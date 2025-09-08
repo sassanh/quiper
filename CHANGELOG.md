@@ -1,6 +1,6 @@
 # Changelog
 
-## Upcoming
+## Version 0.1.1
 
 - chore: add application file to the release assets
 
