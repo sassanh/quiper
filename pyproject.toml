@@ -1,0 +1,69 @@
+[project]
+name = "quiper"
+dynamic = ["version"]
+description = "A macOS overlay for AI web applications, providing a floating window with a web view and hotkey support."
+license = "MIT"
+authors = [{ name = "Sassan Haradji", email = "me@sassanh.com" }]
+maintainers = [{ name = "Sassan Haradji", email = "me@sassanh.com" }]
+readme = "README.md"
+requires-python = ">=3.12"
+keywords = [
+  "macos",
+  "overlay",
+  "ai",
+  "webview",
+  "hotkey",
+  "grok",
+  "gemini",
+  "chatgpt",
+  "ollama",
+]
+
+dependencies = [
+  "jaraco-text>=4.0.0",
+  "pyobjc-framework-applicationservices>=11.1",
+  "pyobjc-framework-quartz>=11.1",
+  "pyobjc-framework-webkit>=11.1",
+  "quickmachotkey>=2025.7.28",
+]
+
+[dependency-groups]
+dev = [
+  "poethepoet>=0.37.0",
+  "py2app>=0.28.8",
+  "pyright>=1.1.405",
+  "ruff>=0.12.12",
+  "setuptools>=78.1.1",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "quiper/_version.py"
+
+[tool.hatch.version.raw-options]
+local_scheme = "node-and-date"
+
+[tool.hatch.build]
+packages = ["quiper"]
+
+[project.scripts]
+quiper = "quiper.main:main"
+
+[tool.uv]
+package = true
+
+[tool.poe.tasks]
+build-app = "build-app.py py2app"
+build-alias-app = "build-app.py py2app -A"
+lint = "ruff check ."
+typecheck = "pyright -p pyproject.toml ."
+
+[tool.pyright]
+exclude = ["typings", ".trunk", "**/.venv", "dist/", "build/"]
+disableTaggedHints = true
