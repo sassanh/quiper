@@ -148,11 +148,6 @@ class AppController(NSResponder):
     def applicationDidFinishLaunching_(self, notification):
         NSApp.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
 
-        # Swizzle WKWebView's keyDown_ method
-        # original_method = objc.lookUpClass("WKWebView").instanceMethodForSelector_("keyDown:")
-        # dummy_method = self.instanceMethodForSelector_("dummyKeyDown:")
-        # objc.method_exchangeImplementations(original_method, dummy_method)
-
         self.initialize_state()
         self.create_main_window()
         self.create_views()

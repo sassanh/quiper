@@ -63,9 +63,8 @@ ENGINES_TEMPLATES = {
 }
 
 DEFAULT_ENGINES = [
-    {**ENGINES_TEMPLATES["ChatGPT"]},
-    {**ENGINES_TEMPLATES["Gemini"]},
-    {**ENGINES_TEMPLATES["Grok"]},
+    {"name": name, **ENGINES_TEMPLATES["ChatGPT"]}
+    for name in ["ChatGPT", "Gemini", "Grok"]
 ]
 
 

@@ -7,20 +7,19 @@ Usage:
 
 from setuptools import setup
 
-PACKAGE_NAME = "quiper"
 APP = ["run.py"]
 DATA_FILES = []
 OPTIONS = {
     "iconfile": "assets/icon_dark.icns",
     "plist": {
-        "CFBundleName": PACKAGE_NAME,
+        "CFBundleName": "Quiper",
         "CFBundleIdentifier": "com.github-sassanh.quiper",
         "LSUIElement": True,
         "NSCameraUsageDescription": "Camera access is needed to take pictures.",
         "NSMicrophoneUsageDescription": "Microphone access is needed for voice mode features.",
     },
     "includes": ["pyobjc", "jaraco.text"],
-    "packages": [PACKAGE_NAME.replace("-", "_")],
+    "packages": ["quiper"],
     "resources": [
         "assets/logo_dark.png",
         "assets/logo_light.png",

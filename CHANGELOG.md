@@ -3,6 +3,7 @@
 ## Upcoming
 
 - docs: add application download link and a more comprehensive version of features list to `README.md`
+- fix: initial run no longer starts in a bad state
 
 ## Version 0.1.1
 
