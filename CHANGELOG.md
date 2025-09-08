@@ -1,5 +1,9 @@
 # Changelog
 
+## Upcoming
+
+- docs: add application download link and a more comprehensive version of features list to `README.md`
+
 ## Version 0.1.1
 
 - chore: add application file to the release assets

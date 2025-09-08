@@ -12,11 +12,20 @@ A versatile macOS application that provides a system-wide overlay for multiple A
   - `Option+Space` (customizable) to show/hide the application window.
   - `Command+Control+<digit-n>` to switch to nth engine.
   - `Cmd+0` through `Cmd+9` to switch between chat instances.
-- **Customizable:** Easily change the global hotkey to your preferred combination.
+- **Customizable:**
+  - Easily change the global hotkey to your preferred combination.
+  - Adjust the window size and position to fit your workflow. It will remember the last position and size.
+  - Add, remove, or reorder the AI services in the settings (`Cmd+,`).
+  - Set css selectors for auto-focusing the input box of the chatbot.
 
 ## Installation
 
-You can install the application using pip:
+Easiest way to install and run the application is downloading it from the [Latest Release](
+https://github.com/sassanh/quiper/releases/latest/) and put it in your Applications folder. macOS will nag you about it being from an unidentified developer, but you can bypass that by right-clicking the app and selecting "Open".
+
+[Direct Download Link](https://github.com/sassanh/quiper/releases/latest/download/quiper.app.zip)
+
+You can also install the application using pip:
 
 ```bash
 python3 -m pip install quiper
