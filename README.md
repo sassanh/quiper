@@ -33,7 +33,7 @@ uv run quiper
 To build the application into a standalone macOS app, run:
 
 ```bash
-uv run poe build-dmg
+uv run poe build-app
 ```
 
 The dmg file will be created in the `dist` directory. You can then drag the app to your Applications folder.

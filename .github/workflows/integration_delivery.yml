@@ -116,11 +116,14 @@ jobs:
       - name: Build app
         run: uv run poe build-app
 
+      - name: Compress App
+        run: ditto -c -k --sequesterRsrc --keepParent dist/quiper.app dist/quiper.app.zip
+
       - name: Upload App
         uses: actions/upload-artifact@v4
         with:
           name: app
-          path: dist/quiper.app
+          path: dist/quiper.app.zip
           if-no-files-found: error
 
   publish:
