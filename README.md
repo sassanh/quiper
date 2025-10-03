@@ -1,12 +1,12 @@
 # Quiper
 
-A versatile macOS application that provides a system-wide overlay for multiple AI services, including Grok, Gemini ChatGPT and everything other engine that provides a web application. This tool allows you to quickly access your favorite AI assistants with a global hotkey, quickly switch between engines and manage multiple chat instances for each service.
+A versatile macOS application that provides a system-wide overlay for multiple AI services, including Grok, Gemini ChatGPT and every other engine that provides a web application. This tool allows you to quickly access your favorite AI assistants with a global hotkey, quickly switch between engines and manage multiple chat instances for each service.
 
 ![Quiper](https://quiper.sassanh.com/quiper-screenshot.jpg)
 
 ## Features
 
-- **Multi-Service Support:** Seamlessly switch between Grok and Gemini.
+- **Multi-Service Support:** Seamlessly switch between different AI services like Grok, Gemini, ChatGPT, and more.
 - **Multi-Instance Chats:** Manage up to 10 simultaneous chat sessions for each service.
 - **Global Hotkeys:**
   - `Option+Space` (customizable) to show/hide the application window.

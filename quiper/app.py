@@ -353,12 +353,6 @@ class AppController(NSResponder):
             self.window,
         )
 
-        self.local_mouse_monitor = (
-            NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
-                NSEventMaskLeftMouseDown, self.handle_local_mouse_event
-            )
-        )
-
     def setup_status_bar(self):
         self.status_item = NSStatusBar.systemStatusBar().statusItemWithLength_(
             NSSquareStatusItemLength
@@ -488,6 +482,13 @@ class AppController(NSResponder):
 
     @objc.IBAction
     def showWindow_(self, sender):
+        if not hasattr(self, "local_mouse_monitor") or not self.local_mouse_monitor:
+            self.local_mouse_monitor = (
+                NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+                    NSEventMaskLeftMouseDown, self.handle_local_mouse_event
+                )
+            )
+
         self.window.makeKeyAndOrderFront_(None)
         NSApp.activateIgnoringOtherApps_(True)
         if webview := self.get_current_webview():
@@ -496,6 +497,10 @@ class AppController(NSResponder):
 
     @objc.IBAction
     def hideWindow_(self, sender):
+        if hasattr(self, "local_mouse_monitor") and self.local_mouse_monitor:
+            NSEvent.removeMonitor_(self.local_mouse_monitor)
+            self.local_mouse_monitor = None
+
         if self.settings_window and self.settings_window.isVisible():
             self.settings_window.hide()
         NSApp.hide_(None)

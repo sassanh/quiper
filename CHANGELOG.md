@@ -1,5 +1,9 @@
 # Changelog
 
+## Upcoming
+
+- fix: clicking on the window area when it is hidden does not show it anymore
+
 ## Version 0.1.2
 
 - docs: add application download link and a more comprehensive version of features list to `README.md`
