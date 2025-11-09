@@ -8,205 +8,69 @@ on:
     tags:
       - "v*"
   pull_request:
-
-env:
-  PYTHON_VERSION: "3.13.5"
+  schedule:
+    - cron: "0 0 * * *"
 
 jobs:
-  version:
-    name: Extract Version
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.extract-version.outputs.VERSION }}
-      name: ${{ steps.extract-version.outputs.NAME }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          lfs: true
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-suffix: ubuntu-latest
-
-      - name: Extract Version
-        id: extract-version
-        shell: bash
-        run: |
-          set +e
-          set -x
-          git fetch --prune --unshallow
-          git fetch --depth=1 origin +refs/tags/*:refs/tags/*
-          uvx --with hatch-vcs hatch version || echo "Failed: $?" >&2
-          uvx --with hatch-vcs hatch project metadata || echo "Failed: $?" >&2
-          echo "VERSION=$(uvx --with hatch-vcs hatch version)" >>"$GITHUB_OUTPUT"
-          echo "VERSION=$(uvx --with hatch-vcs hatch version)"
-          echo "NAME=$(uvx --with hatch-vcs hatch project metadata | jq -r .name)" >>"$GITHUB_OUTPUT"
-          echo "NAME=$(uvx --with hatch-vcs hatch project metadata | jq -r .name)"
-
-  type-check:
-    name: Type Check
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Create virtualenv
-        run: |
-          uv venv --system-site-packages
-
-      - name: Install dependencies
-        run: |
-          uv sync --frozen
-
-      - name: Type Check
-        run: |
-          uv run --frozen poe typecheck
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Extract Ruff version from pyproject.toml
-        run: |
-          SPEC=$(grep -Po '"ruff\K[^"]+' pyproject.toml | head -1)
-          RUFF_VER=$(echo "$SPEC" | sed -E 's/.*(>=|==)//')
-          echo "RUFF_VER=$RUFF_VER" >>$GITHUB_ENV
-
-      - name: Run Ruff
-        run: uvx ruff@${{ env.RUFF_VER }} check .
-
   build:
     name: Build
-    runs-on: macos-latest
-    needs:
-      - version
+    runs-on: macos-26
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          lfs: true
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Build Python Package
-        env:
-          PRETEND_VERSION: ${{ needs.version.outputs.version }}
-        run: uv build
-
-      - name: Upload Package
-        uses: actions/upload-artifact@v4
-        with:
-          name: package
-          path: dist/*
-          if-no-files-found: error
-
-      - name: Build app
-        run: uv run poe build-app
-
+      - uses: actions/checkout@v4
+      - name: Build Swift App
+        run: ./build-app.sh
       - name: Compress App
-        run: ditto -c -k --sequesterRsrc --keepParent dist/quiper.app dist/quiper.app.zip
-
+        run: ditto -c -k --sequesterRsrc --keepParent Quiper.app Quiper.app.zip
       - name: Upload App
         uses: actions/upload-artifact@v4
         with:
           name: app
-          path: dist/quiper.app.zip
+          path: Quiper.app.zip
           if-no-files-found: error
 
-  publish:
-    name: Publish
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') ||
-      github.ref == 'refs/heads/development')
+  nightly-release:
+    if: github.event_name == 'schedule'
+    name: Nightly Pre-release
+    runs-on: macos-latest
     needs:
-      - version
-      - type-check
-      - lint
       - build
-    environment:
-      name: pypi
-      url: https://pypi.org/project/${{ needs.version.outputs.name }}/${{
-        needs.version.outputs.version }}
-    permissions:
-      id-token: write
     steps:
-      - name: Download Package
-        uses: actions/download-artifact@v4
-        with:
-          name: package
-          path: dist
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist
-          skip-existing: true
-
-  release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    name: Release
-    needs:
-      - version
-      - type-check
-      - lint
-      - build
-      - publish
-    runs-on: ubuntu-latest
-    environment:
-      name: release
-      url: https://github.com/${{ github.repository }}/releases/tag/v${{
-        needs.version.outputs.version }}
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Procure Package
-        uses: actions/download-artifact@v4
-        with:
-          name: package
-          path: artifacts
-
-      - name: Procure App
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
           name: app
           path: artifacts
-
-      - name: Extract Changelog
-        id: changelog
-        run: |
-          version="${{ needs.version.outputs.version }}"
-          awk "/## Version ${version}/ {flag=1; next} /^## Version [0-9]+\.[0-9]+\.[0-9]+/ {flag=0} flag" CHANGELOG.md >CURRENT_CHANGELOG.md
-          {
-            echo "CONTENT<<EOF"
-            cat CURRENT_CHANGELOG.md
-            echo "EOF"
-          } >>"$GITHUB_OUTPUT"
-
-      - name: Release
+      - name: Generate Nightly Tag
+        id: generate_tag
+        run: echo "TAG_NAME=nightly-$(date +'%Y-%m-%d-%H%M')" >>"$GITHUB_OUTPUT"
+      - name: Create Nightly Pre-release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
-          tag_name: v${{ needs.version.outputs.version }}
-          body: |
-            PyPI package: https://pypi.org/project/${{ needs.version.outputs.name }}/${{ needs.version.outputs.version }}
-
-            # Changes:
-            ${{ steps.changelog.outputs.CONTENT }}
-          prerelease: false
+          tag_name: ${{ steps.generate_tag.outputs.TAG_NAME }}
+          name: Nightly Build ${{ steps.generate_tag.outputs.TAG_NAME }}
+          body: "Nightly pre-release build. For testing purposes only."
+          prerelease: true
           draft: false
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    name: Publish Release
+    runs-on: macos-latest
+    needs:
+      - build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: app
+          path: artifacts
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body: "Automated release for ${{ github.ref_name }}."
+          draft: false
+          prerelease: false
