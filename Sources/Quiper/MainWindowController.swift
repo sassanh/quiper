@@ -53,6 +53,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         currentServiceURL = services[index].url
         serviceSelector.selectedSegment = index
         updateActiveWebview()
+        updateSessionSelector()
     }
 
     func switchSession(to index: Int) {
