@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import Foundation
 
 struct SettingsView: View {
     @State private var selectedTab = "Services"
@@ -28,17 +29,32 @@ struct SettingsView: View {
 struct GeneralSettingsView: View {
     var appController: AppController?
     @State private var launchAtLogin = Launcher.isInstalledAtLogin()
+    private let versionDescription = Bundle.main.versionDisplayString
 
     var body: some View {
         Form {
-            Toggle("Launch at login", isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) { value in
-                    if value {
-                        appController?.installAtLogin(nil)
-                    } else {
-                        appController?.uninstallFromLogin(nil)
+            Section {
+                Toggle("Launch at login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { value in
+                        if value {
+                            appController?.installAtLogin(nil)
+                        } else {
+                            appController?.uninstallFromLogin(nil)
+                        }
                     }
+            }
+
+            Section {
+                HStack {
+                    Text("Current version")
+                    Spacer()
+                    Text(versionDescription)
+                        .font(.body)
+                        .monospacedDigit()
+                        .foregroundColor(.secondary)
                 }
+                .accessibilityIdentifier("current-version-label")
+            }
         }
         .padding()
         .onAppear {
@@ -280,4 +296,22 @@ struct ServiceDetailView: View {
 
     }
 
+}
+
+private extension Bundle {
+    var versionDisplayString: String {
+        let shortVersion = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let buildNumber = object(forInfoDictionaryKey: "CFBundleVersion") as? String
+
+        switch (shortVersion, buildNumber) {
+        case let (short?, build?) where short != build:
+            return "\(short) (\(build))"
+        case let (short?, _):
+            return short
+        case let (_, build?):
+            return build
+        default:
+            return "Unknown"
+        }
+    }
 }

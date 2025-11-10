@@ -11,6 +11,9 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build
@@ -65,12 +68,22 @@ jobs:
         with:
           name: app
           path: artifacts
+      - name: Determine Release Version
+        id: release_version
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        shell: bash
+      - name: Read changelog entry
+        id: changelog_reader
+        uses: mindsers/changelog-reader-action@v2
+        with:
+          version: ${{ steps.release_version.outputs.value }}
+          path: ./CHANGELOG.md
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
-          body: "Automated release for ${{ github.ref_name }}."
+          body: ${{ steps.changelog_reader.outputs.changes }}
           draft: false
           prerelease: false

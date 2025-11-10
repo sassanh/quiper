@@ -473,13 +473,6 @@ struct StatusIconProvider {
     private func statusIconCandidateURLs() -> [URL] {
         var urls: [URL] = []
 
-        if let url = Bundle.module.url(forResource: "logo", withExtension: "png") {
-            urls.append(url)
-        }
-        if let url = Bundle.module.url(forResource: "logo", withExtension: "png", subdirectory: "logo") {
-            urls.append(url)
-        }
-
         if let url = Bundle.main.url(forResource: "logo", withExtension: "png") {
             urls.append(url)
         }
@@ -492,7 +485,27 @@ struct StatusIconProvider {
             urls.append(resourceURL)
         }
 
+        urls.append(contentsOf: developmentResourceCandidates())
+
         return urls
+    }
+
+    private func developmentResourceCandidates() -> [URL] {
+        var candidates: [URL] = []
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+            .appendingPathComponent("Sources/Quiper/logo/logo.png", isDirectory: false)
+        if FileManager.default.fileExists(atPath: cwd.path) {
+            candidates.append(cwd)
+        }
+
+        let sourceFileURL = URL(fileURLWithPath: #filePath, isDirectory: false)
+            .deletingLastPathComponent()
+            .appendingPathComponent("logo/logo.png", isDirectory: false)
+        if FileManager.default.fileExists(atPath: sourceFileURL.path) {
+            candidates.append(sourceFileURL)
+        }
+
+        return candidates
     }
 
     private func resizedTemplateIcon(from image: NSImage) -> NSImage {
