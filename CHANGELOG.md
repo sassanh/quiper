@@ -2,8 +2,12 @@
 
 ## [Unreleased]
 
-### Changed
+### Added
+- TBD
 
+## [0.2.1] - 2025-11-10
+
+### Fixed
 - Switching services now also refreshes the session selector so it reflects the previously active pane for that service, eliminating stale “pane 1” indicators when returning to a different session (`Sources/Quiper/MainWindowController.swift`).
 
 ## [0.2.0] - 2025-11-10
