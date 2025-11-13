@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Added
+- TBD
+
+## [0.3.0] - 2025-11-13
+
+### Added
 - Bridged the web `Notification` API inside every WKWebView so in-app services can request macOS notification permission and deliver local banners, complete with metadata linking back to the originating service/session. (`Sources/Quiper/WebNotificationBridge.swift`, `Sources/Quiper/NotificationDispatcher.swift`, `Sources/Quiper/MainWindowController.swift`, `Supporting/Info.plist`)
 - Added a status-bar menu item that jumps straight to macOS Notification Settings for Quiper, making it easy to re-authorize the app when testing in different bundle locations. (`Sources/Quiper/App.swift`)
 
