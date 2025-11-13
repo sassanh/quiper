@@ -13,6 +13,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var activeIndicesByURL: [String: Int] = [:]
     private var keyDownEventMonitor: Any?
     private weak var contentContainerView: NSView?
+    private var notificationBridges: [ObjectIdentifier: WebNotificationBridge] = [:]
 
     private var inspectorVisible = false {
         didSet {
@@ -46,6 +47,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Public API
     var serviceCount: Int { services.count }
     var activeServiceURL: String? { currentService()?.url }
+
+    @discardableResult
+    func selectService(withURL url: String) -> Bool {
+        guard let index = services.firstIndex(where: { $0.url == url }) else { return false }
+        selectService(at: index)
+        return true
+    }
 
     func selectService(at index: Int) {
         guard services.indices.contains(index) else { return }
@@ -137,7 +145,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let removedURLs = existingURLs.subtracting(incomingURLs)
         for url in removedURLs {
             if let removedWebviews = webviewsByURL[url] {
-                removedWebviews.forEach { $0.removeFromSuperview() }
+                removedWebviews.forEach { tearDownWebView($0) }
             }
             webviewsByURL.removeValue(forKey: url)
             activeIndicesByURL.removeValue(forKey: url)
@@ -329,7 +337,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func createWebviews(in contentView: NSView) {
-        webviewsByURL.values.flatMap { $0 }.forEach { $0.removeFromSuperview() }
+        webviewsByURL.values.flatMap { $0 }.forEach { tearDownWebView($0) }
         webviewsByURL.removeAll()
         activeIndicesByURL.removeAll()
 
@@ -348,7 +356,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func createWebviewStack(for service: Service, frame: NSRect, in contentView: NSView) -> [WKWebView] {
         var serviceViews: [WKWebView] = []
-        for _ in 0..<10 {
+        for sessionIndex in 0..<10 {
             let config = WKWebViewConfiguration()
             config.preferences.javaScriptCanOpenWindowsAutomatically = true
             config.preferences.setValue(true, forKey: "developerExtrasEnabled")
@@ -359,6 +367,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             webview.navigationDelegate = self
             webview.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
             webview.isHidden = true
+            attachNotificationBridge(to: webview, service: service, sessionIndex: sessionIndex)
 
             contentView.addSubview(webview, positioned: .below, relativeTo: dragArea)
             serviceViews.append(webview)
@@ -453,6 +462,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func segmentIndex(forSession session: Int) -> Int {
         session == 9 ? 9 : session
+    }
+
+    private func attachNotificationBridge(to webView: WKWebView, service: Service, sessionIndex: Int) {
+        let identifier = ObjectIdentifier(webView)
+        notificationBridges[identifier] = WebNotificationBridge(
+            webView: webView,
+            serviceURL: service.url,
+            serviceName: service.name,
+            sessionIndex: sessionIndex
+        )
+    }
+
+    private func detachNotificationBridge(from webView: WKWebView) {
+        let identifier = ObjectIdentifier(webView)
+        notificationBridges[identifier]?.invalidate()
+        notificationBridges.removeValue(forKey: identifier)
+    }
+
+    private func tearDownWebView(_ webView: WKWebView) {
+        detachNotificationBridge(from: webView)
+        webView.removeFromSuperview()
     }
 
     private func initiateDownload(from url: URL) {

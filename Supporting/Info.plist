@@ -24,6 +24,8 @@
 	<string>12.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>Quiper needs notification access to show alerts from your chat services.</string>
 	<key>CFBundleIconFile</key>
 	<string>QuiperIcon</string>
 </dict>

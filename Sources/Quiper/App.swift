@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import WebKit
 import SwiftUI
+import UserNotifications
 
 extension Notification.Name {
     static let inspectorVisibilityChanged = Notification.Name("InspectorVisibilityChanged")
@@ -136,6 +137,14 @@ final class AppController: NSObject, NSWindowDelegate {
             }
 
         }
+
+    }
+
+
+
+    @objc func openNotificationSettings(_ sender: Any?) {
+
+        NotificationDispatcher.shared.openSystemNotificationSettings()
 
     }
 
@@ -279,6 +288,21 @@ final class AppController: NSObject, NSWindowDelegate {
     }
 }
 
+extension AppController: NotificationDispatcherDelegate {
+    func notificationDispatcher(_ dispatcher: NotificationDispatcher,
+                                didActivateNotificationForServiceURL serviceURL: String?,
+                                sessionIndex: Int?) {
+        showWindow(nil)
+        if let url = serviceURL {
+            _ = windowController.selectService(withURL: url)
+        }
+        if let sessionIndex {
+            windowController.switchSession(to: sessionIndex)
+        }
+        windowController.focusInputInActiveWebview()
+    }
+}
+
 // MARK: - App Entry
 
 
@@ -309,15 +333,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.setActivationPolicy(.accessory)
 
-
-
-        createMainMenu()
-
-
-
         statusBarController = StatusBarController()
 
+        NotificationDispatcher.shared.configure(delegate: statusBarController.appController)
 
+        createMainMenu()
 
         statusBarController.install()
 
@@ -545,6 +565,7 @@ struct StatusMenuBuilder {
         addItem("Share", #selector(AppController.share(_:)), "", controller)
         addItem("Clear Web Cache", #selector(AppController.clearWebViewData(_:)), "", controller)
         addItem("Set New Hotkey", #selector(AppController.setHotkey(_:)), "", controller)
+        addItem("Notification Settings...", #selector(AppController.openNotificationSettings(_:)), "", controller)
         menu.addItem(.separator())
         addItem("Install at Login", #selector(AppController.installAtLogin(_:)), "", controller)
         addItem("Uninstall from Login", #selector(AppController.uninstallFromLogin(_:)), "", controller)
