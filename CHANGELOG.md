@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- TBD
+- Restored focus to the previously active application whenever Quiper hides, so dismissing the overlay via the global hotkey instantly returns you to your work without an extra click. (`Sources/Quiper/App.swift`)
 
 ## [0.3.0] - 2025-11-13
 

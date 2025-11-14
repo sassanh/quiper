@@ -16,6 +16,7 @@ final class AppController: NSObject, NSWindowDelegate {
     private let windowController = MainWindowController()
 
     private let hotkeyManager = HotkeyManager()
+    private var previouslyActiveApp: NSRunningApplication?
 
 
 
@@ -45,6 +46,8 @@ final class AppController: NSObject, NSWindowDelegate {
 
     @objc func showWindow(_ sender: Any?) {
 
+        capturePreviouslyActiveAppIfNeeded()
+
         windowController.show()
 
     }
@@ -56,6 +59,7 @@ final class AppController: NSObject, NSWindowDelegate {
         if AppDelegate.sharedSettingsWindow.isVisible == true {
             dismissSettingsWindow()
         }
+        restorePreviousApplicationFocus()
     }
 
 
@@ -285,6 +289,25 @@ final class AppController: NSObject, NSWindowDelegate {
             window.makeFirstResponder(window.contentView)
         }
         mainWindowShield = nil
+    }
+
+    private func capturePreviouslyActiveAppIfNeeded() {
+        guard windowController.window?.isVisible != true else { return }
+        guard let frontmost = NSWorkspace.shared.frontmostApplication else {
+            previouslyActiveApp = nil
+            return
+        }
+        if frontmost.processIdentifier != NSRunningApplication.current.processIdentifier {
+            previouslyActiveApp = frontmost
+        } else {
+            previouslyActiveApp = nil
+        }
+    }
+
+    private func restorePreviousApplicationFocus() {
+        guard let app = previouslyActiveApp else { return }
+        previouslyActiveApp = nil
+        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
     }
 }
 
