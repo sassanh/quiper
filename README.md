@@ -7,7 +7,7 @@ Quiper is a macOS status-bar app that keeps your AI chat services in a single fl
 ## Highlights
 
 - **Overlay built for AI sites** – Define any site that works in Safari (ChatGPT, Gemini, Grok, Claude, internal tools, etc.). Quiper opens each one inside its own `WKWebView` stack so session switches are instant.
-- **Keyboard first** – The default global shortcut is `⌥ Space`, but you can record any combination. Once the window is visible, service switches (`⌘⌃1…9`), session switches (`⌘1…⌘0`), the inspector (`⌘⌃I`), and settings (`⌘ ,`) are all bound to keys.
+- **Keyboard first** – The default global shortcut is `⌥ Space`, but you can record any combination. Once the window is visible, service switches (`⌘ ⌃ 1`…`⌘ ⌃ 9`), session switches (`⌘ 1`…`⌘ 0`), the inspector (`⌘ ⌥ I`), and settings (`⌘ ,`) are all bound to keys.
 - **Persistent sessions** – Each service owns ten live `WKWebView`s. They keep scrollback and form contents, while cookies/cache live in the shared WebKit store so authentication survives next launch.
 - **Notification bridge** – A JavaScript shim mirrors the browser `Notification` API into `UNUserNotificationCenter`. Banners carry the originating service URL and session index, so clicking one reopens the proper context.
 - **Status-bar utility** – Quiper runs with `NSApplication.shared.activationPolicy = .accessory`. The menu extra exposes show/hide, cache clearing, hotkey capture, inspector toggle, login-item install, and notification settings.
@@ -22,10 +22,13 @@ Quiper is a macOS status-bar app that keeps your AI chat services in a single fl
 
 ### Download a release
 
-1. Download the latest `.app` from the [Releases](https://github.com/sassanh/quiper/releases/latest) page.
+1. Download the latest `.app` from the [Releases](https://github.com/sassanh/quiper/releases/latest) page — direct download: [`Quiper.app.zip`](https://github.com/sassanh/quiper/releases/latest/download/Quiper.app.zip).
 2. Move `Quiper.app` to `/Applications`.
-3. On first launch right-click the app, choose **Open**, and confirm Gatekeeper’s warning (unsigned build).
-4. Approve the notification prompt if you plan to use browser banners.
+3. Because this project isn’t signed or notarized (Apple requires a paid Developer ID for that), Gatekeeper will block the first launch. Open **Settings → Privacy & Security** and click **Open Anyway** next to Quiper.
+4. Relaunch `Quiper.app`, click **Open** on the follow-up dialog, and macOS will remember that exception for this bundle path.
+5. Approve the notification prompt if you plan to use browser banners.
+
+> If you rebuild, rename, or move `Quiper.app`, Gatekeeper treats it as a new binary, so repeat steps 3–4 after each update.
 
 ### Build from source
 
@@ -55,12 +58,12 @@ open Quiper.app
 
 | Action | Shortcut |
 | --- | --- |
-| Switch session 1–9 | `⌘1` … `⌘9` |
-| Session 10 | `⌘0` |
-| Switch service 1–9 | `⌘⌃1` … `⌘⌃9` (or `⌘⌥` + digit) |
+| Switch session 1–9 | `⌘ 1` … `⌘ 9` |
+| Session 10 | `⌘ 0` |
+| Switch service 1–9 | `⌘ ⌃ 1` … `⌘ ⌃ 9` (or `⌘ ⌥` + digit) |
 | Open Settings | `⌘ ,` |
-| Toggle Web Inspector | `⌘⌃I` |
-| Hide overlay | `⌘H` |
+| Toggle Web Inspector | `⌘ ⌥ I` |
+| Hide overlay | `⌘ H` |
 
 The segmented controls in the header mirror these shortcuts for mouse users. Dismissing the window via shortcut or menu simply hides it; Quiper reactivates the previously focused app automatically.
 

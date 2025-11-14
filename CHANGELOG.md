@@ -4,6 +4,9 @@
 
 _No changes yet._
 
+### Changed
+- Documented the Gatekeeper bypass steps for unsigned builds in the README, including the need to use System Settings → Privacy & Security → Open Anyway on first launch. (`README.md`)
+
 ## [0.3.1] - 2025-11-14
 
 ### Added
