@@ -6,6 +6,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var dragArea: DraggableView!
     private var serviceSelector: NSSegmentedControl!
     private var sessionSelector: NSSegmentedControl!
+    private var settingsButton: NSButton!
     private var services: [Service] = []
     private var currentServiceName: String?
     private var currentServiceURL: String?
@@ -299,6 +300,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         serviceSelector.action = #selector(serviceChanged(_:))
         dragArea.addSubview(serviceSelector)
 
+        settingsButton = NSButton()
+        if let gear = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings") ?? NSImage(named: NSImage.actionTemplateName) {
+            gear.isTemplate = true
+            settingsButton.image = gear
+            settingsButton.imagePosition = .imageOnly
+        } else {
+            settingsButton.title = "⚙︎"
+        }
+        settingsButton.bezelStyle = .shadowlessSquare
+        settingsButton.isBordered = false
+        settingsButton.focusRingType = .none
+        settingsButton.imageScaling = .scaleProportionallyUpOrDown
+        settingsButton.contentTintColor = .secondaryLabelColor
+        settingsButton.autoresizingMask = [.minXMargin, .minYMargin]
+        settingsButton.toolTip = "Open Settings"
+        settingsButton.target = self
+        settingsButton.action = #selector(settingsButtonTapped(_:))
+        dragArea.addSubview(settingsButton)
+
         sessionSelector = NSSegmentedControl()
         sessionSelector.segmentStyle = .automatic
         sessionSelector.segmentCount = 10
@@ -318,6 +338,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func layoutSelectors() {
         let headerHeight = dragArea.bounds.size.height
         let selectorHeight: CGFloat = 25
+        let buttonSize: CGFloat = 16
+
+        settingsButton.frame = NSRect(
+            x: dragArea.bounds.width - buttonSize - Constants.UI_PADDING,
+            y: (headerHeight - buttonSize) / 2,
+            width: buttonSize,
+            height: buttonSize
+        )
 
         let sessionWidth: CGFloat = 300
         sessionSelector.frame = NSRect(
@@ -328,8 +356,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
 
         let serviceWidth = max(180, estimatedWidthForServiceSegments() + 20)
+        let serviceX = max(
+            sessionSelector.frame.maxX + Constants.UI_PADDING,
+            settingsButton.frame.minX - serviceWidth - Constants.UI_PADDING
+        )
         serviceSelector.frame = NSRect(
-            x: dragArea.bounds.width - serviceWidth - Constants.UI_PADDING,
+            x: serviceX,
             y: (headerHeight - selectorHeight) / 2,
             width: serviceWidth,
             height: selectorHeight
@@ -511,6 +543,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func sessionChanged(_ sender: NSSegmentedControl) {
         switchSession(to: sessionIndex(forSegment: sender.selectedSegment))
+    }
+
+    @objc private func settingsButtonTapped(_ sender: NSButton) {
+        NotificationCenter.default.post(name: .showSettings, object: nil)
     }
 
     // MARK: - NSWindowDelegate
