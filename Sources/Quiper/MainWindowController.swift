@@ -15,6 +15,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var keyDownEventMonitor: Any?
     private weak var contentContainerView: NSView?
     private var notificationBridges: [ObjectIdentifier: WebNotificationBridge] = [:]
+    private var serviceDragRecognizer: NSPanGestureRecognizer?
+    private var draggingServiceIndex: Int?
 
     private var inspectorVisible = false {
         didSet {
@@ -299,6 +301,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         serviceSelector.target = self
         serviceSelector.action = #selector(serviceChanged(_:))
         dragArea.addSubview(serviceSelector)
+        let recognizer = NSPanGestureRecognizer(target: self, action: #selector(handleServiceDrag(_:)))
+        serviceSelector.addGestureRecognizer(recognizer)
+        serviceDragRecognizer = recognizer
 
         settingsButton = NSButton()
         if let gear = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings") ?? NSImage(named: NSImage.actionTemplateName) {
@@ -338,7 +343,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func layoutSelectors() {
         let headerHeight = dragArea.bounds.size.height
         let selectorHeight: CGFloat = 25
-        let buttonSize: CGFloat = 16
+        let buttonSize: CGFloat = 26
 
         settingsButton.frame = NSRect(
             x: dragArea.bounds.width - buttonSize - Constants.UI_PADDING,
@@ -496,6 +501,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         session == 9 ? 9 : session
     }
 
+    private func segmentIndex(at point: NSPoint) -> Int? {
+        let count = serviceSelector.segmentCount
+        guard count > 0, serviceSelector.bounds.width > 0 else { return nil }
+        let clampedX = max(0, min(serviceSelector.bounds.width, point.x))
+        if count == 1 { return 0 }
+        let fraction = clampedX / serviceSelector.bounds.width
+        let rawIndex = Int((fraction * CGFloat(count - 1)).rounded())
+        return max(0, min(count - 1, rawIndex))
+    }
+
+    private func reorderServices(from source: Int, to destination: Int) -> Int? {
+        guard services.indices.contains(source), services.indices.contains(destination) else { return nil }
+        services.swapAt(source, destination)
+        Settings.shared.services = services
+        Settings.shared.saveSettings()
+        refreshServiceSegments()
+        updateSessionSelector()
+        return destination
+    }
+
     private func attachNotificationBridge(to webView: WKWebView, service: Service, sessionIndex: Int) {
         let identifier = ObjectIdentifier(webView)
         notificationBridges[identifier] = WebNotificationBridge(
@@ -547,6 +572,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func settingsButtonTapped(_ sender: NSButton) {
         NotificationCenter.default.post(name: .showSettings, object: nil)
+    }
+
+    @objc private func handleServiceDrag(_ gesture: NSPanGestureRecognizer) {
+        let location = gesture.location(in: serviceSelector)
+        switch gesture.state {
+        case .began:
+            draggingServiceIndex = segmentIndex(at: location)
+            if draggingServiceIndex != nil {
+                NSCursor.openHand.set()
+            }
+        case .changed:
+            guard let source = draggingServiceIndex,
+                  let destination = segmentIndex(at: location),
+                  source != destination else { return }
+            if let newIndex = reorderServices(from: source, to: destination) {
+                draggingServiceIndex = newIndex
+            }
+            NSCursor.closedHand.set()
+        default:
+            draggingServiceIndex = nil
+            NSCursor.arrow.set()
+        }
     }
 
     // MARK: - NSWindowDelegate

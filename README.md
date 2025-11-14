@@ -91,7 +91,7 @@ The segmented controls in the header mirror these shortcuts for mouse users. Dis
 
 ## Customization
 
-- **Services** – Settings → Services lets you add, delete, or reorder entries. Each service includes a CSS selector used by `focusInputInActiveWebview()` to focus the correct input field when the session becomes visible.
+- **Services** – Drag services directly in the header segmented control or open Settings → Services to add/delete/reorder entries. Each service includes a CSS selector used by `focusInputInActiveWebview()` to focus the correct input field when the session becomes visible.
 - **Window aesthetics** – On macOS 26 Quiper wraps content in `NSGlassEffectView`; earlier versions use `NSVisualEffectView` with rounded corners. Drag anywhere on the translucent header to reposition.
 - **Manual edits** – All preferences live at `~/Library/Application Support/Quiper/settings.json`. The JSON object contains `services: [...]` and a `hotkey` entry (`{ "keyCode": <UInt32>, "modifierFlags": <UInt> }`), so you can edit service lists and the global shortcut in one place while Quiper is closed.
 
