@@ -18,6 +18,11 @@ struct Service: Codable, Identifiable {
 
 extension Service: Equatable {}
 
+private struct PersistedSettings: Codable {
+    var services: [Service]
+    var hotkey: HotkeyManager.Configuration?
+}
+
 class SettingsWindow: NSWindow {
     static let shared = SettingsWindow()
     private var hostingController: NSHostingController<SettingsView>
@@ -89,12 +94,18 @@ class Settings: ObservableObject {
     static let shared = Settings()
 
     @Published var services: [Service] = []
+    @Published var hotkeyConfiguration: HotkeyManager.Configuration = HotkeyManager.defaultConfiguration
 
     private let settingsFile: URL = {
         let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appDir = supportDir.appendingPathComponent("Quiper")
         try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true, attributes: nil)
         return appDir.appendingPathComponent("settings.json")
+    }()
+
+    private let legacyHotkeyFile: URL = {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/quiper/hotkey_config.json")
     }()
 
     private let defaultEngines: [Service] = [
@@ -104,25 +115,54 @@ class Settings: ObservableObject {
     ]
 
     init() {
-        services = loadSettings()
+        _ = loadSettings()
     }
 
     func loadSettings() -> [Service] {
-        do {
-            let data = try Data(contentsOf: settingsFile)
-            let services = try JSONDecoder().decode([Service].self, from: data)
-            return services
-        } catch {
-            return defaultEngines
+        let persisted = readPersistedSettings()
+        services = persisted.services
+        if let storedHotkey = persisted.hotkey {
+            hotkeyConfiguration = storedHotkey
+        } else if let legacy = loadLegacyHotkeyConfiguration() {
+            hotkeyConfiguration = legacy
+            saveSettings()
+        } else {
+            hotkeyConfiguration = HotkeyManager.defaultConfiguration
         }
+        return services
     }
 
     func saveSettings() {
         do {
-            let data = try JSONEncoder().encode(services)
+            let payload = PersistedSettings(services: services, hotkey: hotkeyConfiguration)
+            let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
             print("Error saving settings: \(error)")
+        }
+    }
+
+    private func readPersistedSettings() -> PersistedSettings {
+        if let data = try? Data(contentsOf: settingsFile) {
+            if let payload = try? JSONDecoder().decode(PersistedSettings.self, from: data) {
+                return payload
+            }
+            if let legacyServices = try? JSONDecoder().decode([Service].self, from: data) {
+                return PersistedSettings(services: legacyServices, hotkey: nil)
+            }
+        }
+        return PersistedSettings(services: defaultEngines, hotkey: nil)
+    }
+
+    private func loadLegacyHotkeyConfiguration() -> HotkeyManager.Configuration? {
+        guard FileManager.default.fileExists(atPath: legacyHotkeyFile.path) else { return nil }
+        do {
+            let data = try Data(contentsOf: legacyHotkeyFile)
+            let config = try JSONDecoder().decode(HotkeyManager.Configuration.self, from: data)
+            try? FileManager.default.removeItem(at: legacyHotkeyFile)
+            return config
+        } catch {
+            return nil
         }
     }
 }

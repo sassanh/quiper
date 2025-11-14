@@ -12,6 +12,11 @@ final class HotkeyManager {
         }
     }
 
+    static let defaultConfiguration = Configuration(
+        keyCode: UInt32(kVK_Space),
+        modifierFlags: NSEvent.ModifierFlags.option.rawValue
+    )
+
     enum CaptureError: LocalizedError {
         case noWindow
         case cancelled
@@ -29,21 +34,16 @@ final class HotkeyManager {
         }
     }
 
-    private static let configURL: URL = {
-        let logs = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/quiper", isDirectory: true)
-        try? FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
-        return logs.appendingPathComponent("hotkey_config.json")
-    }()
-
     private var configuration: Configuration
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private var callback: (() -> Void)?
     private var captureOverlay: HotkeyCaptureOverlay?
+    private let settings: Settings
 
-    init() {
-        configuration = Self.loadConfiguration()
+    init(settings: Settings = .shared) {
+        self.settings = settings
+        configuration = settings.hotkeyConfiguration
     }
 
     deinit {
@@ -71,8 +71,7 @@ final class HotkeyManager {
             self.captureOverlay = nil
             switch result {
             case .captured(let config):
-                self.configuration = config
-                self.saveConfiguration()
+                self.applyNewConfiguration(config)
                 if self.registerHotKey(with: config) {
                     completion(.success(()))
                 } else {
@@ -84,25 +83,6 @@ final class HotkeyManager {
         }
         captureOverlay = overlay
         overlay.present()
-    }
-
-    // MARK: - Persistence
-    private static func loadConfiguration() -> Configuration {
-        do {
-            let data = try Data(contentsOf: configURL)
-            return try JSONDecoder().decode(Configuration.self, from: data)
-        } catch {
-            return Configuration(keyCode: UInt32(kVK_Space), modifierFlags: NSEvent.ModifierFlags.option.rawValue)
-        }
-    }
-
-    private func saveConfiguration() {
-        do {
-            let data = try JSONEncoder().encode(configuration)
-            try data.write(to: Self.configURL)
-        } catch {
-            NSLog("[Quiper] Failed to save hotkey configuration: \(error)")
-        }
     }
 
     // MARK: - Hotkey registration
@@ -126,6 +106,12 @@ final class HotkeyManager {
             return true
         }
         return false
+    }
+
+    private func applyNewConfiguration(_ configuration: Configuration) {
+        self.configuration = configuration
+        settings.hotkeyConfiguration = configuration
+        settings.saveSettings()
     }
 
     private func unregisterHotKey() {

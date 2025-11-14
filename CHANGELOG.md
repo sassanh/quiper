@@ -5,6 +5,10 @@
 ### Added
 - Restored focus to the previously active application whenever Quiper hides, so dismissing the overlay via the global hotkey instantly returns you to your work without an extra click. (`Sources/Quiper/App.swift`)
 
+### Changed
+- All preferences now persist inside `~/Library/Application Support/Quiper/settings.json`. The services array and the global hotkey live in one JSON payload, and legacy `hotkey_config.json` files are migrated automatically. (`Sources/Quiper/Settings.swift`, `Sources/Quiper/Listener.swift`)
+- Updated the README to reflect the consolidated settings file and the revised hotkey persistence model. (`README.md`)
+
 ## [0.3.0] - 2025-11-13
 
 ### Added
