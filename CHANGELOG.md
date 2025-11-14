@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.3.1] - 2025-11-14
+
 ### Added
 - Restored focus to the previously active application whenever Quiper hides, so dismissing the overlay via the global hotkey instantly returns you to your work without an extra click. (`Sources/Quiper/App.swift`)
 - Services can now be reordered directly from the overlay header by dragging the segmented control; the new order is saved immediately. (`Sources/Quiper/MainWindowController.swift`)
