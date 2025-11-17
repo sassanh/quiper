@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.2] - 2025-11-17
+
 ### Added
 
 - Custom action scripts now live as individual `.js` files under `~/Library/Application Support/Quiper/ActionScripts/<service>/<action>.js`, making it easy to edit them in any external editor. The Advanced tab exposes an “Open in Text Editor” button for each action, and Quiper reads the script file at run time so the latest content is always executed. (`Sources/Quiper/ActionScriptStorage.swift`, `Sources/Quiper/SettingsView.swift`, `Sources/Quiper/MainWindowController.swift`)
