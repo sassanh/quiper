@@ -39,7 +39,12 @@ struct ActionsSettingsView: View {
     }
 
     private func removeActions(at offsets: IndexSet) {
+        let removedIDs = offsets.compactMap { index -> UUID? in
+            guard settings.customActions.indices.contains(index) else { return nil }
+            return settings.customActions[index].id
+        }
         settings.customActions.remove(atOffsets: offsets)
+        removedIDs.forEach { settings.deleteScripts(for: $0) }
     }
 
     private func recordShortcut(for id: UUID) {

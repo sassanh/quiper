@@ -190,13 +190,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         currentWebView()?.evaluateJavaScript("setTimeout(() => document.querySelector(\\\"\(selector)\\\")?.focus(), 0);", completionHandler: nil)
     }
 
-    func logCustomAction(_ name: String) {
-        guard let webView = currentWebView() else { return }
-        let escaped = name
+    func logCustomAction(_ action: CustomAction) {
+        guard let service = currentService(), let webView = currentWebView() else { return }
+        let storedScript = ActionScriptStorage.loadScript(
+            serviceID: service.id,
+            actionID: action.id,
+            fallback: service.actionScripts[action.id] ?? ""
+        )
+        let rawScript = storedScript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let script: String
+        if rawScript.isEmpty {
+            let message = "Action \(escapeForJavaScript(action.name.isEmpty ? "Action" : action.name)) not implemented for \(escapeForJavaScript(service.name))"
+            script = "console.log(\"\(message)\")"
+        } else {
+            script = rawScript
+        }
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    private func escapeForJavaScript(_ value: String) -> String {
+        value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-        let script = "console.log(\"Custom Action: \(escaped)\")"
-        webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
     func currentWebView() -> WKWebView? {

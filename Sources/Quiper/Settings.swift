@@ -8,11 +8,42 @@ struct Service: Codable, Identifiable {
     var name: String
     var url: String
     var focus_selector: String
+    var actionScripts: [UUID: String] = [:]
 
     enum CodingKeys: String, CodingKey {
+        case id
         case name
         case url
         case focus_selector
+        case actionScripts
+    }
+
+    init(id: UUID = UUID(), name: String, url: String, focus_selector: String, actionScripts: [UUID: String] = [:]) {
+        self.id = id
+        self.name = name
+        self.url = url
+        self.focus_selector = focus_selector
+        self.actionScripts = actionScripts
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decode(String.self, forKey: .name)
+        url = try container.decode(String.self, forKey: .url)
+        focus_selector = try container.decode(String.self, forKey: .focus_selector)
+        actionScripts = try container.decodeIfPresent([UUID: String].self, forKey: .actionScripts) ?? [:]
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(url, forKey: .url)
+        try container.encode(focus_selector, forKey: .focus_selector)
+        if !actionScripts.isEmpty {
+            try container.encode(actionScripts, forKey: .actionScripts)
+        }
     }
 }
 
@@ -143,6 +174,14 @@ class Settings: ObservableObject {
         } catch {
             print("Error saving settings: \(error)")
         }
+    }
+
+    func deleteScripts(for actionID: UUID) {
+        for index in services.indices {
+            services[index].actionScripts.removeValue(forKey: actionID)
+            ActionScriptStorage.deleteScript(serviceID: services[index].id, actionID: actionID)
+        }
+        saveSettings()
     }
 
     private func readPersistedSettings() -> PersistedSettings {

@@ -2,11 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Custom action scripts now live as individual `.js` files under `~/Library/Application Support/Quiper/ActionScripts/<service>/<action>.js`, making it easy to edit them in any external editor. The Advanced tab exposes an “Open in Text Editor” button for each action, and Quiper reads the script file at run time so the latest content is always executed. (`Sources/Quiper/ActionScriptStorage.swift`, `Sources/Quiper/SettingsView.swift`, `Sources/Quiper/MainWindowController.swift`)
+
 ### Changed
 
 - Hiding the overlay no longer forces focus back to whatever app was active when Quiper opened; macOS now decides which app should be active when the window closes. (`Sources/Quiper/App.swift`)
 - Documented the Gatekeeper bypass steps for unsigned builds in the README, including the need to use System Settings → Privacy & Security → Open Anyway on first launch. (`README.md`)
 - Reworked the service selector so services activate on mouse-down and drag-and-drop reordering is fully handled by a custom `ServiceSelectorControl`, producing immediate closed-hand feedback and robust hit testing across uneven segment widths. (`Sources/Quiper/ServiceSelectorControl.swift`, `Sources/Quiper/MainWindowController.swift`, `Sources/Quiper/Constants.swift`)
+- Removing a service or a custom action now deletes the corresponding on-disk script files so stale code doesn’t accumulate, and the settings payload keeps service/action script metadata in sync. (`Sources/Quiper/SettingsView.swift`, `Sources/Quiper/ActionsSettingsView.swift`, `Sources/Quiper/Settings.swift`)
 
 ## [0.3.1] - 2025-11-14
 

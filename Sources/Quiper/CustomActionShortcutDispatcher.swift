@@ -1,5 +1,4 @@
 import AppKit
-import Carbon
 
 @MainActor
 final class CustomActionShortcutDispatcher {
@@ -38,7 +37,7 @@ final class CustomActionShortcutDispatcher {
             return shortcut.keyCode == configuration.keyCode && shortcut.modifierFlags == configuration.modifierFlags
         }) else { return false }
         controller.focusInputInActiveWebview()
-        controller.logCustomAction(action.name)
+        controller.logCustomAction(action)
         return true
     }
 }
