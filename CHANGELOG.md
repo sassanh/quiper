@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Changed
+
 - Hiding the overlay no longer forces focus back to whatever app was active when Quiper opened; macOS now decides which app should be active when the window closes. (`Sources/Quiper/App.swift`)
 - Documented the Gatekeeper bypass steps for unsigned builds in the README, including the need to use System Settings → Privacy & Security → Open Anyway on first launch. (`README.md`)
 - Reworked the service selector so services activate on mouse-down and drag-and-drop reordering is fully handled by a custom `ServiceSelectorControl`, producing immediate closed-hand feedback and robust hit testing across uneven segment widths. (`Sources/Quiper/ServiceSelectorControl.swift`, `Sources/Quiper/MainWindowController.swift`, `Sources/Quiper/Constants.swift`)
@@ -10,10 +11,12 @@
 ## [0.3.1] - 2025-11-14
 
 ### Added
+
 - Restored focus to the previously active application whenever Quiper hides, so dismissing the overlay via the global hotkey instantly returns you to your work without an extra click. (`Sources/Quiper/App.swift`)
 - Services can now be reordered directly from the overlay header by dragging the segmented control; the new order is saved immediately. (`Sources/Quiper/MainWindowController.swift`)
 
 ### Changed
+
 - All preferences now persist inside `~/Library/Application Support/Quiper/settings.json`. The services array and the global hotkey live in one JSON payload, and legacy `hotkey_config.json` files are migrated automatically. (`Sources/Quiper/Settings.swift`, `Sources/Quiper/Listener.swift`)
 - Updated the README to reflect the consolidated settings file and the revised hotkey persistence model. (`README.md`)
 - Added an always-visible gear button to the overlay header so Settings is one click away, and tweaked the button styling so it matches light/dark appearances. (`Sources/Quiper/MainWindowController.swift`)
@@ -21,15 +24,18 @@
 ## [0.3.0] - 2025-11-13
 
 ### Added
+
 - Bridged the web `Notification` API inside every WKWebView so in-app services can request macOS notification permission and deliver local banners, complete with metadata linking back to the originating service/session. (`Sources/Quiper/WebNotificationBridge.swift`, `Sources/Quiper/NotificationDispatcher.swift`, `Sources/Quiper/MainWindowController.swift`, `Supporting/Info.plist`)
 - Added a status-bar menu item that jumps straight to macOS Notification Settings for Quiper, making it easy to re-authorize the app when testing in different bundle locations. (`Sources/Quiper/App.swift`)
 
 ### Fixed
+
 - Clicking a notification banner now activates Quiper, selects the correct service and chat session, and focuses the input for immediate reply. (`Sources/Quiper/NotificationDispatcher.swift`, `Sources/Quiper/App.swift`)
 
 ## [0.2.1] - 2025-11-10
 
 ### Fixed
+
 - Switching services now also refreshes the session selector so it reflects the previously active pane for that service, eliminating stale “pane 1” indicators when returning to a different session (`Sources/Quiper/MainWindowController.swift`).
 
 ## [0.2.0] - 2025-11-10

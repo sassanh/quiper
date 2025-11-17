@@ -16,6 +16,7 @@ final class AppController: NSObject, NSWindowDelegate {
     private let windowController = MainWindowController()
 
     private let hotkeyManager = HotkeyManager()
+    private let customActionDispatcher = CustomActionShortcutDispatcher()
     private var lastNonQuiperApplication: NSRunningApplication?
 
 
@@ -53,12 +54,14 @@ final class AppController: NSObject, NSWindowDelegate {
 
         captureFrontmostNonQuiperApplication()
         windowController.show()
+        customActionDispatcher.startMonitoring(windowController: windowController)
 
     }
 
 
 
     @objc func hideWindow(_ sender: Any?) {
+        customActionDispatcher.stopMonitoring()
         windowController.hide()
         if AppDelegate.sharedSettingsWindow.isVisible == true {
             dismissSettingsWindow()
@@ -195,9 +198,16 @@ final class AppController: NSObject, NSWindowDelegate {
 
 
     func setMainWindowShortcutsEnabled(_ enabled: Bool) {
-
         windowController.setShortcutsEnabled(enabled)
-
+        guard windowController.window?.isVisible == true else {
+            customActionDispatcher.stopMonitoring()
+            return
+        }
+        if enabled {
+            customActionDispatcher.startMonitoring(windowController: windowController)
+        } else {
+            customActionDispatcher.stopMonitoring()
+        }
     }
 
     var currentServiceURL: String? {

@@ -190,6 +190,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         currentWebView()?.evaluateJavaScript("setTimeout(() => document.querySelector(\\\"\(selector)\\\")?.focus(), 0);", completionHandler: nil)
     }
 
+    func logCustomAction(_ name: String) {
+        guard let webView = currentWebView() else { return }
+        let escaped = name
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "console.log(\"Custom Action: \(escaped)\")"
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
     func currentWebView() -> WKWebView? {
         guard let service = currentService(),
               let webviewsForService = webviewsByURL[service.url] else {

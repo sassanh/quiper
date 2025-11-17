@@ -21,6 +21,7 @@ extension Service: Equatable {}
 private struct PersistedSettings: Codable {
     var services: [Service]
     var hotkey: HotkeyManager.Configuration?
+    var customActions: [CustomAction]?
 }
 
 class SettingsWindow: NSWindow {
@@ -95,6 +96,7 @@ class Settings: ObservableObject {
 
     @Published var services: [Service] = []
     @Published var hotkeyConfiguration: HotkeyManager.Configuration = HotkeyManager.defaultConfiguration
+    @Published var customActions: [CustomAction] = []
 
     private let settingsFile: URL = {
         let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -121,6 +123,7 @@ class Settings: ObservableObject {
     func loadSettings() -> [Service] {
         let persisted = readPersistedSettings()
         services = persisted.services
+        customActions = persisted.customActions ?? []
         if let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if let legacy = loadLegacyHotkeyConfiguration() {
@@ -134,7 +137,7 @@ class Settings: ObservableObject {
 
     func saveSettings() {
         do {
-            let payload = PersistedSettings(services: services, hotkey: hotkeyConfiguration)
+            let payload = PersistedSettings(services: services, hotkey: hotkeyConfiguration, customActions: customActions)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {

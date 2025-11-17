@@ -15,7 +15,13 @@ struct SettingsView: View {
                     Label("Services", systemImage: "list.bullet")
                 }
                 .tag("Services")
-            
+
+            ActionsSettingsView()
+                .tabItem {
+                    Label("Actions", systemImage: "bolt")
+                }
+                .tag("Actions")
+
             GeneralSettingsView(appController: appController)
                 .tabItem {
                     Label("General", systemImage: "gear")
