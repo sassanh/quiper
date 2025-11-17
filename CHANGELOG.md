@@ -2,9 +2,8 @@
 
 ## [Unreleased]
 
-_No changes yet._
-
 ### Changed
+- Hiding the overlay no longer forces focus back to whatever app was active when Quiper opened; macOS now decides which app should be active when the window closes. (`Sources/Quiper/App.swift`)
 - Documented the Gatekeeper bypass steps for unsigned builds in the README, including the need to use System Settings → Privacy & Security → Open Anyway on first launch. (`README.md`)
 
 ## [0.3.1] - 2025-11-14

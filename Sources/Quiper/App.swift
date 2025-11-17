@@ -16,7 +16,7 @@ final class AppController: NSObject, NSWindowDelegate {
     private let windowController = MainWindowController()
 
     private let hotkeyManager = HotkeyManager()
-    private var previouslyActiveApp: NSRunningApplication?
+    private var lastNonQuiperApplication: NSRunningApplication?
 
 
 
@@ -25,6 +25,10 @@ final class AppController: NSObject, NSWindowDelegate {
         super.init()
 
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettingsNotification), name: .showSettings, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self,
+                                                          selector: #selector(handleApplicationDidActivate(_:)),
+                                                          name: NSWorkspace.didActivateApplicationNotification,
+                                                          object: nil)
 
     }
 
@@ -32,6 +36,7 @@ final class AppController: NSObject, NSWindowDelegate {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
 
@@ -46,8 +51,7 @@ final class AppController: NSObject, NSWindowDelegate {
 
     @objc func showWindow(_ sender: Any?) {
 
-        capturePreviouslyActiveAppIfNeeded()
-
+        captureFrontmostNonQuiperApplication()
         windowController.show()
 
     }
@@ -59,7 +63,7 @@ final class AppController: NSObject, NSWindowDelegate {
         if AppDelegate.sharedSettingsWindow.isVisible == true {
             dismissSettingsWindow()
         }
-        restorePreviousApplicationFocus()
+        activateLastKnownApplication()
     }
 
 
@@ -200,6 +204,27 @@ final class AppController: NSObject, NSWindowDelegate {
         windowController.activeServiceURL
     }
 
+    private func captureFrontmostNonQuiperApplication() {
+        guard let frontmost = NSWorkspace.shared.frontmostApplication,
+              frontmost.processIdentifier != NSRunningApplication.current.processIdentifier else {
+            return
+        }
+        lastNonQuiperApplication = frontmost
+    }
+
+    private func activateLastKnownApplication() {
+        guard let app = lastNonQuiperApplication, !app.isTerminated else { return }
+        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+    }
+
+    @objc private func handleApplicationDidActivate(_ notification: Notification) {
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              app.processIdentifier != NSRunningApplication.current.processIdentifier else {
+            return
+        }
+        lastNonQuiperApplication = app
+    }
+
 
 
     private var mainWindowShield: InteractionShieldView?
@@ -291,24 +316,6 @@ final class AppController: NSObject, NSWindowDelegate {
         mainWindowShield = nil
     }
 
-    private func capturePreviouslyActiveAppIfNeeded() {
-        guard windowController.window?.isVisible != true else { return }
-        guard let frontmost = NSWorkspace.shared.frontmostApplication else {
-            previouslyActiveApp = nil
-            return
-        }
-        if frontmost.processIdentifier != NSRunningApplication.current.processIdentifier {
-            previouslyActiveApp = frontmost
-        } else {
-            previouslyActiveApp = nil
-        }
-    }
-
-    private func restorePreviousApplicationFocus() {
-        guard let app = previouslyActiveApp else { return }
-        previouslyActiveApp = nil
-        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-    }
 }
 
 extension AppController: NotificationDispatcherDelegate {
