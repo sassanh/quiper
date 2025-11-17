@@ -4,7 +4,7 @@ import WebKit
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var dragArea: DraggableView!
-    private var serviceSelector: NSSegmentedControl!
+    private var serviceSelector: ServiceSelectorControl!
     private var sessionSelector: NSSegmentedControl!
     private var settingsButton: NSButton!
     private var services: [Service] = []
@@ -15,7 +15,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var keyDownEventMonitor: Any?
     private weak var contentContainerView: NSView?
     private var notificationBridges: [ObjectIdentifier: WebNotificationBridge] = [:]
-    private var serviceDragRecognizer: NSPanGestureRecognizer?
     private var draggingServiceIndex: Int?
 
     private var inspectorVisible = false {
@@ -58,12 +57,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return true
     }
 
-    func selectService(at index: Int) {
+    func selectService(at index: Int, focusWebView: Bool = true) {
         guard services.indices.contains(index) else { return }
         currentServiceName = services[index].name
         currentServiceURL = services[index].url
         serviceSelector.selectedSegment = index
-        updateActiveWebview()
+        updateActiveWebview(focusWebView: focusWebView)
         updateSessionSelector()
     }
 
@@ -295,15 +294,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         dragArea.autoresizingMask = [.width, .minYMargin]
         contentView.addSubview(dragArea)
 
-        serviceSelector = NSSegmentedControl()
+        serviceSelector = ServiceSelectorControl()
         serviceSelector.segmentStyle = .automatic
         serviceSelector.autoresizingMask = [.minXMargin, .minYMargin]
         serviceSelector.target = self
         serviceSelector.action = #selector(serviceChanged(_:))
+        serviceSelector.mouseDownSegmentHandler = { [weak self] index in
+            self?.handleServiceMouseDown(at: index)
+        }
+        serviceSelector.dragBeganHandler = { [weak self] source in
+            self?.handleServiceDragBegan(from: source)
+        }
+        serviceSelector.dragChangedHandler = { [weak self] destination in
+            self?.handleServiceDragChanged(to: destination)
+        }
+        serviceSelector.dragEndedHandler = { [weak self] in
+            self?.handleServiceDragEnded()
+        }
         dragArea.addSubview(serviceSelector)
-        let recognizer = NSPanGestureRecognizer(target: self, action: #selector(handleServiceDrag(_:)))
-        serviceSelector.addGestureRecognizer(recognizer)
-        serviceDragRecognizer = recognizer
 
         settingsButton = NSButton()
         if let gear = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings") ?? NSImage(named: NSImage.actionTemplateName) {
@@ -338,6 +346,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         layoutSelectors()
         refreshServiceSegments()
         updateSessionSelector()
+    }
+
+    private func handleServiceMouseDown(at index: Int) {
+        selectService(at: index, focusWebView: false)
+    }
+
+    private func handleServiceDragBegan(from index: Int) {
+        draggingServiceIndex = index
+        NSCursor.closedHand.set()
+    }
+
+    private func handleServiceDragChanged(to destination: Int) {
+        guard let source = draggingServiceIndex, source != destination else { return }
+        if let newIndex = reorderServices(from: source, to: destination) {
+            draggingServiceIndex = newIndex
+        }
+    }
+
+    private func handleServiceDragEnded() {
+        draggingServiceIndex = nil
+        NSCursor.arrow.set()
     }
 
     private func layoutSelectors() {
@@ -428,7 +457,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return services.first
     }
 
-    private func updateActiveWebview() {
+    private func updateActiveWebview(focusWebView: Bool = true) {
         guard let service = currentService(),
               let webviewsForService = webviewsByURL[service.url] else {
             return
@@ -444,8 +473,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         webviewsByURL.values.flatMap { $0 }.forEach { $0.isHidden = true }
         activeWebview.isHidden = false
-        window?.makeFirstResponder(activeWebview)
-        focusInputInActiveWebview()
+        if focusWebView {
+            window?.makeFirstResponder(activeWebview)
+            focusInputInActiveWebview()
+        }
     }
 
     private func refreshServiceSegments() {
@@ -501,16 +532,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         session == 9 ? 9 : session
     }
 
-    private func segmentIndex(at point: NSPoint) -> Int? {
-        let count = serviceSelector.segmentCount
-        guard count > 0, serviceSelector.bounds.width > 0 else { return nil }
-        let clampedX = max(0, min(serviceSelector.bounds.width, point.x))
-        if count == 1 { return 0 }
-        let fraction = clampedX / serviceSelector.bounds.width
-        let rawIndex = Int((fraction * CGFloat(count - 1)).rounded())
-        return max(0, min(count - 1, rawIndex))
-    }
-
     private func reorderServices(from source: Int, to destination: Int) -> Int? {
         guard services.indices.contains(source), services.indices.contains(destination) else { return nil }
         services.swapAt(source, destination)
@@ -563,7 +584,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Actions
     @objc private func serviceChanged(_ sender: NSSegmentedControl) {
         selectService(at: sender.selectedSegment)
-        updateSessionSelector()
     }
 
     @objc private func sessionChanged(_ sender: NSSegmentedControl) {
@@ -572,28 +592,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func settingsButtonTapped(_ sender: NSButton) {
         NotificationCenter.default.post(name: .showSettings, object: nil)
-    }
-
-    @objc private func handleServiceDrag(_ gesture: NSPanGestureRecognizer) {
-        let location = gesture.location(in: serviceSelector)
-        switch gesture.state {
-        case .began:
-            draggingServiceIndex = segmentIndex(at: location)
-            if draggingServiceIndex != nil {
-                NSCursor.openHand.set()
-            }
-        case .changed:
-            guard let source = draggingServiceIndex,
-                  let destination = segmentIndex(at: location),
-                  source != destination else { return }
-            if let newIndex = reorderServices(from: source, to: destination) {
-                draggingServiceIndex = newIndex
-            }
-            NSCursor.closedHand.set()
-        default:
-            draggingServiceIndex = nil
-            NSCursor.arrow.set()
-        }
     }
 
     // MARK: - NSWindowDelegate
