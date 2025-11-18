@@ -29,7 +29,7 @@ struct ActionsSettingsView: View {
             }
         }
         .padding()
-        .onChange(of: settings.customActions) { _ in
+        .onChange(of: settings.customActions) {
             settings.saveSettings()
         }
     }

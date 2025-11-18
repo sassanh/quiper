@@ -9,6 +9,12 @@ struct SettingsView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
+            GeneralSettingsView(appController: appController)
+                .tabItem {
+                    Label("General", systemImage: "gear")
+                }
+                .tag("General")
+
             ServicesSettingsView(appController: appController,
                                  initialServiceURL: initialServiceURL)
                 .tabItem {
@@ -21,12 +27,6 @@ struct SettingsView: View {
                     Label("Actions", systemImage: "bolt")
                 }
                 .tag("Actions")
-
-            GeneralSettingsView(appController: appController)
-                .tabItem {
-                    Label("General", systemImage: "gear")
-                }
-                .tag("General")
         }
         .frame(minWidth: 600, minHeight: 400)
     }
@@ -36,37 +36,102 @@ struct GeneralSettingsView: View {
     var appController: AppController?
     @State private var launchAtLogin = Launcher.isInstalledAtLogin()
     private let versionDescription = Bundle.main.versionDisplayString
+    @ObservedObject private var settings = Settings.shared
+    @ObservedObject private var updater = UpdateManager.shared
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Launch at login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { value in
-                        if value {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                SettingsSection(title: "Startup") {
+                    SettingsToggleRow(
+                        title: "Launch at login",
+                        message: "Install Quiper as a login item so it’s ready immediately after you sign in.",
+                        isOn: $launchAtLogin
+                    )
+                    .onChange(of: launchAtLogin) { _, isEnabled in
+                        if isEnabled {
                             appController?.installAtLogin(nil)
                         } else {
                             appController?.uninstallFromLogin(nil)
                         }
                     }
-            }
-
-            Section {
-                HStack {
-                    Text("Current version")
-                    Spacer()
-                    Text(versionDescription)
-                        .font(.body)
-                        .monospacedDigit()
-                        .foregroundColor(.secondary)
                 }
-                .accessibilityIdentifier("current-version-label")
+
+                SettingsSection(title: "Updates") {
+                    SettingsRow(
+                        title: "Current version",
+                        message: updater.statusDescription
+                    ) {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(versionDescription)
+                                .font(.system(.body, design: .monospaced))
+                        }
+                    }
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Manual check",
+                        message: "Immediately trigger an update check from GitHub releases."
+                    ) {
+                        Button(action: { updater.checkForUpdates(userInitiated: true) }) {
+                            Text(updater.isChecking ? "Checking…" : "Check for Updates")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(updater.isChecking)
+                    }
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title: "Automatically check for updates",
+                        message: "Poll in the background and notify you when a new build ships.",
+                        isOn: autoCheckBinding
+                    )
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title: "Automatically download updates",
+                        message: "Fetch new builds as soon as they’re found so installs are instant.",
+                        isOn: autoDownloadBinding
+                    )
+                    .disabled(!settings.updatePreferences.automaticallyChecksForUpdates)
+                }
             }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             launchAtLogin = Launcher.isInstalledAtLogin()
         }
     }
+
+    private var autoCheckBinding: Binding<Bool> {
+        Binding(
+            get: { settings.updatePreferences.automaticallyChecksForUpdates },
+            set: { newValue in
+                settings.updatePreferences.automaticallyChecksForUpdates = newValue
+                if !newValue && settings.updatePreferences.automaticallyDownloadsUpdates {
+                    settings.updatePreferences.automaticallyDownloadsUpdates = false
+                }
+                settings.saveSettings()
+            }
+        )
+    }
+
+    private var autoDownloadBinding: Binding<Bool> {
+        Binding(
+            get: { settings.updatePreferences.automaticallyDownloadsUpdates },
+            set: { newValue in
+                settings.updatePreferences.automaticallyDownloadsUpdates = newValue
+                settings.saveSettings()
+            }
+        )
+    }
+
 }
 
 struct ServicesSettingsView: View {
@@ -137,13 +202,13 @@ struct ServicesSettingsView: View {
             syncSelectionWithCurrentService()
             ensureSelectionExists()
         }
-        .onChange(of: appController?.currentServiceURL ?? "__none__") { _ in
+        .onChange(of: appController?.currentServiceURL ?? "__none__") { _, _ in
             syncSelectionWithCurrentService()
         }
-        .onChange(of: settings.services) { _ in
+        .onChange(of: settings.services) { _, newServices in
             if let selectedServiceID,
-               !settings.services.contains(where: { $0.id == selectedServiceID }) {
-                self.selectedServiceID = settings.services.first?.id
+               !newServices.contains(where: { $0.id == selectedServiceID }) {
+                self.selectedServiceID = newServices.first?.id
             }
             settings.saveSettings()
             appController?.reloadServices()
@@ -206,28 +271,20 @@ struct ServiceDetailView: View {
     @Binding var service: Service
     var appController: AppController?
     @Binding var selectedServiceID: Service.ID?
-    @State private var selectedTab = "General"
     @State private var detailSelection: DetailSelection? = .focus
     @ObservedObject private var settings = Settings.shared
 
     var body: some View {
         VStack {
-            Picker("", selection: $selectedTab) {
-                Text("General").tag("General")
-                Text("Advanced").tag("Advanced")
+            Form {
+                TextField("Name", text: $service.name)
+                TextField("URL", text: $service.url)
             }
-            .pickerStyle(SegmentedPickerStyle())
-            .padding(.bottom, 8)
+            .padding()
 
-            if selectedTab == "General" {
-                Form {
-                    TextField("Name", text: $service.name)
-                    TextField("URL", text: $service.url)
-                }
-                .padding()
-            } else {
-                advancedPane
-            }
+            Divider()
+
+            advancedPane
 
             Spacer()
         }
@@ -246,16 +303,9 @@ struct ServiceDetailView: View {
                 }
             }
         }
-        .onChange(of: selectedTab) { tab in
-            if tab != "Advanced" {
-                detailSelection = .focus
-            } else if detailSelection == nil {
-                detailSelection = .focus
-            }
-        }
-        .onChange(of: settings.customActions) { actions in
+        .onChange(of: settings.customActions) { _, newActions in
             if case .action(let id)? = detailSelection,
-               !actions.contains(where: { $0.id == id }) {
+               !newActions.contains(where: { $0.id == id }) {
                 detailSelection = .focus
             }
         }
@@ -384,8 +434,96 @@ private struct ActionScriptEditor: View {
     }
 }
 
+// MARK: - Settings helpers
 
-private extension Bundle {
+private struct SettingsSection<Content: View>: View {
+    var title: String
+    var content: () -> Content
+
+    init(title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.content = content
+    }
+
+    var body: some View {
+        GroupBox {
+            VStack(spacing: 0) {
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
+            .padding(.horizontal, 4)
+            .padding(.bottom, 2)
+        } label: {
+            Text(title)
+                .font(.headline)
+        }
+        .groupBoxStyle(DefaultGroupBoxStyle())
+    }
+}
+
+private struct SettingsRow<Content: View>: View {
+    var title: String
+    var message: String?
+    var content: () -> Content
+    private let labelWidth: CGFloat = 230
+
+    init(title: String, message: String? = nil, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.message = message
+        self.content = content
+    }
+
+    var body: some View {
+        HStack(alignment: message == nil ? .center : .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .fontWeight(.semibold)
+                if let message, !message.isEmpty {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(width: labelWidth, alignment: .leading)
+
+            Spacer(minLength: 16)
+
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
+    }
+}
+
+private struct SettingsToggleRow: View {
+    var title: String
+    var message: String?
+    @Binding var isOn: Bool
+
+    init(title: String, message: String? = nil, isOn: Binding<Bool>) {
+        self.title = title
+        self.message = message
+        self._isOn = isOn
+    }
+
+    var body: some View {
+        SettingsRow(title: title, message: message) {
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+        }
+    }
+}
+
+private struct SettingsDivider: View {
+    var body: some View {
+        Divider()
+            .padding(.vertical, 8)
+    }
+}
+
+
+extension Bundle {
     var versionDisplayString: String {
         let shortVersion = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         let buildNumber = object(forInfoDictionaryKey: "CFBundleVersion") as? String

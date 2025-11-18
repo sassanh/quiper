@@ -12,6 +12,13 @@ struct Constants {
     static let SERVICE_REORDER_DRAG_THRESHOLD: CGFloat = 2
 
     static let STATUS_ITEM_OBSERVER_CONTEXT = 1
+
+    struct Updates {
+        static let latestReleaseAPI = URL(string: "https://api.github.com/repos/sassanh/quiper/releases/latest")!
+        static let latestReleasePage = URL(string: "https://github.com/sassanh/quiper/releases/latest")!
+        static let automaticCheckInterval: TimeInterval = 60 * 60 * 12 // 12 hours
+        static let preferredAssetExtensions = ["zip", "dmg"]
+    }
     
     struct DefaultHotKey {
         static let flags: UInt = 0x80000 // Option key

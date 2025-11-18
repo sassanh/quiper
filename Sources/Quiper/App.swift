@@ -45,6 +45,7 @@ final class AppController: NSObject, NSWindowDelegate {
     func start() {
 
         registerOverlayHotkey()
+        UpdateManager.shared.handleLaunchIfNeeded()
 
     }
 
@@ -161,6 +162,14 @@ final class AppController: NSObject, NSWindowDelegate {
 
 
 
+    @objc func checkForUpdates(_ sender: Any?) {
+
+        UpdateManager.shared.checkForUpdates(userInitiated: true)
+
+    }
+
+
+
     @objc func installAtLogin(_ sender: Any?) {
 
         Launcher.installAtLogin()
@@ -224,7 +233,7 @@ final class AppController: NSObject, NSWindowDelegate {
 
     private func activateLastKnownApplication() {
         guard let app = lastNonQuiperApplication, !app.isTerminated else { return }
-        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        app.activate(options: [.activateAllWindows])
     }
 
     @objc private func handleApplicationDidActivate(_ notification: Notification) {
@@ -606,6 +615,7 @@ struct StatusMenuBuilder {
         addItem("Clear Web Cache", #selector(AppController.clearWebViewData(_:)), "", controller)
         addItem("Set New Hotkey", #selector(AppController.setHotkey(_:)), "", controller)
         addItem("Notification Settings...", #selector(AppController.openNotificationSettings(_:)), "", controller)
+        addItem("Check for Updates…", #selector(AppController.checkForUpdates(_:)), "", controller)
         menu.addItem(.separator())
         addItem("Install at Login", #selector(AppController.installAtLogin(_:)), "", controller)
         addItem("Uninstall from Login", #selector(AppController.uninstallFromLogin(_:)), "", controller)

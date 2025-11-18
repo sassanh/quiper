@@ -49,10 +49,18 @@ struct Service: Codable, Identifiable {
 
 extension Service: Equatable {}
 
+struct UpdatePreferences: Codable, Equatable {
+    var automaticallyChecksForUpdates: Bool = true
+    var automaticallyDownloadsUpdates: Bool = false
+    var lastAutomaticCheck: Date?
+    var lastNotifiedVersion: String?
+}
+
 private struct PersistedSettings: Codable {
     var services: [Service]
     var hotkey: HotkeyManager.Configuration?
     var customActions: [CustomAction]?
+    var updatePreferences: UpdatePreferences?
 }
 
 class SettingsWindow: NSWindow {
@@ -128,6 +136,7 @@ class Settings: ObservableObject {
     @Published var services: [Service] = []
     @Published var hotkeyConfiguration: HotkeyManager.Configuration = HotkeyManager.defaultConfiguration
     @Published var customActions: [CustomAction] = []
+    @Published var updatePreferences: UpdatePreferences = UpdatePreferences()
 
     private let settingsFile: URL = {
         let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -155,6 +164,7 @@ class Settings: ObservableObject {
         let persisted = readPersistedSettings()
         services = persisted.services
         customActions = persisted.customActions ?? []
+        updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
         if let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if let legacy = loadLegacyHotkeyConfiguration() {
@@ -168,7 +178,10 @@ class Settings: ObservableObject {
 
     func saveSettings() {
         do {
-            let payload = PersistedSettings(services: services, hotkey: hotkeyConfiguration, customActions: customActions)
+            let payload = PersistedSettings(services: services,
+                                            hotkey: hotkeyConfiguration,
+                                            customActions: customActions,
+                                            updatePreferences: updatePreferences)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
@@ -190,10 +203,16 @@ class Settings: ObservableObject {
                 return payload
             }
             if let legacyServices = try? JSONDecoder().decode([Service].self, from: data) {
-                return PersistedSettings(services: legacyServices, hotkey: nil)
+                return PersistedSettings(services: legacyServices,
+                                         hotkey: nil,
+                                         customActions: nil,
+                                         updatePreferences: nil)
             }
         }
-        return PersistedSettings(services: defaultEngines, hotkey: nil)
+        return PersistedSettings(services: defaultEngines,
+                                 hotkey: nil,
+                                 customActions: nil,
+                                 updatePreferences: nil)
     }
 
     private func loadLegacyHotkeyConfiguration() -> HotkeyManager.Configuration? {
