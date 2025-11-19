@@ -8,6 +8,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var serviceSelector: ServiceSelectorControl!
     private var sessionSelector: NSSegmentedControl!
     private var settingsButton: NSButton!
+    private var sessionActionsButton: NSButton!
     private var services: [Service] = []
     private var currentServiceName: String?
     private var currentServiceURL: String?
@@ -369,6 +370,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         dragArea.addSubview(serviceSelector)
 
+        sessionActionsButton = NSButton()
+        if let actionsSymbol = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: "Session Actions") {
+            actionsSymbol.isTemplate = true
+            sessionActionsButton.image = actionsSymbol
+            sessionActionsButton.imagePosition = .imageOnly
+        } else {
+            sessionActionsButton.title = "⋯"
+        }
+        sessionActionsButton.bezelStyle = .shadowlessSquare
+        sessionActionsButton.isBordered = false
+        sessionActionsButton.focusRingType = .none
+        sessionActionsButton.imageScaling = .scaleProportionallyUpOrDown
+        sessionActionsButton.contentTintColor = .secondaryLabelColor
+        sessionActionsButton.autoresizingMask = [.minXMargin, .minYMargin]
+        sessionActionsButton.toolTip = "Session Actions"
+        sessionActionsButton.target = self
+        sessionActionsButton.action = #selector(sessionActionsButtonTapped(_:))
+        dragArea.addSubview(sessionActionsButton)
+
         settingsButton = NSButton()
         if let gear = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings") ?? NSImage(named: NSImage.actionTemplateName) {
             gear.isTemplate = true
@@ -429,9 +449,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let headerHeight = dragArea.bounds.size.height
         let selectorHeight: CGFloat = 25
         let buttonSize: CGFloat = 26
+        let buttonSpacing: CGFloat = 6
 
         settingsButton.frame = NSRect(
             x: dragArea.bounds.width - buttonSize - Constants.UI_PADDING,
+            y: (headerHeight - buttonSize) / 2,
+            width: buttonSize,
+            height: buttonSize
+        )
+
+        sessionActionsButton.frame = NSRect(
+            x: settingsButton.frame.minX - buttonSize - buttonSpacing,
             y: (headerHeight - buttonSize) / 2,
             width: buttonSize,
             height: buttonSize
@@ -448,7 +476,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let serviceWidth = max(180, estimatedWidthForServiceSegments() + 20)
         let serviceX = max(
             sessionSelector.frame.maxX + Constants.UI_PADDING,
-            settingsButton.frame.minX - serviceWidth - Constants.UI_PADDING
+            sessionActionsButton.frame.minX - serviceWidth - Constants.UI_PADDING
         )
         serviceSelector.frame = NSRect(
             x: serviceX,
@@ -652,6 +680,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NotificationCenter.default.post(name: .showSettings, object: nil)
     }
 
+    @objc private func sessionActionsButtonTapped(_ sender: NSButton) {
+        let menu = buildSessionActionsMenu()
+        guard !menu.items.isEmpty else { return }
+        let origin = NSPoint(x: 0, y: sender.bounds.height + 4)
+        menu.popUp(positioning: nil, at: origin, in: sender)
+    }
+
     // MARK: - NSWindowDelegate
     func windowDidResize(_ notification: Notification) {
         layoutSelectors()
@@ -659,6 +694,155 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         focusInputInActiveWebview()
+    }
+
+    private func buildSessionActionsMenu() -> NSMenu {
+        let menu = NSMenu(title: "Session Actions")
+        menu.autoenablesItems = false
+
+        menu.addItem(menuItem(title: "Zoom In",
+                              iconName: "plus.magnifyingglass",
+                              keyEquivalent: "=",
+                              modifiers: .command,
+                              action: #selector(performMenuZoomIn)))
+        menu.addItem(menuItem(title: "Zoom Out",
+                              iconName: "minus.magnifyingglass",
+                              keyEquivalent: "-",
+                              modifiers: .command,
+                              action: #selector(performMenuZoomOut)))
+        menu.addItem(menuItem(title: "Reset Zoom",
+                              iconName: "arrow.uturn.backward",
+                              keyEquivalent: deleteKeyEquivalent,
+                              modifiers: .command,
+                              action: #selector(performMenuResetZoom)))
+        menu.addItem(.separator())
+        menu.addItem(menuItem(title: "Reload",
+                              iconName: "arrow.clockwise",
+                              keyEquivalent: "r",
+                              modifiers: .command,
+                              action: #selector(reloadActiveWebView)))
+        menu.addItem(.separator())
+        menu.addItem(menuItem(title: "Copy",
+                              iconName: "doc.on.doc",
+                              keyEquivalent: "c",
+                              modifiers: .command,
+                              action: #selector(copyFromWebView)))
+        menu.addItem(menuItem(title: "Cut",
+                              iconName: "scissors",
+                              keyEquivalent: "x",
+                              modifiers: .command,
+                              action: #selector(cutFromWebView)))
+        menu.addItem(menuItem(title: "Paste",
+                              iconName: "doc.on.clipboard",
+                              keyEquivalent: "v",
+                              modifiers: .command,
+                              action: #selector(pasteIntoWebView)))
+
+        let customActions = Settings.shared.customActions
+        if !customActions.isEmpty {
+            menu.addItem(.separator())
+            customActions.forEach { action in
+                menu.addItem(menuItem(for: action))
+            }
+        }
+        let enabled = currentWebView() != nil
+        menu.items.forEach { item in
+            if item.isSeparatorItem || item.representedObject is CustomAction || !item.isEnabled {
+                return
+            }
+            item.isEnabled = enabled
+        }
+        return menu
+    }
+
+    private func menuItem(title: String,
+                          iconName: String? = nil,
+                          keyEquivalent: String = "",
+                          modifiers: NSEvent.ModifierFlags = [],
+                          action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.target = self
+        item.keyEquivalentModifierMask = modifiers
+        if let iconName,
+           let image = NSImage(systemSymbolName: iconName, accessibilityDescription: title) {
+            image.isTemplate = true
+            item.image = image
+        }
+        return item
+    }
+
+    private func menuItem(for action: CustomAction) -> NSMenuItem {
+        let title = action.name.isEmpty ? "Untitled Action" : action.name
+        let item = menuItem(title: title,
+                            iconName: "bolt.fill",
+                            keyEquivalent: "",
+                            modifiers: [],
+                            action: #selector(performCustomActionFromMenu(_:)))
+        if let shortcut = action.shortcut,
+           let info = keyEquivalent(for: shortcut) {
+            item.keyEquivalent = info.key
+            item.keyEquivalentModifierMask = info.modifiers
+        } else {
+            item.keyEquivalent = ""
+        }
+        item.representedObject = action
+        return item
+    }
+
+    private func keyEquivalent(for configuration: HotkeyManager.Configuration) -> (key: String, modifiers: NSEvent.ModifierFlags)? {
+        let modifiers = NSEvent.ModifierFlags(rawValue: configuration.modifierFlags).intersection([.command, .option, .control, .shift])
+        guard let key = character(for: UInt16(configuration.keyCode)) else { return nil }
+        let normalizedKey = key.count == 1 ? key.lowercased() : key
+        return (normalizedKey, modifiers)
+    }
+
+    private func character(for keyCode: UInt16) -> String? {
+        if keyCode == UInt16(kVK_Delete) {
+            return deleteKeyEquivalent
+        }
+        if keyCode == UInt16(kVK_Space) {
+            return " "
+        }
+        return keyEquivalentMap[keyCode]
+    }
+
+    @objc private func performMenuZoomIn(_ sender: Any?) {
+        zoom(by: Zoom.step)
+    }
+
+    @objc private func performMenuZoomOut(_ sender: Any?) {
+        zoom(by: -Zoom.step)
+    }
+
+    @objc private func performMenuResetZoom(_ sender: Any?) {
+        resetZoom()
+    }
+
+    @objc private func reloadActiveWebView(_ sender: Any?) {
+        currentWebView()?.reload()
+    }
+
+    @objc private func copyFromWebView(_ sender: Any?) {
+        guard let webView = currentWebView() else { return }
+        window?.makeFirstResponder(webView)
+        NSApp.sendAction(#selector(NSTextView.copy(_:)), to: nil, from: self)
+    }
+
+    @objc private func cutFromWebView(_ sender: Any?) {
+        guard let webView = currentWebView() else { return }
+        window?.makeFirstResponder(webView)
+        NSApp.sendAction(#selector(NSTextView.cut(_:)), to: nil, from: self)
+    }
+
+    @objc private func pasteIntoWebView(_ sender: Any?) {
+        guard let webView = currentWebView() else { return }
+        window?.makeFirstResponder(webView)
+        NSApp.sendAction(#selector(NSTextView.paste(_:)), to: nil, from: self)
+    }
+
+    @objc private func performCustomActionFromMenu(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? CustomAction else { return }
+        logCustomAction(action)
     }
 
     private func zoom(by delta: CGFloat) {
@@ -727,3 +911,72 @@ private enum Zoom {
     static let max: CGFloat = 2.5
     static let `default`: CGFloat = 1.0
 }
+
+private let deleteKeyEquivalent: String = {
+    guard let scalar = UnicodeScalar(NSDeleteCharacter) else { return "" }
+    return String(Character(scalar))
+}()
+
+private let keyEquivalentMap: [UInt16: String] = [
+    UInt16(kVK_ANSI_A): "a",
+    UInt16(kVK_ANSI_B): "b",
+    UInt16(kVK_ANSI_C): "c",
+    UInt16(kVK_ANSI_D): "d",
+    UInt16(kVK_ANSI_E): "e",
+    UInt16(kVK_ANSI_F): "f",
+    UInt16(kVK_ANSI_G): "g",
+    UInt16(kVK_ANSI_H): "h",
+    UInt16(kVK_ANSI_I): "i",
+    UInt16(kVK_ANSI_J): "j",
+    UInt16(kVK_ANSI_K): "k",
+    UInt16(kVK_ANSI_L): "l",
+    UInt16(kVK_ANSI_M): "m",
+    UInt16(kVK_ANSI_N): "n",
+    UInt16(kVK_ANSI_O): "o",
+    UInt16(kVK_ANSI_P): "p",
+    UInt16(kVK_ANSI_Q): "q",
+    UInt16(kVK_ANSI_R): "r",
+    UInt16(kVK_ANSI_S): "s",
+    UInt16(kVK_ANSI_T): "t",
+    UInt16(kVK_ANSI_U): "u",
+    UInt16(kVK_ANSI_V): "v",
+    UInt16(kVK_ANSI_W): "w",
+    UInt16(kVK_ANSI_X): "x",
+    UInt16(kVK_ANSI_Y): "y",
+    UInt16(kVK_ANSI_Z): "z",
+    UInt16(kVK_ANSI_0): "0",
+    UInt16(kVK_ANSI_1): "1",
+    UInt16(kVK_ANSI_2): "2",
+    UInt16(kVK_ANSI_3): "3",
+    UInt16(kVK_ANSI_4): "4",
+    UInt16(kVK_ANSI_5): "5",
+    UInt16(kVK_ANSI_6): "6",
+    UInt16(kVK_ANSI_7): "7",
+    UInt16(kVK_ANSI_8): "8",
+    UInt16(kVK_ANSI_9): "9",
+    UInt16(kVK_ANSI_Equal): "=",
+    UInt16(kVK_ANSI_Minus): "-",
+    UInt16(kVK_ANSI_LeftBracket): "[",
+    UInt16(kVK_ANSI_RightBracket): "]",
+    UInt16(kVK_ANSI_Semicolon): ";",
+    UInt16(kVK_ANSI_Quote): "'",
+    UInt16(kVK_ANSI_Comma): ",",
+    UInt16(kVK_ANSI_Period): ".",
+    UInt16(kVK_ANSI_Slash): "/",
+    UInt16(kVK_ANSI_Grave): "`",
+    UInt16(kVK_ANSI_KeypadPlus): "=",
+    UInt16(kVK_ANSI_KeypadMinus): "-",
+    UInt16(kVK_ANSI_Keypad0): "0",
+    UInt16(kVK_ANSI_Keypad1): "1",
+    UInt16(kVK_ANSI_Keypad2): "2",
+    UInt16(kVK_ANSI_Keypad3): "3",
+    UInt16(kVK_ANSI_Keypad4): "4",
+    UInt16(kVK_ANSI_Keypad5): "5",
+    UInt16(kVK_ANSI_Keypad6): "6",
+    UInt16(kVK_ANSI_Keypad7): "7",
+    UInt16(kVK_ANSI_Keypad8): "8",
+    UInt16(kVK_ANSI_Keypad9): "9",
+    UInt16(kVK_ANSI_KeypadDecimal): ".",
+    UInt16(kVK_ANSI_KeypadDivide): "/",
+    UInt16(kVK_ANSI_KeypadMultiply): "*"
+]
