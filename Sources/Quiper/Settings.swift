@@ -409,6 +409,8 @@ class Settings: ObservableObject {
         )
     ]
 
+    private var isPerformingWipe = false
+
     init() {
         _ = loadSettings()
     }
@@ -436,6 +438,10 @@ class Settings: ObservableObject {
     }
 
     func saveSettings() {
+        if isPerformingWipe {
+            isPerformingWipe = false
+            return
+        }
         do {
             let payload = PersistedSettings(services: services,
                                             hotkey: hotkeyConfiguration,
@@ -454,6 +460,16 @@ class Settings: ObservableObject {
             ActionScriptStorage.deleteScript(serviceID: services[index].id, actionID: actionID)
         }
         saveSettings()
+    }
+
+    func wipeAllData() {
+        isPerformingWipe = true
+        services.removeAll()
+        customActions.removeAll()
+        updatePreferences = UpdatePreferences()
+        hotkeyConfiguration = HotkeyManager.defaultConfiguration
+        try? FileManager.default.removeItem(at: settingsFile)
+        ActionScriptStorage.deleteAllScripts()
     }
 
     private func readPersistedSettings() -> (PersistedSettings, Bool) {

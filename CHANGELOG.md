@@ -12,6 +12,8 @@
 - Restyled the General tab so Startup and Updates live inside standard macOS rounded group boxes, added clearer helper copy for each toggle/button, and updated `onChange` usages to the macOS 14-compliant signature to silence deprecation warnings.
 - Default services now append `?referrer=https://github.io/sassanh/quiper`, and the starter list includes X and Google with sensible focus selectors and action scripts aligned with the new default actions.
 - Services tab now includes an “Add from Template” menu (ChatGPT, Gemini, Grok, etc., plus an “Add All” option) so users can quickly re-create the bundled engines without retyping settings.
+- General tab gains a “Danger Zone” with buttons to clear saved web data and to erase all local Quiper data (services, actions, shortcuts, and scripts) with confirmation prompts.
+- Services tab now includes an "Erase All" control that removes every configured service, custom action, shortcut, and script directory so you can drop back to a factory-fresh state in one click.
 
 ### Fixed
 

@@ -22,18 +22,19 @@ struct ActionsSettingsView: View {
                         )
                     }
                 }
-                HStack {
-                    Button(action: addAction) {
-                        Label("Add Action", systemImage: "plus")
-                    }
-                    Spacer()
-                }
             }
             if recordingActionID != nil {
                 ShortcutCaptureOverlayView(message: captureMessage, onCancel: cancelCapture)
             }
         }
         .padding()
+        .toolbar {
+            ToolbarItem {
+                Button(action: addAction) {
+                    Label("Add Action", systemImage: "plus")
+                }
+            }
+        }
         .onChange(of: settings.customActions) { _, _ in
             settings.saveSettings()
         }

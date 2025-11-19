@@ -6,7 +6,7 @@ struct SettingsView: View {
     @State private var selectedTab = "Services"
     var appController: AppController?
     var initialServiceURL: String?
-
+    
     var body: some View {
         TabView(selection: $selectedTab) {
             GeneralSettingsView(appController: appController)
@@ -14,14 +14,14 @@ struct SettingsView: View {
                     Label("General", systemImage: "gear")
                 }
                 .tag("General")
-
+            
             ServicesSettingsView(appController: appController,
                                  initialServiceURL: initialServiceURL)
-                .tabItem {
-                    Label("Services", systemImage: "list.bullet")
-                }
-                .tag("Services")
-
+            .tabItem {
+                Label("Services", systemImage: "list.bullet")
+            }
+            .tag("Services")
+            
             ActionsSettingsView()
                 .tabItem {
                     Label("Actions", systemImage: "bolt")
@@ -38,7 +38,10 @@ struct GeneralSettingsView: View {
     private let versionDescription = Bundle.main.versionDisplayString
     @ObservedObject private var settings = Settings.shared
     @ObservedObject private var updater = UpdateManager.shared
-
+    @State private var showClearWebConfirmation = false
+    @State private var showEraseEnginesConfirmation = false
+    @State private var showEraseActionsConfirmation = false
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
@@ -56,7 +59,7 @@ struct GeneralSettingsView: View {
                         }
                     }
                 }
-
+                
                 SettingsSection(title: "Updates") {
                     SettingsRow(
                         title: "Current version",
@@ -67,9 +70,9 @@ struct GeneralSettingsView: View {
                                 .font(.system(.body, design: .monospaced))
                         }
                     }
-
+                    
                     SettingsDivider()
-
+                    
                     SettingsRow(
                         title: "Manual check",
                         message: "Immediately trigger an update check from GitHub releases."
@@ -80,17 +83,17 @@ struct GeneralSettingsView: View {
                         .buttonStyle(.borderedProminent)
                         .disabled(updater.isChecking)
                     }
-
+                    
                     SettingsDivider()
-
+                    
                     SettingsToggleRow(
                         title: "Automatically check for updates",
                         message: "Poll in the background and notify you when a new build ships.",
                         isOn: autoCheckBinding
                     )
-
+                    
                     SettingsDivider()
-
+                    
                     SettingsToggleRow(
                         title: "Automatically download updates",
                         message: "Fetch new builds as soon as they’re found so installs are instant.",
@@ -98,17 +101,78 @@ struct GeneralSettingsView: View {
                     )
                     .disabled(!settings.updatePreferences.automaticallyChecksForUpdates)
                 }
+                
+                SettingsSection(title: "Danger Zone", cardBackground: Color.red.opacity(0.05)) {
+                    SettingsRow(title: "Clear Web Data",
+                                message: "Delete cookies, caches, and storage so every site behaves like a fresh login.") {
+                        Button(role: .destructive) {
+                            showClearWebConfirmation = true
+                        } label:{
+                            Text("Clear Web Data")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                    }
+                    
+                    Divider()
+                    
+                    SettingsRow(title: "Erase All Engines",
+                                message: "Remove every configured service and its stored scripts.") {
+                        Button(role: .destructive) {
+                            showEraseEnginesConfirmation = true
+                        } label: {
+                            Text("Erase All Engines")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                    }
+                    
+                    Divider()
+                    
+                    SettingsRow(title: "Erase All Actions",
+                                message: "Delete every custom action and its scripts across services.") {
+                        Button(role: .destructive) {
+                            showEraseActionsConfirmation = true
+                        } label: {
+                            Text("Erase All Actions")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                    }
+                }
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             launchAtLogin = Launcher.isInstalledAtLogin()
         }
+        .alert("Clear saved web data?", isPresented: $showClearWebConfirmation) {
+            Button("Clear", role: .destructive) {
+                clearWebData()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Removes cookies, caches, and storage for every service.")
+        }
+        .alert("Erase all engines?", isPresented: $showEraseEnginesConfirmation) {
+            Button("Erase", role: .destructive) {
+                eraseAllEngines()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Deletes every service and its local scripts.")
+        }
+        .alert("Erase all actions?", isPresented: $showEraseActionsConfirmation) {
+            Button("Erase", role: .destructive) {
+                eraseAllActions()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Removes every custom action and the scripts stored for them.")
+        }
     }
-
+    
     private var autoCheckBinding: Binding<Bool> {
         Binding(
             get: { settings.updatePreferences.automaticallyChecksForUpdates },
@@ -121,7 +185,7 @@ struct GeneralSettingsView: View {
             }
         )
     }
-
+    
     private var autoDownloadBinding: Binding<Bool> {
         Binding(
             get: { settings.updatePreferences.automaticallyDownloadsUpdates },
@@ -131,7 +195,29 @@ struct GeneralSettingsView: View {
             }
         )
     }
-
+    
+    private func clearWebData() {
+        appController?.clearWebViewData(nil)
+    }
+    
+    private func eraseAllEngines() {
+        let ids = settings.services.map { $0.id }
+        settings.services.removeAll()
+        ids.forEach { ActionScriptStorage.deleteScripts(for: $0) }
+        settings.saveSettings()
+        appController?.reloadServices()
+    }
+    
+    private func eraseAllActions() {
+        for index in settings.services.indices {
+            let serviceID = settings.services[index].id
+            settings.services[index].actionScripts.removeAll()
+            ActionScriptStorage.deleteScripts(for: serviceID)
+        }
+        settings.customActions.removeAll()
+        settings.saveSettings()
+        appController?.reloadServices()
+    }
 }
 
 struct ServicesSettingsView: View {
@@ -140,7 +226,7 @@ struct ServicesSettingsView: View {
     @ObservedObject private var settings = Settings.shared
     @State private var selectedServiceID: Service.ID?
     @State private var pendingServiceDeletion: PendingServiceDeletion?
-
+    
     init(appController: AppController?, initialServiceURL: String?) {
         self.appController = appController
         self.initialServiceURL = initialServiceURL
@@ -154,7 +240,7 @@ struct ServicesSettingsView: View {
             _selectedServiceID = State(initialValue: Settings.shared.services.first?.id)
         }
     }
-
+    
     var body: some View {
         HStack(spacing: 0) {
             List(selection: $selectedServiceID) {
@@ -175,43 +261,47 @@ struct ServicesSettingsView: View {
             .listStyle(SidebarListStyle())
             .frame(minWidth: 220, maxWidth: 260)
             .toolbar {
-                ToolbarItem {
-                    Button(action: addService) {
-                        Label("Add Service", systemImage: "plus")
-                    }
-                }
-                ToolbarItem {
+                ToolbarItemGroup {
                     Menu {
-                        ForEach(settings.defaultServiceTemplates) { template in
-                            Button(template.name) {
-                                addService(from: template)
-                            }
+                        Button("Blank Service") {
+                            addService()
                         }
                         if !settings.defaultServiceTemplates.isEmpty {
                             Divider()
-                        }
-                        Button {
-                            addAllTemplates()
-                        } label: {
-                            Label("Add All Templates", systemImage: "plus.rectangle.on.rectangle")
+                            ForEach(settings.defaultServiceTemplates) { template in
+                                Button(template.name) {
+                                    addService(from: template)
+                                }
+                            }
+                            Divider()
+                            Button {
+                                addAllTemplates()
+                            } label: {
+                                Label("Add All Templates", systemImage: "plus.rectangle.on.rectangle")
+                            }
                         }
                     } label: {
-                        Label("Add from Template", systemImage: "plus.square")
+                        Label("Add Service", systemImage: "plus")
                     }
-                    .help("Add a preconfigured service")
+                    .help("Create a blank service or add one from templates")
+                    
+                    Button(role: .destructive, action: deleteSelectedService) {
+                        Label("Delete Service", systemImage: "trash")
+                    }
+                    .disabled(selectedServiceID == nil)
                 }
             }
-
+            
             Divider()
-
+            
             Group {
                 if let binding = bindingForSelectedService() {
                     ServiceDetailView(service: binding,
                                       appController: appController,
                                       selectedServiceID: $selectedServiceID,
                                       requestDelete: { service in
-                                          confirmServiceDeletion(ids: [service.id])
-                                      })
+                        confirmServiceDeletion(ids: [service.id])
+                    })
                 } else {
                     VStack {
                         Text("Select a service")
@@ -248,13 +338,13 @@ struct ServicesSettingsView: View {
             appController?.reloadServices()
         }
     }
-
+    
     private func addService() {
         let newService = Service(name: "New Service", url: "https://example.com", focus_selector: "")
         settings.services.append(newService)
         selectedServiceID = newService.id
     }
-
+    
     private func addService(from template: Service) {
         var service = template
         service.id = UUID()
@@ -264,7 +354,7 @@ struct ServicesSettingsView: View {
         selectedServiceID = service.id
         settings.saveSettings()
     }
-
+    
     private func addAllTemplates() {
         var knownNames = Set(settings.services.map { $0.name.lowercased() })
         for template in settings.defaultServiceTemplates {
@@ -274,7 +364,7 @@ struct ServicesSettingsView: View {
             knownNames.insert(key)
         }
     }
-
+    
     private func applyDefaultScripts(from template: Service, to service: inout Service) {
         let trimmedActions = settings.customActions
         for action in trimmedActions {
@@ -285,7 +375,7 @@ struct ServicesSettingsView: View {
             ActionScriptStorage.saveScript(templateScript, serviceID: service.id, actionID: action.id)
         }
     }
-
+    
     private func requestRemoveServices(at offsets: IndexSet) {
         let ids = offsets.compactMap { index -> Service.ID? in
             guard settings.services.indices.contains(index) else { return nil }
@@ -293,7 +383,7 @@ struct ServicesSettingsView: View {
         }
         confirmServiceDeletion(ids: ids)
     }
-
+    
     private func confirmServiceDeletion(ids: [Service.ID]) {
         guard !ids.isEmpty else { return }
         let names = ids.compactMap { id in
@@ -309,7 +399,7 @@ struct ServicesSettingsView: View {
         }
         pendingServiceDeletion = PendingServiceDeletion(ids: ids, title: title)
     }
-
+    
     private func deleteServices(ids: [Service.ID]) {
         guard !ids.isEmpty else { return }
         let idSet = Set(ids)
@@ -320,12 +410,17 @@ struct ServicesSettingsView: View {
         settings.saveSettings()
         appController?.reloadServices()
     }
-
+    
+    private func deleteSelectedService() {
+        guard let selectedServiceID else { return }
+        confirmServiceDeletion(ids: [selectedServiceID])
+    }
+    
     private func moveServices(from source: IndexSet, to destination: Int) {
         settings.services.move(fromOffsets: source, toOffset: destination)
         ensureSelectionExists()
     }
-
+    
     private func bindingForSelectedService() -> Binding<Service>? {
         guard let selectedServiceID,
               let index = settings.services.firstIndex(where: { $0.id == selectedServiceID }) else {
@@ -333,7 +428,7 @@ struct ServicesSettingsView: View {
         }
         return $settings.services[index]
     }
-
+    
     private func syncSelectionWithCurrentService() {
         guard let url = appController?.currentServiceURL,
               let service = settings.services.first(where: { $0.url == url }) else {
@@ -342,7 +437,7 @@ struct ServicesSettingsView: View {
         }
         selectedServiceID = service.id
     }
-
+    
     private func ensureSelectionExists() {
         if let selectedServiceID,
            settings.services.contains(where: { $0.id == selectedServiceID }) {
@@ -357,14 +452,14 @@ struct ServiceDetailView: View {
         case focus
         case action(UUID)
     }
-
+    
     @Binding var service: Service
     var appController: AppController?
     @Binding var selectedServiceID: Service.ID?
     @State private var detailSelection: DetailSelection? = .focus
     @ObservedObject private var settings = Settings.shared
     var requestDelete: (Service) -> Void
-
+    
     var body: some View {
         VStack {
             Form {
@@ -372,23 +467,14 @@ struct ServiceDetailView: View {
                 TextField("URL", text: $service.url)
             }
             .padding()
-
+            
             Divider()
-
+            
             advancedPane
-
+            
             Spacer()
         }
         .navigationTitle(service.name)
-        .toolbar {
-            ToolbarItem {
-                Button(action: {
-                    requestDelete(service)
-                }) {
-                    Label("Remove Service", systemImage: "trash")
-                }
-            }
-        }
         .onChange(of: settings.customActions) { _, newActions in
             if case .action(let id)? = detailSelection,
                !newActions.contains(where: { $0.id == id }) {
@@ -396,7 +482,7 @@ struct ServiceDetailView: View {
             }
         }
     }
-
+    
     private var advancedPane: some View {
         HStack(spacing: 0) {
             List(selection: $detailSelection) {
@@ -411,9 +497,9 @@ struct ServiceDetailView: View {
                 }
             }
             .frame(minWidth: 200, idealWidth: 220, maxWidth: 260)
-
+            
             Divider()
-
+            
             switch detailSelection ?? .focus {
             case .focus:
                 focusSelectorForm
@@ -428,7 +514,7 @@ struct ServiceDetailView: View {
             }
         }
     }
-
+    
     private var focusSelectorForm: some View {
         Form {
             VStack(alignment: .leading) {
@@ -449,7 +535,7 @@ struct ServiceDetailView: View {
         }
         .padding()
     }
-
+    
     private var emptySelectionView: some View {
         VStack {
             Text("Select an action")
@@ -457,7 +543,7 @@ struct ServiceDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-
+    
     private func loadScript(actionID: UUID) -> String {
         ActionScriptStorage.loadScript(
             serviceID: service.id,
@@ -465,7 +551,7 @@ struct ServiceDetailView: View {
             fallback: service.actionScripts[actionID] ?? ""
         )
     }
-
+    
     private func scriptBinding(for actionID: UUID) -> Binding<String> {
         Binding(
             get: { loadScript(actionID: actionID) },
@@ -482,7 +568,7 @@ struct ServiceDetailView: View {
             }
         )
     }
-
+    
     private func openScriptInEditor(actionID: UUID) {
         let contents = loadScript(actionID: actionID)
         ActionScriptStorage.openInDefaultEditor(serviceID: service.id, actionID: actionID, contents: contents)
@@ -499,7 +585,7 @@ private struct ActionScriptEditor: View {
     var action: CustomAction
     @Binding var script: String
     var openExternally: () -> Void
-
+    
     var body: some View {
         Form {
             VStack(alignment: .leading, spacing: 8) {
@@ -530,13 +616,17 @@ private struct ActionScriptEditor: View {
 
 private struct SettingsSection<Content: View>: View {
     var title: String
+    var titleColor: Color
+    var cardBackground: Color
     var content: () -> Content
-
-    init(title: String, @ViewBuilder content: @escaping () -> Content) {
+    
+    init(title: String, titleColor: Color = .primary, cardBackground: Color = Color(NSColor.controlBackgroundColor), @ViewBuilder content: @escaping () -> Content) {
         self.title = title
+        self.titleColor = titleColor
+        self.cardBackground = cardBackground
         self.content = content
     }
-
+    
     var body: some View {
         GroupBox {
             VStack(spacing: 0) {
@@ -546,9 +636,11 @@ private struct SettingsSection<Content: View>: View {
             .padding(.top, 4)
             .padding(.horizontal, 4)
             .padding(.bottom, 2)
+            .background(cardBackground)
         } label: {
             Text(title)
                 .font(.headline)
+                .foregroundColor(titleColor)
         }
         .groupBoxStyle(DefaultGroupBoxStyle())
     }
@@ -559,13 +651,13 @@ private struct SettingsRow<Content: View>: View {
     var message: String?
     var content: () -> Content
     private let labelWidth: CGFloat = 230
-
+    
     init(title: String, message: String? = nil, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
         self.message = message
         self.content = content
     }
-
+    
     var body: some View {
         HStack(alignment: message == nil ? .center : .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
@@ -578,13 +670,13 @@ private struct SettingsRow<Content: View>: View {
                 }
             }
             .frame(width: labelWidth, alignment: .leading)
-
+            
             Spacer(minLength: 16)
-
+            
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 8)
+        .padding(8)
     }
 }
 
@@ -592,13 +684,13 @@ private struct SettingsToggleRow: View {
     var title: String
     var message: String?
     @Binding var isOn: Bool
-
+    
     init(title: String, message: String? = nil, isOn: Binding<Bool>) {
         self.title = title
         self.message = message
         self._isOn = isOn
     }
-
+    
     var body: some View {
         SettingsRow(title: title, message: message) {
             Toggle("", isOn: $isOn)
@@ -619,7 +711,7 @@ extension Bundle {
     var versionDisplayString: String {
         let shortVersion = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         let buildNumber = object(forInfoDictionaryKey: "CFBundleVersion") as? String
-
+        
         switch (shortVersion, buildNumber) {
         case let (short?, build?) where short != build:
             return "\(short) (\(build))"

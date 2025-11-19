@@ -58,4 +58,11 @@ enum ActionScriptStorage {
         let dir = baseDirectory.appendingPathComponent(serviceID.uuidString, isDirectory: true)
         try? FileManager.default.removeItem(at: dir)
     }
+
+    static func deleteAllScripts() {
+        let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appDir = supportDir.appendingPathComponent("Quiper", isDirectory: true)
+        let scriptsDir = appDir.appendingPathComponent("ActionScripts", isDirectory: true)
+        try? FileManager.default.removeItem(at: scriptsDir)
+    }
 }
