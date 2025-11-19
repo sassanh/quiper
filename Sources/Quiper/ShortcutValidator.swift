@@ -34,6 +34,12 @@ enum ShortcutValidator {
         if keyCode == UInt16(kVK_ANSI_Q) && modifiers.contains(.control) { // quit
             return true
         }
+        if keyCode == UInt16(kVK_ANSI_Equal) || keyCode == UInt16(kVK_ANSI_KeypadPlus) { // Zoom in
+            return true
+        }
+        if keyCode == UInt16(kVK_ANSI_Minus) || keyCode == UInt16(kVK_ANSI_KeypadMinus) { // Zoom out
+            return true
+        }
         return false
     }
 

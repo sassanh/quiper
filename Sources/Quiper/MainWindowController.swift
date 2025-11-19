@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import Carbon
 
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
@@ -13,6 +14,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var webviewsByURL: [String: [WKWebView]] = [:]
     private var activeIndicesByURL: [String: Int] = [:]
     private var keyDownEventMonitor: Any?
+    private var zoomLevelsByURL: [String: CGFloat] = [:]
     private weak var contentContainerView: NSView?
     private var notificationBridges: [ObjectIdentifier: WebNotificationBridge] = [:]
     private var draggingServiceIndex: Int?
@@ -33,10 +35,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         configureWindow()
         services = Settings.shared.loadSettings()
+        zoomLevelsByURL = Settings.shared.serviceZoomLevels
         currentServiceName = services.first?.name
         currentServiceURL = services.first?.url
         services.forEach { service in
             activeIndicesByURL[service.url] = 0
+            if zoomLevelsByURL[service.url] == nil {
+                zoomLevelsByURL[service.url] = Zoom.default
+            }
         }
         setupUI()
         self.window?.delegate = self
@@ -80,6 +86,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         guard event.modifierFlags.contains(.command) else { return false }
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let keyCode = UInt16(event.keyCode)
         let isControl = event.modifierFlags.contains(.control)
         let isOption = event.modifierFlags.contains(.option)
         let isShift = event.modifierFlags.contains(.shift)
@@ -116,8 +123,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case "h":
             hide()
             return true
+        case "=":
+            zoom(by: Zoom.step)
+            return true
+        case "-":
+            zoom(by: -Zoom.step)
+            return true
         default:
             break
+        }
+
+        if keyCode == UInt16(kVK_ANSI_KeypadPlus) {
+            zoom(by: Zoom.step)
+            return true
+        }
+        if keyCode == UInt16(kVK_ANSI_KeypadMinus) {
+            zoom(by: -Zoom.step)
+            return true
+        }
+        if keyCode == UInt16(kVK_Delete) {
+            resetZoom()
+            return true
         }
 
         return false
@@ -134,6 +160,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func updateServices(newServices: [Service]) {
         guard let contentView = contentContainerView ?? window?.contentView else { return }
+        zoomLevelsByURL = Settings.shared.serviceZoomLevels
         let availableFrame = NSRect(
             x: 0,
             y: 0,
@@ -151,11 +178,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
             webviewsByURL.removeValue(forKey: url)
             activeIndicesByURL.removeValue(forKey: url)
+            zoomLevelsByURL.removeValue(forKey: url)
+            Settings.shared.clearZoomLevel(for: url)
         }
 
         for service in newServices where webviewsByURL[service.url] == nil {
             webviewsByURL[service.url] = createWebviewStack(for: service, frame: availableFrame, in: contentView)
             activeIndicesByURL[service.url] = 0
+            if zoomLevelsByURL[service.url] == nil {
+                zoomLevelsByURL[service.url] = Zoom.default
+            }
         }
 
         services = newServices
@@ -457,6 +489,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             webview.navigationDelegate = self
             webview.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
             webview.isHidden = true
+            webview.pageZoom = zoomLevelsByURL[service.url] ?? Zoom.default
             attachNotificationBridge(to: webview, service: service, sessionIndex: sessionIndex)
 
             contentView.addSubview(webview, positioned: .below, relativeTo: dragArea)
@@ -497,6 +530,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         webviewsByURL.values.flatMap { $0 }.forEach { $0.isHidden = true }
         activeWebview.isHidden = false
+        activeWebview.pageZoom = zoomLevelsByURL[service.url] ?? Zoom.default
         if focusWebView {
             window?.makeFirstResponder(activeWebview)
             focusInputInActiveWebview()
@@ -627,6 +661,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         focusInputInActiveWebview()
     }
 
+    private func zoom(by delta: CGFloat) {
+        guard let service = currentService() else { return }
+        let currentZoom = zoomLevelsByURL[service.url] ?? Zoom.default
+        let nextZoom = max(Zoom.min, min(Zoom.max, currentZoom + delta))
+        applyZoom(nextZoom, to: service)
+    }
+
+    private func resetZoom() {
+        guard let service = currentService() else { return }
+        applyZoom(Zoom.default, to: service)
+    }
+
+    private func applyZoom(_ value: CGFloat, to service: Service) {
+        zoomLevelsByURL[service.url] = value
+        if let webviews = webviewsByURL[service.url] {
+            webviews.forEach { $0.pageZoom = value }
+        }
+        Settings.shared.storeZoomLevel(value, for: service.url)
+    }
+
 }
 
 
@@ -665,4 +719,11 @@ extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         webView.reload()
     }
+}
+
+private enum Zoom {
+    static let step: CGFloat = 0.1
+    static let min: CGFloat = 0.5
+    static let max: CGFloat = 2.5
+    static let `default`: CGFloat = 1.0
 }

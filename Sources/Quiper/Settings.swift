@@ -62,6 +62,7 @@ private struct PersistedSettings: Codable {
     var hotkey: HotkeyManager.Configuration?
     var customActions: [CustomAction]?
     var updatePreferences: UpdatePreferences?
+    var serviceZoomLevels: [String: Double]?
 }
 
 class SettingsWindow: NSWindow {
@@ -138,6 +139,7 @@ class Settings: ObservableObject {
     @Published var hotkeyConfiguration: HotkeyManager.Configuration = HotkeyManager.defaultConfiguration
     @Published var customActions: [CustomAction] = []
     @Published var updatePreferences: UpdatePreferences = UpdatePreferences()
+    @Published var serviceZoomLevels: [String: CGFloat] = [:]
 
     private let settingsFile: URL = {
         let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -355,13 +357,13 @@ class Settings: ObservableObject {
             focus_selector: "div[contenteditable='true']",
             actionScripts: [
                 Settings.newSessionActionID: """
-                document.querySelector('button[aria-label="New Chat"]').click();
+                document.querySelector('button[aria-label="New Chat"]')?.click();
                 """,
                 Settings.reloadActionID: """
                 window.location.reload();
                 """,
                 Settings.newTemporarySessionActionID: """
-                document.querySelector('button[aria-label="New Chat"]').click();
+                document.querySelector('button[aria-label="New Chat"]')?.click();
 
                 async function waitFor(check) {
                   return new Promise((resolve) => {
@@ -420,6 +422,11 @@ class Settings: ObservableObject {
         services = persisted.services
         customActions = loadedFromDisk ? (persisted.customActions ?? []) : defaultActions
         updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
+        if let storedZooms = persisted.serviceZoomLevels {
+            serviceZoomLevels = storedZooms.mapValues { CGFloat($0) }
+        } else {
+            serviceZoomLevels = [:]
+        }
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
@@ -446,7 +453,8 @@ class Settings: ObservableObject {
             let payload = PersistedSettings(services: services,
                                             hotkey: hotkeyConfiguration,
                                             customActions: customActions,
-                                            updatePreferences: updatePreferences)
+                                            updatePreferences: updatePreferences,
+                                            serviceZoomLevels: serviceZoomLevels.mapValues { Double($0) })
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
@@ -462,12 +470,27 @@ class Settings: ObservableObject {
         saveSettings()
     }
 
+    func storeZoomLevel(_ value: CGFloat, for serviceURL: String) {
+        if serviceZoomLevels[serviceURL] == value {
+            return
+        }
+        serviceZoomLevels[serviceURL] = value
+        saveSettings()
+    }
+
+    func clearZoomLevel(for serviceURL: String) {
+        if serviceZoomLevels.removeValue(forKey: serviceURL) != nil {
+            saveSettings()
+        }
+    }
+
     func wipeAllData() {
         isPerformingWipe = true
         services.removeAll()
         customActions.removeAll()
         updatePreferences = UpdatePreferences()
         hotkeyConfiguration = HotkeyManager.defaultConfiguration
+        serviceZoomLevels.removeAll()
         try? FileManager.default.removeItem(at: settingsFile)
         ActionScriptStorage.deleteAllScripts()
     }
@@ -481,13 +504,15 @@ class Settings: ObservableObject {
                 return (PersistedSettings(services: legacyServices,
                                           hotkey: nil,
                                           customActions: nil,
-                                          updatePreferences: nil), true)
+                                          updatePreferences: nil,
+                                          serviceZoomLevels: nil), true)
             }
         }
         return (PersistedSettings(services: defaultEngines,
                                   hotkey: nil,
                                   customActions: nil,
-                                  updatePreferences: nil), false)
+                                  updatePreferences: nil,
+                                  serviceZoomLevels: nil), false)
     }
 
     private func loadLegacyHotkeyConfiguration() -> HotkeyManager.Configuration? {

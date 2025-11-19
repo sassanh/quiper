@@ -36,10 +36,12 @@ final class HotkeyManager {
 
     private var configuration: Configuration
     private var hotKeyRef: EventHotKeyRef?
+    private var devHotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private var callback: (() -> Void)?
     private var captureOverlay: HotkeyCaptureOverlay?
     private let settings: Settings
+    private let hotKeySignature = OSType(UInt32(truncatingIfNeeded: 0x51555052))
 
     init(settings: Settings = .shared) {
         self.settings = settings
@@ -91,7 +93,7 @@ final class HotkeyManager {
         unregisterHotKey()
         installHandlerIfNeeded()
 
-        let hotKeyID = EventHotKeyID(signature: OSType(UInt32(truncatingIfNeeded: 0x51555052)), id: 1)
+        let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: 1)
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(
             configuration.keyCode,
@@ -103,6 +105,7 @@ final class HotkeyManager {
         )
         if status == noErr {
             hotKeyRef = ref
+            registerDevFallbackHotkeyIfNeeded(for: configuration)
             return true
         }
         return false
@@ -115,6 +118,7 @@ final class HotkeyManager {
     }
 
     private func unregisterHotKey() {
+        unregisterDevFallbackHotkey()
         if let ref = hotKeyRef {
             UnregisterEventHotKey(ref)
             hotKeyRef = nil
@@ -142,4 +146,65 @@ final class HotkeyManager {
         if flags.contains(.shift) { carbon |= UInt32(shiftKey) }
         return carbon
     }
+
+    private func registerDevFallbackHotkeyIfNeeded(for configuration: Configuration) {
+        guard DevEnvironment.isRunningInXcode else {
+            unregisterDevFallbackHotkey()
+            return
+        }
+        guard usesDefaultOptionSpace(configuration) else {
+            unregisterDevFallbackHotkey()
+            return
+        }
+        unregisterDevFallbackHotkey()
+
+        var fallbackRef: EventHotKeyRef?
+        let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: 2)
+        let status = RegisterEventHotKey(
+            UInt32(kVK_Space),
+            carbonFlags(from: [.control]),
+            hotKeyID,
+            GetEventDispatcherTarget(),
+            0,
+            &fallbackRef
+        )
+        if status == noErr {
+            devHotKeyRef = fallbackRef
+        }
+    }
+
+    private func unregisterDevFallbackHotkey() {
+        if let ref = devHotKeyRef {
+            UnregisterEventHotKey(ref)
+            devHotKeyRef = nil
+        }
+    }
+
+    private func usesDefaultOptionSpace(_ configuration: Configuration) -> Bool {
+        let normalized = configuration.cocoaFlags.intersection([.command, .option, .control, .shift])
+        return configuration.keyCode == UInt32(kVK_Space) && normalized == [.option]
+    }
 }
+
+#if DEBUG
+private enum DevEnvironment {
+    static let isRunningInXcode: Bool = {
+        if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] != nil {
+            return true
+        }
+        let bundlePath = Bundle.main.bundlePath
+        if bundlePath.contains("/DerivedData/") {
+            return true
+        }
+        if let serviceName = ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"],
+           serviceName.contains("com.apple.dt.Xcode") {
+            return true
+        }
+        return false
+    }()
+}
+#else
+private enum DevEnvironment {
+    static let isRunningInXcode = false
+}
+#endif

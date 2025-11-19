@@ -14,6 +14,7 @@
 - Services tab now includes an “Add from Template” menu (ChatGPT, Gemini, Grok, etc., plus an “Add All” option) so users can quickly re-create the bundled engines without retyping settings.
 - General tab gains a “Danger Zone” with buttons to clear saved web data and to erase all local Quiper data (services, actions, shortcuts, and scripts) with confirmation prompts.
 - Services tab now includes an "Erase All" control that removes every configured service, custom action, shortcut, and script directory so you can drop back to a factory-fresh state in one click.
+- Overlay zoom controls now use `⌘+` / `⌘−` to change web content scale per service (sessions stay in lockstep), remember the level between switches, and add `⌘⌫` to snap back to 100%.
 
 ### Fixed
 

@@ -102,7 +102,7 @@ private struct ActionRow: View {
             Button(action: onRecord) {
                 Text(action.shortcut.map { ShortcutFormatter.string(for: $0) } ?? "Record Shortcut")
                     .font(.system(.body, design: .monospaced))
-                    .frame(minWidth: 140, alignment: .leading)
+                    .frame(minWidth: 140, alignment: .center)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.bordered)
