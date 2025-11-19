@@ -180,6 +180,26 @@ struct ServicesSettingsView: View {
                         Label("Add Service", systemImage: "plus")
                     }
                 }
+                ToolbarItem {
+                    Menu {
+                        ForEach(settings.defaultServiceTemplates) { template in
+                            Button(template.name) {
+                                addService(from: template)
+                            }
+                        }
+                        if !settings.defaultServiceTemplates.isEmpty {
+                            Divider()
+                        }
+                        Button {
+                            addAllTemplates()
+                        } label: {
+                            Label("Add All Templates", systemImage: "plus.rectangle.on.rectangle")
+                        }
+                    } label: {
+                        Label("Add from Template", systemImage: "plus.square")
+                    }
+                    .help("Add a preconfigured service")
+                }
             }
 
             Divider()
@@ -233,6 +253,37 @@ struct ServicesSettingsView: View {
         let newService = Service(name: "New Service", url: "https://example.com", focus_selector: "")
         settings.services.append(newService)
         selectedServiceID = newService.id
+    }
+
+    private func addService(from template: Service) {
+        var service = template
+        service.id = UUID()
+        service.actionScripts = [:]
+        applyDefaultScripts(from: template, to: &service)
+        settings.services.append(service)
+        selectedServiceID = service.id
+        settings.saveSettings()
+    }
+
+    private func addAllTemplates() {
+        var knownNames = Set(settings.services.map { $0.name.lowercased() })
+        for template in settings.defaultServiceTemplates {
+            let key = template.name.lowercased()
+            guard !knownNames.contains(key) else { continue }
+            addService(from: template)
+            knownNames.insert(key)
+        }
+    }
+
+    private func applyDefaultScripts(from template: Service, to service: inout Service) {
+        let trimmedActions = settings.customActions
+        for action in trimmedActions {
+            guard let defaultID = settings.defaultActionID(matching: action.name),
+                  let templateScript = template.actionScripts[defaultID],
+                  !templateScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            service.actionScripts[action.id] = templateScript
+            ActionScriptStorage.saveScript(templateScript, serviceID: service.id, actionID: action.id)
+        }
     }
 
     private func requestRemoveServices(at offsets: IndexSet) {

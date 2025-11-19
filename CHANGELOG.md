@@ -5,10 +5,13 @@
 ### Added
 
 - Introduced an Update Manager that checks GitHub releases, downloads newer builds, and surfaces update status directly inside Settings. The General tab now shows a “Check for Updates” button beside the version string plus toggles for automatic checking and automatic download.
+- Added built-in “New Session”, “New Temporary Session”, and “Reload” custom actions with per-service scripts for ChatGPT, Gemini, Grok, X, and Google so fresh installs have working automation out of the box.
 
 ### Changed
 
 - Restyled the General tab so Startup and Updates live inside standard macOS rounded group boxes, added clearer helper copy for each toggle/button, and updated `onChange` usages to the macOS 14-compliant signature to silence deprecation warnings.
+- Default services now append `?referrer=https://github.io/sassanh/quiper`, and the starter list includes X and Google with sensible focus selectors and action scripts aligned with the new default actions.
+- Services tab now includes an “Add from Template” menu (ChatGPT, Gemini, Grok, etc., plus an “Add All” option) so users can quickly re-create the bundled engines without retyping settings.
 
 ### Fixed
 

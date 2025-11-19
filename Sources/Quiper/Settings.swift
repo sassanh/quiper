@@ -2,6 +2,7 @@
 import Foundation
 import AppKit
 import SwiftUI
+import Carbon
 
 struct Service: Codable, Identifiable {
     var id = UUID()
@@ -150,10 +151,262 @@ class Settings: ObservableObject {
             .appendingPathComponent("Library/Logs/quiper/hotkey_config.json")
     }()
 
+    private static let newSessionActionID = UUID()
+    private static let newTemporarySessionActionID = UUID()
+    private static let reloadActionID = UUID()
+
+    private let defaultActions: [CustomAction] = [
+        CustomAction(
+            id: Settings.newSessionActionID,
+            name: "New Session",
+            shortcut: HotkeyManager.Configuration(
+                keyCode: UInt32(kVK_ANSI_N),
+                modifierFlags: NSEvent.ModifierFlags.command.rawValue
+            )
+        ),
+        CustomAction(
+            id: Settings.newTemporarySessionActionID,
+            name: "New Temporary Session",
+            shortcut: HotkeyManager.Configuration(
+                keyCode: UInt32(kVK_ANSI_N),
+                modifierFlags: NSEvent.ModifierFlags([.command, .shift]).rawValue
+            )
+        ),
+        CustomAction(
+            id: Settings.reloadActionID,
+            name: "Reload",
+            shortcut: HotkeyManager.Configuration(
+                keyCode: UInt32(kVK_ANSI_R),
+                modifierFlags: NSEvent.ModifierFlags.command.rawValue
+            )
+        )
+    ]
+
+    var defaultServiceTemplates: [Service] {
+        defaultEngines
+    }
+
     private let defaultEngines: [Service] = [
-        Service(name: "ChatGPT", url: "https://chat.openai.com", focus_selector: "#prompt-textarea"),
-        Service(name: "Gemini", url: "https://gemini.google.com", focus_selector: ".textarea"),
-        Service(name: "Grok", url: "https://grok.com", focus_selector: "textarea[aria-label='Ask Grok anything'],div[contenteditable=true]")
+        Service(
+            name: "ChatGPT",
+            url: "https://chat.openai.com?referrer=https://github.io/sassanh/quiper",
+            focus_selector: "#prompt-textarea",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                document.querySelector('[href="/"]').click();
+                """,
+                Settings.reloadActionID: """
+                window.location.reload();
+                """,
+                Settings.newTemporarySessionActionID: """
+                document.querySelector('[href="/"]').click();
+
+                async function waitFor(check) {
+                  return new Promise((resolve) => {
+                    let iterations = 0;
+
+                    function task() {
+                      iterations += 1;
+                      if (check()) {
+                        resolve();
+                        return;
+                      }
+                      if (iterations < 250) {
+                        setTimeout(task, 20);
+                      }
+                    }
+
+                    setTimeout(task, 20);
+                  });
+                }
+
+                (async () => {
+                  await waitFor(() =>
+                    document.querySelector('[aria-label="Turn on temporary chat"]')
+                  );
+                  const button = document.querySelector(
+                    '[aria-label="Turn on temporary chat"]'
+                  );
+                  if (button) {
+                    button.click();
+                  }
+                })();
+                """
+            ]
+        ),
+        Service(
+            name: "Gemini",
+            url: "https://gemini.google.com?referrer=https://github.io/sassanh/quiper",
+            focus_selector: ".textarea",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                document.querySelector('button[aria-label="New chat"]').click();
+                """,
+                Settings.reloadActionID: """
+                window.location.reload();
+                """,
+                Settings.newTemporarySessionActionID: """
+                async function waitFor(check) {
+                  return new Promise((resolve) => {
+                    let iterations = 0;
+
+                    function task() {
+                      iterations += 1;
+                      if (check()) {
+                        resolve();
+                        return;
+                      }
+                      if (iterations < 250) {
+                        setTimeout(task, 20);
+                      }
+                    }
+
+                    setTimeout(task, 20);
+                  });
+                }
+
+                async function openMenu() {
+                  if (document.querySelector('mat-sidenav.mat-drawer-opened')) {
+                    return;
+                  } else {
+                    document.querySelector('button[aria-label="Main menu"]').click();
+                    await waitFor(() =>
+                      document.querySelector('mat-sidenav.mat-drawer-opened')
+                    );
+                  }
+                }
+
+                async function newSession() {
+                  document.querySelector('button[aria-label="New chat"]').click();
+                  await waitFor(() =>
+                    !document.querySelector('mat-sidenav.mat-drawer-opened')
+                  );
+                }
+
+                async function run() {
+                  await openMenu();
+                  if (
+                    document.querySelector('button[aria-label="Temporary chat"].temp-chat-on')
+                  ) {
+                    await newSession();
+                  }
+                  await openMenu();
+                  document.querySelector('button[aria-label="Temporary chat"]').click();
+                }
+
+                run();
+                """
+            ]
+        ),
+        Service(
+            name: "Grok",
+            url: "https://grok.com?referrer=https://github.io/sassanh/quiper",
+            focus_selector: "textarea[aria-label='Ask Grok anything'],div[contenteditable=true]",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                document
+                  .querySelector('[href="/"]:not([aria-label="Home page"])')
+                  .click();
+                """,
+                Settings.reloadActionID: """
+                window.location.reload();
+                """,
+                Settings.newTemporarySessionActionID: """
+                document
+                  .querySelector('[href="/"]:not([aria-label="Home page"])')
+                  .click();
+
+                async function waitFor(check) {
+                  return new Promise((resolve) => {
+                    let iterations = 0;
+
+                    function task() {
+                      iterations += 1;
+                      if (check()) {
+                        resolve();
+                        return;
+                      }
+                      if (iterations < 250) {
+                        setTimeout(task, 20);
+                      }
+                    }
+
+                    setTimeout(task, 20);
+                  });
+                }
+
+                (async () => {
+                  await waitFor(() =>
+                    document.querySelector('[aria-label="Switch to Private Chat"]')
+                  );
+                  const button = document.querySelector(
+                    '[aria-label="Switch to Private Chat"]'
+                  );
+                  if (button) {
+                    button.click();
+                  }
+                })();
+                """
+            ]
+        ),
+        Service(
+            name: "X",
+            url: "https://x.com/i/grok?referrer=https://github.io/sassanh/quiper",
+            focus_selector: "div[contenteditable='true']",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                document.querySelector('button[aria-label="New Chat"]').click();
+                """,
+                Settings.reloadActionID: """
+                window.location.reload();
+                """,
+                Settings.newTemporarySessionActionID: """
+                document.querySelector('button[aria-label="New Chat"]').click();
+
+                async function waitFor(check) {
+                  return new Promise((resolve) => {
+                    let iterations = 0;
+
+                    function task() {
+                      iterations += 1;
+                      if (check()) {
+                        resolve();
+                        return;
+                      }
+                      if (iterations < 250) {
+                        setTimeout(task, 20);
+                      }
+                    }
+
+                    setTimeout(task, 20);
+                  });
+                }
+
+                (async () => {
+                  await waitFor(() =>
+                    document.querySelector('button[aria-label="Private"]')
+                  );
+                  const button = document.querySelector('button[aria-label="Private"]');
+                  if (button) {
+                    button.click();
+                  }
+                })();
+                """
+            ]
+        ),
+        Service(
+            name: "Google",
+            url: "https://www.google.com?referrer=https://github.io/sassanh/quiper",
+            focus_selector: "textarea, input[type='search']",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                window.location = "/";
+                """,
+                Settings.reloadActionID: """
+                window.location.reload();
+                """
+            ]
+        )
     ]
 
     init() {
@@ -161,19 +414,25 @@ class Settings: ObservableObject {
     }
 
     func loadSettings() -> [Service] {
-        let persisted = readPersistedSettings()
+        let (persisted, loadedFromDisk) = readPersistedSettings()
         services = persisted.services
-        customActions = persisted.customActions ?? []
+        customActions = loadedFromDisk ? (persisted.customActions ?? []) : defaultActions
         updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
-        if let storedHotkey = persisted.hotkey {
+        if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
-        } else if let legacy = loadLegacyHotkeyConfiguration() {
+        } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
             hotkeyConfiguration = legacy
             saveSettings()
         } else {
             hotkeyConfiguration = HotkeyManager.defaultConfiguration
         }
         return services
+    }
+
+    func defaultActionID(matching name: String) -> UUID? {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return nil }
+        return defaultActions.first { $0.name.lowercased() == normalized }?.id
     }
 
     func saveSettings() {
@@ -197,22 +456,22 @@ class Settings: ObservableObject {
         saveSettings()
     }
 
-    private func readPersistedSettings() -> PersistedSettings {
+    private func readPersistedSettings() -> (PersistedSettings, Bool) {
         if let data = try? Data(contentsOf: settingsFile) {
             if let payload = try? JSONDecoder().decode(PersistedSettings.self, from: data) {
-                return payload
+                return (payload, true)
             }
             if let legacyServices = try? JSONDecoder().decode([Service].self, from: data) {
-                return PersistedSettings(services: legacyServices,
-                                         hotkey: nil,
-                                         customActions: nil,
-                                         updatePreferences: nil)
+                return (PersistedSettings(services: legacyServices,
+                                          hotkey: nil,
+                                          customActions: nil,
+                                          updatePreferences: nil), true)
             }
         }
-        return PersistedSettings(services: defaultEngines,
-                                 hotkey: nil,
-                                 customActions: nil,
-                                 updatePreferences: nil)
+        return (PersistedSettings(services: defaultEngines,
+                                  hotkey: nil,
+                                  customActions: nil,
+                                  updatePreferences: nil), false)
     }
 
     private func loadLegacyHotkeyConfiguration() -> HotkeyManager.Configuration? {
