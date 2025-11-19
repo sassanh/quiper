@@ -7,15 +7,20 @@ struct ActionsSettingsView: View {
     @State private var recordingActionID: UUID?
     @State private var captureMessage: String = "Waiting for key press…"
     @State private var captureSession: ShortcutCaptureSession?
+    @State private var pendingDeletion: PendingDeletion?
 
     var body: some View {
         ZStack {
             VStack(alignment: .leading, spacing: 16) {
                 List {
-                    ForEach($settings.customActions) { $action in
-                        ActionRow(action: $action, onRecord: { recordShortcut(for: action.id) }, onClear: { clearShortcut(for: action.id) })
+                    ForEach(Array(settings.customActions.indices), id: \.self) { index in
+                        ActionRow(
+                            action: $settings.customActions[index],
+                            onRecord: { recordShortcut(for: settings.customActions[index].id) },
+                            onClear: { clearShortcut(for: settings.customActions[index].id) },
+                            onDelete: { confirmDeletion(for: settings.customActions[index]) }
+                        )
                     }
-                    .onDelete(perform: removeActions)
                 }
                 HStack {
                     Button(action: addAction) {
@@ -29,8 +34,18 @@ struct ActionsSettingsView: View {
             }
         }
         .padding()
-        .onChange(of: settings.customActions) {
+        .onChange(of: settings.customActions) { _, _ in
             settings.saveSettings()
+        }
+        .alert(item: $pendingDeletion) { pending in
+            Alert(
+                title: Text("Delete \(pending.displayName)?"),
+                message: Text("This removes the shortcut and any custom scripts bound to this action across your services."),
+                primaryButton: .destructive(Text("Delete")) {
+                    removeAction(id: pending.id)
+                },
+                secondaryButton: .cancel()
+            )
         }
     }
 
@@ -38,13 +53,14 @@ struct ActionsSettingsView: View {
         settings.customActions.append(CustomAction(name: "New Action"))
     }
 
-    private func removeActions(at offsets: IndexSet) {
-        let removedIDs = offsets.compactMap { index -> UUID? in
-            guard settings.customActions.indices.contains(index) else { return nil }
-            return settings.customActions[index].id
-        }
-        settings.customActions.remove(atOffsets: offsets)
-        removedIDs.forEach { settings.deleteScripts(for: $0) }
+    private func removeAction(id: UUID) {
+        guard let index = settings.customActions.firstIndex(where: { $0.id == id }) else { return }
+        settings.customActions.remove(at: index)
+        settings.deleteScripts(for: id)
+    }
+
+    private func confirmDeletion(for action: CustomAction) {
+        pendingDeletion = PendingDeletion(id: action.id, name: action.name)
     }
 
     private func recordShortcut(for id: UUID) {
@@ -76,6 +92,7 @@ private struct ActionRow: View {
     @Binding var action: CustomAction
     var onRecord: () -> Void
     var onClear: () -> Void
+    var onDelete: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -84,13 +101,39 @@ private struct ActionRow: View {
             Button(action: onRecord) {
                 Text(action.shortcut.map { ShortcutFormatter.string(for: $0) } ?? "Record Shortcut")
                     .font(.system(.body, design: .monospaced))
+                    .frame(minWidth: 140, alignment: .leading)
+                    .contentShape(Rectangle())
             }
-            Button(action: onClear) {
-                Image(systemName: "xmark.circle")
+            .buttonStyle(.bordered)
+            .overlay(alignment: .trailing) {
+                if action.shortcut != nil {
+                    Button(action: onClear) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .padding(.trailing, 6)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove the recorded shortcut but keep the action")
+                }
+            }
+
+            Button(role: .destructive, action: onDelete) {
+                Image(systemName: "trash")
             }
             .buttonStyle(.borderless)
-            .help("Clear shortcut")
+            .help("Delete action")
         }
+    }
+}
+
+private struct PendingDeletion: Identifiable {
+    let id: UUID
+    let name: String
+
+    var displayName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "this action" : "\"\(trimmed)\""
     }
 }
 

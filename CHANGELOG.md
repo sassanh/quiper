@@ -10,6 +10,11 @@
 
 - Restyled the General tab so Startup and Updates live inside standard macOS rounded group boxes, added clearer helper copy for each toggle/button, and updated `onChange` usages to the macOS 14-compliant signature to silence deprecation warnings.
 
+### Fixed
+
+- Removing custom actions in Settings → Actions now routes through a trash button with a confirmation alert, so deletions only occur after approval and the related on-disk scripts are cleaned up reliably.
+- Deleting services now shows a confirmation alert whether you use the sidebar swipe/delete gesture or the "Remove Service" button. The prompt clarifies that the operation wipes the service’s sessions and custom action scripts so you know exactly what’s affected before confirming.
+
 ## [0.3.2] - 2025-11-17
 
 ### Added

@@ -139,6 +139,7 @@ struct ServicesSettingsView: View {
     var initialServiceURL: String?
     @ObservedObject private var settings = Settings.shared
     @State private var selectedServiceID: Service.ID?
+    @State private var pendingServiceDeletion: PendingServiceDeletion?
 
     init(appController: AppController?, initialServiceURL: String?) {
         self.appController = appController
@@ -168,7 +169,7 @@ struct ServicesSettingsView: View {
                         selectedServiceID = service.id
                     }
                 }
-                .onDelete(perform: removeServices)
+                .onDelete(perform: requestRemoveServices)
                 .onMove(perform: moveServices)
             }
             .listStyle(SidebarListStyle())
@@ -187,7 +188,10 @@ struct ServicesSettingsView: View {
                 if let binding = bindingForSelectedService() {
                     ServiceDetailView(service: binding,
                                       appController: appController,
-                                      selectedServiceID: $selectedServiceID)
+                                      selectedServiceID: $selectedServiceID,
+                                      requestDelete: { service in
+                                          confirmServiceDeletion(ids: [service.id])
+                                      })
                 } else {
                     VStack {
                         Text("Select a service")
@@ -197,6 +201,16 @@ struct ServicesSettingsView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .alert(item: $pendingServiceDeletion) { pending in
+            Alert(
+                title: Text(pending.title),
+                message: Text("Deleting a service clears its sessions and custom action scripts."),
+                primaryButton: .destructive(Text("Delete")) {
+                    deleteServices(ids: pending.ids)
+                },
+                secondaryButton: .cancel()
+            )
         }
         .onAppear {
             syncSelectionWithCurrentService()
@@ -221,14 +235,39 @@ struct ServicesSettingsView: View {
         selectedServiceID = newService.id
     }
 
-    private func removeServices(at offsets: IndexSet) {
-        let removedServices = offsets.compactMap { index -> Service? in
+    private func requestRemoveServices(at offsets: IndexSet) {
+        let ids = offsets.compactMap { index -> Service.ID? in
             guard settings.services.indices.contains(index) else { return nil }
-            return settings.services[index]
+            return settings.services[index].id
         }
-        settings.services.remove(atOffsets: offsets)
+        confirmServiceDeletion(ids: ids)
+    }
+
+    private func confirmServiceDeletion(ids: [Service.ID]) {
+        guard !ids.isEmpty else { return }
+        let names = ids.compactMap { id in
+            settings.services.first(where: { $0.id == id })?.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let title: String
+        if ids.count == 1, let name = names.first, !name.isEmpty {
+            title = "Delete \(name)?"
+        } else if ids.count == 1 {
+            title = "Delete this service?"
+        } else {
+            title = "Delete \(ids.count) services?"
+        }
+        pendingServiceDeletion = PendingServiceDeletion(ids: ids, title: title)
+    }
+
+    private func deleteServices(ids: [Service.ID]) {
+        guard !ids.isEmpty else { return }
+        let idSet = Set(ids)
+        let removedServices = settings.services.filter { idSet.contains($0.id) }
+        settings.services.removeAll { idSet.contains($0.id) }
         removedServices.forEach { ActionScriptStorage.deleteScripts(for: $0.id) }
         ensureSelectionExists()
+        settings.saveSettings()
+        appController?.reloadServices()
     }
 
     private func moveServices(from source: IndexSet, to destination: Int) {
@@ -273,6 +312,7 @@ struct ServiceDetailView: View {
     @Binding var selectedServiceID: Service.ID?
     @State private var detailSelection: DetailSelection? = .focus
     @ObservedObject private var settings = Settings.shared
+    var requestDelete: (Service) -> Void
 
     var body: some View {
         VStack {
@@ -292,12 +332,7 @@ struct ServiceDetailView: View {
         .toolbar {
             ToolbarItem {
                 Button(action: {
-                    if let index = Settings.shared.services.firstIndex(where: { $0.id == service.id }) {
-                        let removedServiceID = service.id
-                        Settings.shared.services.remove(at: index)
-                        ActionScriptStorage.deleteScripts(for: removedServiceID)
-                        selectedServiceID = nil
-                    }
+                    requestDelete(service)
                 }) {
                     Label("Remove Service", systemImage: "trash")
                 }
@@ -401,6 +436,12 @@ struct ServiceDetailView: View {
         let contents = loadScript(actionID: actionID)
         ActionScriptStorage.openInDefaultEditor(serviceID: service.id, actionID: actionID, contents: contents)
     }
+}
+
+private struct PendingServiceDeletion: Identifiable {
+    let id = UUID()
+    let ids: [Service.ID]
+    let title: String
 }
 
 private struct ActionScriptEditor: View {
