@@ -397,6 +397,128 @@ class Settings: ObservableObject {
             ]
         ),
         Service(
+            name: "Ollama",
+            url: "http://localhost:8080",
+            focus_selector: "#chat-input[contenteditable='true']",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                document.querySelector('[href="/"]').click();
+
+                function waitFor(check) {
+                  return new Promise((resolve) => {
+                    let iterations = 0;
+                    function tick() {
+                      iterations += 1;
+                      if (check()) {
+                        resolve();
+                        return;
+                      }
+                      if (iterations < 250) {
+                        setTimeout(tick, 20);
+                      }
+                    }
+                    setTimeout(tick, 20);
+                  });
+                }
+
+                (async () => {
+                  const modelButton = document.querySelector('button[aria-label="Select a model"]');
+                  if (modelButton && modelButton.getAttribute("data-state") === "closed") {
+                    modelButton.click();
+                  }
+
+                  await waitFor(() =>
+                    document.querySelector("[aria-labelledby='model-selector-0-button']")
+                  );
+
+                  const container = document.querySelector(
+                    "[aria-labelledby='model-selector-0-button']"
+                  );
+                  const buttons = container
+                    ? Array.from(container.querySelectorAll("button"))
+                    : [];
+
+                  const target = buttons.find((button) => {
+                    const hasLabel = Array.from(button.querySelectorAll("div")).some((div) =>
+                      (div.textContent || "").trim().endsWith("Temporary Chat")
+                    );
+                    if (!hasLabel) { return false; }
+
+                    const nestedToggle = Array.from(button.querySelectorAll("button")).find(
+                      (nested) => nested !== button
+                    );
+                    return nestedToggle && nestedToggle.getAttribute("data-state") === "checked";
+                  });
+
+                  if (target) {
+                    target.click();
+                  } else if (modelButton && modelButton.getAttribute("data-state") === "open") {
+                    modelButton.click();
+                  }
+                })();
+                """,
+                Settings.newTemporarySessionActionID: """
+                document.querySelector('[href="/"]').click();
+
+                function waitFor(check) {
+                  return new Promise((resolve) => {
+                    let iterations = 0;
+                    function tick() {
+                      iterations += 1;
+                      if (check()) {
+                        resolve();
+                        return;
+                      }
+                      if (iterations < 250) {
+                        setTimeout(tick, 20);
+                      }
+                    }
+                    setTimeout(tick, 20);
+                  });
+                }
+
+                (async () => {
+                  const modelButton = document.querySelector('button[aria-label="Select a model"]');
+                  if (modelButton && modelButton.getAttribute("data-state") === "closed") {
+                    modelButton.click();
+                  }
+
+                  await waitFor(() =>
+                    document.querySelector("[aria-labelledby='model-selector-0-button']")
+                  );
+
+                  const container = document.querySelector(
+                    "[aria-labelledby='model-selector-0-button']"
+                  );
+                  const buttons = container
+                    ? Array.from(container.querySelectorAll("button"))
+                    : [];
+
+                  const target = buttons.find((button) => {
+                    const hasLabel = Array.from(button.querySelectorAll("div")).some((div) =>
+                      (div.textContent || "").trim().endsWith("Temporary Chat")
+                    );
+                    if (!hasLabel) { return false; }
+
+                    const nestedToggle = Array.from(button.querySelectorAll("button")).find(
+                      (nested) => nested !== button
+                    );
+                    return !nestedToggle || nestedToggle.getAttribute("data-state") !== "checked";
+                  });
+
+                  if (target) {
+                    target.click();
+                  } else if (modelButton && modelButton.getAttribute("data-state") === "open") {
+                    modelButton.click();
+                  }
+                })();
+                """,
+                Settings.reloadActionID: """
+                window.location.reload();
+                """
+            ]
+        ),
+        Service(
             name: "Google",
             url: "https://www.google.com?referrer=https://github.io/sassanh/quiper",
             focus_selector: "textarea, input[type='search']",
