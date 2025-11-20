@@ -16,6 +16,7 @@
 - Services tab now includes an "Erase All" control that removes every configured service, custom action, shortcut, and script directory so you can drop back to a factory-fresh state in one click.
 - Overlay zoom controls now use `⌘+` / `⌘−` to change web content scale per service (sessions stay in lockstep), remember the level between switches, and add `⌘⌫` to snap back to 100%.
 - Added a “Session Actions” menu button beside the settings gear that lists every built-in shortcut (zoom, reload, copy/cut/paste) plus your custom actions so you can trigger them by click while seeing their keyboard equivalents.
+- Added a lightweight inline Find bar (⌘F to show, Escape to dismiss) that searches the current service via WebKit’s native find API, complete with next/previous buttons and live match counts.
 
 ### Fixed
 

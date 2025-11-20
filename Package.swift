@@ -20,7 +20,8 @@ let package = Package(
                 .product(name: "MarkdownUI", package: "swift-markdown-ui")
             ],
             resources: [
-                .process("logo/logo.png")
+                .process("logo/logo.png"),
+                .process("find.js")
             ],
             linkerSettings: [
                 .unsafeFlags(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", "Supporting/Info.plist"])

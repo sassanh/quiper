@@ -19,6 +19,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private weak var contentContainerView: NSView?
     private var notificationBridges: [ObjectIdentifier: WebNotificationBridge] = [:]
     private var draggingServiceIndex: Int?
+    private var findBar: NSVisualEffectView?
+    private var findField: NSSearchField?
+    private var findStatusLabel: NSTextField?
+    private var findPreviousButton: NSButton?
+    private var findNextButton: NSButton?
+    private var isFindBarVisible = false
+    private var currentFindString: String = ""
+    private var findDebouncer = FindDebouncer()
+    private var findScript: String?
 
     private var inspectorVisible = false {
         didSet {
@@ -47,6 +56,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         setupUI()
         self.window?.delegate = self
+        findDebouncer.callback = { [weak self] in
+            self?.performFind(forward: true, newSearch: true)
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -84,6 +96,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func handleCommandShortcut(event: NSEvent) -> Bool {
         if (window as? OverlayWindow)?.isFullScreen == true {
             return false
+        }
+        if event.keyCode == UInt16(kVK_Escape) {
+            if closeFindPanelIfNeeded() {
+                return true
+            }
         }
         guard event.modifierFlags.contains(.command) else { return false }
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
@@ -123,6 +140,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return true
         case "h":
             hide()
+            return true
+        case "f":
+            presentFindPanel()
+            return true
+        case "g":
+            handleFindRepeat(shortcutShifted: isShift)
             return true
         case "=":
             zoom(by: Zoom.step)
@@ -337,6 +360,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         contentView.subviews.forEach { $0.removeFromSuperview() }
         createDragArea(in: contentView)
         createWebviews(in: contentView)
+        createFindBar(in: contentView)
         updateActiveWebview()
     }
 
@@ -484,6 +508,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             width: serviceWidth,
             height: selectorHeight
         )
+
+        layoutFindBar()
     }
 
     private func createWebviews(in contentView: NSView) {
@@ -507,7 +533,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func createWebviewStack(for service: Service, frame: NSRect, in contentView: NSView) -> [WKWebView] {
         var serviceViews: [WKWebView] = []
         for sessionIndex in 0..<10 {
+            let userContentController = WKUserContentController()
+            userContentController.add(ScriptBridge { message, error in
+                if let error {
+                    print("JavaScript error: \(error)")
+                    return
+                }
+                if let message = message as? String {
+                    print("JavaScript log: \(message)")
+                }
+            }, name: "log")
+
             let config = WKWebViewConfiguration()
+            config.userContentController = userContentController
             config.preferences.javaScriptCanOpenWindowsAutomatically = true
             config.preferences.setValue(true, forKey: "developerExtrasEnabled")
 
@@ -524,6 +562,101 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             serviceViews.append(webview)
         }
         return serviceViews
+    }
+
+    private func createFindBar(in contentView: NSView) {
+        let bar = NSVisualEffectView(frame: .zero)
+        bar.material = .menu
+        bar.state = .active
+        bar.wantsLayer = true
+        bar.layer?.cornerRadius = 10
+        bar.layer?.masksToBounds = true
+        bar.isHidden = true
+
+        let field = NSSearchField(frame: .zero)
+        field.placeholderString = "Find in page"
+        field.delegate = self
+        field.target = self
+        field.font = NSFont.systemFont(ofSize: 13)
+        if let cell = field.cell as? NSSearchFieldCell {
+            cell.sendsSearchStringImmediately = true
+            cell.sendsWholeSearchString = false
+        }
+
+        let status = NSTextField(labelWithString: "")
+        status.font = NSFont.systemFont(ofSize: 12)
+        status.textColor = .secondaryLabelColor
+        status.lineBreakMode = .byTruncatingTail
+
+        let prevButton = NSButton(title: "‹", target: self, action: #selector(findPreviousTapped))
+        prevButton.bezelStyle = .roundRect
+        prevButton.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+
+        let nextButton = NSButton(title: "›", target: self, action: #selector(findNextTapped))
+        nextButton.bezelStyle = .roundRect
+        nextButton.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+
+        bar.addSubview(field)
+        bar.addSubview(status)
+        bar.addSubview(prevButton)
+        bar.addSubview(nextButton)
+
+        contentView.addSubview(bar, positioned: .above, relativeTo: nil)
+
+        findBar = bar
+        findField = field
+        findStatusLabel = status
+        findPreviousButton = prevButton
+        findNextButton = nextButton
+        layoutFindBar()
+    }
+
+    private func layoutFindBar() {
+        guard let contentView = contentContainerView ?? window?.contentView,
+              let bar = findBar,
+              let field = findField,
+              let status = findStatusLabel,
+              let prev = findPreviousButton,
+              let next = findNextButton else { return }
+
+        let barWidth: CGFloat = 360
+        let barHeight: CGFloat = 46
+        let padding: CGFloat = 12
+        let buttonWidth: CGFloat = 32
+        let buttonHeight: CGFloat = 24
+
+        let originX = contentView.bounds.width - barWidth - padding
+        let originY = contentView.bounds.height - Constants.DRAGGABLE_AREA_HEIGHT - barHeight - padding
+        bar.frame = NSRect(x: originX, y: originY, width: barWidth, height: barHeight)
+
+        field.frame = NSRect(
+            x: padding,
+            y: (barHeight - buttonHeight) / 2,
+            width: 170,
+            height: buttonHeight
+        )
+
+        let statusWidth: CGFloat = 90
+        status.frame = NSRect(
+            x: field.frame.maxX + 8,
+            y: (barHeight - 18) / 2,
+            width: statusWidth,
+            height: 18
+        )
+
+        prev.frame = NSRect(
+            x: status.frame.maxX + 6,
+            y: (barHeight - buttonHeight) / 2,
+            width: buttonWidth,
+            height: buttonHeight
+        )
+
+        next.frame = NSRect(
+            x: prev.frame.maxX + 4,
+            y: prev.frame.minY,
+            width: buttonWidth,
+            height: buttonHeight
+        )
     }
 
     private func currentService() -> Service? {
@@ -722,6 +855,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                               modifiers: .command,
                               action: #selector(reloadActiveWebView)))
         menu.addItem(.separator())
+        menu.addItem(menuItem(title: "Find…",
+                              iconName: "magnifyingglass",
+                              keyEquivalent: "f",
+                              modifiers: .command,
+                              action: #selector(presentFindPanelFromMenu)))
+        menu.addItem(.separator())
         menu.addItem(menuItem(title: "Copy",
                               iconName: "doc.on.doc",
                               keyEquivalent: "c",
@@ -822,6 +961,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         currentWebView()?.reload()
     }
 
+    @objc private func presentFindPanelFromMenu(_ sender: Any?) {
+        presentFindPanel()
+    }
+
     @objc private func copyFromWebView(_ sender: Any?) {
         guard let webView = currentWebView() else { return }
         window?.makeFirstResponder(webView)
@@ -865,6 +1008,176 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         Settings.shared.storeZoomLevel(value, for: service.url)
     }
 
+    private func presentFindPanel() {
+        showFindBar()
+    }
+
+    private func closeFindPanelIfNeeded() -> Bool {
+        guard isFindBarVisible else { return false }
+        hideFindBar()
+        return true
+    }
+
+}
+
+private extension MainWindowController {
+    func showFindBar() {
+        guard let bar = findBar, let field = findField else { return }
+        bar.isHidden = false
+        isFindBarVisible = true
+        window?.makeFirstResponder(field)
+        if field.stringValue.isEmpty {
+            field.stringValue = currentFindString
+        }
+        if let editor = field.currentEditor() {
+            editor.selectAll(nil)
+        }
+        updateFindStatus(matchFound: nil, index: nil, total: nil)
+    }
+
+    func hideFindBar() {
+        currentFindString = findField?.stringValue ?? currentFindString
+        findBar?.isHidden = true
+        isFindBarVisible = false
+        findStatusLabel?.stringValue = ""
+        resetFind()
+        window?.makeFirstResponder(currentWebView())
+    }
+    
+    func handleFindRepeat(shortcutShifted: Bool) {
+        guard let field = findField else {
+            presentFindPanel()
+            return
+        }
+        if !isFindBarVisible {
+            showFindBar()
+            window?.makeFirstResponder(currentWebView())
+        }
+        let trimmedField = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedField.isEmpty {
+            if currentFindString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                window?.makeFirstResponder(field)
+                NSSound.beep()
+                return
+            }
+            field.stringValue = currentFindString
+        }
+        performFind(forward: !shortcutShifted)
+    }
+
+    func updateFindStatus(matchFound: Bool?, index: Int?, total: Int?) {
+        guard let label = findStatusLabel else { return }
+        guard let matchFound, let total, total > 0 else {
+            label.stringValue = currentFindString.isEmpty ? "" : "No matches"
+            return
+        }
+
+        if !matchFound {
+            label.stringValue = "No matches"
+            return
+        }
+        if let idx = index, total > 0 {
+            label.stringValue = "\(idx) of \(total)"
+        } else {
+            label.stringValue = "Match found"
+        }
+    }
+
+    func performFind(forward: Bool, newSearch: Bool = false) {
+        guard let webView = currentWebView() else { return }
+        
+        let searchString = findField?.stringValue ?? ""
+        if newSearch && searchString == currentFindString {
+            return
+        }
+        
+        currentFindString = searchString
+        
+        if currentFindString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            resetFind()
+            return
+        }
+        
+        let jsCompletionHandler: (Any?, Error?) -> Void = { [weak self] result, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("FindNext Error: \(error)")
+                    self?.updateFindStatus(matchFound: false, index: 0, total: 0)
+                    return
+                }
+                if let dict = result as? [String: Any] {
+                    let matchFound = dict["match"] as? Bool ?? false
+                    let index = dict["current"] as? Int ?? 0
+                    let total = dict["total"] as? Int ?? 0
+                    self?.updateFindStatus(matchFound: matchFound, index: index, total: total)
+                }
+            }
+        }
+        
+        let direction = forward ? "true" : "false"
+        let script = """
+        FindNext({ search: \"\(escapeForJavaScript(currentFindString))\", forward: \(direction) }, (err, result) => {
+            if (err) {
+                console.error(err);
+                return;
+            }
+            window.webkit.messageHandlers.completionHandler.postMessage(result);
+        });
+        """
+        
+        if findScript == nil {
+            findScript = loadFindScript()
+        }
+        
+        guard let findScript = findScript else {
+            return
+        }
+        
+        let bridgeName = "completionHandler"
+        let userContentController = webView.configuration.userContentController
+        userContentController.removeScriptMessageHandler(forName: bridgeName)
+        userContentController.add(ScriptBridge(callback: jsCompletionHandler), name: bridgeName)
+        
+        webView.evaluateJavaScript(findScript) { _, initError in
+            if let initError {
+                print("Error injecting find script: \(initError)")
+                return
+            }
+            webView.evaluateJavaScript(script, completionHandler: nil)
+        }
+    }
+    
+    func resetFind() {
+        guard let webView = currentWebView() else { return }
+        webView.evaluateJavaScript("if (window.findNext) { window.findNext.reset(); }", completionHandler: nil)
+        updateFindStatus(matchFound: nil, index: nil, total: nil)
+    }
+
+    @objc func findPreviousTapped() {
+        performFind(forward: false)
+    }
+
+    @objc func findNextTapped() {
+        performFind(forward: true)
+    }
+}
+
+private extension MainWindowController {
+    func loadFindScript() -> String? {
+        #if SWIFT_PACKAGE
+        let candidateBundles: [Bundle] = [Bundle.module, Bundle.main]
+        #else
+        let candidateBundles: [Bundle] = [Bundle.main]
+        #endif
+        for bundle in candidateBundles {
+            if let path = bundle.path(forResource: "find", ofType: "js"),
+               let source = try? String(contentsOfFile: path) {
+                return source
+            }
+        }
+        NSLog("[Quiper] Missing find.js resource")
+        return nil
+    }
 }
 
 
@@ -902,6 +1215,54 @@ extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         webView.reload()
+    }
+}
+
+extension MainWindowController: NSSearchFieldDelegate {
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSSearchField, field == findField else { return }
+        findDebouncer.debounce()
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard control == findField else { return false }
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            performFind(forward: true)
+            return true
+        }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            hideFindBar()
+            return true
+        }
+        if commandSelector == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)) {
+            performFind(forward: false)
+            return true
+        }
+        return false
+    }
+}
+
+private final class FindDebouncer {
+    private var timer: Timer?
+    var callback: (() -> Void)?
+    
+    func debounce(interval: TimeInterval = 0.3) {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.callback?()
+        }
+    }
+}
+
+private final class ScriptBridge: NSObject, WKScriptMessageHandler {
+    var callback: (Any?, Error?) -> Void
+    
+    init(callback: @escaping (Any?, Error?) -> Void) {
+        self.callback = callback
+    }
+    
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        callback(message.body, nil)
     }
 }
 
