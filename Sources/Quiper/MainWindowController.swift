@@ -27,7 +27,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var isFindBarVisible = false
     private var currentFindString: String = ""
     private var findDebouncer = FindDebouncer()
-    private var findScript: String?
 
     private var inspectorVisible = false {
         didSet {
@@ -534,15 +533,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         var serviceViews: [WKWebView] = []
         for sessionIndex in 0..<10 {
             let userContentController = WKUserContentController()
-            userContentController.add(ScriptBridge { message, error in
-                if let error {
-                    print("JavaScript error: \(error)")
-                    return
-                }
-                if let message = message as? String {
-                    print("JavaScript log: \(message)")
-                }
-            }, name: "log")
 
             let config = WKWebViewConfiguration()
             config.userContentController = userContentController
@@ -1067,7 +1057,7 @@ private extension MainWindowController {
 
     func updateFindStatus(matchFound: Bool?, index: Int?, total: Int?) {
         guard let label = findStatusLabel else { return }
-        guard let matchFound, let total, total > 0 else {
+        guard let matchFound else {
             label.stringValue = currentFindString.isEmpty ? "" : "No matches"
             return
         }
@@ -1076,7 +1066,8 @@ private extension MainWindowController {
             label.stringValue = "No matches"
             return
         }
-        if let idx = index, total > 0 {
+
+        if let idx = index, let total, total > 0 {
             label.stringValue = "\(idx) of \(total)"
         } else {
             label.stringValue = "Match found"
@@ -1092,65 +1083,119 @@ private extension MainWindowController {
         }
         
         currentFindString = searchString
-        
-        if currentFindString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        let trimmed = currentFindString.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
             resetFind()
             return
         }
         
-        let jsCompletionHandler: (Any?, Error?) -> Void = { [weak self] result, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    print("FindNext Error: \(error)")
-                    self?.updateFindStatus(matchFound: false, index: 0, total: 0)
-                    return
-                }
-                if let dict = result as? [String: Any] {
-                    let matchFound = dict["match"] as? Bool ?? false
-                    let index = dict["current"] as? Int ?? 0
-                    let total = dict["total"] as? Int ?? 0
-                    self?.updateFindStatus(matchFound: matchFound, index: index, total: total)
-                }
-            }
-        }
-        
-        let direction = forward ? "true" : "false"
+        let escaped = escapeForJavaScript(trimmed)
+        let resetSelection = newSearch ? "true" : "false"
+        let backwards = forward ? "false" : "true"
         let script = """
-        FindNext({ search: \"\(escapeForJavaScript(currentFindString))\", forward: \(direction) }, (err, result) => {
-            if (err) {
-                console.error(err);
-                return;
+        (() => {
+            const search = "\(escaped)";
+            const backwards = \(backwards);
+            let forceReset = \(resetSelection);
+            const root = document.body || document.documentElement;
+            const selection = window.getSelection();
+            if (!root || !selection) {
+                return { match: false, current: 0, total: 0 };
             }
-            window.webkit.messageHandlers.completionHandler.postMessage(result);
-        });
+            if (!document.getElementById("__quiperFindSelectionStyle")) {
+                const style = document.createElement("style");
+                style.id = "__quiperFindSelectionStyle";
+                style.textContent = `
+                    ::selection {
+                        background-color: rgba(255, 210, 0, 0.95) !important;
+                        color: #000 !important;
+                    }
+                    ::-moz-selection {
+                        background-color: rgba(255, 210, 0, 0.95) !important;
+                        color: #000 !important;
+                    }
+                `;
+                (document.head || document.body || document.documentElement).appendChild(style);
+            }
+            const textContent = root.innerText || root.textContent || "";
+            const escapedPattern = search.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+            const regex = escapedPattern ? new RegExp(escapedPattern, "gi") : null;
+            if (!window.__quiperFindState) {
+                window.__quiperFindState = { search: "", total: 0, index: 0 };
+            }
+            const state = window.__quiperFindState;
+            if (state.search !== search) {
+                state.search = search;
+                forceReset = true;
+            }
+            if (!search) {
+                state.total = 0;
+                state.index = 0;
+                selection.removeAllRanges();
+                return { match: false, current: 0, total: 0 };
+            }
+            if (forceReset) {
+                state.total = regex ? (textContent.match(regex) || []).length : 0;
+                state.index = backwards ? state.total + 1 : 0;
+                selection.removeAllRanges();
+                const range = document.createRange();
+                range.selectNodeContents(root);
+                range.collapse(!backwards);
+                selection.addRange(range);
+            }
+            const total = state.total;
+            if (!total) {
+                selection.removeAllRanges();
+                return { match: false, current: 0, total: 0 };
+            }
+            const match = window.find(search, false, backwards, true, false, true, false);
+            if (!match) {
+                return { match: false, current: 0, total };
+            }
+            if (backwards) {
+                state.index = state.index <= 1 ? total : state.index - 1;
+            } else {
+                state.index = state.index >= total ? 1 : state.index + 1;
+            }
+            const selectionNode = selection.focusNode && selection.focusNode.nodeType === Node.TEXT_NODE
+                ? selection.focusNode.parentElement
+                : selection.focusNode;
+            if (selectionNode && selectionNode.scrollIntoView) {
+                selectionNode.scrollIntoView({ block: 'center', inline: 'nearest' });
+            }
+            return { match: true, current: state.index, total };
+        })();
         """
         
-        if findScript == nil {
-            findScript = loadFindScript()
-        }
-        
-        guard let findScript = findScript else {
-            return
-        }
-        
-        let bridgeName = "completionHandler"
-        let userContentController = webView.configuration.userContentController
-        userContentController.removeScriptMessageHandler(forName: bridgeName)
-        userContentController.add(ScriptBridge(callback: jsCompletionHandler), name: bridgeName)
-        
-        webView.evaluateJavaScript(findScript) { _, initError in
-            if let initError {
-                print("Error injecting find script: \(initError)")
+        webView.evaluateJavaScript(script) { [weak self] result, error in
+            guard error == nil else {
+                print("Find JS error: \(error!.localizedDescription)")
+                self?.updateFindStatus(matchFound: false, index: nil, total: nil)
                 return
             }
-            webView.evaluateJavaScript(script, completionHandler: nil)
+            if let dict = result as? [String: Any],
+               let match = dict["match"] as? Bool {
+                let current = dict["current"] as? Int
+                let total = dict["total"] as? Int
+                self?.updateFindStatus(matchFound: match, index: current, total: total)
+            } else {
+                self?.updateFindStatus(matchFound: false, index: nil, total: nil)
+            }
         }
     }
     
     func resetFind() {
-        guard let webView = currentWebView() else { return }
-        webView.evaluateJavaScript("if (window.findNext) { window.findNext.reset(); }", completionHandler: nil)
         updateFindStatus(matchFound: nil, index: nil, total: nil)
+        let script = """
+        if (window.__quiperFindState) {
+            window.__quiperFindState.search = "";
+            window.__quiperFindState.total = 0;
+            window.__quiperFindState.index = 0;
+        }
+        const sel = window.getSelection();
+        if (sel) { sel.removeAllRanges(); }
+        """
+        currentWebView()?.evaluateJavaScript(script, completionHandler: nil)
     }
 
     @objc func findPreviousTapped() {
@@ -1160,26 +1205,8 @@ private extension MainWindowController {
     @objc func findNextTapped() {
         performFind(forward: true)
     }
+    
 }
-
-private extension MainWindowController {
-    func loadFindScript() -> String? {
-        #if SWIFT_PACKAGE
-        let candidateBundles: [Bundle] = [Bundle.module, Bundle.main]
-        #else
-        let candidateBundles: [Bundle] = [Bundle.main]
-        #endif
-        for bundle in candidateBundles {
-            if let path = bundle.path(forResource: "find", ofType: "js"),
-               let source = try? String(contentsOfFile: path) {
-                return source
-            }
-        }
-        NSLog("[Quiper] Missing find.js resource")
-        return nil
-    }
-}
-
 
 @MainActor
 extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
@@ -1242,27 +1269,21 @@ extension MainWindowController: NSSearchFieldDelegate {
     }
 }
 
-private final class FindDebouncer {
+private final class FindDebouncer: NSObject {
     private var timer: Timer?
     var callback: (() -> Void)?
     
     func debounce(interval: TimeInterval = 0.3) {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            self?.callback?()
-        }
-    }
-}
-
-private final class ScriptBridge: NSObject, WKScriptMessageHandler {
-    var callback: (Any?, Error?) -> Void
-    
-    init(callback: @escaping (Any?, Error?) -> Void) {
-        self.callback = callback
+        timer = Timer.scheduledTimer(timeInterval: interval,
+                                     target: self,
+                                     selector: #selector(timerFired),
+                                     userInfo: nil,
+                                     repeats: false)
     }
     
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        callback(message.body, nil)
+    @objc private func timerFired() {
+        callback?()
     }
 }
 
