@@ -58,7 +58,13 @@ final class ServiceSelectorControl: NSSegmentedControl {
             }
         }
 
-        guard isDragging, let destination = segmentIndex(at: location) else { return }
+        guard isDragging else { return }
+
+        let rects = segmentRects()
+        let stickyIndex = currentDragDestination ?? sourceIndex
+        guard !rects.isEmpty else { return }
+
+        let destination = destinationIndex(at: location, rects: rects, stickyIndex: stickyIndex)
         if destination != currentDragDestination {
             currentDragDestination = destination
             dragChangedHandler?(destination)
@@ -84,29 +90,136 @@ final class ServiceSelectorControl: NSSegmentedControl {
     private func segmentIndex(at point: NSPoint) -> Int? {
         let count = segmentCount
         guard count > 0 else { return nil }
-        let boundsWidth = bounds.width
-        guard boundsWidth > 0 else { return nil }
-        let clampedX = max(0, min(boundsWidth, point.x))
+        guard let segmentedCell = cell as? NSSegmentedCell else {
+            preconditionFailure("ServiceSelectorControl: missing segmented cell for hit testing")
+        }
 
-        if let segmentedCell = cell as? NSSegmentedCell {
-            var leadingEdge: CGFloat = 0
+        var nearestIndex: Int = 0
+        var nearestDistance: CGFloat = .greatestFiniteMagnitude
+
+        let selector = Selector(("rectForSegment:inFrame:"))
+        if segmentedCell.responds(to: selector),
+           let imp = segmentedCell.method(for: selector) {
+            typealias RectForSegment = @convention(c) (AnyObject, Selector, Int, NSRect) -> NSRect
+            let fn = unsafeBitCast(imp, to: RectForSegment.self)
             for index in 0..<count {
-                var segmentWidth = segmentedCell.width(forSegment: index)
-                if segmentWidth <= 0 {
-                    let remainingSegments = CGFloat(count - index)
-                    segmentWidth = max((boundsWidth - leadingEdge) / remainingSegments, 1)
-                }
-                let trailingEdge = min(boundsWidth, leadingEdge + segmentWidth)
-                if clampedX >= leadingEdge && clampedX <= trailingEdge {
+                let rect = fn(segmentedCell, selector, index, bounds)
+                if rect.contains(point) {
                     return index
                 }
-                leadingEdge = trailingEdge
+                let distance = abs(rect.midX - point.x)
+                if distance < nearestDistance {
+                    nearestDistance = distance
+                    nearestIndex = index
+                }
             }
-            return nil
-        } else {
-            let segmentWidth = boundsWidth / CGFloat(count)
-            let rawIndex = Int(clampedX / segmentWidth)
-            return max(0, min(count - 1, rawIndex))
         }
+
+        let layoutRect = segmentedCell.drawingRect(forBounds: bounds)
+        let clampedX = max(layoutRect.minX, min(layoutRect.maxX, point.x))
+
+        var widths: [CGFloat] = []
+        widths.reserveCapacity(count)
+        for index in 0..<count {
+            var w = segmentedCell.width(forSegment: index)
+            if w <= 0 {
+                w = max(layoutRect.width / CGFloat(count), 1)
+            }
+            widths.append(w)
+        }
+
+        let totalWidth = widths.reduce(0, +)
+        let paddingPerSegment = (layoutRect.width - totalWidth) / CGFloat(max(count, 1))
+
+        var leading: CGFloat = layoutRect.minX
+        for (index, width) in widths.enumerated() {
+            let trailing = leading + width + paddingPerSegment
+            if clampedX < trailing || index == count - 1 {
+                return index
+            }
+            leading = trailing
+        }
+
+        // Fall back to the closest segment we saw when using rectForSegment.
+        return nearestIndex
+    }
+
+    private func segmentRects() -> [NSRect] {
+        let count = segmentCount
+        guard count > 0, let segmentedCell = cell as? NSSegmentedCell else { return [] }
+
+        var rects: [NSRect] = []
+        rects.reserveCapacity(count)
+
+        let selector = Selector(("rectForSegment:inFrame:"))
+        if segmentedCell.responds(to: selector),
+           let imp = segmentedCell.method(for: selector) {
+            typealias RectForSegment = @convention(c) (AnyObject, Selector, Int, NSRect) -> NSRect
+            let fn = unsafeBitCast(imp, to: RectForSegment.self)
+            for index in 0..<count {
+                rects.append(fn(segmentedCell, selector, index, bounds))
+            }
+            return rects
+        }
+
+        // Fallback to manual calculation
+        let layoutRect = segmentedCell.drawingRect(forBounds: bounds)
+        var widths: [CGFloat] = []
+        widths.reserveCapacity(count)
+        for index in 0..<count {
+            var w = segmentedCell.width(forSegment: index)
+            if w <= 0 {
+                w = max(layoutRect.width / CGFloat(count), 1)
+            }
+            widths.append(w)
+        }
+        let totalWidth = widths.reduce(0, +)
+        let paddingPerSegment = (layoutRect.width - totalWidth) / CGFloat(max(count, 1))
+        var leading: CGFloat = layoutRect.minX
+        for width in widths {
+            let trailing = leading + width + paddingPerSegment
+            rects.append(NSRect(x: leading, y: layoutRect.minY, width: trailing - leading, height: layoutRect.height))
+            leading = trailing
+        }
+        return rects
+    }
+
+    private func destinationIndex(at point: NSPoint, rects: [NSRect], stickyIndex: Int) -> Int {
+        let clampedSticky = max(0, min(stickyIndex, rects.count - 1))
+        if rects.isEmpty { return clampedSticky }
+
+        // Use midpoints and a neutral dead zone at each boundary to prevent flip-flop.
+        var midpoints: [CGFloat] = rects.map { $0.midX }
+        // Ensure increasing order in case rects are misordered.
+        midpoints.sort()
+
+        let deadZone: CGFloat = 10.0
+
+        // Edges
+        if point.x <= midpoints.first! {
+            return 0
+        }
+        if point.x >= midpoints.last! {
+            return rects.count - 1
+        }
+
+        for i in 0..<(midpoints.count - 1) {
+            let left = midpoints[i]
+            let right = midpoints[i + 1]
+            let boundary = (left + right) / 2
+            let lower = boundary - deadZone
+            let upper = boundary + deadZone
+
+            if point.x < lower {
+                return i
+            }
+            if point.x > upper {
+                continue
+            }
+            // Inside dead zone around boundary: stick with current destination.
+            return clampedSticky
+        }
+
+        return clampedSticky
     }
 }

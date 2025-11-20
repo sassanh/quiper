@@ -4,6 +4,11 @@
 
 _No changes yet._
 
+### Fixed
+
+- Fixed service selector hit-testing to use AppKit's segment bounds directly, eliminating offset drift when clicking later engine items.
+- Improved drag-and-drop reordering feedback to avoid flickering and ensure smooth segment movement.
+
 ## [1.0.0] - 2025-11-20
 
 ### Added
