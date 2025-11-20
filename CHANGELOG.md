@@ -4,11 +4,13 @@
 
 _No changes yet._
 
+## [1.1.0] - 2025-11-20
+
 ### Added
 
 - Added a default “Ollama” service pointing to <http://localhost:8080> with focus selector, new-session that clears temporary mode, new-temporary-session that enables it, and reload script.
 
-### Fixed
+### Changed
 
 - Fixed service selector hit-testing to use AppKit's segment bounds directly, eliminating offset drift when clicking later engine items.
 - Improved drag-and-drop reordering feedback to avoid flickering and ensure smooth segment movement.
