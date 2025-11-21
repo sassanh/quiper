@@ -2,7 +2,10 @@
 
 ## [Unreleased]
 
-_(no changes yet)_
+### Changed
+
+- Allowed bare F1–F20 keys to be recorded and used as shortcuts without requiring modifier keys; non-function keys still require Command/Option/Control/Shift.
+- Shortcut formatting now uses glyphs for Return/Escape/arrows and adds labels for F1–F20 plus punctuation/keypad symbols, matching macOS menus.
 
 ## [1.2.0] - 2025-11-21
 

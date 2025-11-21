@@ -5,8 +5,13 @@ enum ShortcutValidator {
     static func allows(configuration: HotkeyManager.Configuration) -> Bool {
         let modifiers = NSEvent.ModifierFlags(rawValue: configuration.modifierFlags)
         let primary = modifiers.intersection([.command, .option, .control, .shift])
-        guard !primary.isEmpty else { return false }
-        return !isReservedActionShortcut(modifiers: primary, keyCode: UInt16(configuration.keyCode))
+        let keyCode = UInt16(configuration.keyCode)
+
+        if primary.isEmpty {
+            return isFunctionKey(keyCode)
+        }
+
+        return !isReservedActionShortcut(modifiers: primary, keyCode: keyCode)
     }
 
     static func isReservedActionShortcut(modifiers rawModifiers: NSEvent.ModifierFlags, keyCode: UInt16) -> Bool {
@@ -44,6 +49,10 @@ enum ShortcutValidator {
         return topRowDigits.contains(keyCode) || keypadDigits.contains(keyCode)
     }
 
+    private static func isFunctionKey(_ keyCode: UInt16) -> Bool {
+        functionKeys.contains(keyCode)
+    }
+
     private static let topRowDigits: Set<UInt16> = [
         UInt16(kVK_ANSI_0), UInt16(kVK_ANSI_1), UInt16(kVK_ANSI_2), UInt16(kVK_ANSI_3), UInt16(kVK_ANSI_4),
         UInt16(kVK_ANSI_5), UInt16(kVK_ANSI_6), UInt16(kVK_ANSI_7), UInt16(kVK_ANSI_8), UInt16(kVK_ANSI_9)
@@ -53,5 +62,12 @@ enum ShortcutValidator {
         UInt16(kVK_ANSI_Keypad0), UInt16(kVK_ANSI_Keypad1), UInt16(kVK_ANSI_Keypad2), UInt16(kVK_ANSI_Keypad3),
         UInt16(kVK_ANSI_Keypad4), UInt16(kVK_ANSI_Keypad5), UInt16(kVK_ANSI_Keypad6), UInt16(kVK_ANSI_Keypad7),
         UInt16(kVK_ANSI_Keypad8), UInt16(kVK_ANSI_Keypad9)
+    ]
+
+    private static let functionKeys: Set<UInt16> = [
+        UInt16(kVK_F1), UInt16(kVK_F2), UInt16(kVK_F3), UInt16(kVK_F4), UInt16(kVK_F5),
+        UInt16(kVK_F6), UInt16(kVK_F7), UInt16(kVK_F8), UInt16(kVK_F9), UInt16(kVK_F10),
+        UInt16(kVK_F11), UInt16(kVK_F12), UInt16(kVK_F13), UInt16(kVK_F14), UInt16(kVK_F15),
+        UInt16(kVK_F16), UInt16(kVK_F17), UInt16(kVK_F18), UInt16(kVK_F19), UInt16(kVK_F20)
     ]
 }

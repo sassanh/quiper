@@ -28,7 +28,6 @@ final class CustomActionShortcutDispatcher {
 
     private func handleKeyDown(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-        guard !modifiers.isEmpty else { return false }
         let configuration = HotkeyManager.Configuration(keyCode: UInt32(event.keyCode), modifierFlags: modifiers.rawValue)
         guard ShortcutValidator.allows(configuration: configuration) else { return false }
         guard let controller = windowController,

@@ -377,7 +377,7 @@ private struct ShortcutBadge: View {
         ZStack {
             RoundedRectangle(cornerRadius: 10)
                 .fill(.quaternary)
-                .frame(width: width, height: 40)
+                .frame(width: width, height: 30)
             Text(text)
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(isPlaceholder ? .secondary : .primary)
@@ -398,7 +398,7 @@ private struct ShortcutBadge: View {
                 .padding(.trailing, 6)
                 .padding(.top, 2)
             }
-            .frame(width: width, height: 40, alignment: .topTrailing)
+            .frame(width: width, height: 30, alignment: .topTrailing)
         }
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .onTapGesture {
@@ -545,7 +545,7 @@ private final class ShortcutCaptureSession {
             let configuration = HotkeyManager.Configuration(keyCode: UInt32(event.keyCode), modifierFlags: modifiers.rawValue)
             guard ShortcutValidator.allows(configuration: configuration) else {
                 NSSound.beep()
-                self.onUpdate("Shortcut must include Command/Option/Control/Shift")
+                self.onUpdate("Shortcut must include Command/Option/Control/Shift unless using F1-F20")
                 return nil
             }
             self.onUpdate(ShortcutFormatter.string(for: modifiers, keyCode: event.keyCode, characters: event.charactersIgnoringModifiers))
