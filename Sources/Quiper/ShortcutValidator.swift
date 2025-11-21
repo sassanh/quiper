@@ -19,9 +19,6 @@ enum ShortcutValidator {
         if keyCode == UInt16(kVK_ANSI_Comma) { // Settings
             return true
         }
-        if keyCode == UInt16(kVK_ANSI_H) { // Hide window
-            return true
-        }
         if keyCode == UInt16(kVK_ANSI_I) && modifiers.contains(.option) { // Inspector
             return true
         }

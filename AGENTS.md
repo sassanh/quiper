@@ -28,7 +28,7 @@
 
 ## Commit & Pull Request Guidelines
 
-- Follow the existing prefix style: `feat:`, `refactor:`, `fix:`, `chore:` (see recent history).
+- Follow the Conventional Commits-style prefixes: `feat:`, `fix:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:`, `build:`, `ci:`, `chore:`, `revert:` (see recent history).
 - Keep subject lines imperative and concise: `feat: add session actions menu`.
 - PRs should summarize behavior change, list manual tests, and note platform (macOS version, Intel/Apple Silicon). Add screenshots or short screen recordings for UI-facing edits and mention if settings schema changes.
 

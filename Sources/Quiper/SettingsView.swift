@@ -22,11 +22,11 @@ struct SettingsView: View {
             }
             .tag("Services")
             
-            ActionsSettingsView()
+            KeyBindingsSettingsView()
                 .tabItem {
-                    Label("Actions", systemImage: "bolt")
+                    Label("Shortcuts", systemImage: "keyboard")
                 }
-                .tag("Actions")
+                .tag("Shortcuts")
         }
         .frame(minWidth: 600, minHeight: 400)
     }

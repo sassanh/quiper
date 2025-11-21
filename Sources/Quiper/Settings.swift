@@ -57,12 +57,123 @@ struct UpdatePreferences: Codable, Equatable {
     var lastNotifiedVersion: String?
 }
 
+struct AppShortcutBindings: Codable, Equatable {
+    enum Key: String, CaseIterable, Codable, Identifiable {
+        case nextSession
+        case previousSession
+        case nextService
+        case previousService
+
+        var id: String { rawValue }
+    }
+
+    enum ModifierGroup {
+        case sessionDigits
+        case serviceDigitsPrimary
+        case serviceDigitsSecondary
+    }
+
+    var nextSession: HotkeyManager.Configuration
+    var previousSession: HotkeyManager.Configuration
+    var nextService: HotkeyManager.Configuration
+    var previousService: HotkeyManager.Configuration
+    var alternateNextSession: HotkeyManager.Configuration?
+    var alternatePreviousSession: HotkeyManager.Configuration?
+    var alternateNextService: HotkeyManager.Configuration?
+    var alternatePreviousService: HotkeyManager.Configuration?
+    var sessionDigitsModifiers: UInt
+    var sessionDigitsAlternateModifiers: UInt?
+    var serviceDigitsPrimaryModifiers: UInt
+    var serviceDigitsSecondaryModifiers: UInt?
+
+    static let defaults = AppShortcutBindings(
+        nextSession: HotkeyManager.Configuration(
+            keyCode: UInt32(kVK_RightArrow),
+            modifierFlags: NSEvent.ModifierFlags([.command, .shift]).rawValue
+        ),
+        previousSession: HotkeyManager.Configuration(
+            keyCode: UInt32(kVK_LeftArrow),
+            modifierFlags: NSEvent.ModifierFlags([.command, .shift]).rawValue
+        ),
+        nextService: HotkeyManager.Configuration(
+            keyCode: UInt32(kVK_RightArrow),
+            modifierFlags: NSEvent.ModifierFlags([.command, .control]).rawValue
+        ),
+        previousService: HotkeyManager.Configuration(
+            keyCode: UInt32(kVK_LeftArrow),
+            modifierFlags: NSEvent.ModifierFlags([.command, .control]).rawValue
+        ),
+        alternateNextSession: HotkeyManager.Configuration(
+            keyCode: UInt32(kVK_ANSI_L),
+            modifierFlags: NSEvent.ModifierFlags.command.rawValue
+        ),
+        alternatePreviousSession: HotkeyManager.Configuration(
+            keyCode: UInt32(kVK_ANSI_H),
+            modifierFlags: NSEvent.ModifierFlags.command.rawValue
+        ),
+        alternateNextService: HotkeyManager.Configuration(
+            keyCode: UInt32(kVK_ANSI_L),
+            modifierFlags: NSEvent.ModifierFlags([.command, .control]).rawValue
+        ),
+        alternatePreviousService: HotkeyManager.Configuration(
+            keyCode: UInt32(kVK_ANSI_H),
+            modifierFlags: NSEvent.ModifierFlags([.command, .control]).rawValue
+        ),
+        sessionDigitsModifiers: NSEvent.ModifierFlags.command.rawValue,
+        sessionDigitsAlternateModifiers: nil,
+        serviceDigitsPrimaryModifiers: NSEvent.ModifierFlags([.command, .control]).rawValue,
+        serviceDigitsSecondaryModifiers: NSEvent.ModifierFlags([.command, .option]).rawValue
+    )
+
+    func configuration(for key: Key) -> HotkeyManager.Configuration {
+        switch key {
+        case .nextSession: return nextSession
+        case .previousSession: return previousSession
+        case .nextService: return nextService
+        case .previousService: return previousService
+        }
+    }
+
+    func alternateConfiguration(for key: Key) -> HotkeyManager.Configuration? {
+        switch key {
+        case .nextSession: return alternateNextSession
+        case .previousSession: return alternatePreviousSession
+        case .nextService: return alternateNextService
+        case .previousService: return alternatePreviousService
+        }
+    }
+
+    func defaultConfiguration(for key: Key) -> HotkeyManager.Configuration {
+        AppShortcutBindings.defaults.configuration(for: key)
+    }
+
+    mutating func setConfiguration(_ configuration: HotkeyManager.Configuration, for key: Key) {
+        switch key {
+        case .nextSession: nextSession = configuration
+        case .previousSession: previousSession = configuration
+        case .nextService: nextService = configuration
+        case .previousService: previousService = configuration
+        }
+    }
+
+    mutating func setAlternateConfiguration(_ configuration: HotkeyManager.Configuration?, for key: Key) {
+        switch key {
+        case .nextSession: alternateNextSession = configuration
+        case .previousSession: alternatePreviousSession = configuration
+        case .nextService: alternateNextService = configuration
+        case .previousService: alternatePreviousService = configuration
+        }
+    }
+}
+
 private struct PersistedSettings: Codable {
     var services: [Service]
     var hotkey: HotkeyManager.Configuration?
     var customActions: [CustomAction]?
     var updatePreferences: UpdatePreferences?
     var serviceZoomLevels: [String: Double]?
+    var appShortcuts: AppShortcutBindings?
+    var sessionDigitsAlternateModifiers: UInt?
 }
 
 class SettingsWindow: NSWindow {
@@ -140,6 +251,7 @@ class Settings: ObservableObject {
     @Published var customActions: [CustomAction] = []
     @Published var updatePreferences: UpdatePreferences = UpdatePreferences()
     @Published var serviceZoomLevels: [String: CGFloat] = [:]
+    @Published var appShortcutBindings: AppShortcutBindings = .defaults
 
     private let settingsFile: URL = {
         let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -549,6 +661,10 @@ class Settings: ObservableObject {
         } else {
             serviceZoomLevels = [:]
         }
+        appShortcutBindings = persisted.appShortcuts ?? .defaults
+        if let altSessionDigits = persisted.sessionDigitsAlternateModifiers {
+            appShortcutBindings.sessionDigitsAlternateModifiers = altSessionDigits
+        }
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
@@ -576,7 +692,9 @@ class Settings: ObservableObject {
                                             hotkey: hotkeyConfiguration,
                                             customActions: customActions,
                                             updatePreferences: updatePreferences,
-                                            serviceZoomLevels: serviceZoomLevels.mapValues { Double($0) })
+                                            serviceZoomLevels: serviceZoomLevels.mapValues { Double($0) },
+                                            appShortcuts: appShortcutBindings,
+                                            sessionDigitsAlternateModifiers: appShortcutBindings.sessionDigitsAlternateModifiers)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {

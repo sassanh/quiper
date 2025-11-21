@@ -31,6 +31,7 @@ final class WebNotificationBridge: NSObject {
         guard let controller = webView?.configuration.userContentController else { return }
         controller.addUserScript(Self.makeUserScript())
         controller.add(handlerProxy, name: Self.handlerName)
+        guard !Self.isRunningTests else { return }
         syncInitialPermissionState()
     }
 
@@ -65,6 +66,7 @@ final class WebNotificationBridge: NSObject {
     }
 
     private func scheduleNotification(title: String, options: [String: Any]) {
+        guard !Self.isRunningTests else { return }
         let payload = NotificationPayload(options: options)
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
             let status = settings.authorizationStatus
@@ -108,6 +110,12 @@ final class WebNotificationBridge: NSObject {
                 }
             }
         }
+    }
+
+    private static var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
+        ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil ||
+        NSClassFromString("XCTestCase") != nil
     }
 
     private func pushPermissionState(_ state: String, requestId: Int?) {

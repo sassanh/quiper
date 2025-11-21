@@ -6,6 +6,12 @@
 
 - Introduced initial XCTest target with coverage for `ShortcutValidator` hotkey rules.
 
+### Changed
+
+- Added default shortcuts for next/previous session/service: `⌘⇧←` and `⌘⇧→` to cycle sessions, `⌘⌃←` and `⌘⌃→`.
+- Added default alternative vim-like bindings for session/service switching: `⌘H`/`⌘L` for sessions, `⌘⌃H`/`⌘⌃L` for services.
+- Added shortcut editor UI: inline primary/alternate badges with per-badge reset, fixed label column, compact widened badges.
+
 ## [1.1.0] - 2025-11-20
 
 ### Added

@@ -34,7 +34,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
     
-    init() {
+    init(services: [Service]? = nil) {
         let window = OverlayWindow(
             contentRect: NSRect(x: 500, y: 200, width: 550, height: 620),
             styleMask: [.borderless, .resizable],
@@ -43,11 +43,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
         super.init(window: window)
         configureWindow()
-        services = Settings.shared.loadSettings()
+        let initialServices = services ?? Settings.shared.loadSettings()
+        self.services = initialServices
         zoomLevelsByURL = Settings.shared.serviceZoomLevels
-        currentServiceName = services.first?.name
-        currentServiceURL = services.first?.url
-        services.forEach { service in
+        currentServiceName = self.services.first?.name
+        currentServiceURL = self.services.first?.url
+        self.services.forEach { service in
             activeIndicesByURL[service.url] = 0
             if zoomLevelsByURL[service.url] == nil {
                 zoomLevelsByURL[service.url] = Zoom.default
@@ -67,6 +68,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Public API
     var serviceCount: Int { services.count }
     var activeServiceURL: String? { currentService()?.url }
+    var activeSessionIndex: Int {
+        guard let service = currentService() else { return 0 }
+        return activeIndicesByURL[service.url] ?? 0
+    }
 
     @discardableResult
     func selectService(withURL url: String) -> Bool {
@@ -101,16 +106,70 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 return true
             }
         }
-        guard event.modifierFlags.contains(.command) else { return false }
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let modifiers = normalizedModifiers(from: event)
         let keyCode = UInt16(event.keyCode)
-        let isControl = event.modifierFlags.contains(.control)
-        let isOption = event.modifierFlags.contains(.option)
-        let isShift = event.modifierFlags.contains(.shift)
+        let appShortcuts = Settings.shared.appShortcutBindings
+
+        if matches(event, configuration: appShortcuts.previousSession) || matchesOptional(appShortcuts.alternatePreviousSession, event: event) {
+            stepSession(by: -1)
+            return true
+        }
+        if matches(event, configuration: appShortcuts.nextSession) || matchesOptional(appShortcuts.alternateNextSession, event: event) {
+            stepSession(by: 1)
+            return true
+        }
+        if matches(event, configuration: appShortcuts.previousService) || matchesOptional(appShortcuts.alternatePreviousService, event: event) {
+            stepService(by: -1)
+            return true
+        }
+        if matches(event, configuration: appShortcuts.nextService) || matchesOptional(appShortcuts.alternateNextService, event: event) {
+            stepService(by: 1)
+            return true
+        }
+
+        if let digit = digitValue(for: keyCode) {
+            if modifiers.rawValue == appShortcuts.sessionDigitsModifiers ||
+                (appShortcuts.sessionDigitsAlternateModifiers.map { modifiers.rawValue == $0 } ?? false) {
+                let index = digit == 0 ? 9 : digit - 1
+                switchSession(to: index)
+                return true
+            }
+            let targetIndex: Int? = {
+                if digit == 0 { // treat 0 as slot 10
+                    return services.count >= 10 ? 9 : nil
+                }
+                return (1...services.count).contains(digit) ? digit - 1 : nil
+            }()
+
+            if modifiers.rawValue == appShortcuts.serviceDigitsPrimaryModifiers {
+                if let idx = targetIndex {
+                    selectService(at: idx)
+                    return true
+                }
+            }
+            if let secondary = appShortcuts.serviceDigitsSecondaryModifiers,
+               modifiers.rawValue == secondary {
+                if let idx = targetIndex {
+                    selectService(at: idx)
+                    return true
+                }
+            }
+        }
+
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let isControl = modifiers.contains(.control)
+        let isOption = modifiers.contains(.option)
+        let isShift = modifiers.contains(.shift)
+        let isCommand = modifiers.contains(.command)
 
         if isControl && isShift && key == "q" {
             NSApp.terminate(nil)
             return true
+        }
+
+        // Remaining built-in shortcuts still require the Command modifier.
+        if !isCommand {
+            return false
         }
 
         if isControl || isOption {
@@ -126,14 +185,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
 
         switch key {
-        case "0":
-            switchSession(to: 9)
-            return true
-        case "1","2","3","4","5","6","7","8","9":
-            if let value = Int(key) {
-                switchSession(to: value - 1)
-                return true
-            }
         case ",":
             NotificationCenter.default.post(name: .showSettings, object: nil)
             return true
@@ -170,6 +221,39 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
 
         return false
+    }
+    
+    private func normalizedModifiers(from event: NSEvent) -> NSEvent.ModifierFlags {
+        event.modifierFlags.intersection([.command, .option, .control, .shift])
+    }
+
+    private func matches(_ event: NSEvent, configuration: HotkeyManager.Configuration) -> Bool {
+        let modifiers = normalizedModifiers(from: event)
+        let normalizedConfigModifiers = NSEvent.ModifierFlags(rawValue: configuration.modifierFlags)
+            .intersection([.command, .option, .control, .shift])
+        return UInt16(event.keyCode) == UInt16(configuration.keyCode) &&
+        modifiers == normalizedConfigModifiers
+    }
+
+    private func matchesOptional(_ configuration: HotkeyManager.Configuration?, event: NSEvent) -> Bool {
+        guard let configuration else { return false }
+        return matches(event, configuration: configuration)
+    }
+
+    private func digitValue(for keyCode: UInt16) -> Int? {
+        switch keyCode {
+        case UInt16(kVK_ANSI_0), UInt16(kVK_ANSI_Keypad0): return 0
+        case UInt16(kVK_ANSI_1), UInt16(kVK_ANSI_Keypad1): return 1
+        case UInt16(kVK_ANSI_2), UInt16(kVK_ANSI_Keypad2): return 2
+        case UInt16(kVK_ANSI_3), UInt16(kVK_ANSI_Keypad3): return 3
+        case UInt16(kVK_ANSI_4), UInt16(kVK_ANSI_Keypad4): return 4
+        case UInt16(kVK_ANSI_5), UInt16(kVK_ANSI_Keypad5): return 5
+        case UInt16(kVK_ANSI_6), UInt16(kVK_ANSI_Keypad6): return 6
+        case UInt16(kVK_ANSI_7), UInt16(kVK_ANSI_Keypad7): return 7
+        case UInt16(kVK_ANSI_8), UInt16(kVK_ANSI_Keypad8): return 8
+        case UInt16(kVK_ANSI_9), UInt16(kVK_ANSI_Keypad9): return 9
+        default: return nil
+        }
     }
     
     func currentWebViewURL() -> URL? {
@@ -723,6 +807,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard let service = currentService() else { return }
         let index = activeIndicesByURL[service.url] ?? 0
         sessionSelector.selectedSegment = segmentIndex(forSession: index)
+    }
+
+    private func stepSession(by delta: Int) {
+        guard let service = currentService() else { return }
+        let current = activeIndicesByURL[service.url] ?? 0
+        let next = (current + delta + 10) % 10
+        switchSession(to: next)
+    }
+
+    private func stepService(by delta: Int) {
+        guard !services.isEmpty else { return }
+        let currentIndex = services.firstIndex(where: { $0.url == currentServiceURL }) ??
+                           services.firstIndex(where: { $0.name == currentServiceName }) ??
+                           0
+        let next = (currentIndex + delta + services.count) % services.count
+        selectService(at: next)
     }
 
     private func estimatedWidthForServiceSegments() -> CGFloat {
