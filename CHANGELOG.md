@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+
+- Introduced initial XCTest target with coverage for `ShortcutValidator` hotkey rules.
 
 ## [1.1.0] - 2025-11-20
 

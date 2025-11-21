@@ -66,3 +66,9 @@ playground.xcworkspace
 .DS_Store
 
 Quiper.app
+# Coverage artifacts
+coverage.lcov
+coverage.json
+coverage.xml
+coverage-html/
+coverage.raw.*
