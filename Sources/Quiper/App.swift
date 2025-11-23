@@ -600,27 +600,27 @@ struct StatusMenuBuilder {
     func buildStatusMenu(controller: AnyObject) -> NSMenu {
         let menu = NSMenu()
 
-        func addItem(_ title: String, _ action: Selector?, _ key: String = "", _ target: AnyObject?) {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        func addItem(_ title: String, _ action: Selector?, _ keyEquivalent: String = "", _ modifiers: NSEvent.ModifierFlags = [], _ target: AnyObject?) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+            item.keyEquivalentModifierMask = modifiers
             item.target = target
             menu.addItem(item)
         }
 
-        addItem("Show Quiper", #selector(AppController.showWindow(_:)), "", controller)
-        addItem("Hide Quiper", #selector(AppController.hideWindow(_:)), "h", controller)
+        addItem("Show Quiper", #selector(AppController.showWindow(_:)), "", [], controller)
+        addItem("Hide Quiper", #selector(AppController.hideWindow(_:)), "", [], controller)
         menu.addItem(.separator())
-        addItem("Settings", #selector(AppController.showSettings(_:)), ",", controller)
-        addItem("Show Inspector", #selector(AppController.toggleInspector(_:)), "i", controller)
-        addItem("Share", #selector(AppController.share(_:)), "", controller)
-        addItem("Clear Web Cache", #selector(AppController.clearWebViewData(_:)), "", controller)
-        addItem("Set New Hotkey", #selector(AppController.setHotkey(_:)), "", controller)
-        addItem("Notification Settings...", #selector(AppController.openNotificationSettings(_:)), "", controller)
-        addItem("Check for Updates…", #selector(AppController.checkForUpdates(_:)), "", controller)
+        addItem("Settings", #selector(AppController.showSettings(_:)), ",", [.command], controller)
+        addItem("Show Inspector", #selector(AppController.toggleInspector(_:)), "i", [.command, .option], controller)
+        addItem("Share", #selector(AppController.share(_:)), "", [], controller)
+        addItem("Set New Hotkey", #selector(AppController.setHotkey(_:)), "", [], controller)
+        addItem("Notification Settings...", #selector(AppController.openNotificationSettings(_:)), "", [], controller)
+        addItem("Check for Updates…", #selector(AppController.checkForUpdates(_:)), "", [], controller)
         menu.addItem(.separator())
-        addItem("Install at Login", #selector(AppController.installAtLogin(_:)), "", controller)
-        addItem("Uninstall from Login", #selector(AppController.uninstallFromLogin(_:)), "", controller)
+        addItem("Install at Login", #selector(AppController.installAtLogin(_:)), "", [], controller)
+        addItem("Uninstall from Login", #selector(AppController.uninstallFromLogin(_:)), "", [], controller)
         menu.addItem(.separator())
-        addItem("Quit", #selector(NSApplication.terminate(_:)), "q", NSApp)
+        addItem("Quit", #selector(NSApplication.terminate(_:)), "q", [.command], NSApp)
 
         return menu
     }

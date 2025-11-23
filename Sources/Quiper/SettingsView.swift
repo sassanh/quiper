@@ -3,30 +3,30 @@ import UniformTypeIdentifiers
 import Foundation
 
 struct SettingsView: View {
-    @State private var selectedTab = "Services"
+    @State private var selectedTab = "Engines"
     var appController: AppController?
     var initialServiceURL: String?
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            GeneralSettingsView(appController: appController)
-                .tabItem {
-                    Label("General", systemImage: "gear")
-                }
-                .tag("General")
-            
             ServicesSettingsView(appController: appController,
                                  initialServiceURL: initialServiceURL)
             .tabItem {
-                Label("Services", systemImage: "list.bullet")
+                Label("Engines", systemImage: "list.bullet")
             }
-            .tag("Services")
+            .tag("Engines")
             
             KeyBindingsSettingsView()
                 .tabItem {
                     Label("Shortcuts", systemImage: "keyboard")
                 }
                 .tag("Shortcuts")
+
+            GeneralSettingsView(appController: appController)
+                .tabItem {
+                    Label("General", systemImage: "gear")
+                }
+                .tag("General")
         }
         .frame(minWidth: 600, minHeight: 400)
     }
