@@ -2,6 +2,7 @@ import AppKit
 import Carbon
 
 enum ShortcutValidator {
+    @MainActor
     static func allows(configuration: HotkeyManager.Configuration) -> Bool {
         let modifiers = NSEvent.ModifierFlags(rawValue: configuration.modifierFlags)
         let primary = modifiers.intersection([.command, .option, .control, .shift])
@@ -11,41 +12,54 @@ enum ShortcutValidator {
             return isFunctionKey(keyCode)
         }
 
-        return !isReservedActionShortcut(modifiers: primary, keyCode: keyCode)
+        return reservedActionName(modifiers: primary, keyCode: keyCode) == nil
+    }
+    
+    static func hasRequiredModifiers(modifiers: NSEvent.ModifierFlags, keyCode: UInt16) -> Bool {
+        let primary = modifiers.intersection([.command, .option, .control, .shift])
+        if primary.isEmpty {
+            return isFunctionKey(keyCode)
+        }
+        return true
     }
 
-    static func isReservedActionShortcut(modifiers rawModifiers: NSEvent.ModifierFlags, keyCode: UInt16) -> Bool {
+    @MainActor
+    static func reservedActionName(modifiers rawModifiers: NSEvent.ModifierFlags, keyCode: UInt16) -> String? {
         let modifiers = rawModifiers.intersection([.command, .option, .control, .shift])
-        guard modifiers.contains(.command) else { return false }
+        guard modifiers.contains(.command) else { return nil }
 
         if isDigitKey(keyCode) {
-            return true
+            let config = HotkeyManager.Configuration(keyCode: UInt32(keyCode), modifierFlags: modifiers.rawValue)
+            if let name = Settings.shared.getReservedActionName(for: config) {
+                return name
+            }
+            return "Session or Engine Switching"
         }
         if keyCode == UInt16(kVK_ANSI_Comma) { // Settings
-            return true
+            return "Settings"
         }
         if keyCode == UInt16(kVK_ANSI_I) && modifiers.contains(.option) { // Inspector
-            return true
+            return "Inspector"
         }
         if keyCode == UInt16(kVK_ANSI_Slash) && modifiers.contains(.shift) { // Shortcut help
-            return true
+            return "Shortcut Help"
         }
         if keyCode == UInt16(kVK_ANSI_M) && modifiers.contains(.option) { // minimize overlay e.g.
-            return true
+            return "Minimize Overlay"
         }
         if keyCode == UInt16(kVK_ANSI_Q) && modifiers.contains(.control) { // quit
-            return true
+            return "Quit"
         }
         if keyCode == UInt16(kVK_ANSI_Equal) || keyCode == UInt16(kVK_ANSI_KeypadPlus) { // Zoom in
-            return true
+            return "Zoom In"
         }
         if keyCode == UInt16(kVK_ANSI_Minus) || keyCode == UInt16(kVK_ANSI_KeypadMinus) { // Zoom out
-            return true
+            return "Zoom Out"
         }
-        return false
+        return nil
     }
 
-    private static func isDigitKey(_ keyCode: UInt16) -> Bool {
+    static func isDigitKey(_ keyCode: UInt16) -> Bool {
         return topRowDigits.contains(keyCode) || keypadDigits.contains(keyCode)
     }
 

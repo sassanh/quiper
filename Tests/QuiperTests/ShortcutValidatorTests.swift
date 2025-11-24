@@ -2,16 +2,17 @@ import XCTest
 @testable import Quiper
 import Carbon
 
+@MainActor
 final class ShortcutValidatorTests: XCTestCase {
-    func testAllowsRejectsWhenNoPrimaryModifier() {
+    func testRejectsDigitWithoutModifiers() {
         let config = HotkeyManager.Configuration(
-            keyCode: UInt32(kVK_ANSI_A),
+            keyCode: UInt32(kVK_ANSI_1),
             modifierFlags: 0
         )
         XCTAssertFalse(ShortcutValidator.allows(configuration: config))
     }
 
-    func testAllowsRejectsReservedDigitShortcut() {
+    func testRejectsCommandDigit() {
         let config = HotkeyManager.Configuration(
             keyCode: UInt32(kVK_ANSI_1),
             modifierFlags: NSEvent.ModifierFlags.command.rawValue
@@ -19,9 +20,9 @@ final class ShortcutValidatorTests: XCTestCase {
         XCTAssertFalse(ShortcutValidator.allows(configuration: config))
     }
 
-    func testAllowsAcceptsNonReservedCombo() {
+    func testAllowsCommandOptionLetter() {
         let config = HotkeyManager.Configuration(
-            keyCode: UInt32(kVK_ANSI_B),
+            keyCode: UInt32(kVK_ANSI_A),
             modifierFlags: NSEvent.ModifierFlags.command.union(.option).rawValue
         )
         XCTAssertTrue(ShortcutValidator.allows(configuration: config))
@@ -29,20 +30,20 @@ final class ShortcutValidatorTests: XCTestCase {
 
     func testReservedInspectorRequiresOption() {
         // cmd+option+I is reserved
-        XCTAssertTrue(ShortcutValidator.isReservedActionShortcut(
+        XCTAssertNotNil(ShortcutValidator.reservedActionName(
             modifiers: [.command, .option],
             keyCode: UInt16(kVK_ANSI_I)
         ))
 
         // cmd+I alone is not reserved
-        XCTAssertFalse(ShortcutValidator.isReservedActionShortcut(
+        XCTAssertNil(ShortcutValidator.reservedActionName(
             modifiers: [.command],
             keyCode: UInt16(kVK_ANSI_I)
         ))
     }
 
     func testReservedKeypadDigitIsDetected() {
-        XCTAssertTrue(ShortcutValidator.isReservedActionShortcut(
+        XCTAssertNotNil(ShortcutValidator.reservedActionName(
             modifiers: [.command],
             keyCode: UInt16(kVK_ANSI_Keypad5)
         ))

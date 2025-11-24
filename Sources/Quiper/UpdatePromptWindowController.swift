@@ -15,7 +15,7 @@ final class UpdatePromptWindowController: NSWindowController {
                              backing: .buffered,
                              defer: false)
         window.isReleasedWhenClosed = false
-        window.level = .floating
+        window.level = .modalPanel
         window.center()
         super.init(window: window)
     }

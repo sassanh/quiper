@@ -3,10 +3,12 @@ import Foundation
 import WebKit
 import SwiftUI
 import UserNotifications
+import Carbon
 
 extension Notification.Name {
     static let inspectorVisibilityChanged = Notification.Name("InspectorVisibilityChanged")
     static let showSettings = Notification.Name("QuiperShowSettings")
+    static let startGlobalHotkeyCapture = Notification.Name("QuiperStartGlobalHotkeyCapture")
 }
 
 @MainActor
@@ -16,6 +18,7 @@ final class AppController: NSObject, NSWindowDelegate {
     private let windowController = MainWindowController()
 
     private let hotkeyManager = HotkeyManager()
+    private let engineHotkeyManager = EngineHotkeyManager()
     private let customActionDispatcher = CustomActionShortcutDispatcher()
     private var lastNonQuiperApplication: NSRunningApplication?
 
@@ -45,6 +48,7 @@ final class AppController: NSObject, NSWindowDelegate {
     func start() {
 
         registerOverlayHotkey()
+        registerEngineHotkeys()
         UpdateManager.shared.handleLaunchIfNeeded()
 
     }
@@ -134,21 +138,8 @@ final class AppController: NSObject, NSWindowDelegate {
 
     @objc func setHotkey(_ sender: Any?) {
 
-        if windowController.window?.isVisible != true {
-
-            showWindow(nil)
-
-        }
-
-        hotkeyManager.beginCapture(from: windowController.window) { result in
-
-            if case .failure(let error) = result {
-
-                NSLog("[Quiper] Failed to set hotkey: \(error.localizedDescription)")
-
-            }
-
-        }
+        presentSettingsWindow()
+        NotificationCenter.default.post(name: .startGlobalHotkeyCapture, object: nil)
 
     }
 
@@ -189,7 +180,12 @@ final class AppController: NSObject, NSWindowDelegate {
     func reloadServices() {
 
         windowController.reloadServices()
+        registerEngineHotkeys()
 
+    }
+
+    func updateOverlayHotkey(_ configuration: HotkeyManager.Configuration) {
+        hotkeyManager.updateConfiguration(configuration)
     }
 
 
@@ -287,19 +283,84 @@ final class AppController: NSObject, NSWindowDelegate {
         focusMainWindowIfVisible()
     }
 
-
-
-
-
     private func registerOverlayHotkey() {
         hotkeyManager.registerCurrentHotkey { [weak self] in
             guard let self else { return }
+            if AppDelegate.sharedSettingsWindow.isVisible && AppDelegate.sharedSettingsWindow.isKeyWindow {
+                return
+            }
             if self.windowController.window?.isVisible == true {
                 self.hideWindow(nil)
             } else {
                 self.showWindow(nil)
             }
         }
+    }
+
+    private func registerEngineHotkeys() {
+        let overlayHotkey = Settings.shared.hotkeyConfiguration
+        var blockedHotkeys: [HotkeyManager.Configuration] = [overlayHotkey]
+        if isRunningInXcode, HotkeyManager.defaultConfiguration == overlayHotkey {
+            // Xcode fallback registers Ctrl+Space; keep engine hotkeys off it.
+            blockedHotkeys.append(
+                HotkeyManager.Configuration(
+                    keyCode: UInt32(kVK_Space),
+                    modifierFlags: NSEvent.ModifierFlags.control.rawValue
+                )
+            )
+        }
+
+        let entries: [EngineHotkeyManager.Entry] = Settings.shared.services.compactMap { service in
+            guard let shortcut = service.activationShortcut,
+                  isBlocked(shortcut, blockedHotkeys: blockedHotkeys) == false else { return nil }
+            return EngineHotkeyManager.Entry(serviceID: service.id, configuration: shortcut)
+        }
+        guard !entries.isEmpty else {
+            engineHotkeyManager.disable()
+            return
+        }
+        engineHotkeyManager.register(entries: entries) { [weak self] serviceID in
+            if AppDelegate.sharedSettingsWindow.isVisible && AppDelegate.sharedSettingsWindow.isKeyWindow {
+                return
+            }
+            self?.activateService(for: serviceID)
+        }
+    }
+
+    private func activateService(for serviceID: UUID) {
+        guard let index = Settings.shared.services.firstIndex(where: { $0.id == serviceID }) else {
+            engineHotkeyManager.unregister(serviceID: serviceID)
+            return
+        }
+        showWindow(nil)
+        windowController.selectService(at: index)
+        windowController.focusInputInActiveWebview()
+    }
+
+    private func isBlocked(_ configuration: HotkeyManager.Configuration,
+                           blockedHotkeys: [HotkeyManager.Configuration]) -> Bool {
+        let normalizedModifiers = NSEvent.ModifierFlags(rawValue: configuration.modifierFlags)
+            .intersection([.command, .option, .control, .shift]).rawValue
+        return blockedHotkeys.contains {
+            $0.keyCode == configuration.keyCode &&
+            NSEvent.ModifierFlags(rawValue: $0.modifierFlags)
+                .intersection([.command, .option, .control, .shift]).rawValue == normalizedModifiers
+        }
+    }
+
+    private var isRunningInXcode: Bool {
+        if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] != nil {
+            return true
+        }
+        if let serviceName = ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"],
+           serviceName.contains("com.apple.dt.Xcode") {
+            return true
+        }
+        let bundlePath = Bundle.main.bundlePath
+        if bundlePath.contains("/DerivedData/") {
+            return true
+        }
+        return false
     }
 
     @objc private func handleShowSettingsNotification() {

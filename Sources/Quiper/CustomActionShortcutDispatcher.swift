@@ -30,11 +30,17 @@ final class CustomActionShortcutDispatcher {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         let configuration = HotkeyManager.Configuration(keyCode: UInt32(event.keyCode), modifierFlags: modifiers.rawValue)
         guard ShortcutValidator.allows(configuration: configuration) else { return false }
-        guard let controller = windowController,
-              let action = settings.customActions.first(where: { action in
+        guard let action = settings.customActions.first(where: { action in
             guard let shortcut = action.shortcut else { return false }
             return shortcut.keyCode == configuration.keyCode && shortcut.modifierFlags == configuration.modifierFlags
         }) else { return false }
+        
+        if ShortcutRecordingState.isRecording {
+            NotificationCenter.default.post(name: .shortcutRecordingDidTriggerReserved, object: configuration)
+            return true
+        }
+        
+        guard let controller = windowController else { return false }
         controller.focusInputInActiveWebview()
         controller.logCustomAction(action)
         return true

@@ -4,15 +4,11 @@ import Carbon
 
 struct KeyBindingsSettingsView: View {
     @ObservedObject private var settings = Settings.shared
-    @State private var captureMessage: String = "Waiting for key press…"
-    @State private var captureSession: ShortcutCaptureSession?
+    @EnvironmentObject var shortcutState: ShortcutRecordingState
     @State private var pendingDeletion: PendingDeletion?
-    @State private var captureTarget: CaptureTarget?
-    @State private var modifierMonitor: Any?
 
     var body: some View {
-        ZStack {
-            VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 16) {
                 List {
                     Section("Actions") {
                         ForEach(Array(settings.customActions.indices), id: \.self) { index in
@@ -34,6 +30,8 @@ struct KeyBindingsSettingsView: View {
                                 alternateValue: settings.appShortcutBindings.alternateConfiguration(for: key).map { ShortcutFormatter.string(for: $0) } ?? "Disabled",
                                 onRecordPrimary: { recordAppShortcut(key, slot: .primary) },
                                 onRecordAlternate: { recordAppShortcut(key, slot: .alternate) },
+                                onClearPrimary: { clearPrimaryAppShortcut(key) },
+                                onClearAlternate: { clearAlternateAppShortcut(key) },
                                 onResetPrimary: { resetPrimaryAppShortcut(key) },
                                 onResetAlternate: { resetAlternateAppShortcut(key) }
                             )
@@ -46,6 +44,8 @@ struct KeyBindingsSettingsView: View {
                             alternateValue: modifierDisplay(rawModifiers: settings.appShortcutBindings.sessionDigitsAlternateModifiers, digitLabel: "1–0"),
                             onRecordPrimary: { recordModifierCapture(.sessionDigits, slot: .primary) },
                             onRecordAlternate: { recordModifierCapture(.sessionDigits, slot: .alternate) },
+                            onClearPrimary: { clearModifier(.sessionDigits) },
+                            onClearAlternate: { clearAlternateModifier(.sessionDigits) },
                             onResetPrimary: { resetModifier(.sessionDigits) },
                             onResetAlternate: { resetAlternateModifier(.sessionDigits) }
                         )
@@ -57,14 +57,12 @@ struct KeyBindingsSettingsView: View {
                             alternateValue: modifierDisplay(rawModifiers: settings.appShortcutBindings.serviceDigitsSecondaryModifiers, digitLabel: "1–0"),
                             onRecordPrimary: { recordModifierCapture(.serviceDigitsPrimary, slot: .primary) },
                             onRecordAlternate: { recordModifierCapture(.serviceDigitsSecondary, slot: .alternate) },
+                            onClearPrimary: { clearModifier(.serviceDigitsPrimary) },
+                            onClearAlternate: { clearAlternateModifier(.serviceDigitsSecondary) },
                             onResetPrimary: { resetModifier(.serviceDigitsPrimary) },
                             onResetAlternate: { resetAlternateModifier(.serviceDigitsSecondary) }
                         )
                     }
-                }
-            }
-            if captureTarget != nil {
-                ShortcutCaptureOverlayView(message: captureMessage, onCancel: cancelCapture)
             }
         }
         .padding()
@@ -105,18 +103,23 @@ struct KeyBindingsSettingsView: View {
     }
 
     private func recordShortcut(for id: UUID) {
-        captureTarget = .customAction(id)
-        captureMessage = "Waiting for key press…"
-        captureSession = ShortcutCaptureSession(onUpdate: { text in
-            captureMessage = text
+        let session = StandardShortcutSession(onUpdate: { update in
+            shortcutState.updateMessage(update)
+        }, onFinish: {
+            shortcutState.cancel()
+        }, additionalValidation: { event in
+            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            if let name = ShortcutValidator.reservedActionName(modifiers: modifiers, keyCode: event.keyCode) {
+                return "Shortcut reserved for \(name)"
+            }
+            return nil
         }, completion: { configuration in
             if let configuration, let index = settings.customActions.firstIndex(where: { $0.id == id }) {
                 settings.customActions[index].shortcut = configuration
                 settings.saveSettings()
             }
-            captureTarget = nil
-            captureSession = nil
         })
+        shortcutState.start(session: session)
     }
 
     private func clearShortcut(for id: UUID) {
@@ -127,10 +130,10 @@ struct KeyBindingsSettingsView: View {
     }
 
     private func recordAppShortcut(_ key: AppShortcutBindings.Key, slot: CaptureSlot) {
-        captureTarget = .appShortcut(key, slot)
-        captureMessage = "Press the new shortcut"
-        captureSession = ShortcutCaptureSession(onUpdate: { text in
-            captureMessage = text
+        let session = StandardShortcutSession(onUpdate: { update in
+            shortcutState.updateMessage(update)
+        }, onFinish: {
+            shortcutState.cancel()
         }, completion: { configuration in
             if let configuration {
                 switch slot {
@@ -141,9 +144,8 @@ struct KeyBindingsSettingsView: View {
                 }
                 settings.saveSettings()
             }
-            captureTarget = nil
-            captureSession = nil
         })
+        shortcutState.start(session: session)
     }
 
     private func resetPrimaryAppShortcut(_ key: AppShortcutBindings.Key) {
@@ -156,47 +158,46 @@ struct KeyBindingsSettingsView: View {
         settings.appShortcutBindings.setAlternateConfiguration(defaultAlt, for: key)
         settings.saveSettings()
     }
+    
+    private func clearPrimaryAppShortcut(_ key: AppShortcutBindings.Key) {
+        settings.appShortcutBindings.setConfiguration(HotkeyManager.Configuration(keyCode: 0, modifierFlags: 0), for: key)
+        settings.saveSettings()
+    }
+    
+    private func clearAlternateAppShortcut(_ key: AppShortcutBindings.Key) {
+        settings.appShortcutBindings.setAlternateConfiguration(nil, for: key)
+        settings.saveSettings()
+    }
 
     private func recordModifierCapture(_ group: AppShortcutBindings.ModifierGroup, slot: CaptureSlot) {
-        captureTarget = .modifierGroup(group, slot)
-        captureMessage = "Press modifier + digit (1–0)"
-        modifierMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == UInt16(kVK_Escape) {
-                endModifierCapture()
-                return nil
-            }
-            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            let keyCode = UInt16(event.keyCode)
-            guard isDigitKey(keyCode), !modifiers.isEmpty else {
-                NSSound.beep()
-                captureMessage = "Use modifiers with digits 0–9"
-                return nil
-            }
-
+        let session = ModifierCaptureSession(onUpdate: { update in
+            shortcutState.updateMessage(update)
+        }, onFinish: {
+            shortcutState.cancel()
+        }, completion: { modifiers, keyCode in
             switch group {
             case .sessionDigits:
                 if slot == .primary {
-                    settings.appShortcutBindings.sessionDigitsModifiers = modifiers.rawValue
+                    settings.appShortcutBindings.sessionDigitsModifiers = modifiers
                 } else {
-                    settings.appShortcutBindings.sessionDigitsAlternateModifiers = modifiers.rawValue
+                    settings.appShortcutBindings.sessionDigitsAlternateModifiers = modifiers
                 }
             case .serviceDigitsPrimary:
                 if slot == .primary {
-                    settings.appShortcutBindings.serviceDigitsPrimaryModifiers = modifiers.rawValue
+                    settings.appShortcutBindings.serviceDigitsPrimaryModifiers = modifiers
                 } else {
-                    settings.appShortcutBindings.serviceDigitsSecondaryModifiers = modifiers.rawValue
+                    settings.appShortcutBindings.serviceDigitsSecondaryModifiers = modifiers
                 }
             case .serviceDigitsSecondary:
                 if slot == .primary {
-                    settings.appShortcutBindings.serviceDigitsPrimaryModifiers = modifiers.rawValue
+                    settings.appShortcutBindings.serviceDigitsPrimaryModifiers = modifiers
                 } else {
-                    settings.appShortcutBindings.serviceDigitsSecondaryModifiers = modifiers.rawValue
+                    settings.appShortcutBindings.serviceDigitsSecondaryModifiers = modifiers
                 }
             }
             settings.saveSettings()
-            endModifierCapture()
-            return nil
-        }
+        })
+        shortcutState.start(session: session)
     }
 
     private func resetModifier(_ group: AppShortcutBindings.ModifierGroup) {
@@ -214,27 +215,40 @@ struct KeyBindingsSettingsView: View {
     private func resetAlternateModifier(_ group: AppShortcutBindings.ModifierGroup) {
         switch group {
         case .sessionDigits:
+            settings.appShortcutBindings.sessionDigitsAlternateModifiers = AppShortcutBindings.defaults.sessionDigitsAlternateModifiers
+        case .serviceDigitsPrimary:
+            settings.appShortcutBindings.serviceDigitsSecondaryModifiers = AppShortcutBindings.defaults.serviceDigitsSecondaryModifiers
+        case .serviceDigitsSecondary:
+            settings.appShortcutBindings.serviceDigitsSecondaryModifiers = AppShortcutBindings.defaults.serviceDigitsSecondaryModifiers
+        }
+        settings.saveSettings()
+    }
+    
+    private func clearModifier(_ group: AppShortcutBindings.ModifierGroup) {
+        switch group {
+        case .sessionDigits:
+            settings.appShortcutBindings.sessionDigitsModifiers = 0
+        case .serviceDigitsPrimary:
+            settings.appShortcutBindings.serviceDigitsPrimaryModifiers = 0
+        case .serviceDigitsSecondary:
+            settings.appShortcutBindings.serviceDigitsSecondaryModifiers = 0
+        }
+        settings.saveSettings()
+    }
+    
+    private func clearAlternateModifier(_ group: AppShortcutBindings.ModifierGroup) {
+        switch group {
+        case .sessionDigits:
             settings.appShortcutBindings.sessionDigitsAlternateModifiers = nil
-        case .serviceDigitsPrimary, .serviceDigitsSecondary:
+        case .serviceDigitsPrimary:
+            settings.appShortcutBindings.serviceDigitsSecondaryModifiers = nil
+        case .serviceDigitsSecondary:
             settings.appShortcutBindings.serviceDigitsSecondaryModifiers = nil
         }
         settings.saveSettings()
     }
 
-    private func endModifierCapture() {
-        if let monitor = modifierMonitor {
-            NSEvent.removeMonitor(monitor)
-            modifierMonitor = nil
-        }
-        captureTarget = nil
-    }
 
-    private func cancelCapture() {
-        captureSession?.cancel()
-        captureSession = nil
-        endModifierCapture()
-        captureTarget = nil
-    }
 
     private func title(for key: AppShortcutBindings.Key) -> String {
         switch key {
@@ -271,11 +285,7 @@ struct KeyBindingsSettingsView: View {
     }
 }
 
-private enum CaptureTarget: Equatable {
-    case customAction(UUID)
-    case appShortcut(AppShortcutBindings.Key, CaptureSlot)
-    case modifierGroup(AppShortcutBindings.ModifierGroup, CaptureSlot)
-}
+
 
 private enum CaptureSlot {
     case primary
@@ -289,6 +299,8 @@ private struct AppShortcutRow: View {
     let alternateValue: String
     var onRecordPrimary: () -> Void
     var onRecordAlternate: () -> Void
+    var onClearPrimary: () -> Void
+    var onClearAlternate: () -> Void
     var onResetPrimary: () -> Void
     var onResetAlternate: () -> Void
 
@@ -304,18 +316,20 @@ private struct AppShortcutRow: View {
             .frame(width: 220, alignment: .leading)
             Spacer()
             HStack(alignment: .top, spacing: 20) {
-                LabeledBadge(
+                LabeledShortcutButton(
                     label: "Primary",
                     text: primaryValue,
                     isPlaceholder: false,
                     onTap: onRecordPrimary,
+                    onClear: onClearPrimary,
                     onReset: onResetPrimary
                 )
-                LabeledBadge(
+                LabeledShortcutButton(
                     label: "Alternate",
                     text: alternateValue,
                     isPlaceholder: alternateValue == "Disabled",
                     onTap: onRecordAlternate,
+                    onClear: onClearAlternate,
                     onReset: onResetAlternate
                 )
             }
@@ -331,6 +345,8 @@ private struct DigitModifierRow: View {
     let alternateValue: String
     var onRecordPrimary: () -> Void
     var onRecordAlternate: () -> Void
+    var onClearPrimary: () -> Void
+    var onClearAlternate: () -> Void
     var onResetPrimary: () -> Void
     var onResetAlternate: () -> Void
 
@@ -346,18 +362,20 @@ private struct DigitModifierRow: View {
             .frame(width: 220, alignment: .leading)
             Spacer()
             HStack(alignment: .top, spacing: 20) {
-                LabeledBadge(
+                LabeledShortcutButton(
                     label: "Primary",
                     text: primaryValue,
                     isPlaceholder: primaryValue == "Disabled",
                     onTap: onRecordPrimary,
+                    onClear: onClearPrimary,
                     onReset: onResetPrimary
                 )
-                LabeledBadge(
+                LabeledShortcutButton(
                     label: "Alternate",
                     text: alternateValue,
                     isPlaceholder: alternateValue == "Disabled",
                     onTap: onRecordAlternate,
+                    onClear: onClearAlternate,
                     onReset: onResetAlternate
                 )
             }
@@ -366,70 +384,7 @@ private struct DigitModifierRow: View {
     }
 }
 
-private struct ShortcutBadge: View {
-    var text: String
-    var isPlaceholder: Bool = false
-    var onTap: () -> Void
-    var onReset: () -> Void
-    var width: CGFloat
 
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(.quaternary)
-                .frame(width: width, height: 30)
-            Text(text)
-                .font(.system(.body, design: .monospaced))
-                .foregroundStyle(isPlaceholder ? .secondary : .primary)
-                .frame(width: width - 28, alignment: .center) // leave space for reset icon
-
-            HStack {
-                Spacer()
-                Button {
-                    onReset()
-                } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .padding(6)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, 6)
-                .padding(.top, 2)
-            }
-            .frame(width: width, height: 30, alignment: .topTrailing)
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 10))
-        .onTapGesture {
-            onTap()
-        }
-    }
-}
-
-private struct LabeledBadge: View {
-    var label: String
-    var text: String
-    var isPlaceholder: Bool
-    var onTap: () -> Void
-    var onReset: () -> Void
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .center)
-            ShortcutBadge(
-                text: text,
-                isPlaceholder: isPlaceholder,
-                onTap: onTap,
-                onReset: onReset,
-                width: 180
-            )
-        }
-    }
-}
 
 private enum ShortcutValidatorIsDigitKey {
     static let keyCodes: Set<UInt16> = [
@@ -453,25 +408,14 @@ private struct ActionRow: View {
         HStack(spacing: 12) {
             TextField("Action name", text: $action.name)
             Spacer()
-            Button(action: onRecord) {
-                Text(action.shortcut.map { ShortcutFormatter.string(for: $0) } ?? "Record Shortcut")
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minWidth: 140, alignment: .center)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.bordered)
-            .overlay(alignment: .trailing) {
-                if action.shortcut != nil {
-                    Button(action: onClear) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.secondary)
-                            .padding(.trailing, 6)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Remove the recorded shortcut but keep the action")
-                }
-            }
+            ShortcutButton(
+                text: action.shortcut.map { ShortcutFormatter.string(for: $0) } ?? "Record Shortcut",
+                isPlaceholder: action.shortcut == nil,
+                onTap: onRecord,
+                onClear: action.shortcut != nil ? onClear : nil,
+                onReset: nil,
+                width: 160
+            )
 
             Button(role: .destructive, action: onDelete) {
                 Image(systemName: "trash")
@@ -492,73 +436,58 @@ private struct PendingDeletion: Identifiable {
     }
 }
 
-private struct ShortcutCaptureOverlayView: View {
-    var message: String
-    var onCancel: () -> Void
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.45).ignoresSafeArea()
-            VStack(spacing: 16) {
-                Text("Press the new shortcut")
-                    .font(.headline)
-                Text(message)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Button("Cancel", action: onCancel)
-            }
-            .padding(32)
-            .background(.ultraThinMaterial)
-            .cornerRadius(18)
-        }
-    }
-}
-
-private final class ShortcutCaptureSession {
+private final class ModifierCaptureSession: CancellableSession {
     private var monitor: Any?
     private let onUpdate: (String) -> Void
-    private let completion: (HotkeyManager.Configuration?) -> Void
+    private let onFinish: () -> Void
+    private let completion: (UInt, UInt16) -> Void
 
-    init(onUpdate: @escaping (String) -> Void, completion: @escaping (HotkeyManager.Configuration?) -> Void) {
+    init(onUpdate: @escaping (String) -> Void, onFinish: @escaping () -> Void, completion: @escaping (UInt, UInt16) -> Void) {
         self.onUpdate = onUpdate
+        self.onFinish = onFinish
         self.completion = completion
+        self.onUpdate("Press modifier + digit (1–0)")
         attachKeyMonitor()
     }
 
     func cancel() {
-        finish(nil)
+        finish(nil, nil)
     }
 
     private func attachKeyMonitor() {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             if event.keyCode == UInt16(kVK_Escape) {
-                self.finish(nil)
+                self.finish(nil, nil)
                 return nil
             }
             let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            if ShortcutValidator.isReservedActionShortcut(modifiers: modifiers, keyCode: event.keyCode) {
+            let keyCode = UInt16(event.keyCode)
+            
+            guard ShortcutValidatorIsDigitKey.keyCodes.contains(keyCode), !modifiers.isEmpty else {
                 NSSound.beep()
-                self.onUpdate("Shortcut reserved by Quiper")
+                self.onUpdate("Use modifiers with digits 0–9")
                 return nil
             }
-            let configuration = HotkeyManager.Configuration(keyCode: UInt32(event.keyCode), modifierFlags: modifiers.rawValue)
-            guard ShortcutValidator.allows(configuration: configuration) else {
-                NSSound.beep()
-                self.onUpdate("Shortcut must include Command/Option/Control/Shift unless using F1-F20")
-                return nil
-            }
-            self.onUpdate(ShortcutFormatter.string(for: modifiers, keyCode: event.keyCode, characters: event.charactersIgnoringModifiers))
-            self.finish(configuration)
+            
+            self.finish(modifiers.rawValue, keyCode)
             return nil
         }
     }
 
-    private func finish(_ configuration: HotkeyManager.Configuration?) {
+    private var isFinished = false
+
+    private func finish(_ modifiers: UInt?, _ keyCode: UInt16?) {
+        guard !isFinished else { return }
+        isFinished = true
+        
         if let monitor {
             NSEvent.removeMonitor(monitor)
             self.monitor = nil
         }
-        completion(configuration)
+        if let modifiers, let keyCode {
+            completion(modifiers, keyCode)
+        }
+        onFinish()
     }
 }

@@ -1,9 +1,12 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import Foundation
+import Carbon
+import AppKit
 
 struct SettingsView: View {
     @State private var selectedTab = "Engines"
+    @StateObject private var shortcutState = ShortcutRecordingState()
     var appController: AppController?
     var initialServiceURL: String?
     
@@ -29,6 +32,11 @@ struct SettingsView: View {
                 .tag("General")
         }
         .frame(minWidth: 600, minHeight: 400)
+        .onReceive(NotificationCenter.default.publisher(for: .startGlobalHotkeyCapture)) { _ in
+            selectedTab = "General"
+        }
+        .environmentObject(shortcutState)
+        .overlay { ShortcutRecordingOverlay(state: shortcutState) }
     }
 }
 
@@ -38,6 +46,9 @@ struct GeneralSettingsView: View {
     private let versionDescription = Bundle.main.versionDisplayString
     @ObservedObject private var settings = Settings.shared
     @ObservedObject private var updater = UpdateManager.shared
+
+    @EnvironmentObject var shortcutState: ShortcutRecordingState
+    @State private var globalHotkeyStatus = ""
     @State private var showClearWebConfirmation = false
     @State private var showEraseEnginesConfirmation = false
     @State private var showEraseActionsConfirmation = false
@@ -45,6 +56,28 @@ struct GeneralSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                SettingsSection(title: "Global Shortcut") {
+                    SettingsRow(
+                        title: "Show/Hide Quiper",
+                        message: "Defaults to ⌥Space. When running inside Xcode, ⌃Space also works for convenience."
+                    ) {
+                        ShortcutButton(
+                            text: currentGlobalHotkeyLabel,
+                            isPlaceholder: false,
+                            onTap: startGlobalHotkeyCapture,
+                            onClear: clearGlobalHotkey,
+                            onReset: resetGlobalHotkey,
+                            width: 200
+                        )
+                    }
+                    if !globalHotkeyStatus.isEmpty {
+                        Text(globalHotkeyStatus)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                    }
+                }
+
                 SettingsSection(title: "Startup") {
                     SettingsToggleRow(
                         title: "Launch at login",
@@ -144,8 +177,12 @@ struct GeneralSettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
+        .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             launchAtLogin = Launcher.isInstalledAtLogin()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .startGlobalHotkeyCapture)) { _ in
+            startGlobalHotkeyCapture()
         }
         .alert("Clear saved web data?", isPresented: $showClearWebConfirmation) {
             Button("Clear", role: .destructive) {
@@ -195,6 +232,48 @@ struct GeneralSettingsView: View {
             }
         )
     }
+
+    private var currentGlobalHotkeyLabel: String {
+        ShortcutFormatter.string(for: settings.hotkeyConfiguration)
+    }
+
+    private func startGlobalHotkeyCapture() {
+        let session = StandardShortcutSession(onUpdate: { update in
+            shortcutState.updateMessage(update)
+        }, onFinish: {
+            shortcutState.cancel()
+        }, completion: { configuration in
+            if let configuration {
+                settings.hotkeyConfiguration = configuration
+                settings.saveSettings()
+                appController?.updateOverlayHotkey(configuration)
+                globalHotkeyStatus = "Saved as \(ShortcutFormatter.string(for: configuration))"
+            } else {
+                globalHotkeyStatus = ""
+            }
+        })
+        shortcutState.start(session: session)
+    }
+
+    private func cancelGlobalHotkeyCapture() {
+        shortcutState.cancel()
+        globalHotkeyStatus = ""
+    }
+
+    private func resetGlobalHotkey() {
+        let configuration = HotkeyManager.defaultConfiguration
+        settings.hotkeyConfiguration = configuration
+        settings.saveSettings()
+        appController?.updateOverlayHotkey(configuration)
+        globalHotkeyStatus = "Reset to ⌥Space"
+    }
+    
+    private func clearGlobalHotkey() {
+        settings.hotkeyConfiguration = HotkeyManager.Configuration(keyCode: 0, modifierFlags: 0)
+        settings.saveSettings()
+        appController?.updateOverlayHotkey(settings.hotkeyConfiguration)
+        globalHotkeyStatus = "Cleared"
+    }
     
     private func clearWebData() {
         appController?.clearWebViewData(nil)
@@ -243,74 +322,9 @@ struct ServicesSettingsView: View {
     
     var body: some View {
         HStack(spacing: 0) {
-            List(selection: $selectedServiceID) {
-                ForEach(settings.services) { service in
-                    HStack {
-                        Image(systemName: "globe")
-                        Text(service.name)
-                    }
-                    .tag(service.id)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        selectedServiceID = service.id
-                    }
-                }
-                .onDelete(perform: requestRemoveServices)
-                .onMove(perform: moveServices)
-            }
-            .listStyle(SidebarListStyle())
-            .frame(minWidth: 220, maxWidth: 260)
-            .toolbar {
-                ToolbarItemGroup {
-                    Menu {
-                        Button("Blank Service") {
-                            addService()
-                        }
-                        if !settings.defaultServiceTemplates.isEmpty {
-                            Divider()
-                            ForEach(settings.defaultServiceTemplates) { template in
-                                Button(template.name) {
-                                    addService(from: template)
-                                }
-                            }
-                            Divider()
-                            Button {
-                                addAllTemplates()
-                            } label: {
-                                Label("Add All Templates", systemImage: "plus.rectangle.on.rectangle")
-                            }
-                        }
-                    } label: {
-                        Label("Add Service", systemImage: "plus")
-                    }
-                    .help("Create a blank service or add one from templates")
-                    
-                    Button(role: .destructive, action: deleteSelectedService) {
-                        Label("Delete Service", systemImage: "trash")
-                    }
-                    .disabled(selectedServiceID == nil)
-                }
-            }
-            
+            serviceList
             Divider()
-            
-            Group {
-                if let binding = bindingForSelectedService() {
-                    ServiceDetailView(service: binding,
-                                      appController: appController,
-                                      selectedServiceID: $selectedServiceID,
-                                      requestDelete: { service in
-                        confirmServiceDeletion(ids: [service.id])
-                    })
-                } else {
-                    VStack {
-                        Text("Select a service")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            serviceDetail
         }
         .alert(item: $pendingServiceDeletion) { pending in
             Alert(
@@ -337,6 +351,78 @@ struct ServicesSettingsView: View {
             settings.saveSettings()
             appController?.reloadServices()
         }
+    }
+
+    private var serviceList: some View {
+        List(selection: $selectedServiceID) {
+            ForEach(settings.services) { service in
+                HStack {
+                    Image(systemName: "globe")
+                    Text(service.name)
+                }
+                .tag(service.id)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectedServiceID = service.id
+                }
+            }
+            .onDelete(perform: requestRemoveServices)
+            .onMove(perform: moveServices)
+        }
+        .listStyle(SidebarListStyle())
+        .frame(minWidth: 220, maxWidth: 260)
+        .toolbar {
+            ToolbarItemGroup {
+                Menu {
+                    Button("Blank Service") {
+                        addService()
+                    }
+                    if !settings.defaultServiceTemplates.isEmpty {
+                        Divider()
+                        ForEach(settings.defaultServiceTemplates) { template in
+                            Button(template.name) {
+                                addService(from: template)
+                            }
+                        }
+                        Divider()
+                        Button {
+                            addAllTemplates()
+                        } label: {
+                            Label("Add All Templates", systemImage: "plus.rectangle.on.rectangle")
+                        }
+                    }
+                } label: {
+                    Label("Add Service", systemImage: "plus")
+                }
+                .help("Create a blank service or add one from templates")
+                
+                Button(role: .destructive, action: deleteSelectedService) {
+                    Label("Delete Service", systemImage: "trash")
+                }
+                .disabled(selectedServiceID == nil)
+            }
+        }
+    }
+
+    private var serviceDetail: some View {
+        Group {
+            if let binding = bindingForSelectedService() {
+                ServiceDetailView(service: binding,
+                                  appController: appController,
+                                  selectedServiceID: $selectedServiceID,
+                                  requestDelete: { service in
+                    confirmServiceDeletion(ids: [service.id])
+                })
+                .id(binding.id)
+            } else {
+                VStack {
+                    Text("Select a service")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     private func addService() {
@@ -452,19 +538,29 @@ struct ServiceDetailView: View {
         case focus
         case action(UUID)
     }
-    
+
     @Binding var service: Service
     var appController: AppController?
     @Binding var selectedServiceID: Service.ID?
     @State private var detailSelection: DetailSelection? = .focus
     @ObservedObject private var settings = Settings.shared
     var requestDelete: (Service) -> Void
+
+    @EnvironmentObject var shortcutState: ShortcutRecordingState
+    @State private var shortcutStatusMessage = ""
     
     var body: some View {
         VStack {
             Form {
                 TextField("Name", text: $service.name)
                 TextField("URL", text: $service.url)
+                
+                ServiceLaunchShortcutRow(
+                    shortcut: service.activationShortcut,
+                    statusMessage: shortcutStatusMessage,
+                    onTap: startShortcutCapture,
+                    onClear: clearShortcut
+                )
             }
             .padding()
             
@@ -481,8 +577,12 @@ struct ServiceDetailView: View {
                 detailSelection = .focus
             }
         }
+        .onDisappear {
+            shortcutState.cancel()
+        }
     }
-    
+
+
     private var advancedPane: some View {
         HStack(spacing: 0) {
             List(selection: $detailSelection) {
@@ -573,6 +673,33 @@ struct ServiceDetailView: View {
         let contents = loadScript(actionID: actionID)
         ActionScriptStorage.openInDefaultEditor(serviceID: service.id, actionID: actionID, contents: contents)
     }
+
+    private func startShortcutCapture() {
+        let session = StandardShortcutSession(onUpdate: { update in
+            shortcutState.updateMessage(update)
+        }, onFinish: {
+            shortcutState.cancel()
+        }, completion: { configuration in
+            if let configuration {
+                service.activationShortcut = configuration
+                settings.saveSettings()
+                appController?.reloadServices()
+            }
+        })
+        shortcutState.start(session: session)
+    }
+
+    private func cancelShortcutCapture() {
+        shortcutState.cancel()
+        shortcutStatusMessage = ""
+    }
+
+    private func clearShortcut() {
+        service.activationShortcut = nil
+        settings.saveSettings()
+        appController?.reloadServices()
+        shortcutStatusMessage = ""
+    }
 }
 
 private struct PendingServiceDeletion: Identifiable {
@@ -611,6 +738,8 @@ private struct ActionScriptEditor: View {
         .padding()
     }
 }
+
+
 
 // MARK: - Settings helpers
 

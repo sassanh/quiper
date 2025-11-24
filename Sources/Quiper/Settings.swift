@@ -10,6 +10,7 @@ struct Service: Codable, Identifiable {
     var url: String
     var focus_selector: String
     var actionScripts: [UUID: String] = [:]
+    var activationShortcut: HotkeyManager.Configuration?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -17,14 +18,21 @@ struct Service: Codable, Identifiable {
         case url
         case focus_selector
         case actionScripts
+        case activationShortcut
     }
 
-    init(id: UUID = UUID(), name: String, url: String, focus_selector: String, actionScripts: [UUID: String] = [:]) {
+    init(id: UUID = UUID(),
+         name: String,
+         url: String,
+         focus_selector: String,
+         actionScripts: [UUID: String] = [:],
+         activationShortcut: HotkeyManager.Configuration? = nil) {
         self.id = id
         self.name = name
         self.url = url
         self.focus_selector = focus_selector
         self.actionScripts = actionScripts
+        self.activationShortcut = activationShortcut
     }
 
     init(from decoder: Decoder) throws {
@@ -34,6 +42,7 @@ struct Service: Codable, Identifiable {
         url = try container.decode(String.self, forKey: .url)
         focus_selector = try container.decode(String.self, forKey: .focus_selector)
         actionScripts = try container.decodeIfPresent([UUID: String].self, forKey: .actionScripts) ?? [:]
+        activationShortcut = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .activationShortcut)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -44,6 +53,9 @@ struct Service: Codable, Identifiable {
         try container.encode(focus_selector, forKey: .focus_selector)
         if !actionScripts.isEmpty {
             try container.encode(actionScripts, forKey: .actionScripts)
+        }
+        if let activationShortcut {
+            try container.encode(activationShortcut, forKey: .activationShortcut)
         }
     }
 }
@@ -764,6 +776,64 @@ class Settings: ObservableObject {
             return config
         } catch {
             return nil
+        }
+    }
+    
+    func getReservedActionName(for config: HotkeyManager.Configuration) -> String? {
+        if config == hotkeyConfiguration {
+            return "Global Shortcut"
+        }
+        
+        if let service = services.first(where: { $0.activationShortcut == config }) {
+            return "Activate \(service.name)"
+        }
+        
+        if let action = customActions.first(where: { $0.shortcut == config }) {
+            return action.name
+        }
+        
+        // Check App Shortcuts
+        if appShortcutBindings.nextSession == config { return "Next Session" }
+        if appShortcutBindings.previousSession == config { return "Previous Session" }
+        if appShortcutBindings.nextService == config { return "Next Engine" }
+        if appShortcutBindings.previousService == config { return "Previous Engine" }
+        if appShortcutBindings.alternateNextSession == config { return "Next Session (Alternate)" }
+        if appShortcutBindings.alternatePreviousSession == config { return "Previous Session (Alternate)" }
+        if appShortcutBindings.alternateNextService == config { return "Next Engine (Alternate)" }
+        if appShortcutBindings.alternatePreviousService == config { return "Previous Engine (Alternate)" }
+        
+        // Check session digit shortcuts (e.g., Cmd+1 for "Go to Session 1")
+        let modifiers = NSEvent.ModifierFlags(rawValue: config.modifierFlags)
+        let keyCode = UInt16(config.keyCode)
+        if ShortcutValidator.isDigitKey(keyCode) {
+            let primaryModifiers = modifiers.intersection([.command, .option, .control, .shift])
+            let sessionMods = NSEvent.ModifierFlags(rawValue: appShortcutBindings.sessionDigitsModifiers)
+            let sessionAltMods = appShortcutBindings.sessionDigitsAlternateModifiers.map { NSEvent.ModifierFlags(rawValue: $0) }
+            let servicePrimaryMods = NSEvent.ModifierFlags(rawValue: appShortcutBindings.serviceDigitsPrimaryModifiers)
+            let serviceSecondaryMods = appShortcutBindings.serviceDigitsSecondaryModifiers.map { NSEvent.ModifierFlags(rawValue: $0) }
+            
+            if primaryModifiers == sessionMods { return "Go to Session \(digitValue(for: keyCode))" }
+            if let altMods = sessionAltMods, primaryModifiers == altMods { return "Go to Session \(digitValue(for: keyCode)) (Alternate)" }
+            if primaryModifiers == servicePrimaryMods { return "Go to Engine \(digitValue(for: keyCode))" }
+            if let secMods = serviceSecondaryMods, primaryModifiers == secMods { return "Go to Engine \(digitValue(for: keyCode)) (Secondary)" }
+        }
+        
+        return nil
+    }
+    
+    private func digitValue(for keyCode: UInt16) -> Int {
+        switch keyCode {
+        case UInt16(kVK_ANSI_1), UInt16(kVK_ANSI_Keypad1): return 1
+        case UInt16(kVK_ANSI_2), UInt16(kVK_ANSI_Keypad2): return 2
+        case UInt16(kVK_ANSI_3), UInt16(kVK_ANSI_Keypad3): return 3
+        case UInt16(kVK_ANSI_4), UInt16(kVK_ANSI_Keypad4): return 4
+        case UInt16(kVK_ANSI_5), UInt16(kVK_ANSI_Keypad5): return 5
+        case UInt16(kVK_ANSI_6), UInt16(kVK_ANSI_Keypad6): return 6
+        case UInt16(kVK_ANSI_7), UInt16(kVK_ANSI_Keypad7): return 7
+        case UInt16(kVK_ANSI_8), UInt16(kVK_ANSI_Keypad8): return 8
+        case UInt16(kVK_ANSI_9), UInt16(kVK_ANSI_Keypad9): return 9
+        case UInt16(kVK_ANSI_0), UInt16(kVK_ANSI_Keypad0): return 10
+        default: return 0
         }
     }
 }

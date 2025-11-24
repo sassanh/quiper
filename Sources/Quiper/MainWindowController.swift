@@ -191,6 +191,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case "h":
             hide()
             return true
+        case "w":
+            hide()
+            return true
         case "f":
             presentFindPanel()
             return true
