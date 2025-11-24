@@ -99,6 +99,11 @@ jobs:
     needs: tests
     steps:
       - uses: actions/checkout@v4
+      - name: Set nightly app version
+        if: github.event_name == 'schedule'
+        run: |
+          VERSION_BASE=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+          echo "APP_VERSION=${VERSION_BASE}-nightly-nonproduction" >>"$GITHUB_ENV"
       - name: Build Swift App
         run: ./build-app.sh
       - name: Compress App
@@ -122,16 +127,25 @@ jobs:
         with:
           name: app
           path: artifacts
-      - name: Generate Nightly Tag
-        id: generate_tag
-        run: echo "TAG_NAME=nightly-$(date +'%Y-%m-%d-%H%M')" >>"$GITHUB_OUTPUT"
+      - name: Delete previous nightly release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nightly --yes --cleanup-tag || true
       - name: Create Nightly Pre-release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
-          tag_name: ${{ steps.generate_tag.outputs.TAG_NAME }}
-          name: Nightly Build ${{ steps.generate_tag.outputs.TAG_NAME }}
-          body: "Nightly pre-release build. For testing purposes only."
+          tag_name: nightly
+          name: Quiper Development build
+          body: |
+            **Automated nightly build** from the latest `main` branch.
+            
+            Built on: ${{ github.run_started_at }}
+            Commit: ${{ github.sha }}
+            
+            ⚠️ This is a pre-release build for testing purposes only.
           prerelease: true
           draft: false
 
