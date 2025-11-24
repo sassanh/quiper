@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+_(no changes yet)_
+
+## [1.3.0] - 2025-11-25
+
 ### Added
 
 - Allow assigning a per-engine global shortcut that launches Quiper straight into that engine.
