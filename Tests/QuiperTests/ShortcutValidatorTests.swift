@@ -48,4 +48,20 @@ final class ShortcutValidatorTests: XCTestCase {
             keyCode: UInt16(kVK_ANSI_Keypad5)
         ))
     }
+
+    func testAllowsFunctionKeyWithoutModifiers() {
+        let config = HotkeyManager.Configuration(
+            keyCode: UInt32(kVK_F5),
+            modifierFlags: 0
+        )
+        XCTAssertTrue(ShortcutValidator.allows(configuration: config))
+    }
+
+    func testRejectsUnmodifiedLetter() {
+        let config = HotkeyManager.Configuration(
+            keyCode: UInt32(kVK_ANSI_Q),
+            modifierFlags: 0
+        )
+        XCTAssertFalse(ShortcutValidator.allows(configuration: config))
+    }
 }

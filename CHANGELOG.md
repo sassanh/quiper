@@ -2,12 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added test coverage for `ShortcutFormatter` to verify glyph rendering and fallback behavior.
+- Added integration tests for Settings to verify default shortcut configurations, vim-style alternates, and modifier key bindings.
+
 ### Changed
 
 - Nightly builds now update a single "nightly" release instead of creating a new release each night.
 - Nightly build artifacts set `CFBundleShortVersionString` to include a `-nightly-nonproduction` suffix to signal they are not production builds.
-
-_(no other changes yet)_
 
 ## [1.3.0] - 2025-11-25
 
