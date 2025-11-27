@@ -172,6 +172,16 @@ final class AppControllerTests: XCTestCase {
     }
 
     func testStart() {
+        // Setup a service with an activation shortcut to ensure registerEngineHotkeys proceeds
+        let shortcut = HotkeyManager.Configuration(keyCode: 0, modifierFlags: 0)
+        let service = Service(name: "Test Service", url: "https://test.com", focus_selector: "", activationShortcut: shortcut)
+        let originalServices = Settings.shared.services
+        Settings.shared.services = [service]
+        
+        defer {
+            Settings.shared.services = originalServices
+        }
+        
         appController.start()
         
         XCTAssertTrue(mockHotkeyManager.registerCurrentHotkeyCalled)

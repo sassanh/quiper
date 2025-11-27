@@ -57,7 +57,7 @@ struct NotificationDispatcherTests {
         mockNotificationCenter.authorizationStatusToReturn = UNAuthorizationStatus.notDetermined
         
         // When
-        await dispatcher.configure(delegate: mockDelegate)
+        dispatcher.configure(delegate: mockDelegate)
         await dispatcher.ensureInitialAuthorization()
 
         // Then
@@ -76,7 +76,7 @@ struct NotificationDispatcherTests {
         mockNotificationCenter.authorizationStatusToReturn = UNAuthorizationStatus.denied
         
         // When
-        await dispatcher.configure(delegate: mockDelegate)
+        dispatcher.configure(delegate: mockDelegate)
         await dispatcher.ensureInitialAuthorization()
 
         // Then

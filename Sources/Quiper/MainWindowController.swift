@@ -1319,6 +1319,29 @@ private extension MainWindowController {
         performFind(forward: true)
     }
     
+    private func serviceURL(for webView: WKWebView) -> URL? {
+        for (urlString, webViews) in webviewsByURL {
+            if webViews.contains(webView) {
+                return URL(string: urlString)
+            }
+        }
+        return nil
+    }
+
+    private func isInternalLink(target: URL, service: URL) -> Bool {
+        guard let targetHost = target.host?.lowercased(),
+              let serviceHost = service.host?.lowercased() else {
+            return false
+        }
+        
+        if targetHost == serviceHost { return true }
+        
+        // Strip www. from service host to get root (heuristic)
+        let rootServiceHost = serviceHost.hasPrefix("www.") ? String(serviceHost.dropFirst(4)) : serviceHost
+        
+        // Allow if target is the root host or a subdomain (ends with .root)
+        return targetHost == rootServiceHost || targetHost.hasSuffix("." + rootServiceHost)
+    }
 }
 
 @MainActor
@@ -1334,6 +1357,14 @@ extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
            let url = navigationAction.request.url,
            let scheme = url.scheme?.lowercased(),
            ["http", "https"].contains(scheme) {
+            
+            // Allow navigation if it matches the service domain (or subdomain)
+            if let serviceURL = serviceURL(for: webView),
+               isInternalLink(target: url, service: serviceURL) {
+                decisionHandler(.allow)
+                return
+            }
+
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
             return

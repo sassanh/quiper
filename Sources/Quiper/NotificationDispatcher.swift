@@ -51,7 +51,7 @@ final class NotificationDispatcher: NSObject, UNUserNotificationCenterDelegate {
     @MainActor
     func openSystemNotificationSettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") else { return }
-        urlOpener.open(url)
+        _ = urlOpener.open(url)
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,

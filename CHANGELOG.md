@@ -16,6 +16,10 @@
 - Nightly builds now update a single "nightly" release instead of creating a new release each night.
 - Nightly build artifacts set `CFBundleShortVersionString` to include a `-nightly-nonproduction` suffix to signal they are not production builds.
 
+### Fixed
+
+- Fixed an issue where authentication and internal links (sharing the same root domain) were opening in the external browser instead of the app overlay.
+
 ## [1.3.0] - 2025-11-25
 
 ### Added
