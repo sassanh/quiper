@@ -44,14 +44,21 @@ final class StandardShortcutSession: CancellableSession, @unchecked Sendable {
     private let completion: (HotkeyManager.Configuration?) -> Void
     private let onFinish: () -> Void
     private let additionalValidation: ((NSEvent) -> String?)?
+    private let reservedActionCheck: (HotkeyManager.Configuration) -> String?
     
     init(onUpdate: @escaping (String) -> Void,
          onFinish: @escaping () -> Void,
          additionalValidation: ((NSEvent) -> String?)? = nil,
+         reservedActionCheck: @escaping (HotkeyManager.Configuration) -> String? = { config in
+             MainActor.assumeIsolated {
+                 Settings.shared.getReservedActionName(for: config)
+             }
+         },
          completion: @escaping (HotkeyManager.Configuration?) -> Void) {
         self.onUpdate = onUpdate
         self.onFinish = onFinish
         self.additionalValidation = additionalValidation
+        self.reservedActionCheck = reservedActionCheck
         self.completion = completion
         self.onUpdate("Press the new shortcut")
         attachKeyMonitor()
@@ -64,43 +71,44 @@ final class StandardShortcutSession: CancellableSession, @unchecked Sendable {
     
     private func attachKeyMonitor() {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            if event.keyCode == UInt16(kVK_Escape) {
-                self.finish(nil)
-                return nil
-            }
-            
-            // Check additional validation first (e.g. reserved shortcuts)
-            if let error = self.additionalValidation?(event) {
-                NSSound.beep()
-                self.onUpdate(error)
-                return nil
-            }
-            
-            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            let configuration = HotkeyManager.Configuration(keyCode: UInt32(event.keyCode), modifierFlags: modifiers.rawValue)
-            
-            guard ShortcutValidator.hasRequiredModifiers(modifiers: modifiers, keyCode: event.keyCode) else {
-                NSSound.beep()
-                self.onUpdate("Shortcut must include Command/Option/Control/Shift unless using F1–F20")
-                return nil
-            }
-            
-            // Check if shortcut is reserved
-            let shortcutString = ShortcutFormatter.string(for: modifiers, keyCode: event.keyCode, characters: event.charactersIgnoringModifiers)
-            let actionName = MainActor.assumeIsolated {
-                Settings.shared.getReservedActionName(for: configuration)
-            }
-            if let actionName {
-                NSSound.beep()
-                self.onUpdate("\(shortcutString) is reserved for '\(actionName)'")
-                return nil
-            }
-            
-            self.onUpdate(shortcutString)
-            self.finish(configuration)
+            return self?.handleEvent(event)
+        }
+    }
+    
+    func handleEvent(_ event: NSEvent) -> NSEvent? {
+        if event.keyCode == UInt16(kVK_Escape) {
+            self.finish(nil)
             return nil
         }
+        
+        // Check additional validation first (e.g. reserved shortcuts)
+        if let error = self.additionalValidation?(event) {
+            NSSound.beep()
+            self.onUpdate(error)
+            return nil
+        }
+        
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        let configuration = HotkeyManager.Configuration(keyCode: UInt32(event.keyCode), modifierFlags: modifiers.rawValue)
+        
+        guard ShortcutValidator.hasRequiredModifiers(modifiers: modifiers, keyCode: event.keyCode) else {
+            NSSound.beep()
+            self.onUpdate("Shortcut must include Command/Option/Control/Shift unless using F1–F20")
+            return nil
+        }
+        
+        // Check if shortcut is reserved
+        let shortcutString = ShortcutFormatter.string(for: modifiers, keyCode: event.keyCode, characters: event.charactersIgnoringModifiers)
+        let actionName = self.reservedActionCheck(configuration)
+        if let actionName {
+            NSSound.beep()
+            self.onUpdate("\(shortcutString) is reserved for '\(actionName)'")
+            return nil
+        }
+        
+        self.onUpdate(shortcutString)
+        self.finish(configuration)
+        return nil
     }
     
     private func attachNotificationObserver() {
@@ -113,7 +121,7 @@ final class StandardShortcutSession: CancellableSession, @unchecked Sendable {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let shortcutString = ShortcutFormatter.string(for: config)
-                if let actionName = Settings.shared.getReservedActionName(for: config) {
+                if let actionName = self.reservedActionCheck(config) {
                     NSSound.beep()
                     self.onUpdate("\(shortcutString) is reserved for '\(actionName)'")
                 }

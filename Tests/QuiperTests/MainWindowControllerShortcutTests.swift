@@ -5,10 +5,12 @@ import Carbon
 
 @MainActor
 final class MainWindowControllerShortcutTests: XCTestCase {
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         // Ensure tests are not affected by any persisted shortcut customizations.
-        Settings.shared.appShortcutBindings = .defaults
+        await MainActor.run {
+            Settings.shared.appShortcutBindings = .defaults
+        }
     }
 
     func testCommandArrowAdvancesSession() {

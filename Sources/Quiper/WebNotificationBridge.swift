@@ -132,7 +132,7 @@ final class WebNotificationBridge: NSObject {
         }
     }
 
-    private static func permissionString(from status: UNAuthorizationStatus) -> String {
+    static func permissionString(from status: UNAuthorizationStatus) -> String {
         switch status {
         case .authorized, .provisional:
             return "granted"
@@ -143,7 +143,7 @@ final class WebNotificationBridge: NSObject {
         }
     }
 
-    private static func isAuthorized(status: UNAuthorizationStatus) -> Bool {
+    static func isAuthorized(status: UNAuthorizationStatus) -> Bool {
         switch status {
         case .authorized, .provisional:
             return true
@@ -152,7 +152,7 @@ final class WebNotificationBridge: NSObject {
         }
     }
 
-    private static func escapeForJavaScript(_ value: String) -> String {
+    static func escapeForJavaScript(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "'", with: "\\'")

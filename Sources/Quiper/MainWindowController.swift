@@ -79,6 +79,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         selectService(at: index)
         return true
     }
+    
+    // Protocol conformance
+    func selectService(at index: Int) {
+        selectService(at: index, focusWebView: true)
+    }
 
     func selectService(at index: Int, focusWebView: Bool = true) {
         guard services.indices.contains(index) else { return }
@@ -259,6 +264,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
     
+    // Protocol conformance
+    func reloadServices() {
+        reloadServices(nil)
+    }
+
     func currentWebViewURL() -> URL? {
         currentWebView()?.url
     }

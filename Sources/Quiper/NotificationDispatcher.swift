@@ -5,11 +5,15 @@ import UserNotifications
 final class NotificationDispatcher: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationDispatcher()
 
-    private let notificationCenter = UNUserNotificationCenter.current()
+    private let notificationCenter: UserNotificationCentering
+    private let urlOpener: URLOpening
     private var initialAuthorizationRequested = false
     private weak var delegate: NotificationDispatcherDelegate?
 
-    private override init() {
+    init(notificationCenter: UserNotificationCentering = UNUserNotificationCenter.current(),
+         urlOpener: URLOpening = NSWorkspace.shared) {
+        self.notificationCenter = notificationCenter
+        self.urlOpener = urlOpener
         super.init()
     }
 
@@ -25,8 +29,8 @@ final class NotificationDispatcher: NSObject, UNUserNotificationCenterDelegate {
     }
 
     @MainActor
-    private func ensureInitialAuthorization() async {
-        let settings = await notificationCenter.notificationSettings()
+    func ensureInitialAuthorization() async {
+        let settings = await notificationCenter.settings()
         NSLog("[Quiper] Notification status at launch: \(settings.authorizationStatus.rawValue)")
 
         guard settings.authorizationStatus == .notDetermined else { return }
@@ -47,7 +51,7 @@ final class NotificationDispatcher: NSObject, UNUserNotificationCenterDelegate {
     @MainActor
     func openSystemNotificationSettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") else { return }
-        NSWorkspace.shared.open(url)
+        urlOpener.open(url)
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,

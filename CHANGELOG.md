@@ -6,6 +6,10 @@
 
 - Added test coverage for `ShortcutFormatter` to verify glyph rendering and fallback behavior.
 - Added integration tests for Settings to verify default shortcut configurations, vim-style alternates, and modifier key bindings.
+- Migrated tests to Swift Testing framework (`@Test` macro, `#expect` assertions) for modern test runner support.
+- Improved Test Quality: Replaced shallow rendering tests with meaningful behavior verification for Settings and Shortcuts.
+- New Tests: Added comprehensive tests for `CustomAction`, `Service`, `UpdatePreferences`, and `HotkeyManager` data models.
+- Coverage Reporting: Added a script to generate HTML code coverage reports.esting in different bundle locations.
 
 ### Changed
 

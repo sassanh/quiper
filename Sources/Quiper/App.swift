@@ -15,17 +15,21 @@ extension Notification.Name {
 
 final class AppController: NSObject, NSWindowDelegate {
 
-    private let windowController = MainWindowController()
-
-    private let hotkeyManager = HotkeyManager()
-    private let engineHotkeyManager = EngineHotkeyManager()
-    private let customActionDispatcher = CustomActionShortcutDispatcher()
+    private let windowController: MainWindowControlling
+    let hotkeyManager: HotkeyManaging
+    let engineHotkeyManager: EngineHotkeyManaging
+    private let customActionDispatcher: CustomActionDispatching
+    private let notificationDispatcher: NotificationDispatching
     private var lastNonQuiperApplication: NSRunningApplication?
 
 
 
-    override init() {
-
+    init(windowController: MainWindowControlling = MainWindowController(), hotkeyManager: HotkeyManaging = HotkeyManager(), engineHotkeyManager: EngineHotkeyManaging = EngineHotkeyManager(), customActionDispatcher: CustomActionDispatching = CustomActionShortcutDispatcher(), notificationDispatcher: NotificationDispatching = NotificationDispatcher.shared) {
+        self.windowController = windowController
+        self.hotkeyManager = hotkeyManager
+        self.engineHotkeyManager = engineHotkeyManager
+        self.customActionDispatcher = customActionDispatcher
+        self.notificationDispatcher = notificationDispatcher
         super.init()
 
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettingsNotification), name: .showSettings, object: nil)
@@ -147,7 +151,7 @@ final class AppController: NSObject, NSWindowDelegate {
 
     @objc func openNotificationSettings(_ sender: Any?) {
 
-        NotificationDispatcher.shared.openSystemNotificationSettings()
+        notificationDispatcher.openSystemNotificationSettings()
 
     }
 
