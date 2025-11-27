@@ -4,6 +4,14 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [1.4.0] - 2025-11-28
+
+### Added
+
 - Added test coverage for `ShortcutFormatter` to verify glyph rendering and fallback behavior.
 - Added integration tests for Settings to verify default shortcut configurations, vim-style alternates, and modifier key bindings.
 - Migrated tests to Swift Testing framework (`@Test` macro, `#expect` assertions) for modern test runner support.
