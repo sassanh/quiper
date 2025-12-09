@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Key Logger</title>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        #log { font-size: 24px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Key Logger</h1>
+    <div id="log">Waiting for input...</div>
+    <script>
+        document.addEventListener('keydown', (event) => {
+            const keys = [];
+            if (event.metaKey) keys.push('Cmd');
+            if (event.ctrlKey) keys.push('Ctrl');
+            if (event.altKey) keys.push('Opt');
+            if (event.shiftKey) keys.push('Shift');
+            keys.push(event.key.toUpperCase());
+            
+            const keyString = keys.join('+');
+            document.getElementById('log').innerText = keyString;
+            console.log('Key pressed:', keyString);
+        });
+    </script>
+</body>
+</html>

@@ -4,6 +4,11 @@ Quiper is a macOS status-bar app that keeps your AI chat services in a single fl
 
 ![Quiper screenshot](https://quiper.sassanh.com/quiper-screenshot.jpg)
 
+[![CI](https://github.com/sassanh/quiper/actions/workflows/integration_delivery.yml/badge.svg)](https://github.com/sassanh/quiper/actions/workflows/integration_delivery.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub release](https://img.shields.io/github/v/release/sassanh/quiper.svg)](https://github.com/sassanh/quiper/releases)
+[![codecov](https://codecov.io/gh/sassanh/quiper/branch/main/graph/badge.svg)](https://codecov.io/gh/sassanh/quiper)
+
 ## Highlights
 
 - **Overlay built for AI sites** – Define any site that works in Safari (ChatGPT, Gemini, Grok, Claude, internal tools, etc.). Quiper opens each one inside its own `WKWebView` stack so session switches are instant.
@@ -14,7 +19,7 @@ Quiper is a macOS status-bar app that keeps your AI chat services in a single fl
 
 ## Requirements
 
-- macOS 12.0 (Monterey) or newer. The codebase targets Swift 6.2 and uses APIs that ship with Xcode 16.
+- macOS 14.0 (Sonoma) or newer. The codebase targets Swift 6.2 and uses APIs that ship with Xcode 16.
 - Apple silicon or Intel hardware. (Intel continues to work as long as macOS does; Apple announced Tahoe as the final Intel release.)
 - Xcode 16 Command Line Tools (or newer) to build from source.
 
@@ -35,17 +40,18 @@ Quiper is a macOS status-bar app that keeps your AI chat services in a single fl
 ```bash
 git clone https://github.com/sassanh/quiper.git
 cd quiper
-swift run # debug build with logs in Terminal
+open Quiper.xcodeproj # Opens in Xcode
+# Press Cmd+R to build and run
 ```
 
 Create a distributable bundle:
 
 ```bash
-./build-app.sh # release build + Info.plist + icon + ad-hoc codesign
+./build-app.sh # Builds with xcodebuild, creates Quiper.app
 open Quiper.app
 ```
 
-`build-app.sh` performs a `swift build -c release`, copies `Supporting/Info.plist`, bundles static assets (logo, icon), applies an ad-hoc signature, sets version info from the latest git tag (override with `APP_VERSION=x.y.z`), and leaves `Quiper.app` at the repo root.
+`build-app.sh` performs an `xcodebuild` release build, sets version info from the latest git tag (override with `APP_VERSION=x.y.z`), and leaves `Quiper.app` at the repo root.
 
 ## Daily Workflow
 

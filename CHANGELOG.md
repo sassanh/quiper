@@ -4,9 +4,16 @@
 
 ### Added
 
+- **UI Tests**: Added extensive UI tests covering window reordering and other interactions to ensure robustness.
+- **Template Management UI Tests**: Implemented comprehensive UI tests for adding and deleting service templates, covering both one-by-one and bulk operations.
+- **Code Coverage**: Integrated Codecov for automated test coverage reporting on every CI build.
+- **CI/CD Enhancements**: Updated GitHub Actions workflow to run robustly on macOS runners with parallel testing disabled for stability.
+
 ### Changed
 
-### Fixed
+- **Codebase Cleanup**: Removed extensive debug print statements from the application and UI tests to reduce log noise and improve performance.
+- **Project Structure**: Migrated codebase from a simple Swift package project to a full Xcode project structure.
+- **Testing Reliability**: Refactored `run-tests-with-coverage.sh` to generate JSON coverage reports and handle headless execution more reliably.
 
 ## [1.4.0] - 2025-11-28
 

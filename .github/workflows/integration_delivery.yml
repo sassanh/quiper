@@ -22,76 +22,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select Xcode 26.1.1
+        run: sudo xcode-select -s /Applications/Xcode_26.1.1.app
+
       - name: Toolchain info
         run: |
           swift --version
           xcodebuild -version
 
-      - name: Run tests
-        run: swift test --configuration debug --enable-code-coverage
-
-      - name: Generate coverage HTML
-        run: |
-          set -euo pipefail
-          PROFILE=$(find .build -path "*/codecov/default.profdata" | head -n1)
-          TEST_BIN=$(find .build -type f -path "*.xctest/Contents/MacOS/*" | head -n1)
-          ROOT=$(pwd)
-          xcrun llvm-cov show \
-            "$TEST_BIN" \
-            -instr-profile "$PROFILE" \
-            -path-equivalence "$ROOT","." \
-            -format=html \
-            -output-dir coverage-html \
-            "$ROOT/Sources"
-
-      - name: Generate coverage JSON
-        run: |
-          set -euo pipefail
-          PROFILE=$(find .build -path "*/codecov/default.profdata" | head -n1)
-          if [ -z "$PROFILE" ]; then
-            echo "No default.profdata found under .build/**/codecov"
-            exit 1
-          fi
-          TEST_BIN=$(find .build -type f -path "*.xctest/Contents/MacOS/*" | head -n1)
-          if [ -z "$TEST_BIN" ]; then
-            echo "No test binary found under .build"
-            exit 1
-          fi
-          ROOT=$(pwd)
-          xcrun llvm-cov export \
-            "$TEST_BIN" \
-            -instr-profile "$PROFILE" \
-            -path-equivalence "$ROOT/","." \
-            -format=lcov \
-            Sources >coverage.json
-
-      - name: Coverage summary
-        run: |
-          set -euo pipefail
-          PROFILE=$(find .build -path "*/codecov/default.profdata" | head -n1)
-          TEST_BIN=$(find .build -type f -path "*.xctest/Contents/MacOS/*" | head -n1)
-          ROOT=$(pwd)
-          xcrun llvm-cov report \
-            "$TEST_BIN" \
-            -instr-profile="$PROFILE" \
-            -path-equivalence "$ROOT","." \
-            "$ROOT/Sources"
-
-      - name: Upload coverage HTML
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-html
-          path: coverage-html
-          if-no-files-found: error
+      - name: Run tests with coverage
+        run: ./run-tests-with-coverage.sh
 
       - name: Upload coverage JSON to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.json
           fail_ci_if_error: true
           flags: unittests
           root_dir: ${{ github.workspace }}
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage-html
 
   build:
     name: Build
@@ -141,10 +96,10 @@ jobs:
           name: Quiper Development build
           body: |
             **Automated nightly build** from the latest `main` branch.
-            
+
             Built on: ${{ github.run_started_at }}
             Commit: ${{ github.sha }}
-            
+
             ⚠️ This is a pre-release build for testing purposes only.
           prerelease: true
           draft: false
