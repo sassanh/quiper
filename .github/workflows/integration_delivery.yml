@@ -33,11 +33,11 @@ jobs:
       - name: Run tests with coverage
         run: ./run-tests-with-coverage.sh
 
-      - name: Upload coverage JSON to Codecov
+      - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage.json
+          files: ./coverage.lcov
           fail_ci_if_error: true
           flags: unittests
           root_dir: ${{ github.workspace }}

@@ -114,13 +114,15 @@ xcrun llvm-cov report \
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 echo ""
-echo "📊 Generating JSON report for Codecov..."
+echo "📊 Generating LCOV report for Codecov..."
 xcrun llvm-cov export \
-    -format="text" \
+    -format="lcov" \
     -instr-profile "$PROFDATA" \
     "${BINARIES[@]}" \
-    -ignore-filename-regex=".build|Tests" > coverage.json
-echo "✅ JSON report generated at coverage.json"
+    -path-equivalence "$(pwd)/","." \
+    -ignore-filename-regex=".build|Tests" > coverage.lcov
+
+echo "✅ LCOV report generated at coverage.lcov"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
@@ -141,7 +143,7 @@ echo "✅ HTML report generated at $OUTPUT_DIR/index.html"
 
 echo ""
 echo "✅ Coverage reports generated!"
-echo "   📄 JSON report: coverage.json"
+echo "   📄 LCOV report: coverage.lcov"
 echo "   🌐 HTML report: coverage-html/index.html"
 echo ""
 echo "To open HTML report:"

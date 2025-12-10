@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- **Code Coverage**: Fixed Codecov reporting issues by providing industry-standard LCOV coverage reports for better Codecov integration.
+
 ## [2.0.0] - 2025-12-10
 
 ### Added

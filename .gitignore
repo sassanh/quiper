@@ -22,6 +22,7 @@ xcuserdata/
 
 # Test coverage
 coverage.json
+coverage.lcov
 coverage-html/
 test_output*.txt
 result*.json
