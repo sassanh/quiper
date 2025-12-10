@@ -1,6 +1,7 @@
 import Foundation
 import UserNotifications
 import WebKit
+import AppKit
 
 @MainActor
 final class WebNotificationBridge: NSObject {
@@ -20,6 +21,15 @@ final class WebNotificationBridge: NSObject {
         super.init()
         handlerProxy.delegate = self
         installBridge()
+        
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(appDidBecomeActive),
+                                               name: NSApplication.didBecomeActiveNotification,
+                                               object: nil)
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     func invalidate() {
@@ -44,6 +54,10 @@ final class WebNotificationBridge: NSObject {
                 self.pushPermissionState(permission, requestId: nil)
             }
         }
+    }
+    
+    @objc private func appDidBecomeActive() {
+        syncInitialPermissionState()
     }
 
     private func requestPermission(requestId: Int) {

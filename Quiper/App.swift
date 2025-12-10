@@ -11,6 +11,7 @@ extension Notification.Name {
     static let startGlobalHotkeyCapture = Notification.Name("QuiperStartGlobalHotkeyCapture")
     static let appVisibilityChanged = Notification.Name("QuiperAppVisibilityChanged")
     static let hotkeyConfigurationChanged = Notification.Name("QuiperHotkeyConfigurationChanged")
+    static let notificationPermissionChanged = Notification.Name("QuiperNotificationPermissionChanged")
 }
 
 @MainActor
@@ -577,6 +578,11 @@ final class StatusBarController {
                     self?.rebuildStatusMenu()
                 }
             }
+            NotificationCenter.default.addObserver(forName: .notificationPermissionChanged, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.rebuildStatusMenu()
+                }
+            }
         }
     }
 
@@ -698,7 +704,17 @@ struct StatusMenuBuilder {
         addItem("Settings", #selector(AppController.showSettings(_:)), ",", [.command], controller)
         addItem("Show Inspector", #selector(AppController.toggleInspector(_:)), "i", [.command, .option], controller)
         addItem("Set New Hotkey", #selector(AppController.setHotkey(_:)), "", [], controller)
-        addItem("Notification Settings...", #selector(AppController.openNotificationSettings(_:)), "", [], controller)
+        
+        let notifStatus = NotificationDispatcher.shared.authorizationStatus
+        let notifTitle: String
+        switch notifStatus {
+        case .authorized, .provisional, .ephemeral: notifTitle = "Notifications: Authorized"
+        case .denied: notifTitle = "Notifications: Denied"
+        case .notDetermined: notifTitle = "Notifications: Not Enabled"
+        @unknown default: notifTitle = "Notifications: Unknown"
+        }
+        addItem(notifTitle, #selector(AppController.openNotificationSettings(_:)), "", [], controller)
+        
         addItem("Check for Updates…", #selector(AppController.checkForUpdates(_:)), "", [], controller)
         menu.addItem(.separator())
         addItem("Install at Login", #selector(AppController.installAtLogin(_:)), "", [], controller)

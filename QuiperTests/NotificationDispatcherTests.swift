@@ -93,7 +93,10 @@ struct NotificationDispatcherTests {
         dispatcher.openSystemNotificationSettings()
         
         #expect(mockURLOpener.openCalled)
-        #expect(mockURLOpener.openedURL?.absoluteString == "x-apple.systempreferences:com.apple.preference.notifications")
+        // The URL should now include the bundle ID for deep linking
+        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper"
+        let expectedURL = "x-apple.systempreferences:com.apple.preference.notifications?id=\(bundleID)"
+        #expect(mockURLOpener.openedURL?.absoluteString == expectedURL)
     }
 }
 

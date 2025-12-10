@@ -1,21 +1,30 @@
 import AppKit
 import Foundation
 import UserNotifications
+import Combine
 
-final class NotificationDispatcher: NSObject, UNUserNotificationCenterDelegate {
+final class NotificationDispatcher: NSObject, UNUserNotificationCenterDelegate, ObservableObject {
     static let shared = NotificationDispatcher()
 
     private let notificationCenter: UserNotificationCentering
     private let urlOpener: URLOpening
     private var initialAuthorizationRequested = false
     private weak var delegate: NotificationDispatcherDelegate?
+    
+    @Published var authorizationStatus: UNAuthorizationStatus = .notDetermined {
+        didSet {
+            NotificationCenter.default.post(name: .notificationPermissionChanged, object: nil)
+        }
+    }
 
     init(notificationCenter: UserNotificationCentering = UNUserNotificationCenter.current(),
          urlOpener: URLOpening = NSWorkspace.shared) {
         self.notificationCenter = notificationCenter
         self.urlOpener = urlOpener
         super.init()
+        Task { await refreshNotificationStatus() }
     }
+
 
     @MainActor
     func configure(delegate: NotificationDispatcherDelegate?) {
@@ -29,27 +38,40 @@ final class NotificationDispatcher: NSObject, UNUserNotificationCenterDelegate {
     }
 
     @MainActor
-    func ensureInitialAuthorization() async {
+    func refreshNotificationStatus() async {
         let settings = await notificationCenter.settings()
+        self.authorizationStatus = settings.authorizationStatus
+    }
 
-        guard settings.authorizationStatus == .notDetermined else { return }
+    @MainActor
+    func ensureInitialAuthorization() async {
+        await refreshNotificationStatus()
+        
+        guard authorizationStatus == .notDetermined else { return }
         guard !initialAuthorizationRequested else { return }
         initialAuthorizationRequested = true
 
         do {
             let granted = try await notificationCenter.requestAuthorization(options: [.alert, .badge, .sound])
+            await refreshNotificationStatus()
             if !granted {
                 openSystemNotificationSettings()
             }
         } catch {
             NSLog("[Quiper] Failed to request notification authorization: \(error.localizedDescription)")
+            await refreshNotificationStatus()
         }
     }
 
     @MainActor
     func openSystemNotificationSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") else { return }
-        _ = urlOpener.open(url)
+        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper"
+        // Try specific deep link first
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications?id=\(bundleID)") {
+            _ = urlOpener.open(url)
+        } else if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") {
+            _ = urlOpener.open(url)
+        }
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,

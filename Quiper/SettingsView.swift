@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import Foundation
 import Carbon
 import AppKit
+import UserNotifications
 
 struct SettingsView: View {
     @State private var selectedTab = "Engines"
@@ -46,6 +47,7 @@ struct GeneralSettingsView: View {
     private let versionDescription = Bundle.main.versionDisplayString
     @ObservedObject private var settings = Settings.shared
     @ObservedObject private var updater = UpdateManager.shared
+    @ObservedObject private var notificationDispatcher = NotificationDispatcher.shared
 
     @EnvironmentObject var shortcutState: ShortcutRecordingState
     @State private var globalHotkeyStatus = ""
@@ -90,6 +92,23 @@ struct GeneralSettingsView: View {
                             appController?.installAtLogin(nil)
                         } else {
                             appController?.uninstallFromLogin(nil)
+                        }
+                    }
+                }
+                
+                SettingsSection(title: "Notifications") {
+                    SettingsRow(
+                        title: "Notification permission",
+                        message: notificationPermissionMessage
+                    ) {
+                        HStack {
+                            Text(notificationPermissionStatus)
+                                .foregroundColor(notificationPermissionColor)
+                                .font(.callout)
+                            
+                            Button("Open System Settings") {
+                                notificationDispatcher.openSystemNotificationSettings()
+                            }
                         }
                     }
                 }
@@ -181,6 +200,7 @@ struct GeneralSettingsView: View {
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             launchAtLogin = Launcher.isInstalledAtLogin()
+            Task { await notificationDispatcher.refreshNotificationStatus() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .startGlobalHotkeyCapture)) { _ in
             startGlobalHotkeyCapture()
@@ -312,7 +332,41 @@ struct GeneralSettingsView: View {
         }
         settings.customActions.removeAll()
         settings.saveSettings()
+        settings.saveSettings()
         appController?.reloadServices()
+    }
+    
+    private var notificationPermissionStatus: String {
+        switch notificationDispatcher.authorizationStatus {
+        case .authorized: return "Authorized"
+        case .denied: return "Denied"
+        case .notDetermined: return "Not Determined"
+        case .provisional: return "Provisional"
+        case .ephemeral: return "Ephemeral"
+        @unknown default: return "Unknown"
+        }
+    }
+    
+    private var notificationPermissionColor: Color {
+        switch notificationDispatcher.authorizationStatus {
+        case .authorized, .provisional, .ephemeral: return .green
+        case .denied: return .red
+        case .notDetermined: return .secondary
+        @unknown default: return .secondary
+        }
+    }
+    
+    private var notificationPermissionMessage: String {
+        switch notificationDispatcher.authorizationStatus {
+        case .authorized:
+            return "Quiper can send notifications for engine responses."
+        case .denied:
+            return "Notifications are disabled. Enable them in System Settings to see engine responses."
+        case .notDetermined:
+            return "Permission has not been requested yet."
+        default:
+            return "Quiper needs notification access to show engine responses."
+        }
     }
 }
 
