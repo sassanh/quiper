@@ -20,7 +20,6 @@ final class AppController: NSObject, NSWindowDelegate {
     private let windowController: MainWindowControlling
     let hotkeyManager: HotkeyManaging
     let engineHotkeyManager: EngineHotkeyManaging
-    private let customActionDispatcher: CustomActionDispatching
     private let notificationDispatcher: NotificationDispatching
     private var lastNonQuiperApplication: NSRunningApplication?
     private let isRunningTests: Bool
@@ -31,14 +30,12 @@ final class AppController: NSObject, NSWindowDelegate {
     init(windowController: MainWindowControlling? = nil,
          hotkeyManager: HotkeyManaging? = nil,
          engineHotkeyManager: EngineHotkeyManaging? = nil,
-         customActionDispatcher: CustomActionDispatching? = nil,
          notificationDispatcher: NotificationDispatching? = nil) {
         
         // Instantiate defaults inside the body (which is safely on MainActor)
         self.windowController = windowController ?? MainWindowController()
         self.hotkeyManager = hotkeyManager ?? HotkeyManager()
         self.engineHotkeyManager = engineHotkeyManager ?? EngineHotkeyManager()
-        self.customActionDispatcher = customActionDispatcher ?? CustomActionShortcutDispatcher()
         self.notificationDispatcher = notificationDispatcher ?? NotificationDispatcher.shared
         self.isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         self.testDataStore = WKWebsiteDataStore.nonPersistent()
@@ -75,7 +72,6 @@ final class AppController: NSObject, NSWindowDelegate {
         
         captureFrontmostNonQuiperApplication()
         windowController.show()
-        customActionDispatcher.startMonitoring(windowController: windowController)
         NotificationCenter.default.post(name: .appVisibilityChanged, object: true)
         
     }
@@ -83,7 +79,6 @@ final class AppController: NSObject, NSWindowDelegate {
     
     
     @objc func hideWindow(_ sender: Any?) {
-        customActionDispatcher.stopMonitoring()
         windowController.hide()
         if AppDelegate.sharedSettingsWindow.isVisible == true {
             dismissSettingsWindow()
@@ -121,33 +116,6 @@ final class AppController: NSObject, NSWindowDelegate {
             }
         }
     }
-    
-    
-    
-    @objc func share(_ sender: Any?) {
-        
-        guard let url = windowController.currentWebViewURL(), let contentView = windowController.window?.contentView else {
-            
-            return
-            
-        }
-        
-        let anchor = NSView(frame: NSRect(x: contentView.bounds.midX, y: contentView.bounds.midY, width: 1, height: 1))
-        
-        contentView.addSubview(anchor)
-        
-        let picker = NSSharingServicePicker(items: [url])
-        
-        picker.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: NSRectEdge.maxY)
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            
-            anchor.removeFromSuperview()
-            
-        }
-        
-    }
-    
     
     
     @objc func setHotkey(_ sender: Any?) {
@@ -220,13 +188,7 @@ final class AppController: NSObject, NSWindowDelegate {
     func setMainWindowShortcutsEnabled(_ enabled: Bool) {
         windowController.setShortcutsEnabled(enabled)
         guard windowController.window?.isVisible == true else {
-            customActionDispatcher.stopMonitoring()
             return
-        }
-        if enabled {
-            customActionDispatcher.startMonitoring(windowController: windowController)
-        } else {
-            customActionDispatcher.stopMonitoring()
         }
     }
     
@@ -493,10 +455,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        let actionsMenuItem = NSMenuItem()
+        mainMenu.addItem(actionsMenuItem)
+
+        let actionsMenu = NSMenu(title: "Actions")
+        actionsMenuItem.submenu = actionsMenu
+        actionsMenu.delegate = ActionMenuDelegate.shared
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
+    }
+}
+
+class ActionMenuDelegate: NSObject, NSMenuDelegate {
+    static let shared = ActionMenuDelegate()
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        
+        let actions = Settings.shared.customActions
+        
+        if actions.isEmpty {
+            let item = NSMenuItem(title: "No Custom Actions", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+            return
+        }
+        
+        for action in actions {
+            let item = NSMenuItem(title: action.name.isEmpty ? "Action" : action.name,
+                                  action: Selector(("performCustomActionFromMenu:")),
+                                  keyEquivalent: "")
+            item.representedObject = action
+            menu.addItem(item)
+        }
     }
 }
 

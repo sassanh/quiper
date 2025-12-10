@@ -263,7 +263,7 @@ class SettingsWindow: NSWindow {
 }
 
 @MainActor
-class Settings: ObservableObject, CustomActionProvider {
+class Settings: ObservableObject {
     static let shared = Settings()
 
     @Published var services: [Service] = []

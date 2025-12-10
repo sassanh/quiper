@@ -16,7 +16,7 @@ final class ManualCheckTests: XCTestCase {
         // Reset state
         // manager.status = .idle // status is get-only or protected
         
-        await manager.checkForUpdates(userInitiated: true)
+        manager.checkForUpdates(userInitiated: true)
         
         // Since it's async and hits network, it might fail or succeed.
         // We just want to ensure it runs without crashing.

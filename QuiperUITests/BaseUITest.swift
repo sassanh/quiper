@@ -35,7 +35,7 @@ class BaseUITest: XCTestCase {
         app.activate()
         
         // Wait for app to be idle
-        let active = app.wait(for: .runningForeground, timeout: 1.0)
+        _ = app.wait(for: .runningForeground, timeout: 1.0)
         
         // Use status menu exclusively as Cmd+, is unreliable when app is hidden/backgrounded
         

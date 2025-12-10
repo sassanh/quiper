@@ -9,7 +9,7 @@ final class FindInPageTests: XCTestCase {
     override func setUp() async throws {
         Settings.shared.reset()
         windowController = MainWindowController()
-        try await TestServer.shared.start()
+        try TestServer.shared.start()
     }
     
     override func tearDown() async throws {

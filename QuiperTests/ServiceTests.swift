@@ -2,6 +2,7 @@ import XCTest
 import Carbon
 @testable import Quiper
 
+@MainActor
 final class ServiceTests: XCTestCase {
     func testServiceInitialization() {
         let service = Service(
@@ -106,6 +107,7 @@ final class ServiceTests: XCTestCase {
     }
 }
 
+@MainActor
 final class UpdatePreferencesTests: XCTestCase {
     func testDefaultValues() {
         let prefs = UpdatePreferences()

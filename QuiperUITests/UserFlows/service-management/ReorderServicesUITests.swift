@@ -121,7 +121,6 @@ final class ReorderServicesUITests: BaseUITest {
         
         // Helper to verify index
         func verifySegment(index: Int, expectedLabel: String) {
-            let width = serviceSelector.frame.width
             let segmentWidthFactor = 1.0 / 4.0
             let centerRatio = (Double(index) * segmentWidthFactor) + (segmentWidthFactor / 2.0)
             

@@ -65,41 +65,26 @@ final class ShortcutConflictsUITests: BaseUITest {
         app.typeKey("i", modifierFlags: [.command])
         
         // Recorder should close
-        XCTAssertTrue(app.staticTexts["Press the new shortcut"].waitForNonExistence(timeout: 2.0), "Recorder did NOT close for valid shortcut!")
+        XCTAssertEqual(true, app.staticTexts["Press the new shortcut"].waitForNonExistence(timeout: 2.0), "Recorder did NOT close for valid shortcut!")
         
         // Verify Button Label updated
         let updatedCell = getActionCell(index: 1)
-        let button = updatedCell.buttons.firstMatch
-        XCTAssertTrue(button.waitForExistence(timeout: 2.0))
+        let button = updatedCell.descendants(matching: .any).matching(identifier: "ShortcutRecorder").firstMatch
+        XCTAssertEqual(true, button.waitForExistence(timeout: 2.0))
+        
+        // Verify Button Value (must check StaticText child as Group has no value)
+        let labelElement = button.staticTexts.firstMatch
         
         // Wait for label to update from "Record Shortcut" or empty to "⌘I"
         // Retry loop for robustness
-        var matched = false
-        // Use predicate expectation instead of custom polling loop
-        // Re-acquire cell and button
-        let checkCell = getActionCell(index: 1)
-        let btn = checkCell.buttons.firstMatch // Note: Earlier we changed this to descendants, verify what it should be
-        // Wait, in previous task I updated lookups to descendants(matching: .any).
-        // Let's check line 104 in viewed file.
-        // It says: let finalBtn = finalCell.descendants(matching: .any).matching(identifier: "ShortcutRecorder").firstMatch
-        // So I should use that lookup here.
+        let predicate = NSPredicate(format: "value == '⌘I' OR value == '⌘ I'")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: labelElement)
+        let result = XCTWaiter().wait(for: [expectation], timeout: 5.0)
         
-        let recorderBtn = checkCell.descendants(matching: .any).matching(identifier: "ShortcutRecorder").firstMatch
+        // Final value check for error message accuracy
+        let finalVal = labelElement.value as? String ?? ""
+        XCTAssertEqual(result, .completed, "Label did not match expected value. Got: '\(finalVal)'")
         
-        let exists = recorderBtn.waitForExistence(timeout: 2.0)
-        
-        if exists {
-            let predicate = NSPredicate(format: "value == '⌘I' OR value == '⌘ I'")
-            let expectation = XCTNSPredicateExpectation(predicate: predicate, object: recorderBtn)
-            let result = XCTWaiter().wait(for: [expectation], timeout: 2.0)
-            if result == .completed { matched = true }
-        }
-        
-        // Final assertion
-        // Final assertion
-        let finalCell = getActionCell(index: 1)
-        let finalBtn = finalCell.descendants(matching: .any).matching(identifier: "ShortcutRecorder").firstMatch
-        let value = finalBtn.value as? String ?? ""
         // Normalize spaces (e.g. "⌘ I" vs "⌘I")
         // 5. Verify Self-Assignment (Idempotency)
         // Re-open recorder on the same cell
@@ -111,14 +96,14 @@ final class ShortcutConflictsUITests: BaseUITest {
         
         // Assert Recorder Closes (Accepted)
         // If it was rejected, the overlay would remain with an error.
-        XCTAssertTrue(app.staticTexts["Press the new shortcut"].waitForNonExistence(timeout: 2.0), "Re-assigning same shortcut failed (was rejected)!")
+        XCTAssertEqual(true, app.staticTexts["Press the new shortcut"].waitForNonExistence(timeout: 2.0), "Re-assigning same shortcut failed (was rejected)!")
         
         // Final verify label is still ⌘I
         let selfTestBtn = selfTestCell.descendants(matching: .any).matching(identifier: "ShortcutRecorder").firstMatch
-        XCTAssertTrue(selfTestBtn.waitForExistence(timeout: 2.0))
+        XCTAssertEqual(true, selfTestBtn.waitForExistence(timeout: 2.0))
         
         let staticText = selfTestBtn.staticTexts.firstMatch
-        XCTAssertTrue(staticText.waitForExistence(timeout: 1.0))
+        XCTAssertEqual(true, staticText.waitForExistence(timeout: 1.0))
         // StaticText in dump showed 'value: ⌘ I', so use .value
         let label = selfTestBtn.staticTexts.firstMatch.value as? String ?? ""
         let selfVal = label.replacingOccurrences(of: " ", with: "")
@@ -142,10 +127,10 @@ final class ShortcutConflictsUITests: BaseUITest {
         
         // 1. Assert Conflict Message Exists
         // Using Identifier for reliability
-        XCTAssertTrue(app.staticTexts["ShortcutRecorderMessage"].waitForExistence(timeout: 2.0), "Conflict message missing for \(input)")
+        XCTAssertEqual(true, app.staticTexts["ShortcutRecorderMessage"].waitForExistence(timeout: 2.0), "Conflict message missing for \(input)")
         
         // 2. Assert Recorder Stuck Open (Rejection)
-        XCTAssertTrue(app.staticTexts["Press the new shortcut"].exists, "Recorder closed unexpectedly (Accepted conflict!) for \(input)")
+        XCTAssertEqual(true, app.staticTexts["Press the new shortcut"].exists, "Recorder closed unexpectedly (Accepted conflict!) for \(input)")
     }
     
     func createCustomAction() {
@@ -157,23 +142,23 @@ final class ShortcutConflictsUITests: BaseUITest {
         }
         
         let blankActionItem = app.menuItems["Blank Action"]
-        XCTAssertTrue(blankActionItem.waitForExistence(timeout: 2.0))
+        XCTAssertEqual(true, blankActionItem.waitForExistence(timeout: 2.0))
         blankActionItem.click()
         
         // Wait for list update - find the new cell
         // Assuming it's added at the end or we can just look for the text field
-        XCTAssertTrue(app.textFields["Action name"].waitForExistence(timeout: 2.0))
+        XCTAssertEqual(true, app.textFields["Action name"].waitForExistence(timeout: 2.0))
     }
     
     func getActionCell(index: Int) -> XCUIElement {
         let list = app.outlines["ShortcutsList"]
-        XCTAssertTrue(list.waitForExistence(timeout: 2.0), "ShortcutsList not found")
+        XCTAssertEqual(true, list.waitForExistence(timeout: 2.0), "ShortcutsList not found")
         // Basic assumption: Index 0 is "Actions" header. Custom actions start at 1.
         return list.cells.element(boundBy: index + 1)
     }
     
     func recordShortcut(cell: XCUIElement, key: String, modifiers: XCUIElement.KeyModifierFlags) {
-        XCTAssertTrue(cell.waitForExistence(timeout: 2.0), "Action cell does not exist")
+        XCTAssertEqual(true, cell.waitForExistence(timeout: 2.0), "Action cell does not exist")
         
         guard let btn = findRecordButton(in: cell) else {
             XCTFail("Could not find record button in cell")
@@ -183,10 +168,10 @@ final class ShortcutConflictsUITests: BaseUITest {
         btn.click()
         
         let overlay = app.staticTexts["Press the new shortcut"]
-        XCTAssertTrue(overlay.waitForExistence(timeout: 2.0), "Shortcut recording overlay did not appear")
+        XCTAssertEqual(true, overlay.waitForExistence(timeout: 2.0), "Shortcut recording overlay did not appear")
         
         app.typeKey(key, modifierFlags: modifiers)
-        XCTAssertTrue(overlay.waitForNonExistence(timeout: 2.0), "Overlay did not dismiss after recording")
+        XCTAssertEqual(true, overlay.waitForNonExistence(timeout: 2.0), "Overlay did not dismiss after recording")
     }
     
     func openRecorder(cell: XCUIElement) {
@@ -195,13 +180,13 @@ final class ShortcutConflictsUITests: BaseUITest {
              return
         }
         btn.click()
-        XCTAssertTrue(app.staticTexts["Press the new shortcut"].waitForExistence(timeout: 2.0))
+        XCTAssertEqual(true, app.staticTexts["Press the new shortcut"].waitForExistence(timeout: 2.0))
     }
     
     func cancelRecording() {
         if app.staticTexts["Press the new shortcut"].exists {
             app.typeKey(.escape, modifierFlags: [])
-            XCTAssertTrue(app.staticTexts["Press the new shortcut"].waitForNonExistence(timeout: 2.0))
+            XCTAssertEqual(true, app.staticTexts["Press the new shortcut"].waitForNonExistence(timeout: 2.0))
         }
     }
     
@@ -212,11 +197,11 @@ final class ShortcutConflictsUITests: BaseUITest {
     
     func setGlobalLaunchShortcut(key: String, modifiers: XCUIElement.KeyModifierFlags) {
         let label = app.staticTexts["Show/Hide Quiper"]
-        XCTAssertTrue(label.waitForExistence(timeout: 2.0))
+        XCTAssertEqual(true, label.waitForExistence(timeout: 2.0))
         
         // Use the accessibility identifier added to SettingsView
         let btn = app.descendants(matching: .any).matching(identifier: "GlobalShortcutButton").firstMatch
-        XCTAssertTrue(btn.waitForExistence(timeout: 2.0), "Global Shortcut Button not found")
+        XCTAssertEqual(true, btn.waitForExistence(timeout: 2.0), "Global Shortcut Button not found")
         
         btn.click()
         
@@ -231,7 +216,7 @@ final class ShortcutConflictsUITests: BaseUITest {
         // Verify it was assigned
         // Re-query button value via StaticText child (Group value might be empty)
         let staticText = btn.staticTexts.firstMatch
-        XCTAssertTrue(staticText.waitForExistence(timeout: 2.0))
+        XCTAssertEqual(true, staticText.waitForExistence(timeout: 2.0))
         
         let predicate = NSPredicate(format: "value CONTAINS[c] %@", key) // StaticText value updates with shortcut
         expectation(for: predicate, evaluatedWith: staticText, handler: nil)
