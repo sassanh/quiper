@@ -49,9 +49,6 @@ final class MainWindowReorderUITests: BaseUITest {
         // Attempt to access segments as buttons/images
         // Note: NSSegmentedControl segments might appear as buttons or toggles
         let firstSegment = serviceSelector.buttons.element(boundBy: 0)
-        let thirdSegment = serviceSelector.buttons.element(boundBy: 2)
-        
-
         
         if firstSegment.waitForExistence(timeout: 2.0) {
             // Verify Initial State
@@ -76,7 +73,6 @@ final class MainWindowReorderUITests: BaseUITest {
         // Drag 0.625 (Engine 3) to 0.125
         // Click 0.125 (Should now be Engine 3) -> Verify "Active: Engine 3"
         
-        let width = serviceSelector.frame.width
         let targetNormalized = CGVector(dx: 0.125, dy: 0.5) // Index 0
         serviceSelector.coordinate(withNormalizedOffset: targetNormalized).tap()
         
@@ -94,7 +90,6 @@ final class MainWindowReorderUITests: BaseUITest {
         
         // --- Step 2: Helper for Drag & Verify ---
         func performDragAndVerify(from sourceIndex: Int, targetX: Double, verifyIndex: Int, expectedActiveLabel: String) {
-            let width = serviceSelector.frame.width
             let segmentWidthFactor = 1.0 / 4.0
             let getCenter = { (i: Int) -> Double in return (Double(i) * segmentWidthFactor) + (segmentWidthFactor / 2.0) }
             

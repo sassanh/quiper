@@ -10,7 +10,7 @@ final class AutoDownloadTests: XCTestCase {
     func testAutoDownload() async throws {
         Settings.shared.updatePreferences.automaticallyDownloadsUpdates = true
         
-        let manager = UpdateManager.shared
+        _ = UpdateManager.shared
         // Simulate available release
         // manager.availableRelease = ... // private set
         

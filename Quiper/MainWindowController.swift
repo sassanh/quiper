@@ -1,6 +1,7 @@
 import AppKit
 import WebKit
 import Carbon
+import Combine
 
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
@@ -54,6 +55,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     
     // For test support: track navigation completions
     private var navigationContinuations: [ObjectIdentifier: CheckedContinuation<Void, Never>] = [:]
+    private var cancellables = Set<AnyCancellable>()
 
 
     private var inspectorVisible = false {
@@ -84,9 +86,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         setupUI()
         self.window?.delegate = self
-        findDebouncer.callback = { [weak self] in
-            self?.performFind(forward: true, newSearch: true)
-        }
+        addObserver(self, forKeyPath: "window", options: [.new], context: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -159,15 +159,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateActiveWebview()
     }
 
-    // ... (handleCommandShortcut and other methods remain unchanged until reloadServices) ...
-
     // Protocol conformance
     func reloadServices() {
         reloadServices(nil)
-    }
-
-    func currentWebViewURL() -> URL? {
-        currentWebView()?.url
     }
 
     func reloadServices(_ services: [Service]? = nil) {
@@ -244,7 +238,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if rawScript.isEmpty {
             let message = "Action \(escapeForJavaScript(action.name.isEmpty ? "Action" : action.name)) not implemented for \(escapeForJavaScript(service.name))"
             script = "console.log(\"\(message)\")"
-            NSSound.beep()
+            playErrorSound()
         } else {
             script = rawScript
         }
@@ -265,17 +259,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             switch (result) {
             case .success (let value):
                 if let dict = value as? [String: Any], let message = dict["quiperError"] as? String {
-                    NSSound.beep()
+                    self?.playErrorSound()
                     NSLog("[Quiper] Custom action script failed (caught exception): \(message)")
                     self?.focusInputInActiveWebview()
                     return
                 }
             case .failure (let error):
-                NSSound.beep()
+                self?.playErrorSound()
                 NSLog("[Quiper] Custom action script failed (error): \(error)")
                 self?.focusInputInActiveWebview()
                 return
             }
+        }
+    }
+    
+    private func playErrorSound() {
+        NSSound.beep()
+        if ProcessInfo.processInfo.arguments.contains("--uitesting") {
+            DistributedNotificationCenter.default().postNotificationName(NSNotification.Name("QuiperTestBeep"), object: nil, userInfo: nil, deliverImmediately: true)
         }
     }
 
@@ -332,6 +333,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let appShortcuts = Settings.shared.appShortcutBindings
         let config = HotkeyManager.Configuration(keyCode: UInt32(keyCode), modifierFlags: modifiers.rawValue)
         
+        NSLog("[QuiperDebug] HandleKeyDown: keyCode=\(event.keyCode) modifiers=\(modifiers.rawValue)")
+
         // Check App Bindings
         if matches(config, appShortcuts.configuration(for: .nextSession)) || matches(config, appShortcuts.alternateConfiguration(for: .nextSession)) {
             stepSession(by: 1)
@@ -582,6 +585,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         serviceSel.setAccessibilityElement(true)
         serviceSel.setAccessibilityIdentifier("ServiceSelector")
+        if let currentName = currentServiceName {
+            serviceSel.setAccessibilityLabel("Active: \(currentName)")
+        }
         drag.addSubview(serviceSel)
         serviceSelector = serviceSel
 
@@ -1245,8 +1251,9 @@ private func character(for keyCode: UInt16) -> String? {
         NSApp.sendAction(#selector(NSTextView.paste(_:)), to: nil, from: self)
     }
 
-    @objc private func performCustomActionFromMenu(_ sender: NSMenuItem) {
+    @objc func performCustomActionFromMenu(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? CustomAction else { return }
+        NSLog("[QuiperDebug] Menu Item Triggered Action: \(action.name)")
         performCustomAction(action)
     }
 

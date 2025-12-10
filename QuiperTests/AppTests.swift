@@ -64,10 +64,6 @@ class MockMainWindowController: MainWindowControlling {
         toggleInspectorCalled = true
     }
     
-    func currentWebViewURL() -> URL? {
-        return currentWebViewURLToReturn
-    }
-
     func focusInputInActiveWebview() {
         focusInputInActiveWebviewCalled = true
     }
@@ -98,19 +94,6 @@ class MockMainWindowController: MainWindowControlling {
     }
 }
 
-class MockCustomActionDispatcher: CustomActionDispatching {
-    var startMonitoringCalled = false
-    var stopMonitoringCalled = false
-
-    func startMonitoring(windowController: MainWindowControlling) {
-        startMonitoringCalled = true
-    }
-
-    func stopMonitoring() {
-        stopMonitoringCalled = true
-    }
-}
-
 class MockNotificationDispatcher: NotificationDispatching {
     var openSystemNotificationSettingsCalled = false
     var configureCalled = false
@@ -132,7 +115,6 @@ final class AppControllerTests: XCTestCase {
     var mockHotkeyManager: MockHotkeyManager!
     var mockEngineHotkeyManager: MockEngineHotkeyManager!
     var mockMainWindowController: MockMainWindowController!
-    var mockCustomActionDispatcher: MockCustomActionDispatcher!
     var mockNotificationDispatcher: MockNotificationDispatcher!
 
     override func setUp() async throws {
@@ -141,11 +123,10 @@ final class AppControllerTests: XCTestCase {
         mockHotkeyManager = MockHotkeyManager()
         mockEngineHotkeyManager = MockEngineHotkeyManager()
         mockMainWindowController = MockMainWindowController()
-        mockCustomActionDispatcher = MockCustomActionDispatcher()
         mockNotificationDispatcher = MockNotificationDispatcher()
         
         await MainActor.run {
-            appController = AppController(windowController: mockMainWindowController, hotkeyManager: mockHotkeyManager, engineHotkeyManager: mockEngineHotkeyManager, customActionDispatcher: mockCustomActionDispatcher, notificationDispatcher: mockNotificationDispatcher)
+            appController = AppController(windowController: mockMainWindowController, hotkeyManager: mockHotkeyManager, engineHotkeyManager: mockEngineHotkeyManager, notificationDispatcher: mockNotificationDispatcher)
         }
     }
 
@@ -156,7 +137,6 @@ final class AppControllerTests: XCTestCase {
             mockHotkeyManager = nil
             mockEngineHotkeyManager = nil
             mockMainWindowController = nil
-            mockCustomActionDispatcher = nil
             mockNotificationDispatcher = nil
         }
     }
@@ -192,14 +172,12 @@ final class AppControllerTests: XCTestCase {
         appController.showWindow(nil)
 
         XCTAssertTrue(mockMainWindowController.showCalled)
-        XCTAssertTrue(mockCustomActionDispatcher.startMonitoringCalled)
     }
 
     func testHideWindow() {
         appController.hideWindow(nil)
 
         XCTAssertTrue(mockMainWindowController.hideCalled)
-        XCTAssertTrue(mockCustomActionDispatcher.stopMonitoringCalled)
     }
 
     func testToggleInspector() {
@@ -228,20 +206,7 @@ final class AppControllerTests: XCTestCase {
         await fulfillment(of: [expectation], timeout: 1.0)
     }
     
-    func testShare() {
-        // Mock currentWebViewURL to return a non-nil value for the share functionality to proceed
-        mockMainWindowController.currentWebViewURLToReturn = URL(string: "https://mockurl.com")
-        
-        // As NSSharingServicePicker.show is a UI operation and hard to mock directly,
-        // this test mainly ensures that the method doesn't crash and the guard passes.
-        // Further testing would require UI testing frameworks or more intricate mocking of NSSharingServicePicker.
-        appController.share(nil)
-        
-        // No direct assert on mock calls related to NSSharingServicePicker,
-        // but we ensure the guard condition (url and contentView existing) is met for coverage.
-        // A more comprehensive test would involve mocking NSSharingServicePicker.
-    }
-    
+
     func testOpenNotificationSettings() {
         appController.openNotificationSettings(nil)
         XCTAssertTrue(mockNotificationDispatcher.openSystemNotificationSettingsCalled)

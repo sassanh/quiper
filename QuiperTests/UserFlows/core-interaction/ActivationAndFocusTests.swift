@@ -22,7 +22,7 @@ final class ActivationAndFocusTests: XCTestCase {
         windowController = MainWindowController()
         
         // Start Local Server
-        try await TestServer.shared.start()
+        try TestServer.shared.start()
     }
     
     override func tearDown() async throws {

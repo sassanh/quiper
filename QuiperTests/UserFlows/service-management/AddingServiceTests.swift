@@ -40,7 +40,7 @@ final class AddingServiceTests: XCTestCase {
     override func setUp() async throws {
         Settings.shared.reset()
         windowController = MainWindowController()
-        try await TestServer.shared.start()
+        try TestServer.shared.start()
     }
     
     override func tearDown() async throws {
@@ -78,7 +78,7 @@ final class AddingServiceTests: XCTestCase {
         
         XCTAssertTrue(settingsWindow.isVisible, "Settings window should be visible")
         
-        guard let contentView = settingsWindow.contentView else {
+        guard settingsWindow.contentView != nil else {
             XCTFail("Settings window has no content view")
             return
         }

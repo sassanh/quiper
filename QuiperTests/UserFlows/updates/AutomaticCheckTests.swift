@@ -11,7 +11,7 @@ final class AutomaticCheckTests: XCTestCase {
         Settings.shared.updatePreferences.automaticallyChecksForUpdates = true
         
         let manager = UpdateManager.shared
-        await manager.handleLaunchIfNeeded()
+        manager.handleLaunchIfNeeded()
         
         XCTAssertTrue(true)
     }

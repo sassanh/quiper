@@ -48,6 +48,7 @@ final class HotkeyManagerTests: XCTestCase {
     }
 }
 
+@MainActor
 final class EngineHotkeyManagerTests: XCTestCase {
     func testEntryEquality() {
         let id = UUID()

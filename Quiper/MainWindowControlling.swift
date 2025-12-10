@@ -7,7 +7,6 @@ protocol MainWindowControlling: AnyObject {
     func hide()
     func toggleInspector()
     var window: NSWindow? { get }
-    func currentWebViewURL() -> URL?
     var activeServiceURL: String? { get }
     func focusInputInActiveWebview()
     func reloadServices()

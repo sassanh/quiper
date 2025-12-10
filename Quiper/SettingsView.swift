@@ -688,8 +688,7 @@ struct ServiceDetailView: View {
             Text("Focus Selector (CSS Selector)")
                 .font(.caption)
                 .foregroundColor(.secondary)
-            TextEditor(text: $service.focus_selector)
-                .font(.system(.body, design: .monospaced))
+            CodeTextEditor(text: $service.focus_selector)
                 .frame(minHeight: 140)
                 .background(Color(NSColor.textBackgroundColor))
                 .cornerRadius(5)
@@ -792,13 +791,13 @@ private struct ActionScriptEditor: View {
                 Text("JavaScript for \(action.name.isEmpty ? "Action" : action.name)")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                TextEditor(text: $script)
-                    .font(.system(.body, design: .monospaced))
+                CodeTextEditor(text: $script)
                     .frame(minHeight: 140)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(Color.secondary.opacity(0.4), lineWidth: 1)
                     )
+                    .autocorrectionDisabled(true) // Disable autocorrect
                 Text("Leave blank to log the default 'Action not implemented' message.")
                     .font(.footnote)
                     .foregroundColor(.secondary)
@@ -811,6 +810,62 @@ private struct ActionScriptEditor: View {
         .padding()
     }
 }
+
+#if os(macOS)
+private struct CodeTextEditor: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+
+        let textView = NSTextView()
+        textView.isRichText = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.isAutomaticLinkDetectionEnabled = false
+        textView.isAutomaticDataDetectionEnabled = false
+        textView.usesFindBar = true
+        textView.font = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        textView.textContainerInset = NSSize(width: 4, height: 6)
+        textView.delegate = context.coordinator
+
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let textView = nsView.documentView as? NSTextView else { return }
+        if textView.string != text {
+            textView.string = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: CodeTextEditor
+        init(parent: CodeTextEditor) { self.parent = parent }
+        func textDidChange(_ notification: Notification) {
+            guard let tv = notification.object as? NSTextView else { return }
+            parent.text = tv.string
+        }
+    }
+}
+#else
+private struct CodeTextEditor: View {
+    @Binding var text: String
+    var body: some View {
+        TextEditor(text: $text)
+            .font(.system(.body, design: .monospaced))
+    }
+}
+#endif
 
 
 
@@ -926,3 +981,4 @@ extension Bundle {
         }
     }
 }
+

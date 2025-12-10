@@ -27,3 +27,4 @@ coverage-html/
 test_output*.txt
 result*.json
 *.log
+/logs
