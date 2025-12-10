@@ -4,6 +4,14 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [2.0.0] - 2025-12-10
+
+### Added
+
 - **UI Tests**: Added extensive UI tests covering window reordering and other interactions to ensure robustness.
 - **Template Management UI Tests**: Implemented comprehensive UI tests for adding and deleting service templates, covering both one-by-one and bulk operations.
 - **Code Coverage**: Integrated Codecov for automated test coverage reporting on every CI build.
