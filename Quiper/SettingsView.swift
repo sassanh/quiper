@@ -20,7 +20,7 @@ struct SettingsView: View {
             }
             .tag("Engines")
             
-            KeyBindingsSettingsView()
+            KeyBindingsSettingsView(appController: appController)
                 .tabItem {
                     Label("Shortcuts", systemImage: "keyboard")
                 }

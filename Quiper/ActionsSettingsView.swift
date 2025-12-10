@@ -7,6 +7,7 @@ struct KeyBindingsSettingsView: View {
     @EnvironmentObject var shortcutState: ShortcutRecordingState
     @State private var pendingDeletion: PendingDeletion?
     @State private var activationStatus: [UUID: String] = [:]
+    var appController: AppController?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -330,6 +331,10 @@ struct KeyBindingsSettingsView: View {
             if let configuration, let index = settings.services.firstIndex(where: { $0.id == serviceID }) {
                 settings.services[index].activationShortcut = configuration
                 settings.saveSettings()
+                Task { @MainActor in
+                    NSLog("[Quiper] ActionsSettingsView calling reloadServices for \(serviceID)")
+                    appController?.reloadServices()
+                }
                 activationStatus[serviceID] = "Saved"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                     activationStatus[serviceID] = nil
@@ -343,6 +348,10 @@ struct KeyBindingsSettingsView: View {
         guard let index = settings.services.firstIndex(where: { $0.id == serviceID }) else { return }
         settings.services[index].activationShortcut = nil
         settings.saveSettings()
+        Task { @MainActor in
+            NSLog("[Quiper] ActionsSettingsView clearing hotkey, calling reloadServices for \(serviceID)")
+            appController?.reloadServices()
+        }
         activationStatus[serviceID] = "Cleared"
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             activationStatus[serviceID] = nil

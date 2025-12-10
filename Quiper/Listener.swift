@@ -195,6 +195,7 @@ final class EngineHotkeyManager {
 
     func register(entries: [Entry], onTrigger: @escaping (UUID) -> Void) {
         assertMainThread()
+        NSLog("[Quiper] EngineHotkeyManager.register called with \(entries.count) entries")
         reset()
         installHandlerIfNeeded()
         self.onTrigger = onTrigger
@@ -203,6 +204,7 @@ final class EngineHotkeyManager {
 
         for entry in entries {
             if seenConfigurations.contains(entry.configuration) {
+                NSLog("[Quiper] Skipping duplicate configuration for service \(entry.serviceID)")
                 continue
             }
             seenConfigurations.append(entry.configuration)
@@ -263,7 +265,11 @@ final class EngineHotkeyManager {
                                          GetEventDispatcherTarget(),
                                          0,
                                          &ref)
-        guard status == noErr, let ref else { return }
+        guard status == noErr, let ref else {
+            NSLog("[Quiper] Failed to register engine hotkey: status=\(status)")
+            return
+        }
+        NSLog("[Quiper] Successfully registered engine hotkey id=\(identifier) keyCode=\(entry.configuration.keyCode)")
         hotKeyRefs[entry.serviceID] = ref
         identifiersByService[entry.serviceID] = identifier
         serviceIDByIdentifier[identifier] = entry.serviceID

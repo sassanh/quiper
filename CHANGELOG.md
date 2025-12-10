@@ -4,6 +4,14 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [2.1.0] - 2025-12-10
+
+### Added
+
 - **Notification Status**: Added a real-time status indicator to the menu bar menu (e.g., "Notifications: Authorized") that updates automatically when permissions change.
 - **Smart Deep Linking**: The "Open System Settings" button now attempts to deep-link directly to Quiper's specific notification settings page, falling back to the general list if needed.
 - **Permission Sync**: The app now automatically refreshes permission status when returning to the foreground, ensuring immediate updates without restart.
