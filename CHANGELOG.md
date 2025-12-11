@@ -11,6 +11,9 @@
 ### Changed
 
 - **Codebase Cleanup**: Removed legacy `share` functionality and associated tests to streamline the codebase.
+- **Launch Shortcuts UI Tests:** Fixed a race condition where tests would type hotkeys before the application had finished registering them, by synchronizing the "Saved" status indicator with the hotkey registration task.
+- **Launch Shortcuts UI Tests (Refactor):** Refactored `LaunchShortcutsUITests` to align with the robust patterns of `NavigationShortcutsUITests`, replacing flaky "Saved" label checks with deterministic button value verification and implementing comprehensive functional verification for global hotkeys and cleanup.
+- **Documentation:** Added comprehensive companion documentation for all UI tests in `QuiperUITests/UserFlows`, covering setups, actions, and expected results for templates, updates, custom actions, and service management.
 
 ### Fixed
 

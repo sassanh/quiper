@@ -884,7 +884,12 @@ class Settings: ObservableObject {
         }
         if CommandLine.arguments.contains("--test-custom-engines") {
             let testEngines = (0..<4).map { i in
-                Service(name: "Engine \(i + 1)", url: "https://example.com/\(i + 1)", focus_selector: "")
+                // Use data URI to avoid network dependency in CI
+                // Use "Content X" to distinguish from Service Name "Engine X" in UI tests
+                // Add <title> for robust accessibility-based verification
+                let html = "<html><head><title>Content \(i + 1)</title></head><body><h1>Content \(i + 1)</h1></body></html>"
+                let dataURL = "data:text/html;charset=utf-8," + html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+                return Service(name: "Engine \(i + 1)", url: dataURL, focus_selector: "")
             }
             return (PersistedSettings(services: testEngines,
                                       hotkey: nil,

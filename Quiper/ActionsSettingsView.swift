@@ -367,6 +367,7 @@ struct KeyBindingsSettingsView: View {
                 ForEach($settings.services) { $service in
                     ServiceLaunchShortcutRow(
                         title: service.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Service" : service.name,
+                        url: service.url,
                         shortcut: service.activationShortcut,
                         statusMessage: activationStatus[service.id] ?? "",
                         onTap: { startActivationCapture(for: service.id) },

@@ -44,22 +44,14 @@ class BaseUITest: XCTestCase {
         if statusItem.waitForExistence(timeout: 1.0) {
             statusItem.click()
             
-            let settingsItem = app.menuItems["Settings"]
-            
-            if settingsItem.waitForExistence(timeout: 1.0) {
-                // Use coordinate click to avoid "waiting for menu open notification" failure
-                settingsItem.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
-            }
+            // Use Cmd+, to open settings reliably once menu is focused
+            // Direct menu item clicking can leave the menu stuck open, disabling the app
+            app.typeKey(",", modifierFlags: .command)
         }
         
         // Verify window opens
         let settingsWindow = app.windows.firstMatch
         if !waitForElement(settingsWindow, timeout: 1) {
-            app.typeKey(",", modifierFlags: .command)
-            if waitForElement(settingsWindow, timeout: 1) {
-                 return // Success
-            }
-            
             XCTFail("Settings window did not open")
         }
     }
