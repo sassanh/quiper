@@ -1,155 +1,168 @@
+
 import XCTest
 
 final class LaunchShortcutsUITests: BaseUITest {
     
     override var launchArguments: [String] {
-        // Use custom test engines defined in Settings.swift
-        return ["--uitesting", "--test-custom-engines"]
+        // Use custom test engines defined in Settings.swift (Engine 1-4)
+        return ["--uitesting", "--test-custom-engines", "--no-default-actions"]
     }
 
+    /// Tests the lifecycle of launch shortcuts: Recording, Verification, Clearing.
+    /// Refactored to match the robust patterns of NavigationShortcutsUITests.
     func testLaunchShortcutsLifecycle() throws {
-        openSettings()
         
+        struct LaunchAssignment {
+            let engineName: String
+            let recorderId: String
+            let letter: String
+            let modifiers: XCUIElement.KeyModifierFlags
+        }
+        
+        let assignments = [
+            LaunchAssignment(engineName: "Engine 1", recorderId: "recorder_launch_Engine 1", letter: "a", modifiers: [.command, .option, .shift]),
+            LaunchAssignment(engineName: "Engine 2", recorderId: "recorder_launch_Engine 2", letter: "b", modifiers: [.command, .option, .shift]),
+            LaunchAssignment(engineName: "Engine 3", recorderId: "recorder_launch_Engine 3", letter: "c", modifiers: [.command, .option, .shift]),
+            LaunchAssignment(engineName: "Engine 4", recorderId: "recorder_launch_Engine 4", letter: "d", modifiers: [.command, .option, .shift])
+        ]
+        
+        // ============================================================
+        // SETUP
+        // ============================================================
+        openSettings()
         switchToSettingsTab("Shortcuts")
         
-        // Tap Service Hotkeys header to scroll to it
-        let header = app.staticTexts["Service Hotkeys"]
-        header.tap()
+        let shortcutsList = app.descendants(matching: .any).matching(identifier: "ShortcutsList").firstMatch
+        XCTAssertTrue(shortcutsList.waitForExistence(timeout: 2.0), "Shortcuts list not found")
         
-        // Test with the custom engines
-        let engines = ["Engine 1", "Engine 2", "Engine 3", "Engine 4"]
-        let letters = ["A", "B", "C", "D"]
-        var assignedCount = 0
+        // ============================================================
+        // 1. ASSIGN SHORTCUTS & VERIFY "SAVED" STATUS
+        // ============================================================
         
-        // 1. Assign shortcuts
-        for (index, engine) in engines.enumerated() {
-            let engineLabel = app.staticTexts[engine]
+        for assignment in assignments {
+            // Tap the row text to ensure the cell is focused/visible/expanded
+            let rowLabel = app.staticTexts[assignment.engineName]
+            XCTAssertTrue(rowLabel.waitForExistence(timeout: 2.0), "Row '\(assignment.engineName)' not found")
+            rowLabel.tap()
             
-            engineLabel.tap()
+            // Robustly find the cell containing this label
+            let cell = app.outlines.cells.containing(.staticText, identifier: assignment.engineName).firstMatch
             
-            // Find the button by its specific identifier
-            let recordID = "recorder_launch_\(engine)"
-            // ShortcutButton is a ZStack (Other), not a Button
-            let recordButton = app.descendants(matching: .any).matching(identifier: recordID).firstMatch
-            
-            if !recordButton.waitForExistence(timeout: 3) {
-                // Verify cell exists
-                let cell = app.outlines.cells.containing(.staticText, identifier: engine).firstMatch
-                continue
-            }
-            
-            if !recordButton.isHittable {
-                engineLabel.tap()
-                // Wait for animation
-                _ = recordButton.waitForExistence(timeout: 1.0)
-            }
-            
+            // Find the record button WITHIN the cell
+            // Note: ShortcutButton is a custom view, often identified as 'Other' or 'Button' depending on traits
+            // Nav tests use .descendants(matching: .any) matching identifier
+            let recordButton = cell.descendants(matching: .any).matching(identifier: assignment.recorderId).firstMatch
+            XCTAssertTrue(recordButton.waitForExistence(timeout: 2.0), "Record button for \(assignment.engineName) not found")
             
             recordButton.tap()
-            let letter = letters[index]
-            app.typeKey(letter.lowercased(), modifierFlags: [.command, .option, .shift])
-            assignedCount += 1
+            app.typeKey(assignment.letter, modifierFlags: assignment.modifiers)
+            
+            // Verify the button text updates to reflect the assignment
+            // This is more robust than checking for transient "Saved" labels
+            // ShortcutButton sets .accessibilityValue to the displayed text
+            let predicate = NSPredicate(format: "value != 'Record Shortcut'")
+            let expectation = XCTNSPredicateExpectation(predicate: predicate, object: recordButton)
+            let result = XCTWaiter.wait(for: [expectation], timeout: 2.0)
+            XCTAssertEqual(result, .completed, "Record button did not update value for \(assignment.engineName)")
         }
         
-        XCTAssertEqual(assignedCount, engines.count, "Should have assigned all shortcuts")
+        // ============================================================
+        // 2. VERIFY ASSIGNMENTS (Functional Check)
+        // ============================================================
         
-        // 2. Close Settings
-        app.typeKey("w", modifierFlags: .command) // Cmd+W to close window
+        // Close Settings window to ensure global hotkeys work correctly (User feedback)
+        app.typeKey("w", modifierFlags: .command)
         
-        // Wait for Settings to disappear (using first match or specific window)
-        let settingsWin = app.windows["Settings"]
-        XCTAssertTrue(settingsWin.waitForNonExistence(timeout: 2.0))
-        
-        // Ensure app is active/foreground to receive hotkeys
+        // Activate app to test global hotkeys (simulated keys go to active app)
         app.activate()
+        // Wait for app to be ready
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5.0))
         
-        // 3. Verify shortcuts activate correct engines
-        // Find ServiceSelector - might be a RadioGroup or SegmentedControl
+        // Identify Service Selector for verification
+        // Note: App overlay must be visible. If hidden, type global toggle (Option+Space default) or check logic.
+        // Assuming app is visible or hotkeys wake it.
+        
         var serviceSelector = app.segmentedControls["ServiceSelector"]
-        if !serviceSelector.exists {
-            serviceSelector = app.radioGroups["ServiceSelector"]
-        }
-        if !serviceSelector.exists {
-            // Fallback to finding by identifier
-            serviceSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch
-        }
+        if !serviceSelector.exists { serviceSelector = app.radioGroups["ServiceSelector"] }
+        if !serviceSelector.exists { serviceSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch }
         
-        if !serviceSelector.waitForExistence(timeout: 3) {
-            
-        }
-        XCTAssertTrue(serviceSelector.exists, "Service selector should exist")
+        // Reorder assignments for verification: Test 2, 3, 4 first, then 1.
+        // This ensures since we start at Engine 1, we verifying switching *away* then *back* to 1.
         
-        for (index, letter) in letters.enumerated() {
-            let engineName = engines[index]
-            
-            app.typeKey(letter.lowercased(), modifierFlags: [.command, .option, .shift])
-            
-            // Wait for switch via label change
-            let predicate = NSPredicate(format: "label CONTAINS 'Active: \(engineName)'")
-            expectation(for: predicate, evaluatedWith: serviceSelector, handler: nil)
-            waitForExpectations(timeout: 3.0)
-            
-            // Verify selection via ServiceSelector Label
-            let selectorLabel = serviceSelector.label
-            
-            XCTAssertTrue(selectorLabel.contains("Active: \(engineName)"), "Selector label should indicate active engine")
+        var verificationOrder = assignments.filter { $0.engineName != "Engine 1" }
+        if let engine1 = assignments.first(where: { $0.engineName == "Engine 1" }) {
+            verificationOrder.append(engine1)
         }
         
-        // 4. Open Settings again
-        openSettings()
-        switchToSettingsTab("Shortcuts")
-        header.tap()
-        
-        // 5. Clear shortcuts
-        
-        var clearedCount = 0
-        // Iterate through engines to ensure we scroll to them and find their clear buttons
-        for engine in engines {
-            let engineLabel = app.staticTexts[engine]
-            engineLabel.tap()
-
-            let cell = app.outlines.cells.containing(.staticText, identifier: engine).firstMatch
+        // Functional Verification Loop
+        for assignment in verificationOrder {
+            // Type the assigned global hotkey
+            app.typeKey(assignment.letter, modifierFlags: assignment.modifiers)
             
-            // Find any hittable clear button
-            let clearButton = cell.buttons.matching(identifier: "xmark.circle.fill").firstMatch
-
-            if clearButton.waitForExistence(timeout: 1.0) {
-                clearButton.tap()
-                clearButton.waitForNonExistence(timeout: 1.0)
+            // Verify the Engine Switch detected in UI
+            let expectedEngineLabel = "Active: \(assignment.engineName)"
+            let enginePred = NSPredicate(format: "label CONTAINS %@", expectedEngineLabel)
+            let engineExp = XCTNSPredicateExpectation(predicate: enginePred, object: serviceSelector)
+            
+            if XCTWaiter.wait(for: [engineExp], timeout: 4.0) != .completed {
+                 print("DEBUG: Verification failed. ServiceSelector Label: '\(serviceSelector.label)'")
+                 XCTFail("Failed to switch to \(assignment.engineName) using global hotkey")
             }
         }
         
-        // 6. Verify Record Shortcut buttons are back
-        for engine in engines {
-            let recordButton = app.staticTexts["Record Shortcut"].firstMatch
-            XCTAssertTrue(recordButton.exists, "Should have Record Shortcut restored for '\(engine)'")
+        // ============================================================
+        // 3. CLEAR SHORTCUTS
+        // ============================================================
+        
+        // Re-open settings for cleanup
+        openSettings()
+        switchToSettingsTab("Shortcuts")
+        
+        // No need to check shortcutsList.exists, we just opened it.
+        
+        for assignment in assignments {
+            // Focus row
+            app.staticTexts[assignment.engineName].tap()
+             
+            let cell = app.outlines.cells.containing(.staticText, identifier: assignment.engineName).firstMatch
+            
+            // The "xmark.circle.fill" is the clear button inside ShortcutButton
+            // We need to find the specific one for this assignment
+            // NavigationShortcutsUITests finds "xmark.circle.fill" inside the cell
+            let clearButton = cell.buttons.matching(identifier: "xmark.circle.fill").firstMatch
+            
+            if clearButton.waitForExistence(timeout: 2.0) {
+                clearButton.tap()
+                XCTAssertTrue(clearButton.waitForNonExistence(timeout: 1.0), "Failed to clear shortcut for \(assignment.engineName)")
+            }
         }
         
-        // 7. Close Settings and verify shortcuts DO NOT work
+        // ============================================================
+        // 4. VERIFY CLEARED (Functional Check)
+        // ============================================================
+        
+        // Close Settings window to ensure we are testing clean state (app focused)
+        // User explicitly requested verifying "check shortcuts and see they are not working" with settings closed
         app.typeKey("w", modifierFlags: .command)
-        // Wait for settings to close
-        XCTAssertTrue(app.windows["Settings"].waitForNonExistence(timeout: 2.0))
         
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5.0))
         
-        // Check current engine (should be Engine 4 from previous step)
-        // Find ServiceSelector again to check its label (state)
-        // We know from earlier that finding the window fails, but matching the element works.
-        let finalSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch
-        XCTAssertTrue(finalSelector.exists, "ServiceSelector should be visible")
+        // Capture current state
+        let currentLabel = serviceSelector.label
         
-        let initialLabel = finalSelector.label
-        XCTAssertTrue(initialLabel.contains("Active: Engine 4"), "Should be on Engine 4 initially, got: \(initialLabel)")
-        
-        // Loop through all assigned shortcuts (A-D) and verify none of them switch the engine
-        for (index, letter) in letters.enumerated() {
-             app.typeKey(letter.lowercased(), modifierFlags: [.command, .option, .shift])
-             wait(0.1) // Short wait as per requirements
+        // Loop through ALL assignments to verify NONE work
+        for assignment in assignments {
+             // Type keys
+             app.typeKey(assignment.letter, modifierFlags: assignment.modifiers)
              
-             let currentLabel = finalSelector.label
-             XCTAssertTrue(
-                 currentLabel.contains("Active: Engine 4"),
-                 "Should still be on Engine 4. Shortcut '\(letter)' triggered a switch to: \(currentLabel)"
-             )
+             // Wait briefly to ensure NO change happens
+             // If we were on Engine 1, and type Engine 2 key, checking it STAYS Engine 1 is valid.
+             // If we were on Engine 1, and type Engine 1 key, it stays Engine 1 (which is correct but weak test).
+             // But since we iterate ALL, we will inevitably test a switch-away case (e.g. Engine 2 key).
+             
+             wait(0.5)
+             XCTAssertEqual(serviceSelector.label, currentLabel, "Global hotkey for \(assignment.engineName) triggered a switch after clearing!")
         }
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ServiceLaunchShortcutRow: View {
     var title: String
+    var url: String
     var shortcut: HotkeyManager.Configuration?
     var statusMessage: String
     var onTap: () -> Void
@@ -12,7 +13,7 @@ struct ServiceLaunchShortcutRow: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.headline)
-            Text("Sets a global keybinding that opens Quiper directly to this engine.")
+            Text(url)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack {

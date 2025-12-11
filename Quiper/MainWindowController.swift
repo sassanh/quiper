@@ -43,6 +43,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var zoomLevelsByURL: [String: CGFloat] = [:]
     weak var contentContainerView: NSView?
     private var notificationBridges: [ObjectIdentifier: WebNotificationBridge] = [:]
+    private var titleObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
     private var draggingServiceIndex: Int?
     private var findBar: NSVisualEffectView?
     private var findField: NSSearchField?
@@ -725,6 +726,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         webview.isHidden = true // Start hidden
         webview.pageZoom = zoomLevelsByURL[service.url] ?? Zoom.default
         
+        // Enable robust accessibility verification for UI tests by mapping title -> accessibilityLabel
+        let observation = webview.observe(\.title, options: [.initial, .new]) { webview, _ in
+            webview.setAccessibilityLabel(webview.title)
+        }
+        titleObservations[ObjectIdentifier(webview)] = observation
+        
         attachNotificationBridge(to: webview, service: service, sessionIndex: sessionIndex)
 
         // Add to view hierarchy
@@ -1003,6 +1010,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func tearDownWebView(_ webView: WKWebView) {
+        let identifier = ObjectIdentifier(webView)
+        titleObservations[identifier]?.invalidate()
+        titleObservations.removeValue(forKey: identifier)
+        
         detachNotificationBridge(from: webView)
         webView.removeFromSuperview()
     }

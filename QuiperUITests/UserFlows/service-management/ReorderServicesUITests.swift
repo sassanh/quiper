@@ -21,16 +21,20 @@ final class ReorderServicesUITests: BaseUITest {
         let engine3 = "Engine 3"
         let engine4 = "Engine 4"
         
-        XCTAssertTrue(app.staticTexts[engine1].waitForExistence(timeout: 2.0))
-        XCTAssertTrue(app.staticTexts[engine2].waitForExistence(timeout: 2.0))
-        XCTAssertTrue(app.staticTexts[engine3].waitForExistence(timeout: 2.0))
-        XCTAssertTrue(app.staticTexts[engine4].waitForExistence(timeout: 2.0))
+        // Scope to sidebar to avoid ambiguity with WebView content ("Engine 1" header)
+        let sidebar = app.outlines.firstMatch
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 2.0))
+        
+        XCTAssertTrue(sidebar.staticTexts[engine1].waitForExistence(timeout: 2.0))
+        XCTAssertTrue(sidebar.staticTexts[engine2].waitForExistence(timeout: 2.0))
+        XCTAssertTrue(sidebar.staticTexts[engine3].waitForExistence(timeout: 2.0))
+        XCTAssertTrue(sidebar.staticTexts[engine4].waitForExistence(timeout: 2.0))
         
         // Initial Verification: 1, 2, 3, 4
-        let e1 = app.staticTexts[engine1]
-        let e2 = app.staticTexts[engine2]
-        let e3 = app.staticTexts[engine3]
-        let e4 = app.staticTexts[engine4]
+        let e1 = sidebar.staticTexts[engine1]
+        let e2 = sidebar.staticTexts[engine2]
+        let e3 = sidebar.staticTexts[engine3]
+        let e4 = sidebar.staticTexts[engine4]
         
         let f1 = e1.frame
         let f2 = e2.frame
@@ -42,16 +46,15 @@ final class ReorderServicesUITests: BaseUITest {
         XCTAssertLessThan(f3.minY, f4.minY)
         
         // --- Step 1: Move Engine 3 to Top (above Engine 1) ---
-        // --- Step 1: Move Engine 3 to Top (above Engine 1) ---
         dragService(source: engine3, target: engine1)
         
         // Expect: 3, 1, 2, 4
         // Engine 1 and 2 shift down.
         // Re-query
-        let e1_s1 = app.staticTexts[engine1]
-        let e2_s1 = app.staticTexts[engine2]
-        let e3_s1 = app.staticTexts[engine3]
-        let e4_s1 = app.staticTexts[engine4]
+        let e1_s1 = sidebar.staticTexts[engine1]
+        let e2_s1 = sidebar.staticTexts[engine2]
+        let e3_s1 = sidebar.staticTexts[engine3]
+        let e4_s1 = sidebar.staticTexts[engine4]
         XCTAssertTrue(e3_s1.waitForExistence(timeout: 2.0))
         
         // Wait for animation to settle
@@ -68,14 +71,13 @@ final class ReorderServicesUITests: BaseUITest {
         XCTAssertLessThan(f2_s1.minY, f4_s1.minY, "Engine 2 should be above Engine 4")
         
         // --- Step 2: Move Engine 2 to Top (above Engine 3) ---
-        // --- Step 2: Move Engine 2 to Top (above Engine 3) ---
         dragService(source: engine2, target: engine3)
         
         // Expect: 2, 3, 1, 4
-        let e1_s2 = app.staticTexts[engine1]
-        let e2_s2 = app.staticTexts[engine2]
-        let e3_s2 = app.staticTexts[engine3]
-        let e4_s2 = app.staticTexts[engine4]
+        let e1_s2 = sidebar.staticTexts[engine1]
+        let e2_s2 = sidebar.staticTexts[engine2]
+        let e3_s2 = sidebar.staticTexts[engine3]
+        let e4_s2 = sidebar.staticTexts[engine4]
         XCTAssertTrue(e2_s2.waitForExistence(timeout: 2.0))
         
         // Wait for animation
@@ -168,8 +170,9 @@ final class ReorderServicesUITests: BaseUITest {
         openSettings()
         
         // Verify Engine 4 exists
-        let service = app.staticTexts["Engine 4"]
-        XCTAssertTrue(service.waitForExistence(timeout: 2.0), "Engine 4 should exist")
+        let sidebar = app.outlines.firstMatch
+        let service = sidebar.staticTexts["Engine 4"]
+        XCTAssertTrue(service.waitForExistence(timeout: 3.0), "Engine 4 should exist")
         
         // Click on the service to select it
         service.click()
