@@ -4,6 +4,14 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [2.2.0] - 2025-12-16
+
+### Added
+
 - **UI Tests**: Added `CustomActionUITests` to robustly verify the custom action lifecycle, script execution, and error handling.
 - **Unit Tests**: Added `MainWindowControllerTests` to verify core logic like service selection.
 - **Test Infrastructure**: Added support for `DistributedNotification` based test signaling (`app.sassanh.quiper.test.beep`) to verify system audible alerts without UI inspection.
