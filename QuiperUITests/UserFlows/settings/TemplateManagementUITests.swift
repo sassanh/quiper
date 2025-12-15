@@ -58,8 +58,8 @@ final class TemplateManagementUITests: BaseUITest {
             }
             addServiceBtn.click()
             
-            // Wait for menu to appear. Menu items might be 'menuItems' or 'buttons'
-            let menuItem = app.menuItems[name]
+            // Wait for menu to appear. Scope to toolbars to avoid matching Window menu items (e.g. "ChatGPT" window title)
+            let menuItem = app.toolbars.menuItems[name]
             if menuItem.waitForExistence(timeout: 1.0) {
                 menuItem.click()
             } else {

@@ -70,6 +70,14 @@ struct Service: Codable, Identifiable {
 
 extension Service: Equatable {}
 
+enum DockVisibility: String, Codable, Equatable, CaseIterable, Identifiable {
+    case never = "Never"
+    case whenVisible = "When Visible"
+    case always = "Always"
+    
+    var id: String { rawValue }
+}
+
 struct UpdatePreferences: Codable, Equatable {
     var automaticallyChecksForUpdates: Bool = true
     var automaticallyDownloadsUpdates: Bool = false
@@ -194,6 +202,7 @@ private struct PersistedSettings: Codable {
     var serviceZoomLevels: [String: Double]?
     var appShortcuts: AppShortcutBindings?
     var sessionDigitsAlternateModifiers: UInt?
+    var dockVisibility: DockVisibility?
 }
 
 class SettingsWindow: NSWindow {
@@ -272,6 +281,11 @@ class Settings: ObservableObject {
     @Published var updatePreferences: UpdatePreferences = UpdatePreferences()
     @Published var serviceZoomLevels: [String: CGFloat] = [:]
     @Published var appShortcutBindings: AppShortcutBindings = .defaults
+    @Published var dockVisibility: DockVisibility = .whenVisible {
+        didSet {
+            NotificationCenter.default.post(name: .dockVisibilityChanged, object: nil)
+        }
+    }
     
     func reset() {
         services = []
@@ -800,6 +814,7 @@ class Settings: ObservableObject {
         if let altSessionDigits = persisted.sessionDigitsAlternateModifiers {
             appShortcutBindings.sessionDigitsAlternateModifiers = altSessionDigits
         }
+        dockVisibility = persisted.dockVisibility ?? .whenVisible
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
@@ -829,7 +844,8 @@ class Settings: ObservableObject {
                                             updatePreferences: updatePreferences,
                                             serviceZoomLevels: serviceZoomLevels.mapValues { Double($0) },
                                             appShortcuts: appShortcutBindings,
-                                            sessionDigitsAlternateModifiers: appShortcutBindings.sessionDigitsAlternateModifiers)
+                                            sessionDigitsAlternateModifiers: appShortcutBindings.sessionDigitsAlternateModifiers,
+                                            dockVisibility: dockVisibility)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {

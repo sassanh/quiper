@@ -2,6 +2,8 @@
 #--------------------------------------------------#
 # Gitignore for the following technologies: Xcode
 
+.DS_Store
+
 ## User settings
 xcuserdata/
 

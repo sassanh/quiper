@@ -12,6 +12,12 @@ extension Notification.Name {
     static let appVisibilityChanged = Notification.Name("QuiperAppVisibilityChanged")
     static let hotkeyConfigurationChanged = Notification.Name("QuiperHotkeyConfigurationChanged")
     static let notificationPermissionChanged = Notification.Name("QuiperNotificationPermissionChanged")
+    static let dockVisibilityChanged = Notification.Name("QuiperDockVisibilityChanged")
+}
+
+@objc protocol StandardEditActions {
+    func undo(_ sender: Any?)
+    func redo(_ sender: Any?)
 }
 
 @MainActor
@@ -47,6 +53,7 @@ final class AppController: NSObject, NSWindowDelegate {
                                                           selector: #selector(handleApplicationDidActivate(_:)),
                                                           name: NSWorkspace.didActivateApplicationNotification,
                                                           object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleDockVisibilityChanged), name: .dockVisibilityChanged, object: nil)
     }
     
     
@@ -60,6 +67,10 @@ final class AppController: NSObject, NSWindowDelegate {
     
     func start() {
         
+        if Settings.shared.dockVisibility == .always {
+            NSApp.setActivationPolicy(.regular)
+        }
+        
         registerOverlayHotkey()
         registerEngineHotkeys()
         UpdateManager.shared.handleLaunchIfNeeded()
@@ -71,6 +82,10 @@ final class AppController: NSObject, NSWindowDelegate {
     @objc func showWindow(_ sender: Any?) {
         
         captureFrontmostNonQuiperApplication()
+        let visibility = Settings.shared.dockVisibility
+        if visibility == .always || visibility == .whenVisible {
+            NSApp.setActivationPolicy(.regular)
+        }
         windowController.show()
         NotificationCenter.default.post(name: .appVisibilityChanged, object: true)
         
@@ -80,11 +95,23 @@ final class AppController: NSObject, NSWindowDelegate {
     
     @objc func hideWindow(_ sender: Any?) {
         windowController.hide()
+        let visibility = Settings.shared.dockVisibility
+        if visibility == .whenVisible {
+            NSApp.setActivationPolicy(.accessory)
+        }
         if AppDelegate.sharedSettingsWindow.isVisible == true {
             dismissSettingsWindow()
         }
         activateLastKnownApplication()
         NotificationCenter.default.post(name: .appVisibilityChanged, object: false)
+    }
+    
+    @objc func closeSettingsOrHide(_ sender: Any?) {
+        if AppDelegate.sharedSettingsWindow.isVisible == true && AppDelegate.sharedSettingsWindow.isKeyWindow {
+            dismissSettingsWindow()
+        } else {
+            hideWindow(sender)
+        }
     }
     
     
@@ -116,7 +143,28 @@ final class AppController: NSObject, NSWindowDelegate {
             }
         }
     }
-    
+    @objc func handleDockVisibilityChanged(_ notification: Notification) {
+        
+        let visibility = Settings.shared.dockVisibility
+        
+        switch visibility {
+        case .always:
+            NSApp.setActivationPolicy(.regular)
+        case .never:
+            NSApp.setActivationPolicy(.accessory)
+        case .whenVisible:
+            if windowController.window?.isVisible == true {
+                NSApp.setActivationPolicy(.regular)
+            } else {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
+        
+        // Force activation to prevent focus loss during policy switch
+        NSApp.activate(ignoringOtherApps: true)
+        AppDelegate.sharedSettingsWindow.makeKeyAndOrderFront(nil)
+        
+    }
     
     @objc func setHotkey(_ sender: Any?) {
         
@@ -232,6 +280,10 @@ final class AppController: NSObject, NSWindowDelegate {
             if settingsWindow.isVisible == true {
                 settingsWindow.orderOut(nil as Any?)
             } else {
+                let visibility = Settings.shared.dockVisibility
+                if visibility == .always || visibility == .whenVisible {
+                    NSApp.setActivationPolicy(.regular)
+                }
                 settingsWindow.makeKeyAndOrderFront(nil as Any?)
                 NSApp.activate(ignoringOtherApps: true)
             }
@@ -249,6 +301,10 @@ final class AppController: NSObject, NSWindowDelegate {
         setMainWindowShortcutsEnabled(false)
         installShieldIfNeeded(on: parent)
         parent.addChildWindow(settingsWindow, ordered: .above)
+        let visibility = Settings.shared.dockVisibility
+        if visibility == .always || visibility == .whenVisible {
+            NSApp.setActivationPolicy(.regular)
+        }
         settingsWindow.makeKeyAndOrderFront(nil as Any?)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -262,6 +318,11 @@ final class AppController: NSObject, NSWindowDelegate {
         removeShieldIfNeeded(from: windowController.window)
         setMainWindowShortcutsEnabled(true)
         focusMainWindowIfVisible()
+        
+        let visibility = Settings.shared.dockVisibility
+        if isWindowVisible == false && visibility == .whenVisible {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
     
     private func registerOverlayHotkey() {
@@ -347,7 +408,7 @@ final class AppController: NSObject, NSWindowDelegate {
     @objc private func handleShowSettingsNotification() {
         presentSettingsWindow()
     }
-    
+
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         if window == AppDelegate.sharedSettingsWindow {
@@ -423,76 +484,105 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         
     }
+
+    @objc func showSettings(_ sender: Any?) {
+        NotificationCenter.default.post(name: .showSettings, object: nil)
+    }
     
     private func createMainMenu() {
         let mainMenu = NSMenu(title: "Main Menu")
         NSApp.mainMenu = mainMenu
         
-        let fileMenuItem = NSMenuItem()
-        mainMenu.addItem(fileMenuItem)
+        // Application Menu (Quiper)
+        let appMenuItem = NSMenuItem()
+        mainMenu.addItem(appMenuItem)
+        let appMenu = NSMenu(title: "Quiper")
+        appMenuItem.submenu = appMenu
         
-        let fileMenu = NSMenu(title: "File")
-        fileMenuItem.submenu = fileMenu
+        let aboutItem = NSMenuItem(title: "About Quiper", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(aboutItem)
         
-        fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        appMenu.addItem(.separator())
         
+        let settingsItem = MenuFactory.createSettingsItem()
+        appMenu.addItem(settingsItem)
+        
+        appMenu.addItem(.separator())
+        
+        // Services Menu (Standard)
+        let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        let servicesMenu = NSMenu(title: "Services")
+        servicesItem.submenu = servicesMenu
+        NSApp.servicesMenu = servicesMenu
+        appMenu.addItem(servicesItem)
+        
+        appMenu.addItem(.separator())
+        
+        let hideAppItem = NSMenuItem(title: "Hide Quiper", action: #selector(AppController.closeSettingsOrHide(_:)), keyEquivalent: "w")
+        appMenu.addItem(hideAppItem)
+        
+        let hideOthersItem = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthersItem.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthersItem)
+        
+        let showAllItem = NSMenuItem(title: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(showAllItem)
+        
+        appMenu.addItem(.separator())
+        
+        let quitItem = MenuFactory.createQuitItem()
+        appMenu.addItem(quitItem)
+
+        // Edit Menu
         let editMenuItem = NSMenuItem()
         mainMenu.addItem(editMenuItem)
-        
-        let editMenu = NSMenu(title: "Edit")
-        editMenuItem.submenu = editMenu
-        
-        let undoItem = NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        undoItem.keyEquivalentModifierMask = [.command]
-        editMenu.addItem(undoItem)
-        
-        let redoItem = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
-        redoItem.keyEquivalentModifierMask = [.command, .shift]
-        editMenu.addItem(redoItem)
-        
-        editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = MenuFactory.createEditMenu()
 
+        // View Menu
+        let viewMenuItem = NSMenuItem()
+        mainMenu.addItem(viewMenuItem)
+        viewMenuItem.submenu = MenuFactory.createViewMenu()
+
+        // Actions Menu
         let actionsMenuItem = NSMenuItem()
         mainMenu.addItem(actionsMenuItem)
-
-        let actionsMenu = NSMenu(title: "Actions")
+        let actionsMenu = MenuFactory.createActionsMenu()
         actionsMenuItem.submenu = actionsMenu
-        actionsMenu.delegate = ActionMenuDelegate.shared
+
+        // Window Menu (Native)
+        let windowMenuItem = NSMenuItem()
+        mainMenu.addItem(windowMenuItem)
+        
+        // For Native Menu, we often want system behavior for "Minimize"/"Zoom".
+        // MenuFactory creates them with standard selectors.
+        let windowMenu = MenuFactory.createWindowMenu()
+        windowMenuItem.submenu = windowMenu
+        NSApp.windowsMenu = windowMenu
+
+        // Help Menu
+        let helpMenuItem = NSMenuItem()
+        mainMenu.addItem(helpMenuItem)
+        let helpMenu = NSMenu(title: "Help")
+        helpMenuItem.submenu = helpMenu
+
+        // Setting NSApp.helpMenu enables the system search field in the menu
+        NSApp.helpMenu = helpMenu
+        
+        let helpItem = MenuFactory.createMenuItem(title: "Quiper Help", iconName: "questionmark.circle", action: #selector(NSApplication.showHelp(_:)), keyEquivalent: "?")
+        helpMenu.addItem(helpItem)
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
-}
 
-class ActionMenuDelegate: NSObject, NSMenuDelegate {
-    static let shared = ActionMenuDelegate()
-
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
-        
-        let actions = Settings.shared.customActions
-        
-        if actions.isEmpty {
-            let item = NSMenuItem(title: "No Custom Actions", action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.addItem(item)
-            return
-        }
-        
-        for action in actions {
-            let item = NSMenuItem(title: action.name.isEmpty ? "Action" : action.name,
-                                  action: Selector(("performCustomActionFromMenu:")),
-                                  keyEquivalent: "")
-            item.representedObject = action
-            menu.addItem(item)
-        }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        statusBarController.appController.showWindow(nil)
+        return true
     }
 }
+
+
 
 // MARK: - Status Bar Controller
 @MainActor

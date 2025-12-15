@@ -7,6 +7,7 @@
 - **UI Tests**: Added `CustomActionUITests` to robustly verify the custom action lifecycle, script execution, and error handling.
 - **Unit Tests**: Added `MainWindowControllerTests` to verify core logic like service selection.
 - **Test Infrastructure**: Added support for `DistributedNotification` based test signaling (`app.sassanh.quiper.test.beep`) to verify system audible alerts without UI inspection.
+- **Development**: Added `scripts/generate_icons.sh` to automate app icon generation.
 
 ### Changed
 
@@ -14,6 +15,8 @@
 - **Launch Shortcuts UI Tests:** Fixed a race condition where tests would type hotkeys before the application had finished registering them, by synchronizing the "Saved" status indicator with the hotkey registration task.
 - **Launch Shortcuts UI Tests (Refactor):** Refactored `LaunchShortcutsUITests` to align with the robust patterns of `NavigationShortcutsUITests`, replacing flaky "Saved" label checks with deterministic button value verification and implementing comprehensive functional verification for global hotkeys and cleanup.
 - **Documentation:** Added comprehensive companion documentation for all UI tests in `QuiperUITests/UserFlows`, covering setups, actions, and expected results for templates, updates, custom actions, and service management.
+- **Icons**: Updated App Icon to a new squircle design.
+- **UI**: Refined `SettingsView` and `Menu` layouts for consistent spacing and alignment.
 
 ### Fixed
 

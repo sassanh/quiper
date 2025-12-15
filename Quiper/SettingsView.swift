@@ -94,6 +94,39 @@ struct GeneralSettingsView: View {
                             appController?.uninstallFromLogin(nil)
                         }
                     }
+                    
+                    SettingsDivider()
+                    
+                    SettingsRow(
+                        title: "Dock Icon Visibility",
+                        message: "Controls when the app appears in the Dock. Note: Native menus are only available when the Dock icon is visible."
+                    ) {
+                        Picker("", selection: $settings.dockVisibility) {
+                            ForEach(DockVisibility.allCases) { visibility in
+                                Text(visibility.rawValue).tag(visibility)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 300)
+                    }
+                    .onChange(of: settings.dockVisibility) { _, newValue in
+                        settings.saveSettings()
+                        
+                        // Apply activation policy immediately
+                        switch newValue {
+                        case .never:
+                            NSApp.setActivationPolicy(.accessory)
+                        case .whenVisible:
+                            // Only set to .regular if window or settings are visible
+                            if appController?.isWindowVisible == true || AppDelegate.sharedSettingsWindow.isVisible {
+                                NSApp.setActivationPolicy(.regular)
+                            } else {
+                                NSApp.setActivationPolicy(.accessory)
+                            }
+                        case .always:
+                            NSApp.setActivationPolicy(.regular)
+                        }
+                    }
                 }
                 
                 SettingsSection(title: "Notifications") {
@@ -916,21 +949,23 @@ private struct SettingsRow<Content: View>: View {
     }
     
     var body: some View {
-        HStack(alignment: message == nil ? .center : .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 16) {
                 Text(title)
                     .fontWeight(.semibold)
-                if let message, !message.isEmpty {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                    .frame(width: labelWidth, alignment: .leading)
+                
+                Spacer(minLength: 16)
+                
+                content()
             }
-            .frame(width: labelWidth, alignment: .leading)
             
-            Spacer(minLength: 16)
-            
-            content()
+            if let message, !message.isEmpty {
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
