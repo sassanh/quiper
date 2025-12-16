@@ -1291,12 +1291,6 @@ private func character(for keyCode: UInt16) -> String? {
         showFindBar()
     }
 
-    private func closeFindPanelIfNeeded() -> Bool {
-        guard isFindBarVisible else { return false }
-        hideFindBar()
-        return true
-    }
-
 }
 
 private extension MainWindowController {

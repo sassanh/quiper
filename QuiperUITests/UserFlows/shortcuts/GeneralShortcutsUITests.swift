@@ -28,31 +28,6 @@ final class GeneralShortcutsUITests: BaseUITest {
         XCTAssertTrue(anyWindow.waitForExistence(timeout: 5.0), "Settings window should appear after Cmd+,")
     }
     
-    func testFindShortcuts() {
-        // Test Cmd+f
-        ensureWindowVisible()
-        
-        let findField = app.searchFields["Find in page"]
-        
-        // Open find bar
-        app.typeKey("f", modifierFlags: .command)
-        
-        XCTAssertTrue(findField.waitForExistence(timeout: 3.0), "Find bar should appear after Cmd+f")
-        
-        // Find Navigation (Cmd+g)
-        // We can't easily verify the selection moves without JS injection or screenshot diff, 
-        // but we can verify the shortcut doesn't crash and keeps the bar open.
-        // Or if we had a match count label. `MainWindowController` updates `findStatusLabel`.
-        // Let's check for that label.
-        
-        // Type something common found in default pages
-        findField.typeText("Content") 
-        
-        // Let's verify the status label if possible, or just implicit stability
-        app.typeKey("g", modifierFlags: .command)
-        XCTAssertTrue(findField.exists)
-    }
-    
     func testHideShortcut() {
         // Test Cmd+h
         ensureWindowVisible()

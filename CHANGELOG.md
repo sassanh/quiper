@@ -7,7 +7,8 @@
 - **Shortcut UI Tests**: Added isolated test classes for in-app shortcuts with proper verification:
   - `ZoomShortcutsUITests`: Tests `Cmd+=`/`Cmd+-` with width-based relative zoom verification
   - `ReloadShortcutsUITests`: Tests `Cmd+r` with dynamic random ID change detection
-  - `GeneralShortcutsUITests`: Tests `Cmd+,` (Settings), `Cmd+f` (Find), `Cmd+h` (Hide), `Cmd+w` (Close)
+  - `FindShortcutsUITests`: Tests `Cmd+f` (open), `Cmd+g`/`Enter` (forward), `Cmd+Shift+g`/`Shift+Enter` (backward), `Escape` (close), with custom HTML containing multiple search targets
+  - `GeneralShortcutsUITests`: Tests `Cmd+,` (Settings), `Cmd+h` (Hide), `Cmd+w` (Close)
 - **Test Infrastructure**: Added `--test-custom-engines-path` argument for file-based HTML content injection in UI tests
 
 ### Changed
