@@ -33,6 +33,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var serviceSelector: ServiceSelectorControl!
     var sessionSelector: NSSegmentedControl!
     var sessionActionsButton: NSButton!
+    private var serviceListObservation: NSKeyValueObservation?
+    
+    // Retain active downloads to prevent -999 cancellation error
+    // Using Array<Any> to be absolutely sure about retention and avoid Hashable/Type issues
+    var activeDownloads: [Any] = [] 
+    // Actually, simply using a storage that is ignored on older OS is easier.
+    // Since the class isn't @available(macOS 11.3, *), we can't have a stored property of type WKDownload directly without some wrapping or availability.
+    // However, sticking to Any for storage is safe.
+
     var services: [Service] = []
     var currentServiceName: String?
     var currentServiceURL: String?
@@ -42,7 +51,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var zoomLevelsByURL: [String: CGFloat] = [:]
     weak var contentContainerView: NSView?
     private var notificationBridges: [ObjectIdentifier: WebNotificationBridge] = [:]
-    private var titleObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
     private var draggingServiceIndex: Int?
     private var findBar: NSVisualEffectView?
     private var findField: NSSearchField?
@@ -332,8 +340,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let keyCode = UInt16(event.keyCode)
         let appShortcuts = Settings.shared.appShortcutBindings
         let config = HotkeyManager.Configuration(keyCode: UInt32(keyCode), modifierFlags: modifiers.rawValue)
-        
-        NSLog("[QuiperDebug] HandleKeyDown: keyCode=\(event.keyCode) modifiers=\(modifiers.rawValue)")
 
         // Check App Bindings
         if matches(config, appShortcuts.configuration(for: .nextSession)) || matches(config, appShortcuts.alternateConfiguration(for: .nextSession)) {
@@ -673,10 +679,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             height: selectorHeight
         )
 
-        // Session selector fills remaining space
-        let sessionStart = serviceSel.frame.maxX + gap
-        let availableForSession = rightReferenceX - gap - sessionStart
-        let sessionWidth = max(0, min(naturalSessionWidth, availableForSession))
+        // Session selector positioned at the right
+        let sessionWidth = max(0, min(naturalSessionWidth, rightReferenceX - gap - serviceSel.frame.maxX - gap))
         let sessionX = rightReferenceX - gap - sessionWidth
         sessionSel.frame = NSRect(
             x: sessionX,
@@ -721,12 +725,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         webview.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         webview.isHidden = true // Start hidden
         webview.pageZoom = zoomLevelsByURL[service.url] ?? Zoom.default
-        
-        // Enable robust accessibility verification for UI tests by mapping title -> accessibilityLabel
-        let observation = webview.observe(\.title, options: [.initial, .new]) { webview, _ in
-            webview.setAccessibilityLabel(webview.title)
-        }
-        titleObservations[ObjectIdentifier(webview)] = observation
         
         attachNotificationBridge(to: webview, service: service, sessionIndex: sessionIndex)
 
@@ -887,7 +885,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             focusInputInActiveWebview()
         }
     }
-
+    
     private func refreshServiceSegments() {
         serviceSelector.segmentCount = services.count
         for (index, service) in services.enumerated() {
@@ -1007,29 +1005,87 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func tearDownWebView(_ webView: WKWebView) {
         let identifier = ObjectIdentifier(webView)
-        titleObservations[identifier]?.invalidate()
-        titleObservations.removeValue(forKey: identifier)
         
         detachNotificationBridge(from: webView)
         webView.removeFromSuperview()
     }
 
-    private func initiateDownload(from url: URL) {
+    private func initiateDownload(from url: URL, webView: WKWebView? = nil, suggestedFilename: String? = nil) {
+        // This function is kept for backward compatibility or direct calls if needed,
+        // but modern downloads (macOS 11.3+) should filter through WKDownloadDelegate.
+        // If we still need manual download for things not triggered by nav policy:
+        if #available(macOS 11.3, *), let webView = webView ?? currentWebView() {
+            webView.startDownload(using: .init(url: url)) { [weak self] download in
+                download.delegate = self
+            }
+            return
+        }
+        
+        // Fallback for older macOS or if no webview context
         URLSession.shared.downloadTask(with: url) { location, response, error in
             guard let location, error == nil else {
                 NSLog("[Quiper] Download failed: \(error?.localizedDescription ?? "unknown error")")
                 return
             }
             let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
-            let suggested = response?.suggestedFilename ?? url.lastPathComponent
+            let suggested = suggestedFilename ?? response?.suggestedFilename ?? url.lastPathComponent
             let destination = downloads.appendingPathComponent(suggested)
             try? FileManager.default.removeItem(at: destination)
             do {
                 try FileManager.default.moveItem(at: location, to: destination)
+                NSLog("[Quiper][Download] Successfully saved to: %@", destination.path)
             } catch {
                 NSLog("[Quiper] Failed to move download: \(error.localizedDescription)")
             }
         }.resume()
+    }
+    
+    private func saveBlobData(_ data: Data, mimeType: String, suggestedFilename: String?) {
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first 
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
+        
+        // Determine filename
+        let filename: String
+        if let suggested = suggestedFilename, !suggested.isEmpty {
+            filename = suggested
+        } else {
+            // Generate filename from mime type
+            let ext = mimeTypeToExtension(mimeType)
+            filename = "download-\(UUID().uuidString.prefix(8)).\(ext)"
+        }
+        
+        let destination = downloads.appendingPathComponent(filename)
+        try? FileManager.default.removeItem(at: destination)
+        
+        do {
+            try data.write(to: destination)
+            NSLog("[Quiper][Download] Blob saved to: %@", destination.path)
+        } catch {
+            NSLog("[Quiper][Download] Failed to save blob: %@", error.localizedDescription)
+        }
+    }
+    
+    private func mimeTypeToExtension(_ mimeType: String) -> String {
+        let mapping: [String: String] = [
+            "image/png": "png",
+            "image/jpeg": "jpg",
+            "image/gif": "gif",
+            "image/webp": "webp",
+            "image/svg+xml": "svg",
+            "application/pdf": "pdf",
+            "application/zip": "zip",
+            "text/plain": "txt",
+            "text/html": "html",
+            "text/css": "css",
+            "text/javascript": "js",
+            "application/json": "json",
+            "application/xml": "xml",
+            "audio/mpeg": "mp3",
+            "audio/wav": "wav",
+            "video/mp4": "mp4",
+            "video/webm": "webm"
+        ]
+        return mapping[mimeType] ?? "bin"
     }
 
     // MARK: - Actions
@@ -1263,7 +1319,6 @@ private func character(for keyCode: UInt16) -> String? {
 
     @objc func performCustomActionFromMenu(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? CustomAction else { return }
-        NSLog("[QuiperDebug] Menu Item Triggered Action: \(action.name)")
         performCustomAction(action)
     }
 
@@ -1531,10 +1586,16 @@ private extension MainWindowController {
 @MainActor
 extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
-        if #available(macOS 11.3, *), navigationAction.shouldPerformDownload, let url = navigationAction.request.url {
-            initiateDownload(from: url)
-            decisionHandler(.cancel)
-            return
+        let url = navigationAction.request.url?.absoluteString ?? "nil"
+        NSLog("[Quiper][Download] decidePolicyFor navigationAction - URL: %@, navigationType: %d", url, navigationAction.navigationType.rawValue)
+        
+        if #available(macOS 11.3, *) {
+            NSLog("[Quiper][Download] shouldPerformDownload: %d", navigationAction.shouldPerformDownload ? 1 : 0)
+            if navigationAction.shouldPerformDownload {
+                // Return .download instead of .cancel to let the system handle it via WKDownloadDelegate
+                decisionHandler(.download)
+                return
+            }
         }
 
         guard let url = navigationAction.request.url,
@@ -1567,14 +1628,39 @@ extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
+        let mimeType = navigationResponse.response.mimeType ?? "unknown"
+        let url = navigationResponse.response.url?.absoluteString ?? "nil"
+        NSLog("[Quiper][Download] decidePolicyFor navigationResponse - URL: %@, MIME: %@, canShowMIMEType: %d", url, mimeType, navigationResponse.canShowMIMEType ? 1 : 0)
+        
         if navigationResponse.canShowMIMEType {
             decisionHandler(.allow)
-        } else if let url = navigationResponse.response.url {
-            decisionHandler(.cancel)
-            initiateDownload(from: url)
         } else {
-            decisionHandler(.cancel)
+             if #available(macOS 11.3, *) {
+                 NSLog("[Quiper][Download] Converting response to download")
+                 decisionHandler(.download)
+             } else {
+                 decisionHandler(.cancel)
+                 if let url = navigationResponse.response.url {
+                     initiateDownload(from: url, webView: webView)
+                 }
+             }
         }
+    }
+
+    @available(macOS 11.3, *)
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        NSLog("[Quiper][Download] navigationResponse didBecome download")
+        download.delegate = self
+        activeDownloads.append(download)
+        NSLog("[Quiper][Download] Active downloads count: %d", activeDownloads.count)
+    }
+
+    @available(macOS 11.3, *)
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        NSLog("[Quiper][Download] navigationAction didBecome download")
+        download.delegate = self
+        activeDownloads.append(download)
+        NSLog("[Quiper][Download] Active downloads count: %d", activeDownloads.count)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {

@@ -24,6 +24,7 @@
 ### Added
 
 - **UI Tests**: Added `CustomActionUITests` to robustly verify the custom action lifecycle, script execution, and error handling.
+- **UI Tests**: Added `DownloadUITests` to verify native file download functionality, ensuring `blob:` files are correctly saved and readable on disk.
 - **Unit Tests**: Added `MainWindowControllerTests` to verify core logic like service selection.
 - **Test Infrastructure**: Added support for `DistributedNotification` based test signaling (`app.sassanh.quiper.test.beep`) to verify system audible alerts without UI inspection.
 - **Development**: Added `scripts/generate_icons.sh` to automate app icon generation.
@@ -38,6 +39,8 @@
 - **UI**: Refined `SettingsView` and `Menu` layouts for consistent spacing and alignment.
 
 ### Fixed
+
+- **Downloads**: Fixed an issue where `blob:` URL downloads (e.g., generated images) were failing silently or throwing errors. Implemented native `WKDownload` handling and added necessary Sandbox entitlements (`com.apple.security.files.downloads.read-write`) to allow saving directly to the user's Downloads folder. Verified with `DownloadUITests` which confirms file content integrity.
 
 ## [2.1.0] - 2025-12-10
 
