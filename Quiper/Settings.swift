@@ -801,6 +801,7 @@ class Settings: ObservableObject {
 
     func loadSettings() -> [Service] {
         let (persisted, loadedFromDisk) = readPersistedSettings()
+        
         services = persisted.services
         let useDefaultActions = !CommandLine.arguments.contains("--no-default-actions")
         customActions = loadedFromDisk ? (persisted.customActions ?? []) : (useDefaultActions ? defaultActions : [])
@@ -898,20 +899,88 @@ class Settings: ObservableObject {
                                           serviceZoomLevels: nil), true)
             }
         }
-        if CommandLine.arguments.contains("--test-custom-engines") {
-            let testEngines = (0..<4).map { i in
-                // Use data URI to avoid network dependency in CI
-                // Use "Content X" to distinguish from Service Name "Engine X" in UI tests
-                // Add <title> for robust accessibility-based verification
-                let html = "<html><head><title>Content \(i + 1)</title></head><body><h1>Content \(i + 1)</h1></body></html>"
-                let dataURL = "data:text/html;charset=utf-8," + html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
-                return Service(name: "Engine \(i + 1)", url: dataURL, focus_selector: "")
-            }
-            return (PersistedSettings(services: testEngines,
-                                      hotkey: nil,
-                                      customActions: nil,
-                                      updatePreferences: nil,
-                                      serviceZoomLevels: nil), false)
+        // Check for parameterized custom engines argument
+        let customEnginesArg = CommandLine.arguments.first { $0.hasPrefix("--test-custom-engines=") }
+        let isCustomEnginesFlag = CommandLine.arguments.contains("--test-custom-engines")
+
+        // Check for custom path argument
+        let customEnginesPathArg = CommandLine.arguments.first { $0.hasPrefix("--test-custom-engines-path=") }
+        let customEnginesPath = customEnginesPathArg?.split(separator: "=").last.map(String.init)
+        
+        if let arg = customEnginesArg, let value = Int(arg.split(separator: "=").last ?? "") {
+             let count = value
+             let testEngines = (0..<count).map { i in
+                 let index = i + 1
+                 // Check for override file
+                 let overrideFilename = "test-custom-engine-\(index).html"
+                 let fileManager = FileManager.default
+                 let directoryURL: URL
+                 
+                 if let customPath = customEnginesPath {
+                     directoryURL = URL(fileURLWithPath: customPath)
+                 } else {
+                     directoryURL = URL(fileURLWithPath: fileManager.currentDirectoryPath)
+                 }
+                 
+                 let overrideFileObj = directoryURL.appendingPathComponent(overrideFilename)
+                 
+                 let html: String
+                 if fileManager.fileExists(atPath: overrideFileObj.path) {
+                     if let content = try? String(contentsOf: overrideFileObj, encoding: .utf8) {
+                         html = content
+                     } else {
+                         html = "<html><head><title>Content \(index)</title></head><body><h1>Content \(index)</h1></body></html>"
+                     }
+                 } else {
+                     // Use "Content X" to distinguish from Service Name "Engine X" in UI tests
+                     // Add <title> for robust accessibility-based verification
+                     html = "<html><head><title>Content \(index)</title></head><body><h1>Content \(index)</h1></body></html>"
+                 }
+                 
+                 let dataURL = "data:text/html;charset=utf-8," + html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+                 return Service(name: "Engine \(index)", url: dataURL, focus_selector: "")
+             }
+             return (PersistedSettings(services: testEngines,
+                                       hotkey: nil,
+                                       customActions: nil,
+                                       updatePreferences: nil,
+                                       serviceZoomLevels: nil), false)
+        } else if isCustomEnginesFlag {
+            // Fallback for non-parameterized usage (default to 4)
+             let testEngines = (0..<4).map { i in
+                 let index = i + 1
+                 // Check for override file (duplicate logic for fallback case)
+                 let overrideFilename = "test-custom-engine-\(index).html"
+                 let fileManager = FileManager.default
+                 let directoryURL: URL
+                 
+                 if let customPath = customEnginesPath {
+                     directoryURL = URL(fileURLWithPath: customPath)
+                 } else {
+                     directoryURL = URL(fileURLWithPath: fileManager.currentDirectoryPath)
+                 }
+
+                 let overrideFileObj = directoryURL.appendingPathComponent(overrideFilename)
+                 
+                 let html: String
+                 if fileManager.fileExists(atPath: overrideFileObj.path) {
+                     if let content = try? String(contentsOf: overrideFileObj, encoding: .utf8) {
+                         html = content
+                     } else {
+                         html = "<html><head><title>Content \(index)</title></head><body><h1>Content \(index)</h1></body></html>"
+                     }
+                 } else {
+                     html = "<html><head><title>Content \(index)</title></head><body><h1>Content \(index)</h1></body></html>"
+                 }
+                 
+                 let dataURL = "data:text/html;charset=utf-8," + html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+                 return Service(name: "Engine \(index)", url: dataURL, focus_selector: "")
+             }
+             return (PersistedSettings(services: testEngines,
+                                       hotkey: nil,
+                                       customActions: nil,
+                                       updatePreferences: nil,
+                                       serviceZoomLevels: nil), false)
         }
         
         let useDefaultServices = !CommandLine.arguments.contains("--no-default-services")

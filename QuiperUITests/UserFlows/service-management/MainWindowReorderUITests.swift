@@ -18,13 +18,7 @@ final class MainWindowReorderUITests: BaseUITest {
         // Usually Launch moves focus.
         
         // Robust lookup for ServiceSelector (SegmentedControl, RadioGroup, or Any with ID)
-        var serviceSelector = app.segmentedControls["ServiceSelector"]
-        if !serviceSelector.exists {
-             serviceSelector = app.radioGroups["ServiceSelector"]
-        }
-        if !serviceSelector.exists {
-             serviceSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch
-        }
+        var serviceSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch
         
         if !serviceSelector.waitForExistence(timeout: 5.0) {
             app.typeKey(XCUIKeyboardKey.space, modifierFlags: [.command, .shift])

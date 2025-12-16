@@ -4,7 +4,7 @@ final class ReorderServicesUITests: BaseUITest {
     
     override var launchArguments: [String] {
         // Use custom test engines defined in Settings.swift
-        return ["--uitesting", "--test-custom-engines"]
+        return ["--uitesting", "--test-custom-engines=4"]
     }
 
     func testComplexServiceReordering() throws {

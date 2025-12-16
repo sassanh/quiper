@@ -35,5 +35,8 @@
 ## Configuration & Security Notes
 
 - User settings live at `~/Library/Application Support/Quiper/settings.json`; include migrations if you change its shape.
-- Login automation writes `~/Library/LaunchAgents/com.<username>.quiper.plist`; avoid breaking bundle identifiers.
 - Notifications use the WebKit bridge; ensure new features respect macOS notification permissions and sandbox expectations.
+
+## Agent Behavior Rules
+
+- **NEVER** modify app code (add test hooks) to facilitate testing without explicit permission.

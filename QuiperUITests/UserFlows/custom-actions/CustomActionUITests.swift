@@ -5,7 +5,7 @@ final class CustomActionUITests: BaseUITest {
     override var launchArguments: [String] {
         // use --test-custom-engines to get 4 generic engines ("Engine 1"..."Engine 4")
         // use --no-default-actions to start with empty actions
-        return ["--uitesting", "--test-custom-engines", "--no-default-actions"]
+        return ["--uitesting", "--test-custom-engines=2", "--no-default-actions"]
     }
 
     func testCustomActionLifecycle() throws {
@@ -173,8 +173,8 @@ final class CustomActionUITests: BaseUITest {
         XCTAssertTrue(selector.waitForExistence(timeout: 5.0), "ServiceSelector not found")
         
         // Use coordinate tapping as reliable fallback for custom segmented control
-        // Assumes 4 engines as per --test-custom-engines
-        let count = 4
+        // Assumes 2 engines as per --test-custom-engines=2
+        let count = 2
         let segmentWidth = 1.0 / Double(count)
         let centerRatio = (Double(index) * segmentWidth) + (segmentWidth / 2.0)
         
