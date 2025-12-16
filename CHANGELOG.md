@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- Display the active session's title in the overlay header, positioned between the service and session selectors.
+
+### Changed
+
+- Removed unused legacy helper code (`configureItem`, `menuItem`, `keyEquivalent`, `initiateDownload`) from `MainWindowController`.
+
+### Fixed
+
+- Resolves Swift 6 concurrency warnings in webview title observation.
+
 ## [2.2.1] - 2025-12-16
 
 ### Added

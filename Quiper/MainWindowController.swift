@@ -32,6 +32,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var dragArea: DraggableView!
     private var serviceSelector: ServiceSelectorControl!
     var sessionSelector: NSSegmentedControl!
+    private var titleLabel: NSTextField!
+    private var loadingSpinner: NSProgressIndicator!
     var sessionActionsButton: NSButton!
     private var serviceListObservation: NSKeyValueObservation?
     
@@ -42,6 +44,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     // Since the class isn't @available(macOS 11.3, *), we can't have a stored property of type WKDownload directly without some wrapping or availability.
     // However, sticking to Any for storage is safe.
 
+    private var titleObservation: NSKeyValueObservation?
     var services: [Service] = []
     var currentServiceName: String?
     var currentServiceURL: String?
@@ -615,6 +618,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         drag.addSubview(sessionSel)
         sessionSelector = sessionSel
 
+        // Title Label
+        let title = NSTextField(labelWithString: "")
+        title.font = .systemFont(ofSize: 12, weight: .medium)
+        title.textColor = .secondaryLabelColor
+        title.lineBreakMode = .byTruncatingTail
+        title.alignment = .center
+        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        drag.addSubview(title)
+        titleLabel = title
+
+        // Loading Spinner (shown while page has no title)
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isDisplayedWhenStopped = false
+        drag.addSubview(spinner)
+        loadingSpinner = spinner
+
         // Session Actions Button
         let iconConfig = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
         let actionsBtn = NSButton(image: NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "Session Actions")!.withSymbolConfiguration(iconConfig)!, target: self, action: #selector(sessionActionsButtonTapped(_:)))
@@ -636,6 +657,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard let drag = dragArea,
               let serviceSel = serviceSelector,
               let sessionSel = sessionSelector,
+              let title = titleLabel,
               let actionsBtn = sessionActionsButton else { return }
 
         let headerHeight = drag.bounds.size.height
@@ -688,6 +710,29 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             width: sessionWidth,
             height: selectorHeight
         )
+
+        // Title label fills the space between service and session selectors
+        let titleX = serviceSel.frame.maxX + gap
+        let titleWidth = max(0, sessionSel.frame.minX - gap - titleX)
+        let titleHeight = title.intrinsicContentSize.height
+        title.frame = NSRect(
+            x: titleX,
+            y: (headerHeight - titleHeight) / 2,
+            width: titleWidth,
+            height: titleHeight
+        )
+        title.isHidden = titleWidth < 40  // Hide if too narrow to show anything meaningful
+
+        // Loading spinner centered in the title area
+        if let spinner = loadingSpinner {
+            let spinnerSize = spinner.intrinsicContentSize
+            spinner.frame = NSRect(
+                x: titleX + (titleWidth - spinnerSize.width) / 2,
+                y: (headerHeight - spinnerSize.height) / 2,
+                width: spinnerSize.width,
+                height: spinnerSize.height
+            )
+        }
 
         layoutFindBar()
     }
@@ -880,12 +925,37 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         activeWebview.isHidden = false
         activeWebview.pageZoom = zoomLevelsByURL[service.url] ?? Zoom.default
         
+        // Update title label and observe changes
+        updateTitleLabel(from: activeWebview)
+        titleObservation?.invalidate()
+        titleObservation = activeWebview.observe(\.title, options: [.new]) { [weak self] webview, _ in
+            Task { @MainActor [weak self] in
+                self?.updateTitleLabel(from: webview)
+            }
+        }
+        
         if focusWebView {
             window?.makeFirstResponder(activeWebview)
             focusInputInActiveWebview()
         }
     }
     
+    private func updateTitleLabel(from webView: WKWebView) {
+        let title = webView.title ?? ""
+        titleLabel?.stringValue = title
+        
+        if title.isEmpty {
+            loadingSpinner?.startAnimation(nil)
+        } else {
+            loadingSpinner?.stopAnimation(nil)
+        }
+    }
+    
+    private func updateTitleLabel(withFallback fallback: String) {
+        titleLabel?.stringValue = fallback
+        loadingSpinner?.stopAnimation(nil)
+    }
+
     private func refreshServiceSegments() {
         serviceSelector.segmentCount = services.count
         for (index, service) in services.enumerated() {
@@ -1004,88 +1074,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func tearDownWebView(_ webView: WKWebView) {
-        let identifier = ObjectIdentifier(webView)
-        
         detachNotificationBridge(from: webView)
         webView.removeFromSuperview()
-    }
-
-    private func initiateDownload(from url: URL, webView: WKWebView? = nil, suggestedFilename: String? = nil) {
-        // This function is kept for backward compatibility or direct calls if needed,
-        // but modern downloads (macOS 11.3+) should filter through WKDownloadDelegate.
-        // If we still need manual download for things not triggered by nav policy:
-        if #available(macOS 11.3, *), let webView = webView ?? currentWebView() {
-            webView.startDownload(using: .init(url: url)) { [weak self] download in
-                download.delegate = self
-            }
-            return
-        }
-        
-        // Fallback for older macOS or if no webview context
-        URLSession.shared.downloadTask(with: url) { location, response, error in
-            guard let location, error == nil else {
-                NSLog("[Quiper] Download failed: \(error?.localizedDescription ?? "unknown error")")
-                return
-            }
-            let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
-            let suggested = suggestedFilename ?? response?.suggestedFilename ?? url.lastPathComponent
-            let destination = downloads.appendingPathComponent(suggested)
-            try? FileManager.default.removeItem(at: destination)
-            do {
-                try FileManager.default.moveItem(at: location, to: destination)
-                NSLog("[Quiper][Download] Successfully saved to: %@", destination.path)
-            } catch {
-                NSLog("[Quiper] Failed to move download: \(error.localizedDescription)")
-            }
-        }.resume()
-    }
-    
-    private func saveBlobData(_ data: Data, mimeType: String, suggestedFilename: String?) {
-        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first 
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
-        
-        // Determine filename
-        let filename: String
-        if let suggested = suggestedFilename, !suggested.isEmpty {
-            filename = suggested
-        } else {
-            // Generate filename from mime type
-            let ext = mimeTypeToExtension(mimeType)
-            filename = "download-\(UUID().uuidString.prefix(8)).\(ext)"
-        }
-        
-        let destination = downloads.appendingPathComponent(filename)
-        try? FileManager.default.removeItem(at: destination)
-        
-        do {
-            try data.write(to: destination)
-            NSLog("[Quiper][Download] Blob saved to: %@", destination.path)
-        } catch {
-            NSLog("[Quiper][Download] Failed to save blob: %@", error.localizedDescription)
-        }
-    }
-    
-    private func mimeTypeToExtension(_ mimeType: String) -> String {
-        let mapping: [String: String] = [
-            "image/png": "png",
-            "image/jpeg": "jpg",
-            "image/gif": "gif",
-            "image/webp": "webp",
-            "image/svg+xml": "svg",
-            "application/pdf": "pdf",
-            "application/zip": "zip",
-            "text/plain": "txt",
-            "text/html": "html",
-            "text/css": "css",
-            "text/javascript": "js",
-            "application/json": "json",
-            "application/xml": "xml",
-            "audio/mpeg": "mp3",
-            "audio/wav": "wav",
-            "video/mp4": "mp4",
-            "video/webm": "webm"
-        ]
-        return mapping[mimeType] ?? "bin"
     }
 
     // MARK: - Actions
@@ -1121,19 +1111,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let menu = NSMenu(title: "Session Actions")
         menu.autoenablesItems = false
 
-        let enabled = currentWebView() != nil
 
-        // Helper to configure enable state
-        func configureItem(_ item: NSMenuItem) {
-            if item.isSeparatorItem ||
-                item.hasSubmenu || // Submenus themselves should remain enabled usually
-                item.representedObject is CustomAction ||
-                (item.representedObject as? MenuItemTag) == .alwaysEnabled ||
-                !item.isEnabled {
-                return
-            }
-            item.isEnabled = enabled
-        }
 
         // --- Edit Menu ---
         let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
@@ -1201,64 +1179,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private var initialLoadAwaitingFocus = Set<ObjectIdentifier>()
 
-    private func menuItem(title: String,
-                          iconName: String? = nil,
-                          keyEquivalent: String = "",
-                          modifiers: NSEvent.ModifierFlags = [],
-                          alwaysEnabled: Bool = false,
-                          action: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
-        item.target = self
-        item.keyEquivalentModifierMask = modifiers
-        if let iconName,
-           let image = NSImage(systemSymbolName: iconName, accessibilityDescription: title) {
-            image.isTemplate = true
-            item.image = image
-        }
-        if alwaysEnabled {
-            item.representedObject = MenuItemTag.alwaysEnabled
-        }
-        return item
-    }
 
-    private func menuItem(for action: CustomAction) -> NSMenuItem {
-        let title = action.name.isEmpty ? "Untitled Action" : action.name
-        let item = menuItem(title: title,
-                            iconName: "bolt.fill",
-                            keyEquivalent: "",
-                            modifiers: [],
-                            action: #selector(performCustomActionFromMenu(_:)))
-        if let shortcut = action.shortcut,
-           let info = keyEquivalent(for: shortcut) {
-            item.keyEquivalent = info.key
-            item.keyEquivalentModifierMask = info.modifiers
-        } else {
-            item.keyEquivalent = ""
-        }
-        item.representedObject = action
-        return item
-    }
-
-    private func keyEquivalent(for configuration: HotkeyManager.Configuration) -> (key: String, modifiers: NSEvent.ModifierFlags)? {
-        let modifiers = NSEvent.ModifierFlags(rawValue: configuration.modifierFlags).intersection([.command, .option, .control, .shift])
-        guard let key = character(for: UInt16(configuration.keyCode)) else { return nil }
-        let normalizedKey = key.count == 1 ? key.lowercased() : key
-        return (normalizedKey, modifiers)
-    }
-
-private func character(for keyCode: UInt16) -> String? {
-        if keyCode == UInt16(kVK_Delete) {
-            return deleteKeyEquivalent
-        }
-        if keyCode == UInt16(kVK_Space) {
-            return " "
-        }
-        return keyEquivalentMap[keyCode]
-    }
-
-    private enum MenuItemTag {
-        case alwaysEnabled
-    }
 
     @objc func performMenuZoomIn(_ sender: Any?) {
         zoom(by: Zoom.step)
@@ -1639,10 +1560,8 @@ extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
                  NSLog("[Quiper][Download] Converting response to download")
                  decisionHandler(.download)
              } else {
+                 NSLog("[Quiper][Download] Legacy download fallback not supported")
                  decisionHandler(.cancel)
-                 if let url = navigationResponse.response.url {
-                     initiateDownload(from: url, webView: webView)
-                 }
              }
         }
     }
@@ -1667,12 +1586,26 @@ extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
         webView.reload()
     }
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        // Reset title to spinner on reload/navigation start
+        guard let url = serviceURL(for: webView),
+              url.absoluteString == currentServiceURL else { return }
+        
+        titleLabel?.stringValue = ""
+        loadingSpinner?.startAnimation(nil)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         let token = ObjectIdentifier(webView)
         
         // Resume any waiting continuation for this WebView (do this FIRST, before any guards)
         if let continuation = navigationContinuations.removeValue(forKey: token) {
             continuation.resume()
+        }
+        
+        // Set fallback title if page loaded without one
+        if webView.title?.isEmpty ?? true {
+            updateTitleLabel(withFallback: "-")
         }
         
         guard let url = serviceURL(for: webView),
@@ -1747,72 +1680,3 @@ enum Zoom {
     static let max: CGFloat = 2.5
     static let `default`: CGFloat = 1.0
 }
-
-private let deleteKeyEquivalent: String = {
-    guard let scalar = UnicodeScalar(NSDeleteCharacter) else { return "" }
-    return String(Character(scalar))
-}()
-
-private let keyEquivalentMap: [UInt16: String] = [
-    UInt16(kVK_ANSI_A): "a",
-    UInt16(kVK_ANSI_B): "b",
-    UInt16(kVK_ANSI_C): "c",
-    UInt16(kVK_ANSI_D): "d",
-    UInt16(kVK_ANSI_E): "e",
-    UInt16(kVK_ANSI_F): "f",
-    UInt16(kVK_ANSI_G): "g",
-    UInt16(kVK_ANSI_H): "h",
-    UInt16(kVK_ANSI_I): "i",
-    UInt16(kVK_ANSI_J): "j",
-    UInt16(kVK_ANSI_K): "k",
-    UInt16(kVK_ANSI_L): "l",
-    UInt16(kVK_ANSI_M): "m",
-    UInt16(kVK_ANSI_N): "n",
-    UInt16(kVK_ANSI_O): "o",
-    UInt16(kVK_ANSI_P): "p",
-    UInt16(kVK_ANSI_Q): "q",
-    UInt16(kVK_ANSI_R): "r",
-    UInt16(kVK_ANSI_S): "s",
-    UInt16(kVK_ANSI_T): "t",
-    UInt16(kVK_ANSI_U): "u",
-    UInt16(kVK_ANSI_V): "v",
-    UInt16(kVK_ANSI_W): "w",
-    UInt16(kVK_ANSI_X): "x",
-    UInt16(kVK_ANSI_Y): "y",
-    UInt16(kVK_ANSI_Z): "z",
-    UInt16(kVK_ANSI_0): "0",
-    UInt16(kVK_ANSI_1): "1",
-    UInt16(kVK_ANSI_2): "2",
-    UInt16(kVK_ANSI_3): "3",
-    UInt16(kVK_ANSI_4): "4",
-    UInt16(kVK_ANSI_5): "5",
-    UInt16(kVK_ANSI_6): "6",
-    UInt16(kVK_ANSI_7): "7",
-    UInt16(kVK_ANSI_8): "8",
-    UInt16(kVK_ANSI_9): "9",
-    UInt16(kVK_ANSI_Equal): "=",
-    UInt16(kVK_ANSI_Minus): "-",
-    UInt16(kVK_ANSI_LeftBracket): "[",
-    UInt16(kVK_ANSI_RightBracket): "]",
-    UInt16(kVK_ANSI_Semicolon): ";",
-    UInt16(kVK_ANSI_Quote): "'",
-    UInt16(kVK_ANSI_Comma): ",",
-    UInt16(kVK_ANSI_Period): ".",
-    UInt16(kVK_ANSI_Slash): "/",
-    UInt16(kVK_ANSI_Grave): "`",
-    UInt16(kVK_ANSI_KeypadPlus): "=",
-    UInt16(kVK_ANSI_KeypadMinus): "-",
-    UInt16(kVK_ANSI_Keypad0): "0",
-    UInt16(kVK_ANSI_Keypad1): "1",
-    UInt16(kVK_ANSI_Keypad2): "2",
-    UInt16(kVK_ANSI_Keypad3): "3",
-    UInt16(kVK_ANSI_Keypad4): "4",
-    UInt16(kVK_ANSI_Keypad5): "5",
-    UInt16(kVK_ANSI_Keypad6): "6",
-    UInt16(kVK_ANSI_Keypad7): "7",
-    UInt16(kVK_ANSI_Keypad8): "8",
-    UInt16(kVK_ANSI_Keypad9): "9",
-    UInt16(kVK_ANSI_KeypadDecimal): ".",
-    UInt16(kVK_ANSI_KeypadDivide): "/",
-    UInt16(kVK_ANSI_KeypadMultiply): "*"
-]
