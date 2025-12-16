@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [2.2.2] - 2025-12-16
+
 ### Added
 
 - Display the active session's title in the overlay header, positioned between the service and session selectors.
