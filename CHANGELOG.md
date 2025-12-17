@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [2.2.3] - 2025-12-17
+
 ### Fixed
 
 - Fixed "Operation not permitted" error during updates by implementing manual post-build code signing. This allows the app to retain necessary entitlements (e.g., `downloads.read-write`) without Xcode automatically enforcing the App Sandbox, which blocks self-updates.
