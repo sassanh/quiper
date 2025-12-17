@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Fixed friend domain navigations (like X login in Grok) opening in native apps instead of staying in the webview. Uses a WebKit policy that bypasses Universal Links for configured friend domains.
+
 ## [2.2.3] - 2025-12-17
 
 ### Fixed

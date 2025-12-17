@@ -1506,14 +1506,41 @@ private extension MainWindowController {
 
 @MainActor
 extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
-        let url = navigationAction.request.url?.absoluteString ?? "nil"
-        NSLog("[Quiper][Download] decidePolicyFor navigationAction - URL: %@, navigationType: %d", url, navigationAction.navigationType.rawValue)
+    // Handle links that attempt to open in a new window (target="_blank", window.open(), etc.)
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        // Get the URL being opened
+        guard let url = navigationAction.request.url,
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let serviceURL = serviceURL(for: webView),
+              let service = services.first(where: { $0.url == serviceURL.absoluteString }) else {
+            // For non-http(s) URLs or unknown services, let the OS handle it
+            if let url = navigationAction.request.url {
+                NSWorkspace.shared.open(url)
+            }
+            return nil
+        }
         
+        // Check if this is a friend domain
+        let isFriend = isInternalLink(target: url, service: serviceURL, friendPatterns: service.friendDomains)
+        
+        if isFriend {
+            // Friend domain: load in the current webview
+            webView.load(URLRequest(url: url))
+        } else {
+            // External domain: open in system browser
+            NSWorkspace.shared.open(url)
+        }
+        
+        // Return nil since we don't want to create a new webview
+        return nil
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         if #available(macOS 11.3, *) {
-            NSLog("[Quiper][Download] shouldPerformDownload: %d", navigationAction.shouldPerformDownload ? 1 : 0)
             if navigationAction.shouldPerformDownload {
-                // Return .download instead of .cancel to let the system handle it via WKDownloadDelegate
+                let url = navigationAction.request.url?.absoluteString ?? "nil"
+                NSLog("[Quiper][Download] decidePolicyFor navigationAction - URL: %@, shouldPerformDownload: true", url)
                 decisionHandler(.download)
                 return
             }
@@ -1528,16 +1555,21 @@ extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
             return
         }
 
-        // Only intercept user-initiated navigations; keep programmatic/internal loads in-app.
+        // Check if URL is a friend domain (including service's own domain)
+        let allowInApp = isInternalLink(target: url, service: serviceURL, friendPatterns: service.friendDomains)
+        
+        // For friend domain navigations, use the private policy that bypasses Universal Links
+        // This prevents macOS from opening friend URLs (like x.com) in their native apps
+        // The raw value allow + 2 corresponds to _WKNavigationActionPolicyAllowWithoutTryingAppLink
+        if allowInApp {
+            let allowWithoutAppLink = WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow
+            decisionHandler(allowWithoutAppLink)
+            return
+        }
+        
+        // For non-friend domains: intercept main-frame link clicks and open externally
         if navigationAction.navigationType == .linkActivated {
             let targetFrameIsMain = navigationAction.targetFrame?.isMainFrame ?? true
-            let allowInApp = isInternalLink(target: url, service: serviceURL, friendPatterns: service.friendDomains)
-
-            if allowInApp {
-                decisionHandler(.allow)
-                return
-            }
-
             if targetFrameIsMain {
                 NSWorkspace.shared.open(url)
                 decisionHandler(.cancel)
