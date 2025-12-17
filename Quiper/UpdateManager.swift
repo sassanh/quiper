@@ -80,7 +80,7 @@ final class UpdateManager: NSObject, ObservableObject {
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = true
         configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 90
+        configuration.timeoutIntervalForResource = 300
         self.session = URLSession(configuration: configuration, delegate: sessionDelegate, delegateQueue: OperationQueue.main)
         
         // Check arguments in init to set configuration early

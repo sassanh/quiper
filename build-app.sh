@@ -38,6 +38,8 @@ xcodebuild \
     -derivedDataPath "$BUILD_DIR" \
     MARKETING_VERSION="$APP_VERSION" \
     CURRENT_PROJECT_VERSION="$APP_BUILD" \
+    CODE_SIGN_ENTITLEMENTS="Quiper/Quiper.entitlements" \
+    CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
     clean build
 
 # Find the built app
@@ -50,6 +52,13 @@ fi
 
 # Copy to root for easy access
 cp -R "$APP_PATH" .
+
+# Re-sign manually to ensure exact entitlements (Option 3: Downloads entitlement without Sandbox)
+# This overrides Xcode's automatic injection of app-sandbox
+if command -v codesign >/dev/null 2>&1; then
+    echo "🔏 Re-signing with explicit entitlements..."
+    codesign --force --deep --sign - --entitlements "Quiper/Quiper.entitlements" "$APP_NAME.app"
+fi
 
 echo "✅ Successfully built $APP_NAME.app"
 echo "   Location: $(pwd)/$APP_NAME.app"

@@ -11,11 +11,13 @@ final class UpdatePromptWindowController: NSWindowController {
     private init() {
         let contentRect = NSRect(x: 0, y: 0, width: 560, height: 520)
         let window = NSPanel(contentRect: contentRect,
-                             styleMask: [.titled, .closable],
+                             styleMask: [.titled, .closable, .nonactivatingPanel],
                              backing: .buffered,
                              defer: false)
         window.isReleasedWhenClosed = false
-        window.level = .modalPanel
+        window.level = .floating
+        window.hidesOnDeactivate = false
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.center()
         super.init(window: window)
     }
