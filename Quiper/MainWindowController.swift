@@ -33,7 +33,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var serviceSelector: ServiceSelectorControl!
     var sessionSelector: NSSegmentedControl!
     private var titleLabel: NSTextField!
-    private var loadingSpinner: NSProgressIndicator!
+
+    private var loadingBorderView: LoadingBorderView!
+    private var isLoadingObservation: NSKeyValueObservation?
     var sessionActionsButton: NSButton!
     private var serviceListObservation: NSKeyValueObservation?
     
@@ -628,13 +630,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         drag.addSubview(title)
         titleLabel = title
 
-        // Loading Spinner (shown while page has no title)
-        let spinner = NSProgressIndicator()
-        spinner.style = .spinning
-        spinner.controlSize = .small
-        spinner.isDisplayedWhenStopped = false
-        drag.addSubview(spinner)
-        loadingSpinner = spinner
+
+
+        // Loading Border View (animated border around title when loading resources)
+        let borderView = LoadingBorderView(frame: .zero)
+        borderView.isHidden = true
+        drag.addSubview(borderView, positioned: .below, relativeTo: title)
+        loadingBorderView = borderView
 
         // Session Actions Button
         let iconConfig = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
@@ -711,28 +713,40 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             height: selectorHeight
         )
 
-        // Title label fills the space between service and session selectors
-        let titleX = serviceSel.frame.maxX + gap
-        let titleWidth = max(0, sessionSel.frame.minX - gap - titleX)
+        // Calculate available space for title area (between selectors with margin)
+        let titleAreaMargin: CGFloat = 8  // Margin from selectors
+        let titleAreaX = serviceSel.frame.maxX + gap + titleAreaMargin
+        let titleAreaWidth = max(0, sessionSel.frame.minX - gap - titleAreaX - titleAreaMargin)
+        
+        // Minimum width to show title and border meaningfully
+        let minTitleAreaWidth: CGFloat = 60
+        let shouldHideTitleArea = titleAreaWidth < minTitleAreaWidth
+        
+        // Loading border view frames the title area
+        if let borderView = loadingBorderView {
+            let verticalPadding: CGFloat = 4
+            let titleHeight = title.intrinsicContentSize.height
+            borderView.frame = NSRect(
+                x: titleAreaX,
+                y: (headerHeight - titleHeight) / 2 - verticalPadding,
+                width: titleAreaWidth,
+                height: titleHeight + verticalPadding * 2
+            )
+            // Hide border if no room, but don't stop animation (it may resume when resized)
+            borderView.isHidden = shouldHideTitleArea || !borderView.isAnimating
+        }
+        
+        // Title label positioned inside the border with padding
+        let titlePadding: CGFloat = 8  // Padding from border edges
+        let titleWidth = max(0, titleAreaWidth - titlePadding * 2)
         let titleHeight = title.intrinsicContentSize.height
         title.frame = NSRect(
-            x: titleX,
+            x: titleAreaX + titlePadding,
             y: (headerHeight - titleHeight) / 2,
             width: titleWidth,
             height: titleHeight
         )
-        title.isHidden = titleWidth < 40  // Hide if too narrow to show anything meaningful
-
-        // Loading spinner centered in the title area
-        if let spinner = loadingSpinner {
-            let spinnerSize = spinner.intrinsicContentSize
-            spinner.frame = NSRect(
-                x: titleX + (titleWidth - spinnerSize.width) / 2,
-                y: (headerHeight - spinnerSize.height) / 2,
-                width: spinnerSize.width,
-                height: spinnerSize.height
-            )
-        }
+        title.isHidden = shouldHideTitleArea
 
         layoutFindBar()
     }
@@ -927,10 +941,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         // Update title label and observe changes
         updateTitleLabel(from: activeWebview)
+        
+        // Invalidate previous observations
         titleObservation?.invalidate()
+        isLoadingObservation?.invalidate()
+        
+        // Observe title changes
         titleObservation = activeWebview.observe(\.title, options: [.new]) { [weak self] webview, _ in
             Task { @MainActor [weak self] in
                 self?.updateTitleLabel(from: webview)
+            }
+        }
+        
+        // Observe isLoading changes for the border animation
+        isLoadingObservation = activeWebview.observe(\.isLoading, options: [.new]) { [weak self] webview, _ in
+            Task { @MainActor [weak self] in
+                self?.updateLoadingIndicator(for: webview)
             }
         }
         
@@ -943,17 +969,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func updateTitleLabel(from webView: WKWebView) {
         let title = webView.title ?? ""
         titleLabel?.stringValue = title
+        updateLoadingIndicator(for: webView)
+    }
+    
+    private func updateLoadingIndicator(for webView: WKWebView) {
+        let isLoading = webView.isLoading
         
-        if title.isEmpty {
-            loadingSpinner?.startAnimation(nil)
+        if isLoading {
+            loadingBorderView?.startAnimating()
         } else {
-            loadingSpinner?.stopAnimation(nil)
+            loadingBorderView?.stopAnimating()
         }
     }
     
     private func updateTitleLabel(withFallback fallback: String) {
         titleLabel?.stringValue = fallback
-        loadingSpinner?.stopAnimation(nil)
+        loadingBorderView?.stopAnimating()
     }
 
     private func refreshServiceSegments() {
@@ -1619,12 +1650,12 @@ extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        // Reset title to spinner on reload/navigation start
+        // Reset title and start loading indicator on navigation start
         guard let url = serviceURL(for: webView),
               url.absoluteString == currentServiceURL else { return }
         
         titleLabel?.stringValue = ""
-        loadingSpinner?.startAnimation(nil)
+        loadingBorderView?.startAnimating()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
