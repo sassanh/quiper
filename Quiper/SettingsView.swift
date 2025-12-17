@@ -127,6 +127,24 @@ struct GeneralSettingsView: View {
                             NSApp.setActivationPolicy(.regular)
                         }
                     }
+                    
+                    SettingsDivider()
+                    
+                    SettingsRow(
+                        title: "Selector Display",
+                        message: "Controls how engine and session selectors appear. Auto switches based on window width."
+                    ) {
+                        Picker("", selection: $settings.selectorDisplayMode) {
+                            ForEach(SelectorDisplayMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 250)
+                    }
+                    .onChange(of: settings.selectorDisplayMode) { _, _ in
+                        settings.saveSettings()
+                    }
                 }
                 
                 SettingsSection(title: "Notifications") {

@@ -4,11 +4,21 @@
 
 ### Added
 
-- Enhanced loading indicator: replaced spinner with animated border that travels around the title when resources are loading. The border and title hide together when the window is too narrow.
+- Collapsible selectors: Introduced `CollapsibleServiceSelector` and `CollapsibleSessionSelector` for a more compact header.
+- "Selector Display" setting: New option in Startup settings with **Expanded**, **Compact**, and **Auto** modes. **Auto** mode dynamically switches to compact view when the window width is below 800px.
+- Syncing selectors: Both static and collapsible selectors stay perfectly in sync when switching engines or sessions.
+- **Fast Selector Tooltips**: Added custom fast-appearing tooltips (200ms delay) to service and session selectors (both static and collapsible) to show full names and page titles on hover. Tooltips are left-aligned and positioned below the elements.
+- **Fast Title Tooltip**: Hovering over the page title in the header now shows a fast-appearing custom tooltip with the full title.
+
+### Changed
+
+- Unified settings management: Centralized settings window logic in `AppController` to reduce duplication and improve reliability.
 
 ### Fixed
 
 - Fixed friend domain navigations (like X login in Grok) opening in native apps instead of staying in the webview. Uses a WebKit policy that bypasses Universal Links for configured friend domains.
+- Fixed a bug where dragging to reorder engines would unexpectedly open the settings window due to circular notification triggers.
+- Fixed synchronization issues where newly reordered services weren't immediately reflected in the collapsible overlay.
 
 ## [2.2.3] - 2025-12-17
 

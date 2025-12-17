@@ -78,6 +78,14 @@ enum DockVisibility: String, Codable, Equatable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum SelectorDisplayMode: String, Codable, CaseIterable, Identifiable {
+    case expanded = "Expanded"   // Always show all segments
+    case compact = "Compact"     // Collapsible, show one + expand on hover
+    case auto = "Auto"           // Switch based on window width
+    
+    var id: String { rawValue }
+}
+
 struct UpdatePreferences: Codable, Equatable {
     var automaticallyChecksForUpdates: Bool = true
     var automaticallyDownloadsUpdates: Bool = false
@@ -203,6 +211,7 @@ private struct PersistedSettings: Codable {
     var appShortcuts: AppShortcutBindings?
     var sessionDigitsAlternateModifiers: UInt?
     var dockVisibility: DockVisibility?
+    var selectorDisplayMode: SelectorDisplayMode?
 }
 
 class SettingsWindow: NSWindow {
@@ -286,6 +295,11 @@ class Settings: ObservableObject {
             NotificationCenter.default.post(name: .dockVisibilityChanged, object: nil)
         }
     }
+    @Published var selectorDisplayMode: SelectorDisplayMode = .auto {
+        didSet {
+            NotificationCenter.default.post(name: .selectorDisplayModeChanged, object: nil)
+        }
+    }
     
     func reset() {
         services = []
@@ -294,6 +308,7 @@ class Settings: ObservableObject {
         updatePreferences = UpdatePreferences()
         serviceZoomLevels = [:]
         appShortcutBindings = .defaults
+        selectorDisplayMode = .auto
     }
 
     private let settingsFile: URL = {
@@ -815,7 +830,12 @@ class Settings: ObservableObject {
         if let altSessionDigits = persisted.sessionDigitsAlternateModifiers {
             appShortcutBindings.sessionDigitsAlternateModifiers = altSessionDigits
         }
-        dockVisibility = persisted.dockVisibility ?? .whenVisible
+        if dockVisibility != (persisted.dockVisibility ?? .whenVisible) {
+            dockVisibility = persisted.dockVisibility ?? .whenVisible
+        }
+        if selectorDisplayMode != (persisted.selectorDisplayMode ?? .auto) {
+            selectorDisplayMode = persisted.selectorDisplayMode ?? .auto
+        }
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
@@ -846,7 +866,8 @@ class Settings: ObservableObject {
                                             serviceZoomLevels: serviceZoomLevels.mapValues { Double($0) },
                                             appShortcuts: appShortcutBindings,
                                             sessionDigitsAlternateModifiers: appShortcutBindings.sessionDigitsAlternateModifiers,
-                                            dockVisibility: dockVisibility)
+                                            dockVisibility: dockVisibility,
+                                            selectorDisplayMode: selectorDisplayMode)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {

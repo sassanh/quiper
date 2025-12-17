@@ -65,10 +65,7 @@ final class MainWindowPositionUITests: BaseUITest {
         
         // serviceSelector is already defined and verified above.
         // Flexible lookup for SessionSelector
-        var sessionSelector = app.segmentedControls["SessionSelector"]
-        if !sessionSelector.exists {
-             sessionSelector = app.descendants(matching: .any).matching(identifier: "SessionSelector").firstMatch
-        }
+        var sessionSelector = app.radioGroups.allElementsBoundByIndex.first { $0.radioButtons.element(matching: NSPredicate(format: "label == '1'")).exists } ?? app.radioGroups.element(boundBy: 1)
         
         if !sessionSelector.waitForExistence(timeout: 5.0) {
              // Fail gracefully or try to proceed with heuristic? For now fail.

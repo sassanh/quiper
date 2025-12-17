@@ -13,6 +13,7 @@ extension Notification.Name {
     static let hotkeyConfigurationChanged = Notification.Name("QuiperHotkeyConfigurationChanged")
     static let notificationPermissionChanged = Notification.Name("QuiperNotificationPermissionChanged")
     static let dockVisibilityChanged = Notification.Name("QuiperDockVisibilityChanged")
+    static let selectorDisplayModeChanged = Notification.Name("QuiperSelectorDisplayModeChanged")
 }
 
 @objc protocol StandardEditActions {
@@ -119,17 +120,11 @@ final class AppController: NSObject, NSWindowDelegate {
     
     
     @objc func showSettings(_ sender: Any?) {
-        
         presentSettingsWindow()
-        
     }
-    
-    
-    
+
     @objc func toggleInspector(_ sender: Any?) {
-        
         windowController.toggleInspector()
-        
     }
     
     
@@ -162,23 +157,19 @@ final class AppController: NSObject, NSWindowDelegate {
         
         // Force activation to prevent focus loss during policy switch
         NSApp.activate(ignoringOtherApps: true)
-        AppDelegate.sharedSettingsWindow.makeKeyAndOrderFront(nil)
         
+        // Removed: AppDelegate.sharedSettingsWindow.makeKeyAndOrderFront(nil)
+        // This was causing the settings window to pop up unexpectedly (e.g. during drag reorder)
     }
     
     @objc func setHotkey(_ sender: Any?) {
-        
         presentSettingsWindow()
         NotificationCenter.default.post(name: .startGlobalHotkeyCapture, object: nil)
-        
     }
-    
-    
-    
+
     @objc func openNotificationSettings(_ sender: Any?) {
-        
+        presentSettingsWindow()
         notificationDispatcher.openSystemNotificationSettings()
-        
     }
     
     
@@ -486,7 +477,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showSettings(_ sender: Any?) {
-        NotificationCenter.default.post(name: .showSettings, object: nil)
+        statusBarController.appController.showSettings(sender)
     }
     
     private func createMainMenu() {

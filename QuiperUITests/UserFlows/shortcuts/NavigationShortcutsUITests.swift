@@ -78,29 +78,52 @@ final class NavigationShortcutsUITests: BaseUITest {
         // ============================================================
         // PHASE 2: VERIFY CUSTOM SHORTCUTS
         // ============================================================
-        
         app.typeKey("w", modifierFlags: .command)
         if !app.windows.firstMatch.exists { app.activate() }
-        
 
-        let sessionSelector = app.descendants(matching: .any).matching(identifier: "SessionSelector").firstMatch
+        let sessionSelector = app.radioGroups.allElementsBoundByIndex.first { $0.radioButtons.element(matching: NSPredicate(format: "label == '1'")).exists } ?? app.radioGroups.element(boundBy: 1)
+        
+        if !sessionSelector.exists {
+             print("Debug: Session Selector not found. Hierarchy: \(app.debugDescription)")
+        }
         XCTAssertTrue(sessionSelector.waitForExistence(timeout: 5))
         
         // Helper to get active engine label
-        var serviceSelector = app.segmentedControls["ServiceSelector"]
+        var serviceSelector = app.radioGroups["ServiceSelector"]
         if !serviceSelector.exists { serviceSelector = app.radioGroups["ServiceSelector"] }
         if !serviceSelector.exists { serviceSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch }
         XCTAssertTrue(serviceSelector.waitForExistence(timeout: 5), "ServiceSelector not found")
         
         func verifyState(session: Int, engine: String) {
             // Verify Session
-            let expectedSessionLabel = "Active Session: \(session)"
-            let sessionPred = NSPredicate(format: "label CONTAINS %@", expectedSessionLabel)
-            let sessionExp = XCTNSPredicateExpectation(predicate: sessionPred, object: sessionSelector)
+            let expectedDigit = "\(session)"
             
-            // Increased timeout to 5.0s to allow for UI updates/animations
-            if XCTWaiter.wait(for: [sessionExp], timeout: 5.0) != .completed {
-                 XCTFail("Expected \(expectedSessionLabel), got '\(sessionSelector.label)'")
+            // Helper to check if a button is selected based on its value
+            // Custom segmented controls often expose selection via 'value' (1 as true/selected)
+            func isButtonSelected(_ button: XCUIElement) -> Bool {
+                if let intValue = button.value as? Int { return intValue == 1 }
+                if let strValue = button.value as? String { return strValue == "1" || strValue == "true" }
+                if let boolValue = button.value as? Bool { return boolValue }
+                return false
+            }
+
+            // Find the button (segment) that corresponds to this session and check if it is selected
+            // We check both buttons and radioButtons collections as implementation details vary
+            let sessionButton = sessionSelector.buttons[expectedDigit].exists ? sessionSelector.buttons[expectedDigit] : sessionSelector.radioButtons[expectedDigit]
+            
+            if sessionButton.exists && isButtonSelected(sessionButton) {
+                // Success
+            } else {
+                 // Fallback: check all child elements to find which one is selected
+                let children = sessionSelector.buttons.allElementsBoundByIndex + sessionSelector.radioButtons.allElementsBoundByIndex
+                let selected = children.first(where: { isButtonSelected($0) })
+                
+                if let selected = selected {
+                    XCTAssertEqual(selected.label, expectedDigit, "Expected active session \(session), but selected segment was '\(selected.label)'")
+                } else {
+                    print("Debug: Session verification failed. Selector Dump: \(sessionSelector.debugDescription)")
+                    XCTFail("No session segment found selected. Expected \(session).")
+                }
             }
             
             // Verify Engine
@@ -202,7 +225,6 @@ final class NavigationShortcutsUITests: BaseUITest {
         switchToSettingsTab("Shortcuts")
         
         for assignment in assignments {
-            wait(5)
             let rowLabel = app.staticTexts[assignment.rowTitle]
             rowLabel.tap()
 

@@ -30,13 +30,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     ]
 
     private var dragArea: DraggableView!
-    private var serviceSelector: ServiceSelectorControl!
-    var sessionSelector: NSSegmentedControl!
-    private var titleLabel: NSTextField!
+    private var serviceSelector: OverlaySegmentedControl?
+    private var collapsibleServiceSelector: CollapsibleSelector?
+    private var sessionSelector: OverlaySegmentedControl?
+    private var collapsibleSessionSelector: CollapsibleSelector?
+    private var titleLabel: HoverTextField!
 
     private var loadingBorderView: LoadingBorderView!
     private var isLoadingObservation: NSKeyValueObservation?
-    var sessionActionsButton: NSButton!
+    private var sessionActionsButton: HoverButton!
     private var serviceListObservation: NSKeyValueObservation?
     
     // Retain active downloads to prevent -999 cancellation error
@@ -78,8 +80,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
     
     init(services: [Service]? = nil) {
+        let isUITesting = ProcessInfo.processInfo.arguments.contains("--uitesting")
+        let windowWidth: CGFloat = isUITesting ? 900 : 550
+        
         let window = OverlayWindow(
-            contentRect: NSRect(x: 500, y: 200, width: 550, height: 620),
+            contentRect: NSRect(x: 500, y: 200, width: windowWidth, height: 620),
             styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
@@ -155,21 +160,37 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard services.indices.contains(index) else { return }
         currentServiceName = services[index].name
         currentServiceURL = services[index].url
-        serviceSelector.selectedSegment = index
-        NSAccessibility.post(element: serviceSelector!, notification: .valueChanged)
-        serviceSelector.setAccessibilityLabel("Active: \(services[index].name)") // Expose for UI testing
+        
+        serviceSelector?.selectedSegment = index
+        collapsibleServiceSelector?.selectedSegment = index
+        
+        if let sel = activeServiceSelector {
+            NSAccessibility.post(element: sel, notification: .valueChanged)
+            if let combo = sel as? OverlaySegmentedControl {
+                 combo.setAccessibilityLabel("Active: \(services[index].name)")
+            }
+        }
+        
         updateActiveWebview(focusWebView: focusWebView)
         updateSessionSelector()
+        layoutSelectors()
     }
 
     func switchSession(to index: Int) {
         guard let service = currentService() else { return }
         let bounded = max(0, min(index, 9))
         activeIndicesByURL[service.url] = bounded
-        sessionSelector.selectedSegment = segmentIndex(forSession: bounded)
-        NSAccessibility.post(element: sessionSelector!, notification: .valueChanged)
-        sessionSelector.setAccessibilityLabel("Active Session: \(bounded + 1)")
+        
+        let segmentIdx = segmentIndex(forSession: bounded)
+        sessionSelector?.selectedSegment = segmentIdx
+        collapsibleSessionSelector?.selectedSegment = segmentIdx
+        
+        if let sel = activeSessionSelector {
+            NSAccessibility.post(element: sel, notification: .valueChanged)
+        }
+        
         updateActiveWebview()
+        layoutSelectors() // Re-layout after session change to update selector width
     }
 
     // Protocol conformance
@@ -506,7 +527,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard let window else { return }
         window.level = .floating
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
-        window.setFrameAutosaveName(Constants.WINDOW_FRAME_AUTOSAVE_NAME)
+        
+        let isUITesting = ProcessInfo.processInfo.arguments.contains("--uitesting")
+        if !isUITesting {
+            window.setFrameAutosaveName(Constants.WINDOW_FRAME_AUTOSAVE_NAME)
+        } else {
+            // Force frame for tests, overriding any potental restoration
+             window.setFrame(NSRect(x: 500, y: 200, width: 900, height: 620), display: true)
+        }
+        
         window.isOpaque = false
         window.backgroundColor = .clear
         window.delegate = self
@@ -567,8 +596,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         contentView.addSubview(drag)
         dragArea = drag
 
-        // Service Selector
-        let serviceSel = ServiceSelectorControl(frame: .zero)
+        // Service Selector (Static)
+        let serviceSel = OverlaySegmentedControl(frame: .zero)
+        serviceSel.enableDragReorder = true
         serviceSel.target = self
         serviceSel.action = #selector(serviceChanged(_:))
         serviceSel.mouseDownSegmentHandler = { [weak self] index in
@@ -586,42 +616,69 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         serviceSel.segmentCount = services.count
         for (index, service) in services.enumerated() {
             serviceSel.setLabel(service.name, forSegment: index)
+            serviceSel.setToolTip(service.name, forSegment: index)
         }
-        if let currentName = currentServiceName,
-           let idx = services.firstIndex(where: { $0.name == currentName }) {
-            serviceSel.selectedSegment = idx
-        } else {
-            serviceSel.selectedSegment = services.isEmpty ? -1 : 0
-        }
-        
-        serviceSel.setAccessibilityElement(true)
         serviceSel.setAccessibilityIdentifier("ServiceSelector")
-        if let currentName = currentServiceName {
-            serviceSel.setAccessibilityLabel("Active: \(currentName)")
-        }
         drag.addSubview(serviceSel)
         serviceSelector = serviceSel
 
-        // Session Selector
-        let sessionSel = NSSegmentedControl(frame: .zero)
+        // Service Selector (Collapsible)
+        let collapsibleServiceSel = CollapsibleSelector()
+        collapsibleServiceSel.enableDragReorder = true
+        collapsibleServiceSel.target = self
+        collapsibleServiceSel.action = #selector(serviceChanged(_:))
+        collapsibleServiceSel.delegate = self
+        collapsibleServiceSel.mouseDownSegmentHandler = serviceSel.mouseDownSegmentHandler
+        collapsibleServiceSel.dragBeganHandler = serviceSel.dragBeganHandler
+        collapsibleServiceSel.dragChangedHandler = serviceSel.dragChangedHandler
+        collapsibleServiceSel.dragEndedHandler = serviceSel.dragEndedHandler
+        collapsibleServiceSel.setItems(services.map { $0.name })
+        // Flex: shrink-to-fit (high hugging, high compression resistance)
+        collapsibleServiceSel.setContentHuggingPriority(.required, for: .horizontal)
+        collapsibleServiceSel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        drag.addSubview(collapsibleServiceSel)
+        collapsibleServiceSelector = collapsibleServiceSel
+
+        // Session Selector (Static)
+        let sessionSel = OverlaySegmentedControl(frame: .zero)
         sessionSel.segmentStyle = .rounded
         sessionSel.trackingMode = .selectOne
         sessionSel.segmentCount = 10
         for i in 0..<10 {
             sessionSel.setLabel("\(i == 9 ? 0 : i + 1)", forSegment: i)
-            sessionSel.setWidth(24, forSegment: i)
         }
-        sessionSel.selectedSegment = 0
         sessionSel.target = self
         sessionSel.action = #selector(sessionChanged(_:))
-        sessionSel.setAccessibilityElement(true)
-        sessionSel.setAccessibilityIdentifier("SessionSelector")
-        sessionSel.setAccessibilityLabel("Active Session: 1")
+        sessionSel.selectorDelegate = self
+        sessionSel.sizeToFit()
         drag.addSubview(sessionSel)
         sessionSelector = sessionSel
 
+        // Session Selector (Collapsible)
+        let collapsibleSessionSel = CollapsibleSelector()
+        collapsibleSessionSel.target = self
+        collapsibleSessionSel.action = #selector(sessionChanged(_:))
+        // Populate items to define segment count (10) - caller provides display labels
+        collapsibleSessionSel.setItems((0..<10).map { "\($0 == 9 ? 0 : $0 + 1)" })
+        collapsibleSessionSel.delegate = self
+        // Flex: shrink-to-fit (high hugging, high compression resistance)
+        collapsibleSessionSel.setContentHuggingPriority(.required, for: .horizontal)
+        collapsibleSessionSel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        drag.addSubview(collapsibleSessionSel)
+        collapsibleSessionSelector = collapsibleSessionSel
+        
+        // Initialize session tooltips with default "Session n" labels
+        for sessionIdx in 0..<10 {
+            let segIdx = segmentIndex(forSession: sessionIdx)
+            let defaultTitle = "Session \(sessionIdx == 9 ? 0 : sessionIdx + 1)"
+            sessionSel.setToolTip(defaultTitle, forSegment: segIdx)
+            collapsibleSessionSel.setToolTip(defaultTitle, forSegment: segIdx)
+        }
+
+        updateSelectorsMode() // Set initial hidden states based on mode/width
+
         // Title Label
-        let title = NSTextField(labelWithString: "")
+        let title = HoverTextField(labelWithString: "")
         title.font = .systemFont(ofSize: 12, weight: .medium)
         title.textColor = .secondaryLabelColor
         title.lineBreakMode = .byTruncatingTail
@@ -637,30 +694,106 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         borderView.isHidden = true
         drag.addSubview(borderView, positioned: .below, relativeTo: title)
         loadingBorderView = borderView
+        
+        // Connect title label to border view for extended hover area
+        title.hitTestView = borderView
+        
+        // Prevent title tooltip if session selector is expanded over it
+        title.shouldShowTooltip = { [weak self] event in
+                guard let self = self,
+                      let sessionSel = self.collapsibleSessionSelector,
+                      let mainWindow = self.window else { return true }
+                
+                // If the session selector is expanded, check the panel's frame in screen coordinates
+                if !sessionSel.isHidden && sessionSel.isExpanded,
+                   let panel = sessionSel.expandedPanel {
+                    let pointInWindow = event.locationInWindow
+                    let pointInScreen = mainWindow.convertToScreen(NSRect(origin: pointInWindow, size: .zero)).origin
+                    if panel.frame.contains(pointInScreen) {
+                        return false
+                    }
+                }
+                return true
+            }
 
         // Session Actions Button
         let iconConfig = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
-        let actionsBtn = NSButton(image: NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "Session Actions")!.withSymbolConfiguration(iconConfig)!, target: self, action: #selector(sessionActionsButtonTapped(_:)))
+        let actionsBtn = HoverButton(image: NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "Session Actions")!.withSymbolConfiguration(iconConfig)!, target: self, action: #selector(sessionActionsButtonTapped(_:)))
+        actionsBtn.hoverToolTip = "Session Actions"
         actionsBtn.bezelStyle = .texturedRounded
-        actionsBtn.isBordered = false
         actionsBtn.contentTintColor = .secondaryLabelColor
         drag.addSubview(actionsBtn)
         sessionActionsButton = actionsBtn
 
         layoutSelectors()
         NotificationCenter.default.addObserver(self, selector: #selector(handleDockVisibilityChanged), name: .dockVisibilityChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleSelectorDisplayModeChanged), name: .selectorDisplayModeChanged, object: nil)
+        
+        // Observe window width for Auto mode
+        if let window = self.window {
+            NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidResize), name: NSWindow.didResizeNotification, object: window)
+        }
     }
 
     @objc private func handleDockVisibilityChanged(_ notification: Notification) {
         layoutSelectors()
     }
+    
+    @objc private func handleSelectorDisplayModeChanged(_ notification: Notification) {
+        updateSelectorsMode()
+        layoutSelectors()
+    }
+
+    @objc private func handleWindowDidResize(_ notification: Notification) {
+        if Settings.shared.selectorDisplayMode == .auto {
+            updateSelectorsMode()
+            layoutSelectors()
+        }
+    }
+
+    private func updateSelectorsMode() {
+        let mode = Settings.shared.selectorDisplayMode
+        let windowWidth = window?.frame.width ?? 0
+        let threshold: CGFloat = 800
+        
+        let useCompact: Bool
+        switch mode {
+        case .expanded: useCompact = false
+        case .compact: useCompact = true
+        case .auto: useCompact = windowWidth < threshold
+        }
+        
+        serviceSelector?.isHidden = useCompact
+        collapsibleServiceSelector?.isHidden = !useCompact
+        
+        sessionSelector?.isHidden = useCompact
+        collapsibleSessionSelector?.isHidden = !useCompact
+        
+        // Sync selections
+        syncSelectorSelections()
+    }
+
+    private func syncSelectorSelections() {
+        let serviceIdx = services.firstIndex(where: { $0.url == currentServiceURL }) ?? 0
+        serviceSelector?.selectedSegment = serviceIdx
+        collapsibleServiceSelector?.selectedSegment = serviceIdx
+        
+        let sessionIdx = segmentIndex(forSession: activeIndicesByURL[currentServiceURL ?? ""] ?? 0)
+        sessionSelector?.selectedSegment = sessionIdx
+        collapsibleSessionSelector?.selectedSegment = sessionIdx
+    }
 
     private func layoutSelectors() {
         guard let drag = dragArea,
-              let serviceSel = serviceSelector,
-              let sessionSel = sessionSelector,
               let title = titleLabel,
               let actionsBtn = sessionActionsButton else { return }
+        
+        // Find visible selectors
+        let activeServiceSel = (serviceSelector?.isHidden == false) ? serviceSelector : (collapsibleServiceSelector?.isHidden == false ? collapsibleServiceSelector : nil)
+        let activeSessionSel = (sessionSelector?.isHidden == false) ? sessionSelector : (collapsibleSessionSelector?.isHidden == false ? collapsibleSessionSelector : nil)
+        
+        guard let serviceSel = activeServiceSel,
+              let sessionSel = activeSessionSel else { return }
 
         let headerHeight = drag.bounds.size.height
         let selectorHeight: CGFloat = 25
@@ -685,27 +818,39 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
 
         // Determine right edge for selectors
-        let rightReferenceX = showActionsButton ? actionsBtn.frame.minX : (drag.bounds.width - inset)
+        let rightReferenceX = showActionsButton ? (actionsBtn.frame.minX - gap) : (drag.bounds.width - inset)
 
-        // Natural widths
-        let naturalSessionWidth = sessionSel.intrinsicContentSize.width
-        let estimatedServiceWidth = max(180, estimatedWidthForServiceSegments() + 20)
+        // Session width
+        let sessionWidth: CGFloat
+        if let coll = sessionSel as? CollapsibleSelector {
+            sessionWidth = coll.currentWidth
+        } else {
+            sessionWidth = sessionSel.fittingSize.width
+        }
+
+        // Service width
+        let serviceWidth: CGFloat
+        if let coll = serviceSel as? CollapsibleSelector {
+            serviceWidth = coll.currentWidth
+        } else {
+            serviceWidth = max(minimumServiceWidth, estimatedWidthForServiceSegments())
+        }
+
 
         // Size service selector first
         let maxServiceWidth = max(minimumServiceWidth,
-                                  rightReferenceX - gap - inset - naturalSessionWidth - gap)
-        let serviceWidth = min(estimatedServiceWidth, maxServiceWidth)
+                                  rightReferenceX - gap - sessionWidth - gap)
+        let actualServiceWidth = min(serviceWidth, maxServiceWidth)
 
         serviceSel.frame = NSRect(
             x: inset,
             y: (headerHeight - selectorHeight) / 2,
-            width: serviceWidth,
+            width: actualServiceWidth,
             height: selectorHeight
         )
 
         // Session selector positioned at the right
-        let sessionWidth = max(0, min(naturalSessionWidth, rightReferenceX - gap - serviceSel.frame.maxX - gap))
-        let sessionX = rightReferenceX - gap - sessionWidth
+        let sessionX = rightReferenceX - sessionWidth
         sessionSel.frame = NSRect(
             x: sessionX,
             y: (headerHeight - selectorHeight) / 2,
@@ -714,7 +859,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
 
         // Calculate available space for title area (between selectors with margin)
-        let titleAreaMargin: CGFloat = 8  // Margin from selectors
+        let titleAreaMargin: CGFloat = 2  // Margin from selectors
         let titleAreaX = serviceSel.frame.maxX + gap + titleAreaMargin
         let titleAreaWidth = max(0, sessionSel.frame.minX - gap - titleAreaX - titleAreaMargin)
         
@@ -724,13 +869,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         // Loading border view frames the title area
         if let borderView = loadingBorderView {
-            let verticalPadding: CGFloat = 4
-            let titleHeight = title.intrinsicContentSize.height
+            // User requested robust full-height hover area
+            // We'll give it the full height of the header minus a small margin for aesthetics if needed,
+            // or literally full header height to ensure no gaps.
+            let fullHeight = headerHeight
+            
             borderView.frame = NSRect(
                 x: titleAreaX,
-                y: (headerHeight - titleHeight) / 2 - verticalPadding,
+                y: 0,
                 width: titleAreaWidth,
-                height: titleHeight + verticalPadding * 2
+                height: fullHeight
             )
             // Hide border if no room, but don't stop animation (it may resume when resized)
             borderView.isHidden = shouldHideTitleArea || !borderView.isAnimating
@@ -969,6 +1117,35 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func updateTitleLabel(from webView: WKWebView) {
         let title = webView.title ?? ""
         titleLabel?.stringValue = title
+        
+        let isLoading = webView.isLoading
+        
+        // Dynamic Update for title label if truncated
+        if let label = titleLabel {
+            if label.isTruncated() {
+                QuickTooltip.shared.updateIfVisible(with: title, for: label)
+            } else {
+                QuickTooltip.shared.hide(for: label)
+            }
+        }
+        
+        // Update session selector tooltip for the active session
+        if let service = currentService() {
+            let activeIndex = activeIndicesByURL[service.url] ?? 0
+            let segIdx = segmentIndex(forSession: activeIndex)
+            sessionSelector?.setToolTip(title, forSegment: segIdx)
+            collapsibleSessionSelector?.setToolTip(title, forSegment: segIdx)
+            
+            // Dynamic Update for session tooltip if visible
+            if let selector = sessionSelector {
+                QuickTooltip.shared.updateIfVisible(with: title, for: (selector, segIdx), isLoading: isLoading)
+            }
+            // Collapsible selector internal view matching
+            if let collapsible = collapsibleSessionSelector {
+                collapsible.setToolTip(title, forSegment: segIdx)
+            }
+        }
+        
         updateLoadingIndicator(for: webView)
     }
     
@@ -980,23 +1157,84 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         } else {
             loadingBorderView?.stopAnimating()
         }
+        
+        // Update tooltip spinner for the specific session
+        guard let serviceUrlStr = serviceURL(for: webView)?.absoluteString,
+              serviceUrlStr == currentServiceURL,
+              let webviews = webviewsByURL[serviceUrlStr],
+              let sessionIndex = webviews.first(where: { $0.value == webView })?.key else { return }
+        
+        let segIdx = segmentIndex(forSession: sessionIndex)
+        var title = webView.title ?? ""
+        
+        // If this is the active webView and the title label is empty (manually cleared),
+        // respect that empty state to ensure tooltips sync with the "blank" title
+        // instead of reverting to the stale webView.title.
+        if let labelTitle = titleLabel?.stringValue, labelTitle.isEmpty,
+           let currentUrl = currentServiceURL,
+           let activeIdx = activeIndicesByURL[currentUrl],
+           activeIdx == sessionIndex {
+            title = ""
+        }
+        
+        if let selector = sessionSelector {
+            QuickTooltip.shared.updateIfVisible(with: title, for: (selector, segIdx), isLoading: isLoading)
+        }
+        if let collapsible = collapsibleSessionSelector {
+            collapsible.setToolTip(title, forSegment: segIdx)
+        }
     }
     
     private func updateTitleLabel(withFallback fallback: String) {
         titleLabel?.stringValue = fallback
+        
+        // Dynamic Update for title label if truncated
+        if let label = titleLabel {
+            if label.isTruncated() {
+                // Pass strict width to match label width
+                QuickTooltip.shared.updateIfVisible(with: fallback, for: label)
+            } else {
+                QuickTooltip.shared.hide(for: label)
+            }
+        }
+        
+            // Update session selector tooltip for the active session
+            if let service = currentService() {
+                let activeIndex = activeIndicesByURL[service.url] ?? 0
+                let segIdx = segmentIndex(forSession: activeIndex)
+                
+                // Ensure we use the fallback if title is empty
+                sessionSelector?.setToolTip(fallback, forSegment: segIdx)
+                collapsibleSessionSelector?.setToolTip(fallback, forSegment: segIdx)
+                
+                // Dynamic Update for session tooltip if visible
+                // Forcing this update ensures that even if title went blank, the tooltip reflects the fallback
+                if let selector = sessionSelector {
+                    QuickTooltip.shared.updateIfVisible(with: fallback, for: (selector, segIdx), isLoading: false)
+                }
+                // Collapsible selector internal view matching
+                if let collapsible = collapsibleSessionSelector {
+                    collapsible.setToolTip(fallback, forSegment: segIdx)
+                }
+            }
+        
         loadingBorderView?.stopAnimating()
     }
 
     private func refreshServiceSegments() {
-        serviceSelector.segmentCount = services.count
+        serviceSelector?.segmentCount = services.count
         for (index, service) in services.enumerated() {
-            serviceSelector.setLabel(service.name, forSegment: index)
+            serviceSelector?.setLabel(service.name, forSegment: index)
+            serviceSelector?.setToolTip(service.name, forSegment: index)
         }
-        if let currentName = currentServiceName,
-           let idx = services.firstIndex(where: { $0.name == currentName }) {
-            serviceSelector.selectedSegment = idx
+        
+        collapsibleServiceSelector?.setItems(services.map { $0.name })
+        collapsibleServiceSelector?.selectedSegment = services.firstIndex(where: { $0.url == currentServiceURL }) ?? 0
+        
+        if let idx = services.firstIndex(where: { $0.url == currentServiceURL }) {
+            serviceSelector?.selectedSegment = idx
         } else {
-            serviceSelector.selectedSegment = services.isEmpty ? -1 : 0
+            serviceSelector?.selectedSegment = services.isEmpty ? -1 : 0
             currentServiceName = services.first?.name
         }
         layoutSelectors()
@@ -1021,8 +1259,38 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func updateSessionSelector() {
         guard let service = currentService() else { return }
         let index = activeIndicesByURL[service.url] ?? 0
-        sessionSelector.selectedSegment = segmentIndex(forSession: index)
-        sessionSelector.setAccessibilityLabel("Active Session: \(index + 1)")
+        let segmentIdx = segmentIndex(forSession: index)
+        
+        // Update tooltips for all sessions based on their webview titles
+        if let selector = sessionSelector {
+            for sessionIdx in 0..<10 {
+                let segIdx = segmentIndex(forSession: sessionIdx)
+                let title = webviewsByURL[service.url]?[sessionIdx]?.title ?? "Session \(sessionIdx == 9 ? 0 : sessionIdx + 1)"
+                selector.setToolTip(title, forSegment: segIdx)
+                collapsibleSessionSelector?.setToolTip(title, forSegment: segIdx)
+            }
+        } else if let collapsible = collapsibleSessionSelector {
+             for sessionIdx in 0..<10 {
+                let segIdx = segmentIndex(forSession: sessionIdx)
+                let title = webviewsByURL[service.url]?[sessionIdx]?.title ?? "Session \(sessionIdx == 9 ? 0 : sessionIdx + 1)"
+                collapsible.setToolTip(title, forSegment: segIdx)
+            }
+        }
+
+        sessionSelector?.selectedSegment = segmentIdx
+        collapsibleSessionSelector?.selectedSegment = segmentIdx
+    }
+
+    private var activeServiceSelector: NSView? {
+        if let sel = serviceSelector, !sel.isHidden { return sel }
+        if let sel = collapsibleServiceSelector, !sel.isHidden { return sel }
+        return nil
+    }
+
+    private var activeSessionSelector: NSView? {
+        if let sel = sessionSelector, !sel.isHidden { return sel }
+        if let sel = collapsibleSessionSelector, !sel.isHidden { return sel }
+        return nil
     }
 
     private func stepSession(by delta: Int) {
@@ -1042,7 +1310,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func estimatedWidthForServiceSegments() -> CGFloat {
-        guard let font = serviceSelector.font else { return CGFloat(services.count * 80) }
+        let font = serviceSelector?.font ?? NSFont.systemFont(ofSize: 13)
         return services.reduce(0) { partialResult, service in
             let size = (service.name as NSString).size(withAttributes: [.font: font])
             return partialResult + size.width + 20
@@ -1535,6 +1803,30 @@ private extension MainWindowController {
     }
 }
 
+
+// MARK: - CollapsibleSelectorDelegate
+@MainActor
+extension MainWindowController: CollapsibleSelectorDelegate {
+    func isLoading(index: Int) -> Bool {
+        guard let url = currentServiceURL,
+              let webviews = webviewsByURL[url],
+              let webView = webviews[index] else { return false }
+        return webView.isLoading
+    }
+    
+    func selector(_ selector: CollapsibleSelector, didDragSegment index: Int, to newIndex: Int) {
+        // Drag logic is handled by closures on the control currently
+    }
+    
+    func selectorWillExpand(_ selector: CollapsibleSelector) {
+        if selector === collapsibleServiceSelector {
+            collapsibleSessionSelector?.collapse()
+        } else if selector === collapsibleSessionSelector {
+            collapsibleServiceSelector?.collapse()
+        }
+    }
+}
+
 @MainActor
 extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
     // Handle links that attempt to open in a new window (target="_blank", window.open(), etc.)
@@ -1654,7 +1946,8 @@ extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
         guard let url = serviceURL(for: webView),
               url.absoluteString == currentServiceURL else { return }
         
-        titleLabel?.stringValue = ""
+        // Use updateTitleLabel to ensure tooltips are synced with the "blank" state
+        updateTitleLabel(withFallback: "")
         loadingBorderView?.startAnimating()
     }
 
@@ -1742,4 +2035,94 @@ enum Zoom {
     static let min: CGFloat = 0.5
     static let max: CGFloat = 2.5
     static let `default`: CGFloat = 1.0
+}
+
+// MARK: - Helper Views
+
+final class HoverTextField: NSTextField {
+    private var trackingArea: NSTrackingArea?
+    
+    // Explicitly allow setting a larger hit-test view (e.g., the LoadingBorderView)
+    weak var hitTestView: NSView?
+    
+    // Check if tooltip should be shown (e.g., to prevent showing when obscured)
+    var shouldShowTooltip: ((NSEvent) -> Bool)?
+    
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingArea {
+            removeTrackingArea(existing)
+        }
+        
+        // Use hitTestView bounds if available, otherwise self.bounds
+        let rect: NSRect
+        if let hitView = hitTestView, let superview = superview {
+             // Convert hitView frame to our coordinate system
+             // But simpler: just track mouse moves over self and parent?
+             // Actually, the cleanly supported way is to add tracking rect for *that* view on that view.
+             // But since we want to trigger *this* tooltip logic...
+             // Let's make the tracking area cover the hitTestView's frame relative to self
+             rect = convert(hitView.frame, from: superview)
+        } else {
+             rect = bounds
+        }
+        
+        trackingArea = NSTrackingArea(rect: rect, options: [.mouseEnteredAndExited, .activeAlways], owner: self, userInfo: nil)
+        addTrackingArea(trackingArea!)
+    }
+    
+    override func mouseEntered(with event: NSEvent) {
+        // Check external condition first
+        if let shouldShow = shouldShowTooltip, !shouldShow(event) {
+            return
+        }
+        
+        if !stringValue.isEmpty {
+            // Only show if truncated
+            if isTruncated() {
+                // Use the hitTestView width if available for positioning visual width logic?
+                // Actually user requested "area of the rounded spinning rectangle"
+                // So if we have hitTestView, we use its width as the forced width
+                let width = hitTestView?.bounds.width ?? bounds.width
+                QuickTooltip.shared.show(stringValue, for: self, forcedWidth: width)
+            }
+        }
+    }
+    
+    func isTruncated() -> Bool {
+        guard let cell = cell else { return false }
+        // Use a large width to measure the full natural width of the text
+        let properSize = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: bounds.height))
+        // Compare against the available width (hitTestView if present)
+        let availableWidth = hitTestView?.bounds.width ?? bounds.width
+        return properSize.width > availableWidth
+    }
+    
+    override func mouseExited(with event: NSEvent) {
+        QuickTooltip.shared.hide(for: self)
+    }
+}
+
+final class HoverButton: NSButton {
+    var hoverToolTip: String?
+    private var trackingArea: NSTrackingArea?
+    
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingArea {
+            removeTrackingArea(existing)
+        }
+        trackingArea = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self, userInfo: nil)
+        addTrackingArea(trackingArea!)
+    }
+    
+    override func mouseEntered(with event: NSEvent) {
+        if let toolTip = hoverToolTip {
+            QuickTooltip.shared.show(toolTip, for: self)
+        }
+    }
+    
+    override func mouseExited(with event: NSEvent) {
+        QuickTooltip.shared.hide()
+    }
 }
