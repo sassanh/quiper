@@ -186,24 +186,17 @@ final class AppControllerTests: XCTestCase {
     }
 
     func testClearWebViewData() async {
-        // Since WKWebsiteDataStore.default().removeData is asynchronous, we need to await for its completion
-        let expectation = self.expectation(description: "Clear web view data completion")
-        
-        // Mocking the WKWebsiteDataStore.default().removeData call is complex as it's a global singleton.
-        // For now, we'll assume the call is made and just check the focusInputInActiveWebviewCalled
-        // if we can find a way to mock the WKWebsiteDataStore.
-        
-        // This test only covers the direct call to the method, not its asynchronous completion.
-        // A more robust test would involve mocking WKWebsiteDataStore.
+        // clearWebViewData calls WKWebsiteDataStore.removeData which is async.
+        // We poll for the expected side effect instead of using a fixed delay.
         appController.clearWebViewData(nil)
         
-        // Wait a short while for the async block to potentially execute
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            XCTAssertTrue(self.mockMainWindowController.focusInputInActiveWebviewCalled)
-            expectation.fulfill()
+        let predicate = NSPredicate { _, _ in
+            self.mockMainWindowController.focusInputInActiveWebviewCalled
         }
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: nil)
         
-        await fulfillment(of: [expectation], timeout: 1.0)
+        await fulfillment(of: [expectation], timeout: 5.0)
+        XCTAssertTrue(mockMainWindowController.focusInputInActiveWebviewCalled)
     }
     
 

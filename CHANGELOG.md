@@ -7,6 +7,7 @@
 ### Fixed
 
 - Fixed "Operation not permitted" error during updates by implementing manual post-build code signing. This allows the app to retain necessary entitlements (e.g., `downloads.read-write`) without Xcode automatically enforcing the App Sandbox, which blocks self-updates.
+- Fixed flaky `testClearWebViewData` test by replacing fixed delay with polling expectation.
 
 ## [2.2.2] - 2025-12-16
 
