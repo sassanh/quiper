@@ -9,24 +9,17 @@ final class MainWindowPositionUITests: BaseUITest {
     func testMainWindowRepositioning() throws {
         // Goal: Verify that the Main Window can be dragged and repositioned
         
+        if let statusItem = app.statusItems.firstMatch as XCUIElement? {
+            statusItem.click()
+            let showMenuItem = app.menuItems["Show Quiper"]
+            if showMenuItem.waitForExistence(timeout: 2.0) { showMenuItem.click() }
+        }
+        
         // --- Step 1: Ensure Main Window is Visible (via ServiceSelector) ---
         // We trust ServiceSelector as a reliable indicator of the UI being present.
         var serviceSelector = app.segmentedControls["ServiceSelector"]
         if !serviceSelector.exists { serviceSelector = app.radioGroups["ServiceSelector"] }
         if !serviceSelector.exists { serviceSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch }
-        
-        if !serviceSelector.waitForExistence(timeout: 2.0) {
-            app.typeKey(XCUIKeyboardKey.space, modifierFlags: [.command, .shift])
-        }
-        
-        // Fallback: Status Item
-        if !serviceSelector.waitForExistence(timeout: 2.0) {
-             if let statusItem = app.statusItems.firstMatch as XCUIElement? {
-                 statusItem.click()
-                 let showMenuItem = app.menuItems["Show Quiper"]
-                 if showMenuItem.waitForExistence(timeout: 2.0) { showMenuItem.click() }
-             }
-        }
         
         XCTAssertTrue(serviceSelector.waitForExistence(timeout: 5.0), "ServiceSelector (and thus Main Window) must be visible")
         

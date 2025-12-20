@@ -83,8 +83,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let isUITesting = ProcessInfo.processInfo.arguments.contains("--uitesting")
         let windowWidth: CGFloat = isUITesting ? 900 : 550
         
+        let height: CGFloat = 620
+        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let x = screenFrame.midX - (windowWidth / 2)
+        let y = screenFrame.midY - (height / 2)
+        
         let window = OverlayWindow(
-            contentRect: NSRect(x: 500, y: 200, width: windowWidth, height: 620),
+            contentRect: NSRect(x: x, y: y, width: windowWidth, height: height),
             styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
@@ -533,7 +538,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window.setFrameAutosaveName(Constants.WINDOW_FRAME_AUTOSAVE_NAME)
         } else {
             // Force frame for tests, overriding any potental restoration
-             window.setFrame(NSRect(x: 500, y: 200, width: 900, height: 620), display: true)
+            let width: CGFloat = 900
+            let height: CGFloat = 400
+            let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            let x = screenFrame.midX - (width / 2)
+            let y = screenFrame.midY - (height / 2)
+            
+            window.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
         }
         
         window.isOpaque = false

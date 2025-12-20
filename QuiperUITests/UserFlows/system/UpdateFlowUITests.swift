@@ -21,24 +21,6 @@ class UpdateFlowUITests: BaseUITest {
         // The app runs as an accessory app, so we must bring it to the foreground
         // by interacting with the status bar item to make windows accessible to XCTest.
         
-        // 1. Click Status Item to open menu
-        let statusItem = app.statusItems.firstMatch
-        if statusItem.waitForExistence(timeout: 5.0) {
-            statusItem.click()
-        } else {
-            XCTFail("Status item not found")
-        }
-        
-        // 2. Click "Show Quiper" to activate the app
-        let showAppItem = app.menuItems["Show Quiper"]
-        if showAppItem.waitForExistence(timeout: 2.0) {
-            showAppItem.click()
-        } else {
-            // If "Show Quiper" isn't there, maybe it's already active or title is different?
-            // But proceeding anyway to check for Update Prompt.
-
-        }
-
         // 3. Wait for the main update view to appear
         // The app should automatically check for updates on launch because of the launch argument
         // We expect the "Software Update" window (or alert) to appear eventually
