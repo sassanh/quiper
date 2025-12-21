@@ -11,6 +11,7 @@ struct Service: Codable, Identifiable {
     var focus_selector: String
     var actionScripts: [UUID: String] = [:]
     var activationShortcut: HotkeyManager.Configuration?
+    var customCSS: String?
     var friendDomains: [String] = []
 
     enum CodingKeys: String, CodingKey {
@@ -21,6 +22,7 @@ struct Service: Codable, Identifiable {
         case actionScripts
         case activationShortcut
         case friendDomains
+        case customCSS
     }
 
     init(id: UUID = UUID(),
@@ -29,7 +31,8 @@ struct Service: Codable, Identifiable {
          focus_selector: String,
          actionScripts: [UUID: String] = [:],
          activationShortcut: HotkeyManager.Configuration? = nil,
-         friendDomains: [String] = []) {
+         friendDomains: [String] = [],
+         customCSS: String? = nil) {
         self.id = id
         self.name = name
         self.url = url
@@ -37,6 +40,7 @@ struct Service: Codable, Identifiable {
         self.actionScripts = actionScripts
         self.activationShortcut = activationShortcut
         self.friendDomains = friendDomains
+        self.customCSS = customCSS
     }
 
     init(from decoder: Decoder) throws {
@@ -48,6 +52,7 @@ struct Service: Codable, Identifiable {
         actionScripts = try container.decodeIfPresent([UUID: String].self, forKey: .actionScripts) ?? [:]
         activationShortcut = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .activationShortcut)
         friendDomains = try container.decodeIfPresent([String].self, forKey: .friendDomains) ?? []
+        customCSS = try container.decodeIfPresent(String.self, forKey: .customCSS)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -64,6 +69,9 @@ struct Service: Codable, Identifiable {
         }
         if !friendDomains.isEmpty {
             try container.encode(friendDomains, forKey: .friendDomains)
+        }
+        if let customCSS, !customCSS.isEmpty {
+            try container.encode(customCSS, forKey: .customCSS)
         }
     }
 }
@@ -447,7 +455,12 @@ class Settings: ObservableObject {
             ], friendDomains: [
                 "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)",
                 "^https?://([^/]*\\.)?appleid\\.apple\\.com(/|$)"
-            ]
+            ],
+            customCSS: """
+            html, body {
+              background-color: transparent !important;
+            }
+            """
         ),
         Service(
             name: "Gemini",
@@ -612,7 +625,15 @@ class Settings: ObservableObject {
             ],
             friendDomains: [
                 "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
-            ]
+            ],
+            customCSS: """
+            body, mat-sidenav-container {
+              background-color: transparent !important;
+            }
+            input-container::before {
+              background: transparent !important;
+            }
+            """
         ),
         Service(
             name: "Grok",
@@ -661,7 +682,12 @@ class Settings: ObservableObject {
             friendDomains: [
                 "^https?://([^/]*\\.)?x\\.com(/|$)",
                 "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
-            ]
+            ],
+            customCSS: """
+            body {
+              background-color: transparent !important;
+            }
+            """
         ),
         Service(
             name: "X",
@@ -697,7 +723,12 @@ class Settings: ObservableObject {
             ],
             friendDomains: [
                 "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
-            ]
+            ],
+            customCSS: """
+            body, div[data-testid="primaryColumn"] {
+              background-color: transparent !important;
+            }
+            """
         ),
         Service(
             name: "Ollama",
@@ -802,7 +833,12 @@ class Settings: ObservableObject {
                 Settings.newSessionActionID: """
                 window.location = "/";
                 """,
-            ]
+            ],
+            customCSS: """
+            body {
+              background-color: transparent !important;
+            }
+            """
         )
     ]
 

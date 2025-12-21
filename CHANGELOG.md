@@ -5,6 +5,9 @@
 ### Added
 
 - Added unit tests for `CollapsibleSelector` to verify initialization, state management, and delegate callbacks.
+- **Custom CSS Injection**: Added support for injecting custom CSS into engine sessions.
+  - Added "Custom CSS" editor in Engine settings, allowing users to override styles for any service.
+  - Configured default transparent backgrounds for ChatGPT, Gemini, Grok, X, and Google to leverage the new WebView transparency.
 
 ### Changed
 

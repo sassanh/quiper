@@ -660,6 +660,7 @@ struct ServiceDetailView: View {
     enum DetailSelection: Hashable {
         case focus
         case friendDomains
+        case css
         case action(UUID)
     }
 
@@ -704,6 +705,7 @@ struct ServiceDetailView: View {
             List(selection: $detailSelection) {
                 Text("Focus Selector").tag(DetailSelection.focus)
                 Text("Friend Domains").tag(DetailSelection.friendDomains)
+                Text("Custom CSS").tag(DetailSelection.css)
                 if !settings.customActions.isEmpty {
                     Section("Custom Actions") {
                         ForEach(settings.customActions) { action in
@@ -722,6 +724,8 @@ struct ServiceDetailView: View {
                 focusSelectorForm
             case .friendDomains:
                 friendDomainsForm
+            case .css:
+                customCSSForm
             case .action(let id):
                 if let action = settings.customActions.first(where: { $0.id == id }) {
                     ActionScriptEditor(action: action,
@@ -784,7 +788,29 @@ struct ServiceDetailView: View {
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-    
+
+    private var customCSSForm: some View {
+        VStack(alignment: .leading) {
+            Text("Custom CSS")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            CodeTextEditor(text: Binding(
+                get: { service.customCSS ?? "" },
+                set: { service.customCSS = $0.isEmpty ? nil : $0 }
+            ))
+            .frame(minHeight: 140)
+            .background(Color(NSColor.textBackgroundColor))
+            .cornerRadius(5)
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+            )
+            .padding(.top, 15)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
     private var emptySelectionView: some View {
         VStack {
             Text("Select an action")

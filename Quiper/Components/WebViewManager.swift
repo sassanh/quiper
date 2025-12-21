@@ -97,6 +97,17 @@ final class WebViewManager: NSObject {
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
 
+        if let customCSS = service.customCSS, !customCSS.isEmpty {
+            let cssScript = """
+            const style = document.createElement('style');
+            style.textContent = `/* Custom CSS */
+            \(customCSS)`;
+            document.head.appendChild(style);
+            """
+            let userScript = WKUserScript(source: cssScript, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+            userContentController.addUserScript(userScript)
+        }
+
         let webview = WKWebView(frame: frame, configuration: config)
         webview.setValue(false, forKey: "drawsBackground")
         webview.autoresizingMask = [.width, .height]
