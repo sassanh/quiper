@@ -273,10 +273,8 @@ class SettingsWindow: NSWindow {
 
             glass.contentView = hostingView
             contentView = glass
-            contentViewController = hostingController
-        } else {
-            contentViewController = hostingController
         }
+        contentViewController = hostingController
     }
 }
 

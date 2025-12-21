@@ -129,12 +129,12 @@ class OverlaySegmentedControl: NSSegmentedControl {
                 
                 // Start drag detection
                 dragCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
-                    guard let self = self, let initial = self.initialMouseLocation else {
+                    guard let self = self, self.initialMouseLocation != nil else {
                         timer.invalidate()
                         return
                     }
                     
-                    let current = NSEvent.mouseLocation
+                    // let current = NSEvent.mouseLocation
                     // Convert screen point to window point for approximate distance check is fine, 
                     // but better to use window coordinates if possible. 
                     // Since timer is async and mouseLocation is screen, let's skip complex conversion for threshold
@@ -521,7 +521,7 @@ class CollapsibleSelector: NSView {
         }
         
         // 3. Layout & Positioning
-        var controlWidth = control.frame.width
+        let controlWidth = control.frame.width
         
         let controlHeight = max(bounds.height, control.frame.height)
         control.frame = NSRect(x: 0, y: 0, width: controlWidth, height: controlHeight)
@@ -579,10 +579,12 @@ class CollapsibleSelector: NSView {
              context.duration = animationDuration
              panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
-             self?.expandedPanel?.parent?.removeChildWindow(panel)
-             self?.expandedPanel?.orderOut(nil)
-             self?.expandedPanel = nil
-             self?.expandedControl = nil
+             Task { @MainActor [weak self] in
+                 self?.expandedPanel?.parent?.removeChildWindow(panel)
+                 self?.expandedPanel?.orderOut(nil)
+                 self?.expandedPanel = nil
+                 self?.expandedControl = nil
+             }
         }
     }
     

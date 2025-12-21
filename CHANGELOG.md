@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Refactored `MainWindowController` logic into dedicated `WebViewManager` and `FindBarViewController` components to improve code organization.
+
 ## [2.3.0] - 2025-12-21
 
 ### Added

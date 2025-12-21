@@ -38,7 +38,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private var loadingBorderView: LoadingBorderView!
     private var isLoadingObservation: NSKeyValueObservation?
-    private var sessionActionsButton: HoverButton!
+    private var sessionActionsButton: NSButton!
     private var serviceListObservation: NSKeyValueObservation?
     
     // Retain active downloads to prevent -999 cancellation error
@@ -52,21 +52,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var services: [Service] = []
     var currentServiceName: String?
     var currentServiceURL: String?
-    var webviewsByURL: [String: [Int: WKWebView]] = [:]
+    private var webViewManager: WebViewManager!
+    private var findBarViewController: FindBarViewController!
+    private var draggingServiceIndex: Int?
     var activeIndicesByURL: [String: Int] = [:]
     var keyDownEventMonitor: Any?
-    var zoomLevelsByURL: [String: CGFloat] = [:]
-    weak var contentContainerView: NSView?
-    private var notificationBridges: [ObjectIdentifier: WebNotificationBridge] = [:]
-    private var draggingServiceIndex: Int?
-    private var findBar: NSVisualEffectView?
-    private var findField: NSSearchField?
-    private var findStatusLabel: NSTextField?
-    private var findPreviousButton: NSButton?
-    private var findNextButton: NSButton?
-    private var isFindBarVisible = false
-    private var currentFindString: String = ""
-    private var findDebouncer = FindDebouncer()
     
     // For test support: track navigation completions
     private var navigationContinuations: [ObjectIdentifier: CheckedContinuation<Void, Never>] = [:]
@@ -95,17 +85,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         super.init(window: window)
-        configureWindow()
         let initialServices = services ?? Settings.shared.loadSettings()
+        
+        // Ensure window is properly configured before using it
+        configureWindow(for: window)
+        
+        // Verify content view is ready
+        guard let contentView = window.contentView else {
+            fatalError("Failed to initialize window content view")
+        }
+        
+        webViewManager = WebViewManager(containerView: contentView)
         self.services = initialServices
-        zoomLevelsByURL = Settings.shared.serviceZoomLevels
-        currentServiceName = self.services.first?.name
-        currentServiceURL = self.services.first?.url
+        webViewManager.updateServices(initialServices)
+        
         self.services.forEach { service in
             activeIndicesByURL[service.url] = 0
-            if zoomLevelsByURL[service.url] == nil {
-                zoomLevelsByURL[service.url] = Zoom.default
-            }
         }
         setupUI()
         self.window?.delegate = self
@@ -135,17 +130,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Wait for the next navigation to complete on the specified WebView.
     /// For test support - allows event-driven waiting instead of manual sleeps.
     func waitForNavigation(on webView: WKWebView) async {
-        await withCheckedContinuation { continuation in
-            let id = ObjectIdentifier(webView)
-            navigationContinuations[id] = continuation
-            // Timeout safety: resume after 5s if navigation never completes
-            Task {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-                if let cont = navigationContinuations.removeValue(forKey: id) {
-                    cont.resume()
-                }
-            }
-        }
+        await webViewManager.waitForNavigation(on: webView)
     }
 
 
@@ -209,30 +194,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func updateServices(newServices: [Service]) {
-        zoomLevelsByURL = Settings.shared.serviceZoomLevels
-
         let incomingURLs = Set(newServices.map { $0.url })
-        let existingURLs = Set(webviewsByURL.keys)
+        let existingURLs = Set(activeIndicesByURL.keys)
 
         let removedURLs = existingURLs.subtracting(incomingURLs)
         for url in removedURLs {
-            if let removedWebviews = webviewsByURL[url] {
-                removedWebviews.values.forEach { tearDownWebView($0) }
-            }
-            webviewsByURL.removeValue(forKey: url)
             activeIndicesByURL.removeValue(forKey: url)
-            zoomLevelsByURL.removeValue(forKey: url)
-            Settings.shared.clearZoomLevel(for: url)
+        }
+        
+        for service in newServices where activeIndicesByURL[service.url] == nil {
+             activeIndicesByURL[service.url] = 0
         }
 
-        for service in newServices where webviewsByURL[service.url] == nil {
-            webviewsByURL[service.url] = [:] // Initialize empty dictionary
-            activeIndicesByURL[service.url] = 0
-            if zoomLevelsByURL[service.url] == nil {
-                zoomLevelsByURL[service.url] = Zoom.default
-            }
-        }
-
+        webViewManager.updateServices(newServices)
         services = newServices
         syncCurrentServiceSelection()
         refreshServiceSegments()
@@ -312,7 +286,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
     
-    private func playErrorSound() {
+    func playErrorSound() {
         NSSound.beep()
         if ProcessInfo.processInfo.arguments.contains("--uitesting") {
             DistributedNotificationCenter.default().postNotificationName(NSNotification.Name("QuiperTestBeep"), object: nil, userInfo: nil, deliverImmediately: true)
@@ -475,10 +449,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             reloadActiveWebView(nil)
             return true
         case "f":
-            presentFindPanel()
+            findBarViewController.show()
             return true
         case "g":
-            handleFindRepeat(shortcutShifted: isShift)
+            findBarViewController.handleFindRepeat(shortcutShifted: isShift)
             return true
         case "=":
             zoom(by: Zoom.step)
@@ -499,7 +473,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return true
         }
         if keyCode == UInt16(kVK_Delete) {
-            resetZoom()
+            performMenuResetZoom(nil)
             return true
         }
 
@@ -528,8 +502,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return lhs == rhs
     }
 
-    private func configureWindow() {
-        guard let window else { return }
+    private func configureWindow(for window: NSWindow) {
         window.level = .floating
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
         
@@ -549,7 +522,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.delegate = self
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        // window.delegate = self // Moved to init to prevent premature callbacks before webViewManager is ready
+
 
         let frame = window.contentRect(forFrameRect: window.frame)
         if #available(macOS 26.0, *) {
@@ -565,7 +541,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
             glass.contentView = host
             window.contentView = glass
-            contentContainerView = host
         } else {
             let effect = NSVisualEffectView(frame: frame)
             effect.material = .underWindowBackground
@@ -574,25 +549,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             effect.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
             effect.layer?.masksToBounds = true
             effect.autoresizingMask = [.width, .height]
+            effect.autoresizingMask = [.width, .height]
             window.contentView = effect
-            contentContainerView = effect
         }
     }
 
     private func setupUI() {
-        guard let contentView = contentContainerView ?? window?.contentView else { return }
-        contentView.subviews.forEach { $0.removeFromSuperview() }
-        createDragArea(in: contentView)
-        // No longer creating all webviews upfront
-        webviewsByURL.removeAll()
-        activeIndicesByURL.removeAll()
+        guard let contentView = window?.contentView else { return }
         
+        createDragArea(in: contentView)
+        
+        webViewManager.delegate = self
+        
+        activeIndicesByURL.removeAll()
         for service in services {
-            webviewsByURL[service.url] = [:] // Initialize empty
             activeIndicesByURL[service.url] = 0
         }
-        
-        createFindBar(in: contentView)
+        webViewManager.updateServices(services)
+
+        findBarViewController = FindBarViewController()
+        findBarViewController.delegate = self
+        findBarViewController.addTo(contentView: contentView, bottomOffset: Constants.DRAGGABLE_AREA_HEIGHT)
+
         updateActiveWebview()
     }
 
@@ -729,8 +707,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         // Session Actions Button
         let iconConfig = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
-        let actionsBtn = HoverButton(image: NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "Session Actions")!.withSymbolConfiguration(iconConfig)!, target: self, action: #selector(sessionActionsButtonTapped(_:)))
-        actionsBtn.hoverToolTip = "Session Actions"
+        let actionsBtn = NSButton(image: NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "Session Actions")!.withSymbolConfiguration(iconConfig)!, target: self, action: #selector(sessionActionsButtonTapped(_:)))
         actionsBtn.bezelStyle = .texturedRounded
         actionsBtn.contentTintColor = .secondaryLabelColor
         drag.addSubview(actionsBtn)
@@ -798,6 +775,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard let drag = dragArea,
               let title = titleLabel,
               let actionsBtn = sessionActionsButton else { return }
+        
+        // FindBar layout is now handled by FindBarViewController.addTo()/layoutIn() logic
+        // We might need to call it if window resizes?
+        // Original code called layoutFindBar() inside layoutSelectors() or windowDidResize.
+        // FindBarViewController has active auto-layout or manual frame logic?
+        // It has `layoutIn`. Let's assume we should call it if we want it to stay positioned.
+        findBarViewController?.layoutIn(contentView: window!.contentView!, bottomOffset: Constants.DRAGGABLE_AREA_HEIGHT)
+
         
         // Find visible selectors
         let activeServiceSel = (serviceSelector?.isHidden == false) ? serviceSelector : (collapsibleServiceSelector?.isHidden == false ? collapsibleServiceSelector : nil)
@@ -907,164 +892,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
         title.isHidden = shouldHideTitleArea
 
-        layoutFindBar()
     }
 
     // Removed createWebviews and createWebviewStack as they are replaced by lazy loading
-
     private func getOrCreateWebview(for service: Service, sessionIndex: Int) -> WKWebView {
-        if let existing = webviewsByURL[service.url]?[sessionIndex] {
-            return existing
+        // Safety check to prevent startup crashes if called before init is complete
+        guard let manager = webViewManager else {
+            NSLog("[Quiper] WARNING: getOrCreateWebview called before webViewManager initialized. Returning dummy.")
+            return WKWebView(frame: .zero)
         }
-        
-        // Create new WebView
-        guard let contentView = contentContainerView ?? window?.contentView else {
-            fatalError("ContentView not available")
-        }
-        
-        let availableHeight = contentView.bounds.height - Constants.DRAGGABLE_AREA_HEIGHT
-        let frame = NSRect(
-            x: 0,
-            y: 0,
-            width: contentView.bounds.width,
-            height: availableHeight
-        )
-        
-        let userContentController = WKUserContentController()
-        let config = WKWebViewConfiguration()
-        config.userContentController = userContentController
-        config.preferences.javaScriptCanOpenWindowsAutomatically = true
-        config.preferences.setValue(true, forKey: "developerExtrasEnabled")
-
-        let webview = WKWebView(frame: frame, configuration: config)
-        webview.autoresizingMask = [.width, .height]
-        webview.uiDelegate = self
-        webview.navigationDelegate = self
-        webview.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-        webview.isHidden = true // Start hidden
-        webview.pageZoom = zoomLevelsByURL[service.url] ?? Zoom.default
-        
-        attachNotificationBridge(to: webview, service: service, sessionIndex: sessionIndex)
-
-        // Add to view hierarchy
-        contentView.addSubview(webview, positioned: .below, relativeTo: dragArea)
-        
-        // Store it
-        if webviewsByURL[service.url] == nil {
-            webviewsByURL[service.url] = [:]
-        }
-        webviewsByURL[service.url]?[sessionIndex] = webview
-        
-        // Load initial URL
-        if let url = URL(string: service.url) {
-            if url.isFileURL {
-                webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-            } else {
-                webview.load(URLRequest(url: url))
-            }
-            // Ensure focus runs after the first load completes
-            let token = ObjectIdentifier(webview)
-            initialLoadAwaitingFocus.insert(token)
-        }
-        
-        return webview
-    }
-
-    private func createFindBar(in contentView: NSView) {
-        // ... (remains same) ...
-        let bar = NSVisualEffectView(frame: .zero)
-        bar.material = .menu
-        bar.state = .active
-        bar.wantsLayer = true
-        bar.layer?.cornerRadius = 10
-        bar.layer?.masksToBounds = true
-        bar.isHidden = true
-
-        let field = NSSearchField(frame: .zero)
-        field.placeholderString = "Find in page"
-        field.delegate = self
-        field.target = self
-        field.font = NSFont.systemFont(ofSize: 13)
-        if let cell = field.cell as? NSSearchFieldCell {
-            cell.sendsSearchStringImmediately = true
-            cell.sendsWholeSearchString = false
-        }
-
-        let status = NSTextField(labelWithString: "")
-        status.font = NSFont.systemFont(ofSize: 12)
-        status.textColor = .secondaryLabelColor
-        status.lineBreakMode = .byTruncatingTail
-
-        let prevButton = NSButton(title: "‹", target: self, action: #selector(findPreviousTapped))
-        prevButton.bezelStyle = .roundRect
-        prevButton.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
-
-        let nextButton = NSButton(title: "›", target: self, action: #selector(findNextTapped))
-        nextButton.bezelStyle = .roundRect
-        nextButton.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
-
-        bar.addSubview(field)
-        bar.addSubview(status)
-        bar.addSubview(prevButton)
-        bar.addSubview(nextButton)
-
-        contentView.addSubview(bar, positioned: .above, relativeTo: nil)
-
-        findBar = bar
-        findField = field
-        findStatusLabel = status
-        findPreviousButton = prevButton
-        findNextButton = nextButton
-        layoutFindBar()
-    }
-
-    // ... (layoutFindBar remains same) ...
-    private func layoutFindBar() {
-        guard let contentView = contentContainerView ?? window?.contentView,
-              let bar = findBar,
-              let field = findField,
-              let status = findStatusLabel,
-              let prev = findPreviousButton,
-              let next = findNextButton else { return }
-
-        let barWidth: CGFloat = 360
-        let barHeight: CGFloat = 46
-        let padding: CGFloat = 12
-        let buttonWidth: CGFloat = 32
-        let buttonHeight: CGFloat = 24
-
-        let originX = contentView.bounds.width - barWidth - padding
-        let originY = contentView.bounds.height - Constants.DRAGGABLE_AREA_HEIGHT - barHeight - padding
-        bar.frame = NSRect(x: originX, y: originY, width: barWidth, height: barHeight)
-
-        field.frame = NSRect(
-            x: padding,
-            y: (barHeight - buttonHeight) / 2,
-            width: 170,
-            height: buttonHeight
-        )
-
-        let statusWidth: CGFloat = 90
-        status.frame = NSRect(
-            x: field.frame.maxX + 8,
-            y: (barHeight - 18) / 2,
-            width: statusWidth,
-            height: 18
-        )
-
-        prev.frame = NSRect(
-            x: status.frame.maxX + 6,
-            y: (barHeight - buttonHeight) / 2,
-            width: buttonWidth,
-            height: buttonHeight
-        )
-
-        next.frame = NSRect(
-            x: prev.frame.maxX + 4,
-            y: prev.frame.minY,
-            width: buttonWidth,
-            height: buttonHeight
-        )
+        return manager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea)
     }
 
     private func currentService() -> Service? {
@@ -1084,40 +921,30 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func updateActiveWebview(focusWebView: Bool = true) {
-        guard let service = currentService() else { return }
+        guard let service = currentService(), webViewManager != nil else { return }
         
         let activeIndex = activeIndicesByURL[service.url] ?? 0
         
         // Hide all existing webviews
-        webviewsByURL.values.forEach { sessionMap in
-            sessionMap.values.forEach { $0.isHidden = true }
-        }
+        webViewManager.hideAll()
         
         // Get or create the active one
         let activeWebview = getOrCreateWebview(for: service, sessionIndex: activeIndex)
         activeWebview.isHidden = false
-        activeWebview.pageZoom = zoomLevelsByURL[service.url] ?? Zoom.default
+        activeWebview.isHidden = false
+        if let zoom = Settings.shared.serviceZoomLevels[service.url] {
+             webViewManager.applyZoom(zoom, for: service.url)
+        }
         
         // Update title label and observe changes
         updateTitleLabel(from: activeWebview)
         
-        // Invalidate previous observations
-        titleObservation?.invalidate()
-        isLoadingObservation?.invalidate()
+        // Load initial state (observers handled by manager now, but we need to update UI)
+        updateTitleLabel(from: activeWebview)
         
-        // Observe title changes
-        titleObservation = activeWebview.observe(\.title, options: [.new]) { [weak self] webview, _ in
-            Task { @MainActor [weak self] in
-                self?.updateTitleLabel(from: webview)
-            }
-        }
-        
-        // Observe isLoading changes for the border animation
-        isLoadingObservation = activeWebview.observe(\.isLoading, options: [.new]) { [weak self] webview, _ in
-            Task { @MainActor [weak self] in
-                self?.updateLoadingIndicator(for: webview)
-            }
-        }
+        // Listeners for internal state changes
+        // Manager uses delegate pattern now
+
         
         if focusWebView {
             window?.makeFirstResponder(activeWebview)
@@ -1172,8 +999,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Update tooltip spinner for the specific session
         guard let serviceUrlStr = serviceURL(for: webView)?.absoluteString,
               serviceUrlStr == currentServiceURL,
-              let webviews = webviewsByURL[serviceUrlStr],
-              let sessionIndex = webviews.first(where: { $0.value == webView })?.key else { return }
+              let service = services.first(where: { $0.url == serviceUrlStr }),
+              let sessionIndex = (0...9).first(where: { webViewManager.getWebView(for: service, sessionIndex: $0) == webView }) else { return }
         
         let segIdx = segmentIndex(forSession: sessionIndex)
         var title = webView.title ?? ""
@@ -1273,19 +1100,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let segmentIdx = segmentIndex(forSession: index)
         
         // Update tooltips for all sessions based on their webview titles
+        // Update tooltips for all sessions based on their webview titles
         if let selector = sessionSelector {
             for sessionIdx in 0..<10 {
                 let segIdx = segmentIndex(forSession: sessionIdx)
-                let title = webviewsByURL[service.url]?[sessionIdx]?.title ?? "Session \(sessionIdx == 9 ? 0 : sessionIdx + 1)"
+                let title = webViewManager.getWebView(for: service, sessionIndex: sessionIdx)?.title ?? "Session \(sessionIdx == 9 ? 0 : sessionIdx + 1)"
                 selector.setToolTip(title, forSegment: segIdx)
                 collapsibleSessionSelector?.setToolTip(title, forSegment: segIdx)
             }
         } else if let collapsible = collapsibleSessionSelector {
              for sessionIdx in 0..<10 {
                 let segIdx = segmentIndex(forSession: sessionIdx)
-                let title = webviewsByURL[service.url]?[sessionIdx]?.title ?? "Session \(sessionIdx == 9 ? 0 : sessionIdx + 1)"
+                let title = webViewManager.getWebView(for: service, sessionIndex: sessionIdx)?.title ?? "Session \(sessionIdx == 9 ? 0 : sessionIdx + 1)"
                 collapsible.setToolTip(title, forSegment: segIdx)
             }
+
         }
 
         sessionSelector?.selectedSegment = segmentIdx
@@ -1367,26 +1196,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return destination
     }
 
-    private func attachNotificationBridge(to webView: WKWebView, service: Service, sessionIndex: Int) {
-        let identifier = ObjectIdentifier(webView)
-        notificationBridges[identifier] = WebNotificationBridge(
-            webView: webView,
-            serviceURL: service.url,
-            serviceName: service.name,
-            sessionIndex: sessionIndex
-        )
-    }
 
-    private func detachNotificationBridge(from webView: WKWebView) {
-        let identifier = ObjectIdentifier(webView)
-        notificationBridges[identifier]?.invalidate()
-        notificationBridges.removeValue(forKey: identifier)
-    }
-
-    private func tearDownWebView(_ webView: WKWebView) {
-        detachNotificationBridge(from: webView)
-        webView.removeFromSuperview()
-    }
 
     // MARK: - Actions
     @objc private func serviceChanged(_ sender: NSSegmentedControl) {
@@ -1500,7 +1310,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc func performMenuResetZoom(_ sender: Any?) {
-        resetZoom()
+        guard let service = currentService() else { return }
+        webViewManager.applyZoom(Zoom.default, for: service.url)
+    }
+
+    func zoom(by delta: CGFloat) {
+        guard let service = currentService() else { return }
+        // We need to fetch current zoom from manager. It stores state.
+        // But manager state access is currently internal.
+        // Let's assume we can add public access or just track it here?
+        // Actually, better to just let manager handle it fully, but we need 'current'.
+        // For now, let's rely on Settings.shared since that's the persistent store
+        let currentZoom = Settings.shared.serviceZoomLevels[service.url] ?? Zoom.default
+        let nextZoom = max(Zoom.min, min(Zoom.max, currentZoom + delta))
+        
+        webViewManager.applyZoom(nextZoom, for: service.url)
+        Settings.shared.storeZoomLevel(nextZoom, for: service.url)
     }
 
     @objc func performMenuHideWindow(_ sender: Any?) {
@@ -1523,29 +1348,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc func presentFindPanelFromMenu(_ sender: Any?) {
-        presentFindPanel()
+        findBarViewController.show()
     }
 
     @objc func performMenuToggleInspector(_ sender: Any?) {
         toggleInspector()
-    }
-
-    @objc private func copyFromWebView(_ sender: Any?) {
-        guard let webView = currentWebView() else { return }
-        window?.makeFirstResponder(webView)
-        NSApp.sendAction(#selector(NSTextView.copy(_:)), to: nil, from: self)
-    }
-
-    @objc private func cutFromWebView(_ sender: Any?) {
-        guard let webView = currentWebView() else { return }
-        window?.makeFirstResponder(webView)
-        NSApp.sendAction(#selector(NSTextView.cut(_:)), to: nil, from: self)
-    }
-
-    @objc private func pasteIntoWebView(_ sender: Any?) {
-        guard let webView = currentWebView() else { return }
-        window?.makeFirstResponder(webView)
-        NSApp.sendAction(#selector(NSTextView.paste(_:)), to: nil, from: self)
     }
 
     @objc func performCustomActionFromMenu(_ sender: NSMenuItem) {
@@ -1553,275 +1360,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         performCustomAction(action)
     }
 
-    func zoom(by delta: CGFloat) {
-        guard let service = currentService() else { return }
-        let currentZoom = zoomLevelsByURL[service.url] ?? Zoom.default
-        let nextZoom = max(Zoom.min, min(Zoom.max, currentZoom + delta))
-        applyZoom(nextZoom, to: service)
-    }
 
-    private func resetZoom() {
-        guard let service = currentService() else { return }
-        applyZoom(Zoom.default, to: service)
-    }
-
-    private func applyZoom(_ value: CGFloat, to service: Service) {
-        zoomLevelsByURL[service.url] = value
-        if let webviews = webviewsByURL[service.url] {
-            webviews.values.forEach { $0.pageZoom = value }
-        }
-        Settings.shared.storeZoomLevel(value, for: service.url)
-    }
-
-    private func presentFindPanel() {
-        showFindBar()
-    }
-
-}
-
-private extension MainWindowController {
-    func showFindBar() {
-        guard let bar = findBar, let field = findField else { return }
-        bar.isHidden = false
-        isFindBarVisible = true
-        window?.makeFirstResponder(field)
-        if field.stringValue.isEmpty {
-            field.stringValue = currentFindString
-        }
-        if let editor = field.currentEditor() {
-            editor.selectAll(nil)
-        }
-        updateFindStatus(matchFound: nil, index: nil, total: nil)
-    }
-
-    func hideFindBar() {
-        currentFindString = findField?.stringValue ?? currentFindString
-        findBar?.isHidden = true
-        isFindBarVisible = false
-        findStatusLabel?.stringValue = ""
-        resetFind()
-        window?.makeFirstResponder(currentWebView())
-    }
-    
-    func handleFindRepeat(shortcutShifted: Bool) {
-        guard let field = findField else {
-            presentFindPanel()
-            return
-        }
-        if !isFindBarVisible {
-            showFindBar()
-            window?.makeFirstResponder(currentWebView())
-        }
-        let trimmedField = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedField.isEmpty {
-            if currentFindString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                window?.makeFirstResponder(field)
-                NSSound.beep()
-                return
-            }
-            field.stringValue = currentFindString
-        }
-        performFind(forward: !shortcutShifted)
-    }
-
-    func updateFindStatus(matchFound: Bool?, index: Int?, total: Int?) {
-        guard let label = findStatusLabel else { return }
-        guard let matchFound else {
-            label.stringValue = currentFindString.isEmpty ? "" : "No matches"
-            return
-        }
-
-        if !matchFound {
-            label.stringValue = "No matches"
-            return
-        }
-
-        if let idx = index, let total, total > 0 {
-            label.stringValue = "\(idx) of \(total)"
-        } else {
-            label.stringValue = "Match found"
-        }
-    }
-
-    func performFind(forward: Bool, newSearch: Bool = false) {
-        guard let webView = currentWebView() else { return }
-        
-        let searchString = findField?.stringValue ?? ""
-        if newSearch && searchString == currentFindString {
-            return
-        }
-        
-        currentFindString = searchString
-        let trimmed = currentFindString.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            resetFind()
-            return
-        }
-        
-        let escaped = escapeForJavaScript(trimmed)
-        let resetSelection = newSearch ? "true" : "false"
-        let backwards = forward ? "false" : "true"
-        let script = """
-        (() => {
-            const search = "\(escaped)";
-            const backwards = \(backwards);
-            let forceReset = \(resetSelection);
-            const root = document.body || document.documentElement;
-            const selection = window.getSelection();
-            if (!root || !selection) {
-                return { match: false, current: 0, total: 0 };
-            }
-            if (!document.getElementById("__quiperFindSelectionStyle")) {
-                const style = document.createElement("style");
-                style.id = "__quiperFindSelectionStyle";
-                style.textContent = `
-                    ::selection {
-                        background-color: rgba(255, 210, 0, 0.95) !important;
-                        color: #000 !important;
-                    }
-                    ::-moz-selection {
-                        background-color: rgba(255, 210, 0, 0.95) !important;
-                        color: #000 !important;
-                    }
-                `;
-                (document.head || document.body || document.documentElement).appendChild(style);
-            }
-            const textContent = root.innerText || root.textContent || "";
-            const escapedPattern = search.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
-            const regex = escapedPattern ? new RegExp(escapedPattern, "gi") : null;
-            if (!window.__quiperFindState) {
-                window.__quiperFindState = { search: "", total: 0, index: 0 };
-            }
-            const state = window.__quiperFindState;
-            if (state.search !== search) {
-                state.search = search;
-                forceReset = true;
-            }
-            if (!search) {
-                state.total = 0;
-                state.index = 0;
-                selection.removeAllRanges();
-                return { match: false, current: 0, total: 0 };
-            }
-            if (forceReset) {
-                state.total = regex ? (textContent.match(regex) || []).length : 0;
-                state.index = backwards ? state.total + 1 : 0;
-                selection.removeAllRanges();
-                const range = document.createRange();
-                range.selectNodeContents(root);
-                range.collapse(!backwards);
-                selection.addRange(range);
-            }
-            const total = state.total;
-            if (!total) {
-                selection.removeAllRanges();
-                return { match: false, current: 0, total: 0 };
-            }
-            const match = window.find(search, false, backwards, true, false, true, false);
-            if (!match) {
-                return { match: false, current: 0, total };
-            }
-            if (backwards) {
-                state.index = state.index <= 1 ? total : state.index - 1;
-            } else {
-                state.index = state.index >= total ? 1 : state.index + 1;
-            }
-            const selectionNode = selection.focusNode && selection.focusNode.nodeType === Node.TEXT_NODE
-                ? selection.focusNode.parentElement
-                : selection.focusNode;
-            if (selectionNode && selectionNode.scrollIntoView) {
-                selectionNode.scrollIntoView({ block: 'center', inline: 'nearest' });
-            }
-            return { match: true, current: state.index, total };
-        })();
-        """
-        
-        webView.evaluateJavaScript(script) { [weak self] result, error in
-            guard error == nil else {
-                self?.updateFindStatus(matchFound: false, index: nil, total: nil)
-                return
-            }
-            if let dict = result as? [String: Any],
-               let match = dict["match"] as? Bool {
-                let current = dict["current"] as? Int
-                let total = dict["total"] as? Int
-                self?.updateFindStatus(matchFound: match, index: current, total: total)
-            } else {
-                self?.updateFindStatus(matchFound: false, index: nil, total: nil)
-            }
-        }
-    }
-    
-    func resetFind() {
-        updateFindStatus(matchFound: nil, index: nil, total: nil)
-        let script = """
-        (() => {
-          if (window.__quiperFindState) {
-              window.__quiperFindState.search = "";
-              window.__quiperFindState.total = 0;
-              window.__quiperFindState.index = 0;
-          }
-          const sel = window.getSelection();
-          if (sel) { sel.removeAllRanges(); }
-        })();
-        """
-        currentWebView()?.evaluateJavaScript(script, completionHandler: nil)
-    }
-
-    @objc func findPreviousTapped() {
-        performFind(forward: false)
-    }
-
-    @objc func findNextTapped() {
-        performFind(forward: true)
-    }
     
     private func serviceURL(for webView: WKWebView) -> URL? {
-        for (urlString, webViews) in webviewsByURL {
-            if webViews.values.contains(webView) {
-                return URL(string: urlString)
-            }
-        }
-        return nil
-    }
-
-    private func isInternalLink(target: URL, service: URL, friendPatterns: [String]) -> Bool {
-        guard let targetHost = target.host?.lowercased(),
-              let serviceHost = service.host?.lowercased() else {
-            return false
-        }
-        
-        if targetHost == serviceHost { return true }
-        
-        // Strip www. from service host to get root (heuristic)
-        let rootServiceHost = serviceHost.hasPrefix("www.") ? String(serviceHost.dropFirst(4)) : serviceHost
-        
-        // Allow if target is the root host or a subdomain (ends with .root)
-        if targetHost == rootServiceHost || targetHost.hasSuffix("." + rootServiceHost) {
-            return true
-        }
-
-        // Friend domains via regex patterns
-        for pattern in friendPatterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
-            let range = NSRange(location: 0, length: target.absoluteString.utf16.count)
-            if regex.firstMatch(in: target.absoluteString, options: [], range: range) != nil {
-                return true
-            }
-        }
-
-        return false
+        return webViewManager.serviceURL(for: webView)
     }
 }
-
 
 // MARK: - CollapsibleSelectorDelegate
 @MainActor
 extension MainWindowController: CollapsibleSelectorDelegate {
     func isLoading(index: Int) -> Bool {
-        guard let url = currentServiceURL,
-              let webviews = webviewsByURL[url],
-              let webView = webviews[index] else { return false }
+        guard let service = currentService(),
+              let webView = webViewManager.getWebView(for: service, sessionIndex: index) else { return false }
         return webView.isLoading
     }
     
@@ -1838,148 +1389,37 @@ extension MainWindowController: CollapsibleSelectorDelegate {
     }
 }
 
-@MainActor
-extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
-    // Handle links that attempt to open in a new window (target="_blank", window.open(), etc.)
-    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        // Get the URL being opened
-        guard let url = navigationAction.request.url,
-              let scheme = url.scheme?.lowercased(),
-              ["http", "https"].contains(scheme),
-              let serviceURL = serviceURL(for: webView),
-              let service = services.first(where: { $0.url == serviceURL.absoluteString }) else {
-            // For non-http(s) URLs or unknown services, let the OS handle it
-            if let url = navigationAction.request.url {
-                NSWorkspace.shared.open(url)
-            }
-            return nil
-        }
-        
-        // Check if this is a friend domain
-        let isFriend = isInternalLink(target: url, service: serviceURL, friendPatterns: service.friendDomains)
-        
-        if isFriend {
-            // Friend domain: load in the current webview
-            webView.load(URLRequest(url: url))
-        } else {
-            // External domain: open in system browser
-            NSWorkspace.shared.open(url)
-        }
-        
-        // Return nil since we don't want to create a new webview
-        return nil
+// MARK: - FindBarDelegate
+extension MainWindowController: FindBarDelegate {
+    func activeWebViewForFind() -> WKWebView? {
+        currentWebView()
     }
+}
 
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
-        if #available(macOS 11.3, *) {
-            if navigationAction.shouldPerformDownload {
-                let url = navigationAction.request.url?.absoluteString ?? "nil"
-                NSLog("[Quiper][Download] decidePolicyFor navigationAction - URL: %@, shouldPerformDownload: true", url)
-                decisionHandler(.download)
-                return
-            }
-        }
-
-        guard let url = navigationAction.request.url,
-              let scheme = url.scheme?.lowercased(),
-              ["http", "https"].contains(scheme),
-              let serviceURL = serviceURL(for: webView),
-              let service = services.first(where: { $0.url == serviceURL.absoluteString }) else {
-            decisionHandler(.allow)
-            return
-        }
-
-        // Check if URL is a friend domain (including service's own domain)
-        let allowInApp = isInternalLink(target: url, service: serviceURL, friendPatterns: service.friendDomains)
-        
-        // For friend domain navigations, use the private policy that bypasses Universal Links
-        // This prevents macOS from opening friend URLs (like x.com) in their native apps
-        // The raw value allow + 2 corresponds to _WKNavigationActionPolicyAllowWithoutTryingAppLink
-        if allowInApp {
-            let allowWithoutAppLink = WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow
-            decisionHandler(allowWithoutAppLink)
-            return
-        }
-        
-        // For non-friend domains: intercept main-frame link clicks and open externally
-        if navigationAction.navigationType == .linkActivated {
-            let targetFrameIsMain = navigationAction.targetFrame?.isMainFrame ?? true
-            if targetFrameIsMain {
-                NSWorkspace.shared.open(url)
-                decisionHandler(.cancel)
-                return
-            }
-        }
-
-        decisionHandler(.allow)
+// MARK: - WebViewManagerDelegate
+extension MainWindowController: WebViewManagerDelegate {
+    func webViewDidUpdateTitle(_ title: String, for webView: WKWebView) {
+        // Only update UI if this is the active webview
+        guard webView == currentWebView() else { return }
+        updateTitleLabel(from: webView)
     }
-
-    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
-        let mimeType = navigationResponse.response.mimeType ?? "unknown"
-        let url = navigationResponse.response.url?.absoluteString ?? "nil"
-        NSLog("[Quiper][Download] decidePolicyFor navigationResponse - URL: %@, MIME: %@, canShowMIMEType: %d", url, mimeType, navigationResponse.canShowMIMEType ? 1 : 0)
-        
-        if navigationResponse.canShowMIMEType {
-            decisionHandler(.allow)
-        } else {
-             if #available(macOS 11.3, *) {
-                 NSLog("[Quiper][Download] Converting response to download")
-                 decisionHandler(.download)
-             } else {
-                 NSLog("[Quiper][Download] Legacy download fallback not supported")
-                 decisionHandler(.cancel)
-             }
-        }
+    
+    func webViewDidUpdateLoading(_ isLoading: Bool, for webView: WKWebView) {
+        // Only update UI if this is the active webview
+        guard webView == currentWebView() else { return }
+        updateLoadingIndicator(for: webView)
     }
-
-    @available(macOS 11.3, *)
-    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-        NSLog("[Quiper][Download] navigationResponse didBecome download")
-        download.delegate = self
-        activeDownloads.append(download)
-        NSLog("[Quiper][Download] Active downloads count: %d", activeDownloads.count)
-    }
-
-    @available(macOS 11.3, *)
-    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
-        NSLog("[Quiper][Download] navigationAction didBecome download")
-        download.delegate = self
-        activeDownloads.append(download)
-        NSLog("[Quiper][Download] Active downloads count: %d", activeDownloads.count)
-    }
-
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        webView.reload()
-    }
-
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        // Reset title and start loading indicator on navigation start
-        guard let url = serviceURL(for: webView),
-              url.absoluteString == currentServiceURL else { return }
-        
-        // Use updateTitleLabel to ensure tooltips are synced with the "blank" state
-        updateTitleLabel(withFallback: "")
-        loadingBorderView?.startAnimating()
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        let token = ObjectIdentifier(webView)
-        
-        // Resume any waiting continuation for this WebView (do this FIRST, before any guards)
-        if let continuation = navigationContinuations.removeValue(forKey: token) {
-            continuation.resume()
-        }
+    
+    func webViewDidFinishNavigation(_ webView: WKWebView) {
+        guard webView == currentWebView() else { return }
         
         // Set fallback title if page loaded without one
         if webView.title?.isEmpty ?? true {
-            updateTitleLabel(withFallback: "-")
+             updateTitleLabel(withFallback: "-")
         }
         
-        guard let url = serviceURL(for: webView),
-              url.absoluteString == currentServiceURL else { return }
-
         window?.makeFirstResponder(webView)
-
+        
         let runFocus: @MainActor @Sendable () -> Void = { [weak self] in
             guard let self else { return }
             self.focusInputInActiveWebview()
@@ -1987,59 +1427,12 @@ extension MainWindowController: WKNavigationDelegate, WKUIDelegate {
                 self?.focusInputInActiveWebview()
             }
         }
-
-        if initialLoadAwaitingFocus.contains(token) {
-            initialLoadAwaitingFocus.remove(token)
-            // First load of this webview
-            DispatchQueue.main.async(execute: runFocus)
-        } else {
-            // Subsequent reloads
-            DispatchQueue.main.async(execute: runFocus)
-        }
+        
+        DispatchQueue.main.async(execute: runFocus)
     }
 }
 
-extension MainWindowController: NSSearchFieldDelegate {
-    func controlTextDidChange(_ obj: Notification) {
-        guard let field = obj.object as? NSSearchField, field == findField else { return }
-        findDebouncer.debounce()
-    }
 
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        guard control == findField else { return false }
-        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-            performFind(forward: true)
-            return true
-        }
-        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            hideFindBar()
-            return true
-        }
-        if commandSelector == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)) {
-            performFind(forward: false)
-            return true
-        }
-        return false
-    }
-}
-
-private final class FindDebouncer: NSObject {
-    private var timer: Timer?
-    var callback: (() -> Void)?
-    
-    func debounce(interval: TimeInterval = 0.3) {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(timeInterval: interval,
-                                     target: self,
-                                     selector: #selector(timerFired),
-                                     userInfo: nil,
-                                     repeats: false)
-    }
-    
-    @objc private func timerFired() {
-        callback?()
-    }
-}
 
 enum Zoom {
     static let step: CGFloat = 0.1
@@ -2111,29 +1504,5 @@ final class HoverTextField: NSTextField {
     
     override func mouseExited(with event: NSEvent) {
         QuickTooltip.shared.hide(for: self)
-    }
-}
-
-final class HoverButton: NSButton {
-    var hoverToolTip: String?
-    private var trackingArea: NSTrackingArea?
-    
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let existing = trackingArea {
-            removeTrackingArea(existing)
-        }
-        trackingArea = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self, userInfo: nil)
-        addTrackingArea(trackingArea!)
-    }
-    
-    override func mouseEntered(with event: NSEvent) {
-        if let toolTip = hoverToolTip {
-            QuickTooltip.shared.show(toolTip, for: self)
-        }
-    }
-    
-    override func mouseExited(with event: NSEvent) {
-        QuickTooltip.shared.hide()
     }
 }
