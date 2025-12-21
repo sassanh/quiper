@@ -98,6 +98,7 @@ final class WebViewManager: NSObject {
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
 
         let webview = WKWebView(frame: frame, configuration: config)
+        webview.setValue(false, forKey: "drawsBackground")
         webview.autoresizingMask = [.width, .height]
         webview.uiDelegate = self
         webview.navigationDelegate = self

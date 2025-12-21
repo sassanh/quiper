@@ -12,6 +12,7 @@
 - **Xcode Integration**: Modified the "Quit Quiper" shortcut to behave efficiently based on the environment:
   - **Xcode Environment**: Uses `Cmd+Q` to allow quick quitting during development, preventing accidental quits of the production app.
   - **Standard Environment**: Retains the safe `Cmd+Ctrl+Shift+Q` shortcut to prevent accidental quits during normal usage.
+- **WebView Transparency**: Enabled `drawsBackground = false` on WebViews, allowing the window background to show through when the loaded page has a transparent background.
 
 ## [2.3.0] - 2025-12-21
 
