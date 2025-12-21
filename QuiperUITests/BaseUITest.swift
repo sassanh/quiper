@@ -18,6 +18,12 @@ class BaseUITest: XCTestCase {
     }
     
     override func tearDown() {
+        if let testRun = testRun, !testRun.hasSucceeded {
+            let screenshot = XCUIScreen.main.screenshot()
+            let attachment = XCTAttachment(screenshot: screenshot)
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
         app.terminate()
         super.tearDown()
     }

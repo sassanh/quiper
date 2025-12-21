@@ -10,6 +10,7 @@
 - **Fast Selector Tooltips**: Added custom fast-appearing tooltips (200ms delay) to service and session selectors (both static and collapsible) to show full names and page titles on hover. Tooltips are left-aligned and positioned below the elements.
 - **Fast Title Tooltip**: Hovering over the page title in the header now shows a fast-appearing custom tooltip with the full title.
 - **Tests**: Added `HybridSelectorInteractionsUITests` to test the functionality of the collapsible selectors.
+- **CI**: Configured automated upload of the full `TestResult.xcresult` bundle on failure. This provides comprehensive debugging data (screenshots, logs, and timelines) for diagnosing flaky UI tests in GitHub Actions.
 
 ### Changed
 
