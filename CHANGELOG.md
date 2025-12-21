@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added unit tests for `CollapsibleSelector` to verify initialization, state management, and delegate callbacks.
+
 ### Changed
 
 - Refactored `MainWindowController` logic into dedicated `WebViewManager` and `FindBarViewController` components to improve code organization.
