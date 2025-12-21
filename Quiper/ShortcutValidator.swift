@@ -74,8 +74,8 @@ enum ShortcutValidator {
             return "Minimize Overlay"
         }
         
-        if keyCode == UInt16(kVK_ANSI_Q) && hasControl && !hasOption && !hasShift { // Quit
-             return "Quit"
+        if keyCode == UInt16(kVK_ANSI_Q) {
+            if hasControl && hasCommand && hasShift && !hasOption { return "Quit" }
         }
         
         if (keyCode == UInt16(kVK_ANSI_Equal) || keyCode == UInt16(kVK_ANSI_KeypadPlus)) && !hasOption && !hasControl { // Zoom In (Cmd+=)

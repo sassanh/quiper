@@ -53,7 +53,7 @@ final class ShortcutConflictsUITests: BaseUITest {
         
         verifyConflictInChain(key: "/", modifiers: [.command, .shift])
         
-        verifyConflictInChain(key: "q", modifiers: [.command, .control])
+        verifyConflictInChain(key: "q", modifiers: [.command, .control, .shift])
 
         // D. App & Digit Conflicts
         verifySpecialConflictInChain(key: .rightArrow, modifiers: [.command, .shift])

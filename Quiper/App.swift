@@ -29,7 +29,6 @@ final class AppController: NSObject, NSWindowDelegate {
     let engineHotkeyManager: EngineHotkeyManaging
     private let notificationDispatcher: NotificationDispatching
     private var lastNonQuiperApplication: NSRunningApplication?
-    private let isRunningTests: Bool
     private let testDataStore: WKWebsiteDataStore
     
     
@@ -44,7 +43,6 @@ final class AppController: NSObject, NSWindowDelegate {
         self.hotkeyManager = hotkeyManager ?? HotkeyManager()
         self.engineHotkeyManager = engineHotkeyManager ?? EngineHotkeyManager()
         self.notificationDispatcher = notificationDispatcher ?? NotificationDispatcher.shared
-        self.isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         self.testDataStore = WKWebsiteDataStore.nonPersistent()
         
         super.init()
@@ -130,7 +128,7 @@ final class AppController: NSObject, NSWindowDelegate {
     
     
     @objc func clearWebViewData(_ sender: Any?) {
-        let store = isRunningTests ? testDataStore : WKWebsiteDataStore.default()
+        let store = AppController.isRunningTests ? testDataStore : WKWebsiteDataStore.default()
         store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
                          modifiedSince: Date(timeIntervalSince1970: 0)) { [weak self] in
             DispatchQueue.main.async {
@@ -333,7 +331,7 @@ final class AppController: NSObject, NSWindowDelegate {
     private func registerEngineHotkeys() {
         let overlayHotkey = Settings.shared.hotkeyConfiguration
         var blockedHotkeys: [HotkeyManager.Configuration] = [overlayHotkey]
-        if isRunningInXcode, HotkeyManager.defaultConfiguration == overlayHotkey {
+        if AppController.isRunningInXcode, HotkeyManager.defaultConfiguration == overlayHotkey {
             // Xcode fallback registers Ctrl+Space; keep engine hotkeys off it.
             blockedHotkeys.append(
                 HotkeyManager.Configuration(
@@ -380,8 +378,15 @@ final class AppController: NSObject, NSWindowDelegate {
                 .intersection([.command, .option, .control, .shift]).rawValue == normalizedModifiers
         }
     }
+
+    static var isRunningTests: Bool {
+        return ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
     
-    private var isRunningInXcode: Bool {
+    static var isRunningInXcode: Bool {
+        if (AppController.isRunningTests) {
+            return false
+        }
         if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] != nil {
             return true
         }
@@ -795,7 +800,8 @@ struct StatusMenuBuilder {
         addItem("Install at Login", #selector(AppController.installAtLogin(_:)), "", [], controller)
         addItem("Uninstall from Login", #selector(AppController.uninstallFromLogin(_:)), "", [], controller)
         menu.addItem(.separator())
-        addItem("Quit", #selector(NSApplication.terminate(_:)), "q", [.command, .shift, .control], NSApp)
+        let quitModifiers: NSEvent.ModifierFlags = AppController.isRunningInXcode ? [.command] : [.command, .shift, .control]
+        addItem("Quit", #selector(NSApplication.terminate(_:)), "q", quitModifiers, NSApp)
         
         return menu
     }

@@ -100,7 +100,11 @@ enum MenuFactory {
     
     static func createQuitItem() -> NSMenuItem {
         let item = createMenuItem(title: "Quit Quiper", iconName: "power", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        item.keyEquivalentModifierMask = [.command, .control, .shift]
+        if AppController.isRunningInXcode {
+            item.keyEquivalentModifierMask = [.command]
+        } else {
+            item.keyEquivalentModifierMask = [.command, .control, .shift]
+        }
         return item
     }
     

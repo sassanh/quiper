@@ -9,6 +9,9 @@
 ### Changed
 
 - Refactored `MainWindowController` logic into dedicated `WebViewManager` and `FindBarViewController` components to improve code organization.
+- **Xcode Integration**: Modified the "Quit Quiper" shortcut to behave efficiently based on the environment:
+  - **Xcode Environment**: Uses `Cmd+Q` to allow quick quitting during development, preventing accidental quits of the production app.
+  - **Standard Environment**: Retains the safe `Cmd+Ctrl+Shift+Q` shortcut to prevent accidental quits during normal usage.
 
 ## [2.3.0] - 2025-12-21
 
