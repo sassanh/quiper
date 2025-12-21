@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [2.3.0] - 2025-12-21
+
 ### Added
 
 - Collapsible selectors: Introduced `CollapsibleServiceSelector` and `CollapsibleSessionSelector` for a more compact header.
