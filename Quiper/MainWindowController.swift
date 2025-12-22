@@ -30,9 +30,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     ]
 
     private var dragArea: DraggableView!
-    private var serviceSelector: OverlaySegmentedControl?
+    private var serviceSelector: SegmentedControl?
     private var collapsibleServiceSelector: CollapsibleSelector?
-    private var sessionSelector: OverlaySegmentedControl?
+    private var sessionSelector: SegmentedControl?
     private var collapsibleSessionSelector: CollapsibleSelector?
     private var titleLabel: HoverTextField!
 
@@ -156,7 +156,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         if let sel = activeServiceSelector {
             NSAccessibility.post(element: sel, notification: .valueChanged)
-            if let combo = sel as? OverlaySegmentedControl {
+            if let combo = sel as? SegmentedControl {
                  combo.setAccessibilityLabel("Active: \(services[index].name)")
             }
         }
@@ -586,7 +586,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         dragArea = drag
 
         // Service Selector (Static)
-        let serviceSel = OverlaySegmentedControl(frame: .zero)
+        let serviceSel = SegmentedControl(frame: .zero)
         serviceSel.enableDragReorder = true
         serviceSel.target = self
         serviceSel.action = #selector(serviceChanged(_:))
@@ -602,6 +602,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         serviceSel.dragEndedHandler = { [weak self] in
             self?.handleServiceDragEnded()
         }
+        serviceSel.alwaysShowTooltips = false
+
         serviceSel.segmentCount = services.count
         for (index, service) in services.enumerated() {
             serviceSel.setLabel(service.name, forSegment: index)
@@ -621,6 +623,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         collapsibleServiceSel.dragBeganHandler = serviceSel.dragBeganHandler
         collapsibleServiceSel.dragChangedHandler = serviceSel.dragChangedHandler
         collapsibleServiceSel.dragEndedHandler = serviceSel.dragEndedHandler
+        collapsibleServiceSel.alwaysShowTooltips = false
         collapsibleServiceSel.setItems(services.map { $0.name })
         // Flex: shrink-to-fit (high hugging, high compression resistance)
         collapsibleServiceSel.setContentHuggingPriority(.required, for: .horizontal)
@@ -629,7 +632,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         collapsibleServiceSelector = collapsibleServiceSel
 
         // Session Selector (Static)
-        let sessionSel = OverlaySegmentedControl(frame: .zero)
+        let sessionSel = SegmentedControl(frame: .zero)
         sessionSel.segmentStyle = .rounded
         sessionSel.trackingMode = .selectOne
         sessionSel.segmentCount = 10
@@ -1065,14 +1068,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             serviceSelector?.setLabel(service.name, forSegment: index)
             serviceSelector?.setToolTip(service.name, forSegment: index)
         }
-        
+
         collapsibleServiceSelector?.setItems(services.map { $0.name })
-        collapsibleServiceSelector?.selectedSegment = services.firstIndex(where: { $0.url == currentServiceURL }) ?? 0
         
         if let idx = services.firstIndex(where: { $0.url == currentServiceURL }) {
+            collapsibleServiceSelector?.selectedSegment = idx
             serviceSelector?.selectedSegment = idx
         } else {
-            serviceSelector?.selectedSegment = services.isEmpty ? -1 : 0
+            if services.isEmpty {
+                currentServiceURL = nil
+                currentServiceName = nil
+                titleLabel?.stringValue = ""
+                collapsibleServiceSelector?.selectedSegment = -1
+                serviceSelector?.selectedSegment = -1
+                loadingBorderView?.stopAnimating()
+            } else {
+                collapsibleServiceSelector?.selectedSegment = 0
+                serviceSelector?.selectedSegment = 0
+            }
             currentServiceName = services.first?.name
         }
         layoutSelectors()

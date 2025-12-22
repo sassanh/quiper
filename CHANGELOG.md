@@ -16,6 +16,12 @@
   - **Xcode Environment**: Uses `Cmd+Q` to allow quick quitting during development, preventing accidental quits of the production app.
   - **Standard Environment**: Retains the safe `Cmd+Ctrl+Shift+Q` shortcut to prevent accidental quits during normal usage.
 - **WebView Transparency**: Enabled `drawsBackground = false` on WebViews, allowing the window background to show through when the loaded page has a transparent background.
+- Renamed `OverlaySegmentedControl` to `SegmentedControl` and moved it to a dedicated file for clarity.
+
+### Fixed
+
+- **Service Selector Tooltips**: Fixed tooltips always appearing on hover. Tooltips now only appear when the label is truncated.
+- **Collapsible Selector Drag**: Fixed drag-and-drop reordering not working in the collapsible service selector's expanded view.
 
 ## [2.3.0] - 2025-12-21
 
