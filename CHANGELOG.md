@@ -10,6 +10,10 @@
   - Configured default transparent backgrounds for ChatGPT, Gemini, Grok, X, and Google to leverage the new WebView transparency.
 - **Appearance Settings Tab**: New dedicated tab for visual customization, containing Dock icon visibility and Selector display mode settings.
 - **Updates Settings Tab**: Separated update-related settings (version info, check/download preferences) into their own tab.
+- **Window Appearance Settings**: Added configurable window background options:
+  - Choose between blur effect (with selectable material) or solid color mode
+  - Solid color mode includes color picker and opacity slider
+  - Changes apply in real-time without restart
 
 ### Changed
 

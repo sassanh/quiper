@@ -61,6 +61,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     // For test support: track navigation completions
     private var navigationContinuations: [ObjectIdentifier: CheckedContinuation<Void, Never>] = [:]
     private var cancellables = Set<AnyCancellable>()
+    
+    // Effect view for window appearance
+    private var backgroundEffectView: NSVisualEffectView?
 
 
     private var inspectorVisible = false {
@@ -549,9 +552,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             effect.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
             effect.layer?.masksToBounds = true
             effect.autoresizingMask = [.width, .height]
-            effect.autoresizingMask = [.width, .height]
             window.contentView = effect
+            backgroundEffectView = effect
         }
+        
+        applyWindowAppearance()
     }
 
     private func setupUI() {
@@ -719,6 +724,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         layoutSelectors()
         NotificationCenter.default.addObserver(self, selector: #selector(handleDockVisibilityChanged), name: .dockVisibilityChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleSelectorDisplayModeChanged), name: .selectorDisplayModeChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleWindowAppearanceChanged), name: .windowAppearanceChanged, object: nil)
         
         // Observe window width for Auto mode
         if let window = self.window {
@@ -739,6 +745,39 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if Settings.shared.selectorDisplayMode == .auto {
             updateSelectorsMode()
             layoutSelectors()
+        }
+    }
+    
+    @objc private func handleWindowAppearanceChanged(_ notification: Notification) {
+        applyWindowAppearance()
+    }
+    
+    private func applyWindowAppearance() {
+        let appearance = Settings.shared.windowAppearance
+        
+        guard let win = window else { return }
+        
+        guard let effect = backgroundEffectView else {
+            // Fallback for macOS 26+ or when effect view isn't available
+            switch appearance.mode {
+            case .blur:
+                win.backgroundColor = .clear
+            case .solidColor:
+                win.backgroundColor = appearance.backgroundColor.nsColor
+            }
+            return
+        }
+        
+        switch appearance.mode {
+        case .blur:
+            win.backgroundColor = .clear
+            effect.alphaValue = 1.0
+            effect.material = appearance.material.nsMaterial
+            effect.state = .active
+            
+        case .solidColor:
+            win.backgroundColor = appearance.backgroundColor.nsColor
+            effect.alphaValue = 0.0
         }
     }
 

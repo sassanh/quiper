@@ -101,6 +101,72 @@ struct UpdatePreferences: Codable, Equatable {
     var lastNotifiedVersion: String?
 }
 
+enum WindowBackgroundMode: String, Codable, CaseIterable, Identifiable {
+    case blur = "Blur Effect"
+    case solidColor = "Solid Color"
+    
+    var id: String { rawValue }
+}
+
+enum WindowMaterial: String, Codable, CaseIterable, Identifiable {
+    case underWindowBackground = "Under Window"
+    case sidebar = "Sidebar"
+    case hudWindow = "HUD"
+    case popover = "Popover"
+    case menu = "Menu"
+    case headerView = "Header"
+    case contentBackground = "Content"
+    
+    var id: String { rawValue }
+    
+    var nsMaterial: NSVisualEffectView.Material {
+        switch self {
+        case .underWindowBackground: return .underWindowBackground
+        case .sidebar: return .sidebar
+        case .hudWindow: return .hudWindow
+        case .popover: return .popover
+        case .menu: return .menu
+        case .headerView: return .headerView
+        case .contentBackground: return .contentBackground
+        }
+    }
+}
+
+struct WindowAppearanceSettings: Codable, Equatable {
+    var mode: WindowBackgroundMode = .blur
+    var material: WindowMaterial = .underWindowBackground
+    var backgroundColor: CodableColor = CodableColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 0.8)
+    
+    static let `default` = WindowAppearanceSettings()
+}
+
+struct CodableColor: Codable, Equatable {
+    var red: Double
+    var green: Double
+    var blue: Double
+    var alpha: Double
+    
+    var nsColor: NSColor {
+        NSColor(red: red, green: green, blue: blue, alpha: alpha)
+    }
+    
+    init(red: Double, green: Double, blue: Double, alpha: Double) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+    
+    init(nsColor: NSColor) {
+        let converted = nsColor.usingColorSpace(.sRGB) ?? nsColor
+        self.red = Double(converted.redComponent)
+        self.green = Double(converted.greenComponent)
+        self.blue = Double(converted.blueComponent)
+        self.alpha = Double(converted.alphaComponent)
+    }
+}
+
+
 struct AppShortcutBindings: Codable, Equatable {
     enum Key: String, CaseIterable, Codable, Identifiable {
         case nextSession
@@ -220,6 +286,7 @@ private struct PersistedSettings: Codable {
     var sessionDigitsAlternateModifiers: UInt?
     var dockVisibility: DockVisibility?
     var selectorDisplayMode: SelectorDisplayMode?
+    var windowAppearance: WindowAppearanceSettings?
 }
 
 class SettingsWindow: NSWindow {
@@ -306,6 +373,7 @@ class Settings: ObservableObject {
             NotificationCenter.default.post(name: .selectorDisplayModeChanged, object: nil)
         }
     }
+    @Published var windowAppearance: WindowAppearanceSettings = .default
     
     func reset() {
         services = []
@@ -315,6 +383,7 @@ class Settings: ObservableObject {
         serviceZoomLevels = [:]
         appShortcutBindings = .defaults
         selectorDisplayMode = .auto
+        windowAppearance = .default
     }
 
     private let settingsFile: URL = {
@@ -870,6 +939,9 @@ class Settings: ObservableObject {
         if selectorDisplayMode != (persisted.selectorDisplayMode ?? .auto) {
             selectorDisplayMode = persisted.selectorDisplayMode ?? .auto
         }
+        if windowAppearance != (persisted.windowAppearance ?? .default) {
+            windowAppearance = persisted.windowAppearance ?? .default
+        }
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
@@ -901,7 +973,8 @@ class Settings: ObservableObject {
                                             appShortcuts: appShortcutBindings,
                                             sessionDigitsAlternateModifiers: appShortcutBindings.sessionDigitsAlternateModifiers,
                                             dockVisibility: dockVisibility,
-                                            selectorDisplayMode: selectorDisplayMode)
+                                            selectorDisplayMode: selectorDisplayMode,
+                                            windowAppearance: windowAppearance)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
