@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [2.4.0] - 2025-12-22
+
 ### Added
 
 - Added unit tests for `CollapsibleSelector` to verify initialization, state management, and delegate callbacks.
