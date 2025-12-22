@@ -6,6 +6,11 @@
 
 - **Modifier Key Expansion**: Holding the modifier keys for session (e.g. `Cmd+Shift`) or service (e.g. `Cmd+Ctrl`) shortcuts now automatically expands the corresponding collapsible selector in the header for quick visibility.
 
+### Changed
+
+- Updated default window appearance to use "Solid Color" mode with a refined teal-grey tint.
+- Service Hotkeys Layout: Reverted to pre-2.4.0 vertical layout in `ServiceLaunchShortcutRow` for improved clarity.
+
 ## [2.4.0] - 2025-12-22
 
 ### Added

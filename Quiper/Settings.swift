@@ -133,9 +133,9 @@ enum WindowMaterial: String, Codable, CaseIterable, Identifiable {
 }
 
 struct WindowAppearanceSettings: Codable, Equatable {
-    var mode: WindowBackgroundMode = .blur
+    var mode: WindowBackgroundMode = .solidColor
     var material: WindowMaterial = .underWindowBackground
-    var backgroundColor: CodableColor = CodableColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 0.8)
+    var backgroundColor: CodableColor = CodableColor(red: 0.26, green: 0.21, blue: 0.25, alpha: 0.51)
     
     static let `default` = WindowAppearanceSettings()
 }

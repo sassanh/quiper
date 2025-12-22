@@ -403,7 +403,7 @@ struct KeyBindingsSettingsView: View {
                     appController?.reloadServices()
                 }
                 activationStatus[serviceID] = "Saved"
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                     activationStatus[serviceID] = nil
                 }
             }
@@ -420,7 +420,7 @@ struct KeyBindingsSettingsView: View {
             appController?.reloadServices()
         }
         activationStatus[serviceID] = "Cleared"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             activationStatus[serviceID] = nil
         }
     }
@@ -435,6 +435,7 @@ struct KeyBindingsSettingsView: View {
                     ServiceLaunchShortcutRow(
                         title: service.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Service" : service.name,
                         shortcut: service.activationShortcut,
+                        statusMessage: activationStatus[service.id] ?? "",
                         onTap: { startActivationCapture(for: service.id) },
                         onClear: { clearActivation(for: service.id) },
                         axIdentifier: "recorder_launch_\(service.name)"

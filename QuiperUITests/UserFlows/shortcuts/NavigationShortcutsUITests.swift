@@ -67,8 +67,6 @@ final class NavigationShortcutsUITests: BaseUITest {
         XCTAssertTrue(shortcutsList.waitForExistence(timeout: 2.0))
         
         for assignment in assignments {
-            app.staticTexts[assignment.rowTitle].tap()
-
             let cell = app.outlines.cells.containing(.staticText, identifier: assignment.rowTitle).firstMatch
             let recordButton = cell.descendants(matching: .any).matching(identifier: assignment.id).firstMatch
             recordButton.tap()

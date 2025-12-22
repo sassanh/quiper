@@ -20,10 +20,10 @@ final class LaunchShortcutsUITests: BaseUITest {
         }
         
         let assignments = [
-            LaunchAssignment(engineName: "Engine 1", recorderId: "recorder_launch_Engine 1", letter: "a", modifiers: [.command, .option, .shift]),
-            LaunchAssignment(engineName: "Engine 2", recorderId: "recorder_launch_Engine 2", letter: "b", modifiers: [.command, .option, .shift]),
-            LaunchAssignment(engineName: "Engine 3", recorderId: "recorder_launch_Engine 3", letter: "c", modifiers: [.command, .option, .shift]),
-            LaunchAssignment(engineName: "Engine 4", recorderId: "recorder_launch_Engine 4", letter: "d", modifiers: [.command, .option, .shift])
+            LaunchAssignment(engineName: "Engine 1", recorderId: "recorder_launch_Engine 1", letter: "a", modifiers: [.control, .option, .shift]),
+            LaunchAssignment(engineName: "Engine 2", recorderId: "recorder_launch_Engine 2", letter: "b", modifiers: [.control, .option, .shift]),
+            LaunchAssignment(engineName: "Engine 3", recorderId: "recorder_launch_Engine 3", letter: "c", modifiers: [.control, .option, .shift]),
+            LaunchAssignment(engineName: "Engine 4", recorderId: "recorder_launch_Engine 4", letter: "d", modifiers: [.control, .option, .shift]),
         ]
         
         // ============================================================
@@ -40,30 +40,17 @@ final class LaunchShortcutsUITests: BaseUITest {
         // ============================================================
         
         for assignment in assignments {
-            // Tap the row text to ensure the cell is focused/visible/expanded
-            let rowLabel = app.staticTexts[assignment.engineName]
-            XCTAssertTrue(rowLabel.waitForExistence(timeout: 2.0), "Row '\(assignment.engineName)' not found")
-            rowLabel.tap()
-            
-            // Robustly find the cell containing this label
             let cell = app.outlines.cells.containing(.staticText, identifier: assignment.engineName).firstMatch
-            
+
             // Find the record button WITHIN the cell
-            // Note: ShortcutButton is a custom view, often identified as 'Other' or 'Button' depending on traits
-            // Nav tests use .descendants(matching: .any) matching identifier
             let recordButton = cell.descendants(matching: .any).matching(identifier: assignment.recorderId).firstMatch
-            XCTAssertTrue(recordButton.waitForExistence(timeout: 2.0), "Record button for \(assignment.engineName) not found")
-            
             recordButton.tap()
             app.typeKey(assignment.letter, modifierFlags: assignment.modifiers)
-            
-            // Verify the button text updates to reflect the assignment
-            // This is more robust than checking for transient "Saved" labels
-            // ShortcutButton sets .accessibilityValue to the displayed text
-            let predicate = NSPredicate(format: "value != 'Record Shortcut'")
-            let expectation = XCTNSPredicateExpectation(predicate: predicate, object: recordButton)
-            let result = XCTWaiter.wait(for: [expectation], timeout: 2.0)
-            XCTAssertEqual(result, .completed, "Record button did not update value for \(assignment.engineName)")
+
+            // Verify "Saved" status message appears
+            let savedMessage = cell.staticTexts["Saved"]
+            XCTAssertTrue(savedMessage.waitForExistence(timeout: 1))
+            XCTAssertTrue(savedMessage.waitForNonExistence(timeout: 1))
         }
         
         // ============================================================
@@ -96,6 +83,10 @@ final class LaunchShortcutsUITests: BaseUITest {
         
         // Functional Verification Loop
         for assignment in verificationOrder {
+            // Ensure app active and stable before typing
+            app.activate()
+            XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5.0))
+            
             // Type the assigned global hotkey
             app.typeKey(assignment.letter, modifierFlags: assignment.modifiers)
             
@@ -121,9 +112,6 @@ final class LaunchShortcutsUITests: BaseUITest {
         // No need to check shortcutsList.exists, we just opened it.
         
         for assignment in assignments {
-            // Focus row
-            app.staticTexts[assignment.engineName].tap()
-             
             let cell = app.outlines.cells.containing(.staticText, identifier: assignment.engineName).firstMatch
             
             // The "xmark.circle.fill" is the clear button inside ShortcutButton
@@ -131,10 +119,12 @@ final class LaunchShortcutsUITests: BaseUITest {
             // NavigationShortcutsUITests finds "xmark.circle.fill" inside the cell
             let clearButton = cell.buttons.matching(identifier: "xmark.circle.fill").firstMatch
             
-            if clearButton.waitForExistence(timeout: 2.0) {
-                clearButton.tap()
-                XCTAssertTrue(clearButton.waitForNonExistence(timeout: 1.0), "Failed to clear shortcut for \(assignment.engineName)")
-            }
+            clearButton.tap()
+
+            // Verify "Cleared" status message appears
+            let clearedMessage = cell.staticTexts["Cleared"]
+            XCTAssertTrue(clearedMessage.waitForExistence(timeout: 1))
+            XCTAssertTrue(clearedMessage.waitForNonExistence(timeout: 1))
         }
         
         // ============================================================
