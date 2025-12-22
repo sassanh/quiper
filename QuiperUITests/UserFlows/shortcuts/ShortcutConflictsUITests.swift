@@ -11,10 +11,8 @@ final class ShortcutConflictsUITests: BaseUITest {
         openSettings()
         
         // 0. Set Global Launch Shortcut FIRST to test conflict later
-        switchToSettingsTab("General")
-        setGlobalLaunchShortcut(key: "l", modifiers: [.command, .shift])
-        
         switchToSettingsTab("Shortcuts")
+        setGlobalLaunchShortcut(key: "l", modifiers: [.command, .shift])
         
         // 1. Create Action A (First one)
         createCustomAction()

@@ -8,6 +8,8 @@
 - **Custom CSS Injection**: Added support for injecting custom CSS into engine sessions.
   - Added "Custom CSS" editor in Engine settings, allowing users to override styles for any service.
   - Configured default transparent backgrounds for ChatGPT, Gemini, Grok, X, and Google to leverage the new WebView transparency.
+- **Appearance Settings Tab**: New dedicated tab for visual customization, containing Dock icon visibility and Selector display mode settings.
+- **Updates Settings Tab**: Separated update-related settings (version info, check/download preferences) into their own tab.
 
 ### Changed
 
@@ -17,6 +19,11 @@
   - **Standard Environment**: Retains the safe `Cmd+Ctrl+Shift+Q` shortcut to prevent accidental quits during normal usage.
 - **WebView Transparency**: Enabled `drawsBackground = false` on WebViews, allowing the window background to show through when the loaded page has a transparent background.
 - Renamed `OverlaySegmentedControl` to `SegmentedControl` and moved it to a dedicated file for clarity.
+- **Settings Reorganization**: Restructured settings into five focused tabs: Engines, Shortcuts, General, Appearance, and Updates.
+- **Global Shortcut**: Moved the "Show/Hide Quiper" shortcut from General to the Shortcuts tab for better discoverability.
+- **Code Structure**: Extracted reusable `SettingsSection`, `SettingsRow`, `SettingsToggleRow`, and `SettingsDivider` components to `Components/SettingsComponents.swift`.
+- **File Naming**: Renamed `ActionsSettingsView.swift` to `ShortcutsSettingsView.swift` to better reflect its contents.
+- **Service Hotkeys Layout**: Updated `ServiceLaunchShortcutRow` to match the compact horizontal layout used by custom action rows.
 
 ### Fixed
 

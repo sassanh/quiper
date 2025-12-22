@@ -7,12 +7,13 @@ struct KeyBindingsSettingsView: View {
     @EnvironmentObject var shortcutState: ShortcutRecordingState
     @State private var pendingDeletion: PendingDeletion?
     @State private var activationStatus: [UUID: String] = [:]
+    @State private var globalHotkeyStatus = ""
     var appController: AppController?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             List {
-                Section("Actions") {
+                Section("Custom Actions") {
                     ForEach(Array(settings.customActions.indices), id: \.self) { index in
                         ActionRow(
                             action: $settings.customActions[index],
@@ -21,6 +22,19 @@ struct KeyBindingsSettingsView: View {
                             onDelete: { confirmDeletion(for: settings.customActions[index]) }
                         )
                     }
+                }
+                
+                Section("Global") {
+                    GlobalShortcutRow(
+                        title: "Show/Hide Quiper",
+                        detail: "Defaults to ⌥Space. When running inside Xcode, ⌃Space also works for convenience.",
+                        value: currentGlobalHotkeyLabel,
+                        statusMessage: globalHotkeyStatus,
+                        onRecord: startGlobalHotkeyCapture,
+                        onClear: globalHotkeyClearAction,
+                        onReset: globalHotkeyResetAction,
+                        axIdentifier: "GlobalShortcutButton"
+                    )
                 }
 
                 Section("App Shortcuts") {
@@ -121,6 +135,59 @@ struct KeyBindingsSettingsView: View {
                 },
                 secondaryButton: .cancel()
             )
+        }
+    }
+
+    private var currentGlobalHotkeyLabel: String {
+        ShortcutFormatter.string(for: settings.hotkeyConfiguration)
+    }
+
+    private func startGlobalHotkeyCapture() {
+        let session = StandardShortcutSession(onUpdate: { update in
+            shortcutState.updateMessage(update)
+        }, onFinish: {
+            shortcutState.cancel()
+        }, completion: { configuration in
+            if let configuration {
+                settings.hotkeyConfiguration = configuration
+                settings.saveSettings()
+                appController?.updateOverlayHotkey(configuration)
+                globalHotkeyStatus = "Saved as \(ShortcutFormatter.string(for: configuration))"
+            } else {
+                globalHotkeyStatus = ""
+            }
+        })
+        shortcutState.start(session: session)
+    }
+
+    private func resetGlobalHotkey() {
+        let configuration = HotkeyManager.defaultConfiguration
+        settings.hotkeyConfiguration = configuration
+        settings.saveSettings()
+        appController?.updateOverlayHotkey(configuration)
+        globalHotkeyStatus = "Reset to ⌥Space"
+    }
+    
+    private func clearGlobalHotkey() {
+        settings.hotkeyConfiguration = HotkeyManager.Configuration(keyCode: 0, modifierFlags: 0)
+        settings.saveSettings()
+        appController?.updateOverlayHotkey(settings.hotkeyConfiguration)
+        globalHotkeyStatus = "Cleared"
+    }
+    
+    private var globalHotkeyClearAction: (() -> Void)? {
+        if settings.hotkeyConfiguration.isDisabled {
+            return nil
+        } else {
+            return clearGlobalHotkey
+        }
+    }
+    
+    private var globalHotkeyResetAction: (() -> Void)? {
+        if settings.hotkeyConfiguration == HotkeyManager.defaultConfiguration {
+            return nil
+        } else {
+            return resetGlobalHotkey
         }
     }
 
@@ -367,9 +434,7 @@ struct KeyBindingsSettingsView: View {
                 ForEach($settings.services) { $service in
                     ServiceLaunchShortcutRow(
                         title: service.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Service" : service.name,
-                        url: service.url,
                         shortcut: service.activationShortcut,
-                        statusMessage: activationStatus[service.id] ?? "",
                         onTap: { startActivationCapture(for: service.id) },
                         onClear: { clearActivation(for: service.id) },
                         axIdentifier: "recorder_launch_\(service.name)"
@@ -630,5 +695,45 @@ private final class ModifierCaptureSession: CancellableSession {
             completion(modifiers, keyCode)
         }
         onFinish()
+    }
+}
+
+private struct GlobalShortcutRow: View {
+    let title: String
+    let detail: String
+    let value: String
+    let statusMessage: String
+    var onRecord: () -> Void
+    var onClear: (() -> Void)?
+    var onReset: (() -> Void)?
+    var axIdentifier: String?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .fontWeight(.semibold)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !statusMessage.isEmpty {
+                    Text(statusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 320, alignment: .leading)
+            Spacer()
+            ShortcutButton(
+                text: value,
+                isPlaceholder: value == "Disabled",
+                onTap: onRecord,
+                onClear: onClear,
+                onReset: onReset,
+                width: 200,
+                axIdentifier: axIdentifier ?? "ShortcutRecorder"
+            )
+        }
+        .padding(.vertical, 10)
     }
 }

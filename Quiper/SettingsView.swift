@@ -31,10 +31,22 @@ struct SettingsView: View {
                     Label("General", systemImage: "gear")
                 }
                 .tag("General")
+            
+            AppearanceSettingsView()
+                .tabItem {
+                    Label("Appearance", systemImage: "paintbrush")
+                }
+                .tag("Appearance")
+            
+            UpdatesSettingsView()
+                .tabItem {
+                    Label("Updates", systemImage: "arrow.down.circle")
+                }
+                .tag("Updates")
         }
         .frame(minWidth: 600, minHeight: 400)
         .onReceive(NotificationCenter.default.publisher(for: .startGlobalHotkeyCapture)) { _ in
-            selectedTab = "General"
+            selectedTab = "Shortcuts"
         }
         .environmentObject(shortcutState)
         .overlay { ShortcutRecordingOverlay(state: shortcutState).allowsHitTesting(shortcutState.isPresenting) }
@@ -44,13 +56,9 @@ struct SettingsView: View {
 struct GeneralSettingsView: View {
     var appController: AppController?
     @State private var launchAtLogin = Launcher.isInstalledAtLogin()
-    private let versionDescription = Bundle.main.versionDisplayString
     @ObservedObject private var settings = Settings.shared
-    @ObservedObject private var updater = UpdateManager.shared
     @ObservedObject private var notificationDispatcher = NotificationDispatcher.shared
 
-    @EnvironmentObject var shortcutState: ShortcutRecordingState
-    @State private var globalHotkeyStatus = ""
     @State private var showClearWebConfirmation = false
     @State private var showEraseEnginesConfirmation = false
     @State private var showEraseActionsConfirmation = false
@@ -58,29 +66,6 @@ struct GeneralSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                SettingsSection(title: "Global Shortcut") {
-                    SettingsRow(
-                        title: "Show/Hide Quiper",
-                        message: "Defaults to ⌥Space. When running inside Xcode, ⌃Space also works for convenience."
-                    ) {
-                        ShortcutButton(
-                            text: currentGlobalHotkeyLabel,
-                            isPlaceholder: settings.hotkeyConfiguration.isDisabled,
-                            onTap: startGlobalHotkeyCapture,
-                            onClear: globalHotkeyClearAction,
-                            onReset: globalHotkeyResetAction,
-                            width: 200,
-                            axIdentifier: "GlobalShortcutButton"
-                        )
-                    }
-                    if !globalHotkeyStatus.isEmpty {
-                        Text(globalHotkeyStatus)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 8)
-                    }
-                }
-
                 SettingsSection(title: "Startup") {
                     SettingsToggleRow(
                         title: "Launch at login",
@@ -93,57 +78,6 @@ struct GeneralSettingsView: View {
                         } else {
                             appController?.uninstallFromLogin(nil)
                         }
-                    }
-                    
-                    SettingsDivider()
-                    
-                    SettingsRow(
-                        title: "Dock Icon Visibility",
-                        message: "Controls when the app appears in the Dock. Note: Native menus are only available when the Dock icon is visible."
-                    ) {
-                        Picker("", selection: $settings.dockVisibility) {
-                            ForEach(DockVisibility.allCases) { visibility in
-                                Text(visibility.rawValue).tag(visibility)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 300)
-                    }
-                    .onChange(of: settings.dockVisibility) { _, newValue in
-                        settings.saveSettings()
-                        
-                        // Apply activation policy immediately
-                        switch newValue {
-                        case .never:
-                            NSApp.setActivationPolicy(.accessory)
-                        case .whenVisible:
-                            // Only set to .regular if window or settings are visible
-                            if appController?.isWindowVisible == true || AppDelegate.sharedSettingsWindow.isVisible {
-                                NSApp.setActivationPolicy(.regular)
-                            } else {
-                                NSApp.setActivationPolicy(.accessory)
-                            }
-                        case .always:
-                            NSApp.setActivationPolicy(.regular)
-                        }
-                    }
-                    
-                    SettingsDivider()
-                    
-                    SettingsRow(
-                        title: "Selector Display",
-                        message: "Controls how engine and session selectors appear. Auto switches based on window width."
-                    ) {
-                        Picker("", selection: $settings.selectorDisplayMode) {
-                            ForEach(SelectorDisplayMode.allCases) { mode in
-                                Text(mode.rawValue).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 250)
-                    }
-                    .onChange(of: settings.selectorDisplayMode) { _, _ in
-                        settings.saveSettings()
                     }
                 }
                 
@@ -162,48 +96,6 @@ struct GeneralSettingsView: View {
                             }
                         }
                     }
-                }
-                
-                SettingsSection(title: "Updates") {
-                    SettingsRow(
-                        title: "Current version",
-                        message: updater.statusDescription
-                    ) {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(versionDescription)
-                                .font(.system(.body, design: .monospaced))
-                        }
-                    }
-                    
-                    SettingsDivider()
-                    
-                    SettingsRow(
-                        title: "Manual check",
-                        message: "Immediately trigger an update check from GitHub releases."
-                    ) {
-                        Button(action: { updater.checkForUpdates(userInitiated: true) }) {
-                            Text(updater.isChecking ? "Checking…" : "Check for Updates")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(updater.isChecking)
-                    }
-                    
-                    SettingsDivider()
-                    
-                    SettingsToggleRow(
-                        title: "Automatically check for updates",
-                        message: "Poll in the background and notify you when a new build ships.",
-                        isOn: autoCheckBinding
-                    )
-                    
-                    SettingsDivider()
-                    
-                    SettingsToggleRow(
-                        title: "Automatically download updates",
-                        message: "Fetch new builds as soon as they’re found so installs are instant.",
-                        isOn: autoDownloadBinding
-                    )
-                    .disabled(!settings.updatePreferences.automaticallyChecksForUpdates)
                 }
                 
                 SettingsSection(title: "Danger Zone", cardBackground: Color.red.opacity(0.05)) {
@@ -253,9 +145,6 @@ struct GeneralSettingsView: View {
             launchAtLogin = Launcher.isInstalledAtLogin()
             Task { await notificationDispatcher.refreshNotificationStatus() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .startGlobalHotkeyCapture)) { _ in
-            startGlobalHotkeyCapture()
-        }
         .alert("Clear saved web data?", isPresented: $showClearWebConfirmation) {
             Button("Clear", role: .destructive) {
                 clearWebData()
@@ -279,87 +168,6 @@ struct GeneralSettingsView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Removes every custom action and the scripts stored for them.")
-        }
-    }
-    
-    private var autoCheckBinding: Binding<Bool> {
-        Binding(
-            get: { settings.updatePreferences.automaticallyChecksForUpdates },
-            set: { newValue in
-                settings.updatePreferences.automaticallyChecksForUpdates = newValue
-                if !newValue && settings.updatePreferences.automaticallyDownloadsUpdates {
-                    settings.updatePreferences.automaticallyDownloadsUpdates = false
-                }
-                settings.saveSettings()
-            }
-        )
-    }
-    
-    private var autoDownloadBinding: Binding<Bool> {
-        Binding(
-            get: { settings.updatePreferences.automaticallyDownloadsUpdates },
-            set: { newValue in
-                settings.updatePreferences.automaticallyDownloadsUpdates = newValue
-                settings.saveSettings()
-            }
-        )
-    }
-
-    private var currentGlobalHotkeyLabel: String {
-        ShortcutFormatter.string(for: settings.hotkeyConfiguration)
-    }
-
-    private func startGlobalHotkeyCapture() {
-        let session = StandardShortcutSession(onUpdate: { update in
-            shortcutState.updateMessage(update)
-        }, onFinish: {
-            shortcutState.cancel()
-        }, completion: { configuration in
-            if let configuration {
-                settings.hotkeyConfiguration = configuration
-                settings.saveSettings()
-                appController?.updateOverlayHotkey(configuration)
-                globalHotkeyStatus = "Saved as \(ShortcutFormatter.string(for: configuration))"
-            } else {
-                globalHotkeyStatus = ""
-            }
-        })
-        shortcutState.start(session: session)
-    }
-
-    private func cancelGlobalHotkeyCapture() {
-        shortcutState.cancel()
-        globalHotkeyStatus = ""
-    }
-
-    private func resetGlobalHotkey() {
-        let configuration = HotkeyManager.defaultConfiguration
-        settings.hotkeyConfiguration = configuration
-        settings.saveSettings()
-        appController?.updateOverlayHotkey(configuration)
-        globalHotkeyStatus = "Reset to ⌥Space"
-    }
-    
-    private func clearGlobalHotkey() {
-        settings.hotkeyConfiguration = HotkeyManager.Configuration(keyCode: 0, modifierFlags: 0)
-        settings.saveSettings()
-        appController?.updateOverlayHotkey(settings.hotkeyConfiguration)
-        globalHotkeyStatus = "Cleared"
-    }
-    
-    private var globalHotkeyClearAction: (() -> Void)? {
-        if settings.hotkeyConfiguration.isDisabled {
-            return nil
-        } else {
-            return clearGlobalHotkey
-        }
-    }
-    
-    private var globalHotkeyResetAction: (() -> Void)? {
-        if settings.hotkeyConfiguration == HotkeyManager.defaultConfiguration {
-            return nil
-        } else {
-            return resetGlobalHotkey
         }
     }
     
@@ -945,102 +753,6 @@ private struct CodeTextEditor: View {
 #endif
 
 
-
-// MARK: - Settings helpers
-
-private struct SettingsSection<Content: View>: View {
-    var title: String
-    var titleColor: Color
-    var cardBackground: Color
-    var content: () -> Content
-    
-    init(title: String, titleColor: Color = .primary, cardBackground: Color = Color(NSColor.controlBackgroundColor), @ViewBuilder content: @escaping () -> Content) {
-        self.title = title
-        self.titleColor = titleColor
-        self.cardBackground = cardBackground
-        self.content = content
-    }
-    
-    var body: some View {
-        GroupBox {
-            VStack(spacing: 0) {
-                content()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 4)
-            .padding(.horizontal, 4)
-            .padding(.bottom, 2)
-            .background(cardBackground)
-        } label: {
-            Text(title)
-                .font(.headline)
-                .foregroundColor(titleColor)
-        }
-        .groupBoxStyle(DefaultGroupBoxStyle())
-    }
-}
-
-private struct SettingsRow<Content: View>: View {
-    var title: String
-    var message: String?
-    var content: () -> Content
-    private let labelWidth: CGFloat = 230
-    
-    init(title: String, message: String? = nil, @ViewBuilder content: @escaping () -> Content) {
-        self.title = title
-        self.message = message
-        self.content = content
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 16) {
-                Text(title)
-                    .fontWeight(.semibold)
-                    .frame(width: labelWidth, alignment: .leading)
-                
-                Spacer(minLength: 16)
-                
-                content()
-            }
-            
-            if let message, !message.isEmpty {
-                Text(message)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-    }
-}
-
-private struct SettingsToggleRow: View {
-    var title: String
-    var message: String?
-    @Binding var isOn: Bool
-    
-    init(title: String, message: String? = nil, isOn: Binding<Bool>) {
-        self.title = title
-        self.message = message
-        self._isOn = isOn
-    }
-    
-    var body: some View {
-        SettingsRow(title: title, message: message) {
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-        }
-    }
-}
-
-private struct SettingsDivider: View {
-    var body: some View {
-        Divider()
-            .padding(.vertical, 8)
-    }
-}
 
 
 extension Bundle {
