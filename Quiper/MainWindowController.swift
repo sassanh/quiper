@@ -328,9 +328,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func setShortcutsEnabled(_ enabled: Bool) {
         if enabled {
             if keyDownEventMonitor == nil {
-                keyDownEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                    if self?.handleCommandShortcut(event: event) == true {
-                        return nil
+                keyDownEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+                    if event.type == .keyDown {
+                        if self?.handleCommandShortcut(event: event) == true {
+                            return nil
+                        }
+                    } else if event.type == .flagsChanged {
+                        self?.handleFlagsChanged(event: event)
                     }
                     return event
                 }
@@ -341,6 +345,68 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 keyDownEventMonitor = nil
             }
         }
+    }
+    
+    func handleFlagsChanged(event: NSEvent) {
+        // We only care about specific combinations if they match exactly
+        // But users might press Cmd then Shift. We want to react as soon as the combo is valid.
+        // Also if they release one key, it might become invalid.
+        
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        let appShortcuts = Settings.shared.appShortcutBindings
+        
+        // Session Digits (e.g. Cmd+Shift)
+        var shouldExpandSession = false
+        if appShortcuts.sessionDigitsModifiers > 0 && modifiers.rawValue == appShortcuts.sessionDigitsModifiers {
+             shouldExpandSession = true
+        } else if let alt = appShortcuts.sessionDigitsAlternateModifiers, alt > 0, modifiers.rawValue == alt {
+             shouldExpandSession = true
+        }
+        
+        // Service Digits (e.g. Cmd+Ctrl)
+        var shouldExpandService = false
+        if appShortcuts.serviceDigitsPrimaryModifiers > 0 && modifiers.rawValue == appShortcuts.serviceDigitsPrimaryModifiers {
+             shouldExpandService = true
+        } else if let sec = appShortcuts.serviceDigitsSecondaryModifiers, sec > 0, modifiers.rawValue == sec {
+             shouldExpandService = true
+        }
+        
+        // Apply expansion states
+        // Only expand if we have collapsible selectors and they are not hidden (i.e. in Compact/Auto mode)
+        
+        if let sessionSel = collapsibleSessionSelector, !sessionSel.isHidden {
+            if shouldExpandSession {
+                if !sessionSel.isExpanded {
+                    sessionSel.mouseEntered(with: event) 
+                }
+            } else {
+                // Collapse immediately if keys released and mouse is not hovering safely
+                if sessionSel.isExpanded, !isMouseInSafeArea(for: sessionSel) {
+                     sessionSel.collapse()
+                }
+            }
+        }
+        
+        if let serviceSel = collapsibleServiceSelector, !serviceSel.isHidden {
+            if shouldExpandService {
+                if !serviceSel.isExpanded {
+                    serviceSel.mouseEntered(with: event)
+                }
+            } else {
+                if serviceSel.isExpanded, !isMouseInSafeArea(for: serviceSel) {
+                    serviceSel.collapse()
+                }
+            }
+        }
+    }
+    
+    private func isMouseInSafeArea(for selector: CollapsibleSelector) -> Bool {
+        guard let panel = selector.expandedPanel else { return false }
+        let mouseInScreen = NSEvent.mouseLocation
+        let padding = selector.safeAreaPadding
+        // Inset by negative padding = outset
+        let safeFrame = panel.frame.insetBy(dx: -padding, dy: -padding)
+        return safeFrame.contains(mouseInScreen)
     }
 
     func handleCommandShortcut(event: NSEvent) -> Bool {

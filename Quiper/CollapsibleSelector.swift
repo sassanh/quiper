@@ -85,7 +85,7 @@ class CollapsibleSelector: NSView {
     // Constants
     private let animationDuration: TimeInterval = 0.15
     private let collapseDelay: TimeInterval = 0.3
-    private let safeAreaPadding: CGFloat = 50
+    var safeAreaPadding: CGFloat = 50
     
     // MARK: - Initialization
     
@@ -338,10 +338,18 @@ class CollapsibleSelector: NSView {
              panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
              Task { @MainActor [weak self] in
-                 self?.expandedPanel?.parent?.removeChildWindow(panel)
-                 self?.expandedPanel?.orderOut(nil)
-                 self?.expandedPanel = nil
-                 self?.expandedControl = nil
+                 guard let self = self else { return }
+                 
+                 // Clean up the specific panel that was collapsed
+                 panel.parent?.removeChildWindow(panel)
+                 panel.orderOut(nil)
+                 
+                 // Only clear the main reference if it still points to THIS panel.
+                 // If user re-expanded during animation, expandedPanel will be a different, new panel.
+                 if self.expandedPanel == panel {
+                     self.expandedPanel = nil
+                     self.expandedControl = nil
+                 }
              }
         }
     }

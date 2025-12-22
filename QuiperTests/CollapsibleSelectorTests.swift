@@ -123,6 +123,46 @@ final class CollapsibleSelectorTests: XCTestCase {
         
         XCTAssertTrue(delegate.willExpandCalled)
     }
+    
+    func testRapidExpandCollapse() {
+        selector.items = ["A", "B"]
+        // Initial setup
+        selector.layoutSubtreeIfNeeded()
+        window.makeKeyAndOrderFront(nil)
+        
+        // Simulate rapid toggle
+        // 1. Expand
+        selector.mouseEntered(with: makeEvent()) // expands
+        XCTAssertTrue(selector.isExpanded)
+        XCTAssertNotNil(selector.expandedPanel)
+        
+        // 2. Collapse (immediately)
+        selector.collapse() // sets isExpanded=false, starts animation
+        XCTAssertFalse(selector.isExpanded)
+        // Panel still exists (fading)
+        XCTAssertNotNil(selector.expandedPanel)
+        
+        // 3. Expand again (immediately, while first collapse animation is running)
+        selector.mouseEntered(with: makeEvent())
+        XCTAssertTrue(selector.isExpanded)
+        let newPanel = selector.expandedPanel
+        XCTAssertNotNil(newPanel)
+        
+        // 4. Wait for the FIRST collapse completion to fire
+        // The first collapse completion will try to clean up.
+        // If buggy, it will set expandedPanel = nil even though we just created a new one.
+        
+        let expectation = XCTestExpectation(description: "Wait for animation params")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            // Check state
+            XCTAssertTrue(self.selector.isExpanded, "Should still be expanded")
+            XCTAssertNotNil(self.selector.expandedPanel, "Panel reference should not be nilled out by previous collapse")
+            XCTAssertEqual(self.selector.expandedPanel, newPanel, "Should still reference the new panel")
+            expectation.fulfill()
+        }
+        
+        wait(for: [expectation], timeout: 1.0)
+    }
 }
 
 class MockSelectorDelegate: CollapsibleSelectorDelegate {
@@ -132,5 +172,19 @@ class MockSelectorDelegate: CollapsibleSelectorDelegate {
     func selector(_ selector: CollapsibleSelector, didDragSegment index: Int, to newIndex: Int) {}
     func selectorWillExpand(_ selector: CollapsibleSelector) {
         willExpandCalled = true
+    }
+}
+
+extension CollapsibleSelectorTests {
+    func makeEvent() -> NSEvent {
+        return NSEvent.enterExitEvent(with: .mouseEntered,
+                                      location: .zero,
+                                      modifierFlags: [],
+                                      timestamp: 0,
+                                      windowNumber: 0,
+                                      context: nil,
+                                      eventNumber: 0,
+                                      trackingNumber: 0,
+                                      userData: nil)!
     }
 }

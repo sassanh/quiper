@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **Modifier Key Expansion**: Holding the modifier keys for session (e.g. `Cmd+Shift`) or service (e.g. `Cmd+Ctrl`) shortcuts now automatically expands the corresponding collapsible selector in the header for quick visibility.
+
 ## [2.4.0] - 2025-12-22
 
 ### Added
