@@ -101,6 +101,22 @@ struct UpdatePreferences: Codable, Equatable {
     var lastNotifiedVersion: String?
 }
 
+enum AppColorScheme: String, Codable, CaseIterable, Identifiable {
+    case system = "System"
+    case light = "Light"
+    case dark = "Dark"
+    
+    var id: String { rawValue }
+    
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
 enum WindowBackgroundMode: String, Codable, CaseIterable, Identifiable {
     case blur = "Blur Effect"
     case solidColor = "Solid Color"
@@ -132,12 +148,66 @@ enum WindowMaterial: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct WindowAppearanceSettings: Codable, Equatable {
+struct ThemeAppearanceSettings: Codable, Equatable {
     var mode: WindowBackgroundMode = .solidColor
     var material: WindowMaterial = .underWindowBackground
-    var backgroundColor: CodableColor = CodableColor(red: 0.26, green: 0.21, blue: 0.25, alpha: 0.51)
+    var backgroundColor: CodableColor
+    
+    static let defaultLight = ThemeAppearanceSettings(
+        mode: .solidColor,
+        material: .underWindowBackground,
+        backgroundColor: CodableColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 0.85)
+    )
+    
+    static let defaultDark = ThemeAppearanceSettings(
+        mode: .solidColor,
+        material: .underWindowBackground,
+        backgroundColor: CodableColor(red: 0.26, green: 0.21, blue: 0.25, alpha: 0.51)
+    )
+}
+
+struct WindowAppearanceSettings: Codable, Equatable {
+    var light: ThemeAppearanceSettings = .defaultLight
+    var dark: ThemeAppearanceSettings = .defaultDark
     
     static let `default` = WindowAppearanceSettings()
+    
+    // Migration: decode old format into new format
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        if let light = try container.decodeIfPresent(ThemeAppearanceSettings.self, forKey: .light),
+           let dark = try container.decodeIfPresent(ThemeAppearanceSettings.self, forKey: .dark) {
+            self.light = light
+            self.dark = dark
+        } else {
+            // Legacy format - migrate to new format
+            let mode = try container.decodeIfPresent(WindowBackgroundMode.self, forKey: .mode) ?? .solidColor
+            let material = try container.decodeIfPresent(WindowMaterial.self, forKey: .material) ?? .underWindowBackground
+            let backgroundColor = try container.decodeIfPresent(CodableColor.self, forKey: .backgroundColor) ?? ThemeAppearanceSettings.defaultDark.backgroundColor
+            
+            let legacySettings = ThemeAppearanceSettings(mode: mode, material: material, backgroundColor: backgroundColor)
+            self.dark = legacySettings
+            self.light = .defaultLight
+        }
+    }
+    
+    init() {
+        self.light = .defaultLight
+        self.dark = .defaultDark
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case light, dark
+        // Legacy keys for migration
+        case mode, material, backgroundColor
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(light, forKey: .light)
+        try container.encode(dark, forKey: .dark)
+    }
 }
 
 struct CodableColor: Codable, Equatable {
@@ -287,6 +357,7 @@ private struct PersistedSettings: Codable {
     var dockVisibility: DockVisibility?
     var selectorDisplayMode: SelectorDisplayMode?
     var windowAppearance: WindowAppearanceSettings?
+    var colorScheme: AppColorScheme?
 }
 
 class SettingsWindow: NSWindow {
@@ -374,6 +445,11 @@ class Settings: ObservableObject {
         }
     }
     @Published var windowAppearance: WindowAppearanceSettings = .default
+    @Published var colorScheme: AppColorScheme = .system {
+        didSet {
+            NotificationCenter.default.post(name: .colorSchemeChanged, object: nil)
+        }
+    }
     
     func reset() {
         services = []
@@ -384,6 +460,7 @@ class Settings: ObservableObject {
         appShortcutBindings = .defaults
         selectorDisplayMode = .auto
         windowAppearance = .default
+        colorScheme = .system
     }
 
     private let settingsFile: URL = {
@@ -892,7 +969,12 @@ class Settings: ObservableObject {
                 Settings.historyActionID: """
                 document.querySelector('[aria-label="Toggle Sidebar"]').click();
                 """
-            ]
+            ],
+            customCSS: """
+            div.app>div, div.bg-white:has(form #chat-input-container) {
+              background-color: transparent;
+            }
+            """
         ),
         Service(
             name: "Google",
@@ -942,6 +1024,9 @@ class Settings: ObservableObject {
         if windowAppearance != (persisted.windowAppearance ?? .default) {
             windowAppearance = persisted.windowAppearance ?? .default
         }
+        if colorScheme != (persisted.colorScheme ?? .system) {
+            colorScheme = persisted.colorScheme ?? .system
+        }
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
@@ -974,7 +1059,8 @@ class Settings: ObservableObject {
                                             sessionDigitsAlternateModifiers: appShortcutBindings.sessionDigitsAlternateModifiers,
                                             dockVisibility: dockVisibility,
                                             selectorDisplayMode: selectorDisplayMode,
-                                            windowAppearance: windowAppearance)
+                                            windowAppearance: windowAppearance,
+                                            colorScheme: colorScheme)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {

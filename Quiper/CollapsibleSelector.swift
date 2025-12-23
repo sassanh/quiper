@@ -35,6 +35,9 @@ class CollapsibleSelector: NSView {
     /// Padding around segment labels
     var labelPadding: CGFloat = 20
     
+    /// Controls whether hover/click interaction is enabled (set to false when window loses focus)
+    var isInteractionEnabled: Bool = true
+    
     private let collapsedControl: SegmentedControl
     
     // Expanded State
@@ -200,6 +203,7 @@ class CollapsibleSelector: NSView {
     }
     
     @objc private func collapsedControlClicked() {
+        guard isInteractionEnabled else { return }
         isExpanded ? collapse() : expand()
     }
     
@@ -207,6 +211,7 @@ class CollapsibleSelector: NSView {
     
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
+        guard isInteractionEnabled else { return }
         expand()
     }
     

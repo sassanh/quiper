@@ -15,6 +15,7 @@ extension Notification.Name {
     static let dockVisibilityChanged = Notification.Name("QuiperDockVisibilityChanged")
     static let selectorDisplayModeChanged = Notification.Name("QuiperSelectorDisplayModeChanged")
     static let windowAppearanceChanged = Notification.Name("QuiperWindowAppearanceChanged")
+    static let colorSchemeChanged = Notification.Name("QuiperColorSchemeChanged")
 }
 
 @objc protocol StandardEditActions {

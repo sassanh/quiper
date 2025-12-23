@@ -5,11 +5,18 @@
 ### Added
 
 - **Modifier Key Expansion**: Holding the modifier keys for session (e.g. `Cmd+Shift`) or service (e.g. `Cmd+Ctrl`) shortcuts now automatically expands the corresponding collapsible selector in the header for quick visibility.
+- **Color Scheme Control**: New appearance setting to force Light or Dark mode, or follow the system setting.
+- **Per-Theme Window Backgrounds**: Window appearance settings (blur material or solid color) can now be configured separately for Light and Dark themes. When using "System" color scheme, both theme settings are shown for customization.
 
 ### Changed
 
 - Updated default window appearance to use "Solid Color" mode with a refined teal-grey tint.
 - Service Hotkeys Layout: Reverted to pre-2.4.0 vertical layout in `ServiceLaunchShortcutRow` for improved clarity.
+
+### Fixed
+
+- **Blur Material Updates**: Fixed blur material style changes not applying on macOS 26 (Tahoe) by using `NSVisualEffectView` consistently across all macOS versions.
+- **Solid Color Background**: Fixed solid color mode rendering incorrectly (either covering all content or showing nothing). Now uses layer-based background coloring while keeping content visible.
 
 ## [2.4.0] - 2025-12-22
 

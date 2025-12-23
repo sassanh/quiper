@@ -113,6 +113,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+    
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+        if keyPath == "effectiveAppearance" {
+            // System appearance changed, update window background
+            applyWindowAppearance()
+        } else {
+            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+        }
+    }
 
     // MARK: - Public API
     var serviceCount: Int { services.count }
@@ -597,30 +606,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
 
         let frame = window.contentRect(forFrameRect: window.frame)
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView(frame: frame)
-            glass.style = .regular
-            glass.cornerRadius = Constants.WINDOW_CORNER_RADIUS
-
-            let host = NSView(frame: glass.bounds)
-            host.autoresizingMask = [.width, .height]
-            host.wantsLayer = true
-            host.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
-            host.layer?.masksToBounds = true
-
-            glass.contentView = host
-            window.contentView = glass
-        } else {
-            let effect = NSVisualEffectView(frame: frame)
-            effect.material = .underWindowBackground
-            effect.state = .active
-            effect.wantsLayer = true
-            effect.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
-            effect.layer?.masksToBounds = true
-            effect.autoresizingMask = [.width, .height]
-            window.contentView = effect
-            backgroundEffectView = effect
-        }
+        
+        // Use NSVisualEffectView on all platforms to support material customization
+        let effect = NSVisualEffectView(frame: frame)
+        effect.material = .underWindowBackground
+        effect.state = .active
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
+        effect.layer?.masksToBounds = true
+        effect.autoresizingMask = [.width, .height]
+        window.contentView = effect
+        backgroundEffectView = effect
         
         applyWindowAppearance()
     }
@@ -791,11 +787,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleDockVisibilityChanged), name: .dockVisibilityChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleSelectorDisplayModeChanged), name: .selectorDisplayModeChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowAppearanceChanged), name: .windowAppearanceChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleColorSchemeChanged), name: .colorSchemeChanged, object: nil)
         
         // Observe window width for Auto mode
         if let window = self.window {
             NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidResize), name: NSWindow.didResizeNotification, object: window)
+            
+            // Observe system appearance changes to update window background when system theme changes
+            window.addObserver(self, forKeyPath: "effectiveAppearance", options: [.new], context: nil)
         }
+        
+        // Apply initial color scheme
+        applyColorScheme()
     }
 
     @objc private func handleDockVisibilityChanged(_ notification: Notification) {
@@ -818,32 +821,56 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         applyWindowAppearance()
     }
     
+    @objc private func handleColorSchemeChanged(_ notification: Notification) {
+        applyColorScheme()
+    }
+    private func applyColorScheme() {
+        let scheme = Settings.shared.colorScheme
+        window?.appearance = scheme.nsAppearance
+        // Also update window appearance when color scheme changes
+        applyWindowAppearance()
+    }
+    
     private func applyWindowAppearance() {
-        let appearance = Settings.shared.windowAppearance
-        
         guard let win = window else { return }
         
+        // Determine which theme settings to use based on effective appearance
+        let effectiveAppearance = win.effectiveAppearance
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let themeSettings = isDark ? Settings.shared.windowAppearance.dark : Settings.shared.windowAppearance.light
+        
         guard let effect = backgroundEffectView else {
-            // Fallback for macOS 26+ or when effect view isn't available
-            switch appearance.mode {
+            // Fallback when effect view isn't available
+            switch themeSettings.mode {
             case .blur:
                 win.backgroundColor = .clear
             case .solidColor:
-                win.backgroundColor = appearance.backgroundColor.nsColor
+                win.backgroundColor = themeSettings.backgroundColor.nsColor
             }
             return
         }
         
-        switch appearance.mode {
+        // Always keep effect view visible - content is inside it
+        effect.alphaValue = 1.0
+        
+        switch themeSettings.mode {
         case .blur:
             win.backgroundColor = .clear
-            effect.alphaValue = 1.0
-            effect.material = appearance.material.nsMaterial
+            effect.material = themeSettings.material.nsMaterial
+            effect.blendingMode = .behindWindow
             effect.state = .active
+            // Remove any solid color background layer
+            effect.layer?.backgroundColor = nil
+            effect.needsDisplay = true
             
         case .solidColor:
-            win.backgroundColor = appearance.backgroundColor.nsColor
-            effect.alphaValue = 0.0
+            win.backgroundColor = .clear
+            // Set effect state to inactive to not show blur
+            effect.state = .inactive
+            // Use the layer to show solid color behind content
+            effect.wantsLayer = true
+            effect.layer?.backgroundColor = themeSettings.backgroundColor.nsColor.cgColor
+            effect.needsDisplay = true
         }
     }
 
@@ -1342,7 +1369,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
+        // If settings window is visible, redirect focus to it
+        let settingsWindow = AppDelegate.sharedSettingsWindow
+        if settingsWindow.isVisible {
+            settingsWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+        
         focusInputInActiveWebview()
+        // Re-enable selector interaction when window gains focus
+        collapsibleServiceSelector?.isInteractionEnabled = true
+        collapsibleSessionSelector?.isInteractionEnabled = true
+    }
+    
+    func windowDidResignKey(_ notification: Notification) {
+        // Collapse all collapsible selectors when window loses focus
+        collapsibleServiceSelector?.collapse()
+        collapsibleSessionSelector?.collapse()
+        // Disable hover interaction while window is not key
+        collapsibleServiceSelector?.isInteractionEnabled = false
+        collapsibleSessionSelector?.isInteractionEnabled = false
     }
 
     private func buildSessionActionsMenu() -> NSMenu {
