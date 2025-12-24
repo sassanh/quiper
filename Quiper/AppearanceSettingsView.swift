@@ -258,17 +258,13 @@ struct AppearanceSettingsView: View {
     
     private func applyColorChange(_ newColor: Color, for theme: ThemeVariant) {
         let nsColor = NSColor(newColor)
+        NSLog("[Quiper] SettingsView received color change: \(nsColor)")
         DispatchQueue.main.async {
             let currentAlpha = theme == .light
                 ? settings.windowAppearance.light.backgroundColor.alpha
                 : settings.windowAppearance.dark.backgroundColor.alpha
             
-            let newColorValue = CodableColor(
-                red: Double(nsColor.redComponent),
-                green: Double(nsColor.greenComponent),
-                blue: Double(nsColor.blueComponent),
-                alpha: currentAlpha
-            )
+            let newColorValue = CodableColor(nsColor: nsColor.withAlphaComponent(currentAlpha))
             
             if theme == .light {
                 settings.windowAppearance.light.backgroundColor = newColorValue

@@ -607,15 +607,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         let frame = window.contentRect(forFrameRect: window.frame)
         
-        // Use NSVisualEffectView on all platforms to support material customization
-        let effect = NSVisualEffectView(frame: frame)
+        // CONTAINER VIEW
+        // This view will be the main content view. It can hold a solid background color (layer)
+        // or be transparent to let the visual effect view show through.
+        let containerView = NSView(frame: frame)
+        containerView.wantsLayer = true
+        containerView.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
+        containerView.layer?.masksToBounds = true
+        containerView.autoresizingMask = [.width, .height]
+        window.contentView = containerView
+        
+        // VISUAL EFFECT VIEW (Background Only)
+        // Placed as a subview of containerView, at the very bottom (z-index).
+        // It provides the blur material. We can hide it when using solid colors.
+        let effect = NSVisualEffectView(frame: containerView.bounds)
         effect.material = .underWindowBackground
         effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
-        effect.layer?.masksToBounds = true
+        effect.blendingMode = .behindWindow
         effect.autoresizingMask = [.width, .height]
-        window.contentView = effect
+        
+        // Add effect view FIRST so it's behind everything else added later
+        containerView.addSubview(effect, positioned: .below, relativeTo: nil)
         backgroundEffectView = effect
         
         applyWindowAppearance()
@@ -850,28 +862,44 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         
-        // Always keep effect view visible - content is inside it
+        // Always keep effect view attached
         effect.alphaValue = 1.0
+        
+        // Main content view (container)
+        guard let container = win.contentView else { return }
         
         switch themeSettings.mode {
         case .blur:
-            win.backgroundColor = .clear
+            // BLUR MODE:
+            // 1. Show the effect view
+            effect.isHidden = false
             effect.material = themeSettings.material.nsMaterial
             effect.blendingMode = .behindWindow
             effect.state = .active
-            // Remove any solid color background layer
+            
+            // 2. Ensure container is transparent so blur shows through
+            win.backgroundColor = .clear
+            container.layer?.backgroundColor = NSColor.clear.cgColor
+            
+            // 3. Clear explicit layer background on effect just in case
             effect.layer?.backgroundColor = nil
-            effect.needsDisplay = true
             
         case .solidColor:
-            win.backgroundColor = .clear
-            // Set effect state to inactive to not show blur
-            effect.state = .inactive
-            // Use the layer to show solid color behind content
-            effect.wantsLayer = true
-            effect.layer?.backgroundColor = themeSettings.backgroundColor.nsColor.cgColor
-            effect.needsDisplay = true
+            // SOLID COLOR MODE:
+            // 1. Hide the effect view completely so it doesn't interfere
+            effect.isHidden = true
+            
+            // 2. Apply solid color to the container view's layer
+            // Note: We use the container's layer instead of window.backgroundColor
+            // because NSWindow.backgroundColor behaves inconsistently with isOpaque=false
+            let color = themeSettings.backgroundColor.nsColor
+            win.backgroundColor = .clear 
+            container.wantsLayer = true // Should already be true from configure
+            container.layer?.backgroundColor = color.cgColor
         }
+        
+        effect.needsDisplay = true
+        container.needsDisplay = true
     }
 
     private func updateSelectorsMode() {

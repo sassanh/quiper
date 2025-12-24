@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Color Settings Saving**: Fixed potential color data corruption when saving custom colors by ensuring safe sRGB conversion (`CodableColor`).
+
 ## [2.5.0] - 2025-12-24
 
 ### Added
@@ -19,7 +23,7 @@
 ### Fixed
 
 - **Blur Material Updates**: Fixed blur material style changes not applying on macOS 26 (Tahoe) by using `NSVisualEffectView` consistently across all macOS versions.
-- **Solid Color Background**: Fixed solid color mode rendering incorrectly (either covering all content or showing nothing). Now uses layer-based background coloring while keeping content visible.
+- **Solid Color Background**: Fixed solid color mode rendering incorrectly (either covering all content or showing nothing). Now uses a refactored view hierarchy with a dedicated container view to robustly handle both solid and blurred backgrounds.
 
 ## [2.4.0] - 2025-12-22
 

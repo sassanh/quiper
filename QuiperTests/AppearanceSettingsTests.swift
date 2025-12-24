@@ -164,4 +164,23 @@ struct AppearanceSettingsTests {
         #expect(settings.colorScheme == .system)
         #expect(settings.windowAppearance == .default)
     }
+    @Test func testCodableColor_InitFromNSColor() {
+        // 1. Verify handling of component-based color (P3)
+        // We just want to ensure it initializes and stores valid components
+        let p3Color = NSColor(displayP3Red: 0.5, green: 0.5, blue: 0.5, alpha: 1.0)
+        let codableP3 = CodableColor(nsColor: p3Color)
+        
+        #expect(codableP3.red > 0.4 && codableP3.red < 0.6)
+        #expect(codableP3.alpha == 1.0)
+        
+        // 2. Verify handling of dynamic/catalog colors (windowBackgroundColor)
+        // Accessing components directly on dynamic colors often fails or returns 0 in some contexts
+        // correct usage of usingColorSpace(.sRGB) ensures we get valid components.
+        let dynamicColor = NSColor.windowBackgroundColor
+        let codableDynamic = CodableColor(nsColor: dynamicColor)
+        
+        // Verify we got actual components (alpha usually 1.0 or non-zero for background)
+        // Specific values depend on system appearance, but shouldn't crash and should be valid.
+        #expect(codableDynamic.alpha > 0)
+    }
 }

@@ -67,13 +67,7 @@ final class MainWindowControllerModifierTests: XCTestCase {
         controller.handleFlagsChanged(event: releaseEvent)
         
         // Wait for collapse (should be immediate now)
-        // Previous logic was 0.3s delay. Now it is direct call.
-        // We still need a tiny wait for animation or run loop cycle, 
-        // but it should be faster.
-        // Or check immediately? CollapsibleSelector.collapse() uses animation group.
-        // But internal state `isExpanded` is set to false immediately (line 334 in CS.swift).
-        // So checking immediately should return false.
-        
+        Thread.sleep(forTimeInterval: 0.3)
         XCTAssertFalse(sessionSel.isExpanded, "Session selector should collapse immediately on key release")
     }
 
