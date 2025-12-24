@@ -11,6 +11,7 @@
 ### Changed
 
 - Updated default window appearance to use "Solid Color" mode with a refined teal-grey tint.
+- **Documentation Refined**: Reorganized `README.md` for better flow and clarity, updated all screenshots with fresh 80% WebP assets, and added 'Custom Actions' documentation.
 - Service Hotkeys Layout: Reverted to pre-2.4.0 vertical layout in `ServiceLaunchShortcutRow` for improved clarity.
 
 ### Fixed

@@ -773,7 +773,7 @@ class Settings: ObservableObject {
                 "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
             ],
             customCSS: """
-            body, mat-sidenav-container {
+            body, mat-sidenav-container, response-container>* {
               background-color: transparent !important;
             }
             input-container::before {
@@ -832,6 +832,9 @@ class Settings: ObservableObject {
             customCSS: """
             body {
               background-color: transparent !important;
+            }
+            .chat-input-backdrop {
+              background-image: none;
             }
             """
         ),
@@ -972,7 +975,7 @@ class Settings: ObservableObject {
             ],
             customCSS: """
             div.app>div, div.bg-white:has(form #chat-input-container) {
-              background-color: transparent;
+              background-color: transparent !important;
             }
             """
         ),
