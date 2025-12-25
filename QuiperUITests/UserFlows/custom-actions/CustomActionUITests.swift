@@ -102,7 +102,7 @@ final class CustomActionUITests: BaseUITest {
         // --- 3. Verify ---
         // Close Settings
         app.typeKey("w", modifierFlags: .command)
-        XCTAssertTrue(app.windows["Settings"].waitForNonExistence(timeout: 2.0))
+        XCTAssertTrue(app.windows["Quiper Settings"].waitForNonExistence(timeout: 2.0))
         
         app.activate()
         // Wait for app to be ready and focused (Critical for CI hotkey delivery)

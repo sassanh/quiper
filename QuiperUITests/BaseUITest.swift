@@ -56,9 +56,31 @@ class BaseUITest: XCTestCase {
         }
         
         // Verify window opens
-        let settingsWindow = app.windows.firstMatch
+        let settingsWindow = app.windows["Quiper Settings"]
         if !waitForElement(settingsWindow, timeout: 1) {
             XCTFail("Settings window did not open")
+        }
+    }
+
+    func ensureWindowVisible() {
+        // The main window is an overlay and may not appear in app.windows.
+        // We check for a UI element inside it to verify visibility.
+        let overlayWindow = app.windows["Quiper Overlay"]
+        
+        if !overlayWindow.firstMatch.exists {
+             let statusItem = app.statusItems.firstMatch
+             if statusItem.waitForExistence(timeout: 5.0) {
+                 statusItem.click()
+                 
+                 let showItem = app.menuItems["Show Quiper"]
+                 if showItem.waitForExistence(timeout: 2.0) {
+                     showItem.click()
+                 }
+             }
+        }
+
+        if !waitForElement(overlayWindow.firstMatch, timeout: 5.0) {
+            XCTFail("Main window content (SessionSelector) must be visible for tests")
         }
     }
     

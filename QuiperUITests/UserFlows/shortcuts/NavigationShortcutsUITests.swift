@@ -77,9 +77,9 @@ final class NavigationShortcutsUITests: BaseUITest {
         // PHASE 2: VERIFY CUSTOM SHORTCUTS
         // ============================================================
         app.typeKey("w", modifierFlags: .command)
-        if !app.windows.firstMatch.exists { app.activate() }
+        XCTAssertTrue(app.windows["Quiper Settings"].waitForNonExistence(timeout: 2.0))
 
-        let sessionSelector = app.radioGroups.allElementsBoundByIndex.first { $0.radioButtons.element(matching: NSPredicate(format: "label == '1'")).exists } ?? app.radioGroups.element(boundBy: 1)
+        let sessionSelector = app.radioGroups["SessionSelector"]
         
         if !sessionSelector.exists {
              print("Debug: Session Selector not found. Hierarchy: \(app.debugDescription)")
@@ -87,10 +87,7 @@ final class NavigationShortcutsUITests: BaseUITest {
         XCTAssertTrue(sessionSelector.waitForExistence(timeout: 5))
         
         // Helper to get active engine label
-        var serviceSelector = app.radioGroups["ServiceSelector"]
-        if !serviceSelector.exists { serviceSelector = app.radioGroups["ServiceSelector"] }
-        if !serviceSelector.exists { serviceSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch }
-        XCTAssertTrue(serviceSelector.waitForExistence(timeout: 5), "ServiceSelector not found")
+        let serviceSelector = app.radioGroups["ServiceSelector"]
         
         func verifyState(session: Int, engine: String) {
             // Verify Session
@@ -239,7 +236,7 @@ final class NavigationShortcutsUITests: BaseUITest {
         // ============================================================
         
         app.typeKey("w", modifierFlags: .command)
-        if !app.windows.firstMatch.exists { app.activate() }
+        XCTAssertTrue(app.windows["Quiper Settings"].waitForNonExistence(timeout: 2.0))
         
         // Reset to known state (Session 1, Engine 1) using Defaults if possible
         // Default for Session 1 is Cmd+1 (if session digits enabled)

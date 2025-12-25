@@ -157,7 +157,7 @@ struct KeyBindingsSettingsView: View {
                 globalHotkeyStatus = ""
             }
         })
-        shortcutState.start(session: session)
+        shortcutState.start(session: session, title: "Show/Hide Quiper")
     }
 
     private func resetGlobalHotkey() {
@@ -239,7 +239,8 @@ struct KeyBindingsSettingsView: View {
                 settings.saveSettings()
             }
         })
-        shortcutState.start(session: session)
+        let actionName = settings.customActions.first(where: { $0.id == id })?.name ?? "Action"
+        shortcutState.start(session: session, title: actionName)
     }
 
     private func clearShortcut(for id: UUID) {
@@ -286,7 +287,7 @@ struct KeyBindingsSettingsView: View {
                 settings.saveSettings()
             }
         })
-        shortcutState.start(session: session)
+        shortcutState.start(session: session, title: title(for: key))
     }
 
     private func resetPrimaryAppShortcut(_ key: AppShortcutBindings.Key) {
@@ -338,7 +339,12 @@ struct KeyBindingsSettingsView: View {
             }
             settings.saveSettings()
         })
-        shortcutState.start(session: session)
+        let groupTitle: String
+        switch group {
+        case .sessionDigits: groupTitle = "Go to session 1–10"
+        case .serviceDigitsPrimary, .serviceDigitsSecondary: groupTitle = "Go to engine 1–10"
+        }
+        shortcutState.start(session: session, title: groupTitle)
     }
 
     private func resetModifier(_ group: AppShortcutBindings.ModifierGroup) {
@@ -408,7 +414,8 @@ struct KeyBindingsSettingsView: View {
                 }
             }
         })
-        shortcutState.start(session: session)
+        let serviceName = settings.services.first(where: { $0.id == serviceID })?.name ?? "Service"
+        shortcutState.start(session: session, title: "Launch \(serviceName)")
     }
 
     private func clearActivation(for serviceID: UUID) {

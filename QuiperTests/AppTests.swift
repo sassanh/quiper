@@ -1,4 +1,5 @@
 import XCTest
+import WebKit
 @testable import Quiper
 
 class MockHotkeyManager: HotkeyManaging {
@@ -44,6 +45,7 @@ class MockMainWindowController: MainWindowControlling {
     var window: NSWindow? = NSWindow()
     var currentWebViewURLToReturn: URL? = URL(string: "https://example.com")
     var activeServiceURL: String? = "https://example.com"
+    var activeWebView: WKWebView? = nil
     var focusInputInActiveWebviewCalled = false
     var reloadServicesCalled = false
     var setShortcutsEnabledCalled = false

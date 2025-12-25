@@ -21,7 +21,7 @@ final class MainWindowControllerModifierTests: XCTestCase {
         Settings.shared.reset()
     }
 
-    func testModifierKeysExpandSessionSelector() {
+    func testModifierKeysExpandSessionSelector() async throws {
         let services = [Service(name: "Test", url: "https://test.com", focus_selector: "")]
         let controller = MainWindowController(services: services)
         
@@ -67,11 +67,11 @@ final class MainWindowControllerModifierTests: XCTestCase {
         controller.handleFlagsChanged(event: releaseEvent)
         
         // Wait for collapse (should be immediate now)
-        Thread.sleep(forTimeInterval: 0.3)
+        try await Task.sleep(nanoseconds: 10_000_000)
         XCTAssertFalse(sessionSel.isExpanded, "Session selector should collapse immediately on key release")
     }
 
-    func testModifierKeysExpandServiceSelector() {
+    func testModifierKeysExpandServiceSelector() async throws {
         // Need at least 2 services to have segments? Or just 1 is enough for the selector to exist.
         // CollapsibleSelector works with 1 item.
         let services = [Service(name: "A", url: "a", focus_selector: ""), Service(name: "B", url: "b", focus_selector: "")]
@@ -115,7 +115,8 @@ final class MainWindowControllerModifierTests: XCTestCase {
         
         controller.handleFlagsChanged(event: releaseEvent)
         
-        // Should be immediate
+        // Wait for collapse (should be immediate now)
+        try await Task.sleep(nanoseconds: 10_000_000)
         XCTAssertFalse(serviceSel.isExpanded, "Service selector should collapse immediately on key release")
     }
 }

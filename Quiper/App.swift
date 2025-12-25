@@ -216,9 +216,17 @@ final class AppController: NSObject, NSWindowDelegate {
         
         guard windowController.window?.isVisible == true else { return }
         
-        windowController.window?.makeKeyAndOrderFront(nil as Any?)
-        
-        windowController.focusInputInActiveWebview()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.windowController.window?.makeKeyAndOrderFront(nil)
+            
+            // Make webview first responder so it receives keyboard events
+            if let webView = self.windowController.activeWebView {
+                self.windowController.window?.makeFirstResponder(webView)
+            }
+            
+            self.windowController.focusInputInActiveWebview()
+        }
         
     }
     

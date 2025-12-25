@@ -5,6 +5,7 @@
 ### Fixed
 
 - **Color Settings Saving**: Fixed potential color data corruption when saving custom colors by ensuring safe sRGB conversion (`CodableColor`).
+- **Focus Restoration**: Fixed an issue where the main window would not regain focus after closing the Settings window via the close button. Implemented robust async focus restoration and updated UI tests to verify strict focus state.
 
 ## [2.5.0] - 2025-12-24
 

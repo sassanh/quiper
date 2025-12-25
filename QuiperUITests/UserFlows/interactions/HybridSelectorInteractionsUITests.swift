@@ -15,27 +15,7 @@ final class HybridSelectorInteractionsUITests: BaseUITest {
             if showMenuItem.waitForExistence(timeout: 2.0) { showMenuItem.click() }
         }
         
-        // --- Identifying the Window Object ---
-        // Helper to reliably find the main application window (ignoring tooltips/bars)
-        func findMainWindow() -> XCUIElement {
-            // 1. Try first match if it's large enough
-            let first = app.windows.firstMatch
-            if first.exists && first.frame.height > 200 { return first }
-            
-             // 2. Search all candidates (windows + top-level children)
-             let candidates = app.windows.allElementsBoundByIndex + app.children(matching: .any).allElementsBoundByIndex
-             for candidate in candidates {
-                 // Lower threshold to accommodate 500px collapsed window
-                 if candidate.frame.width >= 400 && candidate.frame.height > 300 {
-                     print("Debug: Resolved Main Window with frame: \(candidate.frame)")
-                     return candidate
-                 }
-             }
-            // Fallback
-            return first
-        }
-        
-        let window = findMainWindow()
+        let window = app.windows["Quiper Overlay"]
         if !window.waitForExistence(timeout: 5) {
             print("Debug: Window not found. Hierarchy: \(app.debugDescription)")
         }
@@ -123,7 +103,7 @@ final class HybridSelectorInteractionsUITests: BaseUITest {
         
         // Use the CACHED initial frame to calculate coordinates relative to the window itself.
         // We re-resolve the window to ensure we have the correct element (not an overlay).
-        let windowForDrag = findMainWindow()
+        let windowForDrag = app.windows["Quiper Overlay"]
         
         let winFrame = initialWindowFrame
         print("Debug: Using cached frame for resize calculation: \(winFrame)")
@@ -154,7 +134,7 @@ final class HybridSelectorInteractionsUITests: BaseUITest {
         
         // Re-find the window to check its new frame (cached frame is now old)
         // We use the same finding logic to ensure we get the main window, not overlay
-        let newWindow = findMainWindow()
+        let newWindow = app.windows["Quiper Overlay"]
         print("Debug: New window frame: \(newWindow.frame)")
         
         XCTAssertLessThan(newWindow.frame.width, 600, "Window resize failed. Width is \(newWindow.frame.width)")

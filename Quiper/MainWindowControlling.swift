@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import WebKit
 
 @MainActor
 protocol MainWindowControlling: AnyObject {
@@ -8,6 +9,7 @@ protocol MainWindowControlling: AnyObject {
     func toggleInspector()
     var window: NSWindow? { get }
     var activeServiceURL: String? { get }
+    var activeWebView: WKWebView? { get }
     func focusInputInActiveWebview()
     func reloadServices()
     func setShortcutsEnabled(_ enabled: Bool)

@@ -102,22 +102,9 @@ final class ReorderServicesUITests: BaseUITest {
         
         // Open Main Window (Overlay)
         // Replicating lookup logic from MainWindowReorderUITests
-        var serviceSelector = app.segmentedControls["ServiceSelector"]
-        if !serviceSelector.exists { serviceSelector = app.radioGroups["ServiceSelector"] }
-        if !serviceSelector.exists { serviceSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch }
+        ensureWindowVisible()
         
-        if !serviceSelector.waitForExistence(timeout: 3.0) {
-             app.typeKey(XCUIKeyboardKey.space, modifierFlags: [.command, .shift])
-             
-             if !serviceSelector.waitForExistence(timeout: 2.0) {
-                 if let statusItem = app.statusItems.firstMatch as XCUIElement? {
-                     statusItem.click()
-                     let showMenuItem = app.menuItems["Show Quiper"]
-                     if showMenuItem.waitForExistence(timeout: 2.0) { showMenuItem.click() }
-                 }
-             }
-        }
-        
+        let serviceSelector = app.radioGroups["ServiceSelector"]
         XCTAssertTrue(serviceSelector.waitForExistence(timeout: 5.0), "ServiceSelector should be visible")
         serviceSelector.click() // Ensure focus
         

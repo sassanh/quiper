@@ -17,27 +17,10 @@ final class MainWindowReorderUITests: BaseUITest {
         // Ensure app is active/window visible
         // Usually Launch moves focus.
         
-        // Robust lookup for ServiceSelector (SegmentedControl, RadioGroup, or Any with ID)
-        var serviceSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch
-        
-        if !serviceSelector.waitForExistence(timeout: 5.0) {
-            app.typeKey(XCUIKeyboardKey.space, modifierFlags: [.command, .shift])
-            
-            if !serviceSelector.waitForExistence(timeout: 3.0) {
-                if let statusItem = app.statusItems.firstMatch as XCUIElement? {
-                    statusItem.click()
-                    // Click "Show Quiper" menu item
-                    let showMenuItem = app.menuItems["Show Quiper"]
-                    if showMenuItem.waitForExistence(timeout: 2.0) {
-                        showMenuItem.click()
-                    }
-                }
-            }
-        }
-        
-        XCTAssertTrue(serviceSelector.waitForExistence(timeout: 5.0), "ServiceSelector must exist in Main Window")
+        ensureWindowVisible()
         
         // Ensure focus
+        let serviceSelector = app.radioGroups["ServiceSelector"]
         serviceSelector.click()
         
         // Attempt to access segments as buttons/images

@@ -722,6 +722,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         sessionSel.action = #selector(sessionChanged(_:))
         sessionSel.selectorDelegate = self
         sessionSel.sizeToFit()
+        sessionSel.setAccessibilityIdentifier("SessionSelector")
         drag.addSubview(sessionSel)
         sessionSelector = sessionSel
 
@@ -792,6 +793,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let actionsBtn = NSButton(image: NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "Session Actions")!.withSymbolConfiguration(iconConfig)!, target: self, action: #selector(sessionActionsButtonTapped(_:)))
         actionsBtn.bezelStyle = .texturedRounded
         actionsBtn.contentTintColor = .secondaryLabelColor
+        actionsBtn.refusesFirstResponder = true  // Prevent focus from being stolen from webview
         drag.addSubview(actionsBtn)
         sessionActionsButton = actionsBtn
 
@@ -1404,6 +1406,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         
+        // Always ensure webview is the first responder when main window becomes key
+        if let webView = currentWebView() {
+            window?.makeFirstResponder(webView)
+        }
         focusInputInActiveWebview()
         // Re-enable selector interaction when window gains focus
         collapsibleServiceSelector?.isInteractionEnabled = true
@@ -1636,6 +1642,9 @@ enum Zoom {
 // MARK: - Helper Views
 
 final class HoverTextField: NSTextField {
+    // Prevent focus from being stolen from webview
+    override var acceptsFirstResponder: Bool { false }
+    
     private var trackingArea: NSTrackingArea?
     
     // Explicitly allow setting a larger hit-test view (e.g., the LoadingBorderView)

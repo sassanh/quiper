@@ -13,19 +13,12 @@ final class GeneralShortcutsUITests: BaseUITest {
         // Test Cmd+, from the main window
         ensureWindowVisible()
         
-        // Ensure settings is closed to start clean
-        let settingsWindow = app.windows["Settings"]
-        if settingsWindow.exists {
-             settingsWindow.buttons[XCUIIdentifierCloseWindow].click()
-             XCTAssertTrue(settingsWindow.waitForNonExistence(timeout: 2.0))
-        }
-        
         // Shortcut under test: Cmd+,
         app.typeKey(",", modifierFlags: .command)
         
         // Verification
-        let anyWindow = app.windows.firstMatch
-        XCTAssertTrue(anyWindow.waitForExistence(timeout: 5.0), "Settings window should appear after Cmd+,")
+        let settingsWindow = app.windows["Quiper Settings"]
+        XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5.0), "Settings window should appear after Cmd+,")
     }
     
     func testHideShortcut() {
@@ -51,35 +44,14 @@ final class GeneralShortcutsUITests: BaseUITest {
     func testCloseShortcut() {
         // Test Cmd+w
         ensureWindowVisible()
-        _ = app.windows.firstMatch // Main window is often overlay, strict check needed?
+        _ = app.windows["Quiper Overlay"] // Main window is often overlay, strict check needed?
         
         // Cmd+w should close/hide the active window
         app.typeKey("w", modifierFlags: .command)
         
         // In Quiper, Cmd+w hides the window
         // We can check if the SessionSelector is no longer hittable
-        let sessionSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch
+        let sessionSelector = app.radioGroups["SessionSelector"]
         XCTAssertTrue(sessionSelector.waitForNonExistence(timeout: 2.0), "Main window content should be hidden/closed after Cmd+w")
-    }
-    
-    // MARK: - Helpers
-    
-    private func ensureWindowVisible() {
-        let sessionSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector")
-        
-        if !sessionSelector.firstMatch.exists {
-             let statusItem = app.statusItems.firstMatch
-             if statusItem.waitForExistence(timeout: 5.0) {
-                 statusItem.click()
-                 let showItem = app.menuItems["Show Quiper"]
-                 if showItem.waitForExistence(timeout: 2.0) {
-                     showItem.click()
-                 }
-             }
-        }
-
-        if !waitForElement(sessionSelector.firstMatch, timeout: 5.0) {
-            XCTFail("Main window content (SessionSelector) must be visible for tests")
-        }
     }
 }

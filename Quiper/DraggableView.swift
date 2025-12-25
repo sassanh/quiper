@@ -1,6 +1,8 @@
 import AppKit
 
 public class DraggableView: NSView {
+    // Prevent focus from being stolen from webview
+    public override var acceptsFirstResponder: Bool { false }
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         self.wantsLayer = true

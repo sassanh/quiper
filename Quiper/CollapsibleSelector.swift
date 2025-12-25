@@ -27,6 +27,9 @@ extension CollapsibleSelectorDelegate {
 @MainActor
 class CollapsibleSelector: NSView {
     
+    // Prevent focus from being stolen from webview
+    override var acceptsFirstResponder: Bool { false }
+    
     // MARK: - Properties
     
     /// Enable drag reordering of segments

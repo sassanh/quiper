@@ -40,14 +40,44 @@ final class LaunchShortcutsUITests: BaseUITest {
         // ============================================================
         
         for assignment in assignments {
-            let cell = app.outlines.cells.containing(.staticText, identifier: assignment.engineName).firstMatch
+            let recordButton = app.descendants(matching: .any).matching(identifier: assignment.recorderId).firstMatch
+            
+            // Retry logic for opening the record dialog
+            var dialogOpened = false
+            for attempt in 1...3 {
+                recordButton.tap()
+                
+                // Wait briefly for dialog to appear
+                wait(0.3)
+                
+                // Check if the record dialog is open for THIS specific engine
+                // The overlay shows "ShortcutRecorderTitle" with text "Launch <EngineName>"
+                let expectedTitle = "Launch \(assignment.engineName)"
+                let titleElement = app.descendants(matching: .any).matching(identifier: "ShortcutRecorderTitle").firstMatch
+                if (!titleElement.exists) {
+                    continue;
+                }
 
-            // Find the record button WITHIN the cell
-            let recordButton = cell.descendants(matching: .any).matching(identifier: assignment.recorderId).firstMatch
-            recordButton.tap()
+                let titleValue = titleElement.value as? String ?? ""
+                if titleValue == expectedTitle {
+                    dialogOpened = true
+                    break
+                }
+                
+                if attempt < 3 {
+                    app.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+                    wait(0.2)
+                }
+            }
+            
+            let titleElement = app.descendants(matching: .any).matching(identifier: "ShortcutRecorderTitle").firstMatch
+            let actualValue = titleElement.value as? String ?? "nil"
+            XCTAssertTrue(dialogOpened, "Failed to open record dialog for \(assignment.engineName) after 3 attempts. Title value was: '\(actualValue)'")
+            
             app.typeKey(assignment.letter, modifierFlags: assignment.modifiers)
 
             // Verify "Saved" status message appears
+            let cell = app.outlines.cells.containing(.staticText, identifier: assignment.engineName).firstMatch
             let savedMessage = cell.staticTexts["Saved"]
             XCTAssertTrue(savedMessage.waitForExistence(timeout: 1))
             XCTAssertTrue(savedMessage.waitForNonExistence(timeout: 1))
@@ -69,9 +99,7 @@ final class LaunchShortcutsUITests: BaseUITest {
         // Note: App overlay must be visible. If hidden, type global toggle (Option+Space default) or check logic.
         // Assuming app is visible or hotkeys wake it.
         
-        var serviceSelector = app.segmentedControls["ServiceSelector"]
-        if !serviceSelector.exists { serviceSelector = app.radioGroups["ServiceSelector"] }
-        if !serviceSelector.exists { serviceSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch }
+        let serviceSelector = app.radioGroups["ServiceSelector"]
         
         // Reorder assignments for verification: Test 2, 3, 4 first, then 1.
         // This ensures since we start at Engine 1, we verifying switching *away* then *back* to 1.
@@ -112,16 +140,17 @@ final class LaunchShortcutsUITests: BaseUITest {
         // No need to check shortcutsList.exists, we just opened it.
         
         for assignment in assignments {
-            let cell = app.outlines.cells.containing(.staticText, identifier: assignment.engineName).firstMatch
+            let recordButton = app.descendants(matching: .any).matching(identifier: assignment.recorderId).firstMatch
             
             // The "xmark.circle.fill" is the clear button inside ShortcutButton
             // We need to find the specific one for this assignment
-            // NavigationShortcutsUITests finds "xmark.circle.fill" inside the cell
-            let clearButton = cell.buttons.matching(identifier: "xmark.circle.fill").firstMatch
+            // NavigationShortcutsUITests finds "xmark.circle.fill" inside the record button
+            let clearButton = recordButton.buttons.matching(identifier: "xmark.circle.fill").firstMatch
             
             clearButton.tap()
 
             // Verify "Cleared" status message appears
+            let cell = app.outlines.cells.containing(.staticText, identifier: assignment.engineName).firstMatch
             let clearedMessage = cell.staticTexts["Cleared"]
             XCTAssertTrue(clearedMessage.waitForExistence(timeout: 1))
             XCTAssertTrue(clearedMessage.waitForNonExistence(timeout: 1))

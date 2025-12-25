@@ -46,6 +46,9 @@ class SegmentedControl: NSSegmentedControl {
         set { }
     }
     
+    // Prevent focus from being stolen from webview
+    override var acceptsFirstResponder: Bool { false }
+    
     weak var selectorDelegate: CollapsibleSelectorDelegate?
     
     // Tooltips

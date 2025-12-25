@@ -10,7 +10,7 @@ final class CollapsibleSelectorTests: XCTestCase {
     override func setUp() async throws {
         selector = CollapsibleSelector()
         // Host in a window to enable expansion logic
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+        window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 200, height: 100),
                           styleMask: [.borderless],
                           backing: .buffered,
                           defer: false)

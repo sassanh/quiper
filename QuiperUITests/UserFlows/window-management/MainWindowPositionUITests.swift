@@ -9,47 +9,12 @@ final class MainWindowPositionUITests: BaseUITest {
     func testMainWindowRepositioning() throws {
         // Goal: Verify that the Main Window can be dragged and repositioned
         
-        if let statusItem = app.statusItems.firstMatch as XCUIElement? {
-            statusItem.click()
-            let showMenuItem = app.menuItems["Show Quiper"]
-            if showMenuItem.waitForExistence(timeout: 2.0) { showMenuItem.click() }
-        }
-        
-        // --- Step 1: Ensure Main Window is Visible (via ServiceSelector) ---
-        // We trust ServiceSelector as a reliable indicator of the UI being present.
-        var serviceSelector = app.segmentedControls["ServiceSelector"]
-        if !serviceSelector.exists { serviceSelector = app.radioGroups["ServiceSelector"] }
-        if !serviceSelector.exists { serviceSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector").firstMatch }
-        
-        XCTAssertTrue(serviceSelector.waitForExistence(timeout: 5.0), "ServiceSelector (and thus Main Window) must be visible")
+        ensureWindowVisible()
         
         // --- Step 2: Identify the Window Object ---
         // Now that UI is up, find the window.
         // Try standard "Quiper" or first match.
-        var mainWindow = app.windows["Quiper"]
-        
-        if !mainWindow.exists {
-             // Fallback: Search top-level candidates
-             let topLevel = app.children(matching: .any).allElementsBoundByIndex
-             
-             // Find element containing ServiceSelector (heuristic: frame intersection)
-             let selectorFrame = serviceSelector.frame
-             for element in topLevel {
-                 // Skip small elements (menus etc) - arbitrary threshold
-                 if element.frame.size.width > 200 && element.frame.size.height > 100 {
-                     // Check intersection/containment
-                     if element.frame.contains(selectorFrame) {
-                         mainWindow = element
-                         break
-                     }
-                 }
-             }
-        }
-        
-        if !mainWindow.exists {
-            // Last ditch: Use the first window-like element found in previous loop or just firstMatch
-             mainWindow = app.windows.firstMatch
-        }
+        let mainWindow = app.windows["Quiper Overlay"]
         
         XCTAssertTrue(mainWindow.exists, "Could not identify Main Window element.")
         
@@ -58,13 +23,18 @@ final class MainWindowPositionUITests: BaseUITest {
         
         // serviceSelector is already defined and verified above.
         // Flexible lookup for SessionSelector
-        var sessionSelector = app.radioGroups.allElementsBoundByIndex.first { $0.radioButtons.element(matching: NSPredicate(format: "label == '1'")).exists } ?? app.radioGroups.element(boundBy: 1)
-        
+        let sessionSelector = app.radioGroups["SessionSelector"]
         if !sessionSelector.waitForExistence(timeout: 5.0) {
              // Fail gracefully or try to proceed with heuristic? For now fail.
         }
         XCTAssertTrue(sessionSelector.exists, "SessionSelector missing")
         
+        let serviceSelector = app.radioGroups["ServiceSelector"]
+        if !serviceSelector.waitForExistence(timeout: 5.0) {
+             // Fail gracefully or try to proceed with heuristic? For now fail.
+        }
+        XCTAssertTrue(serviceSelector.exists, "ServiceSelector missing")
+
         let serviceFrame = serviceSelector.frame
         let sessionFrame = sessionSelector.frame
         

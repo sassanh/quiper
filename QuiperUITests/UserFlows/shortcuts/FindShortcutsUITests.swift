@@ -127,25 +127,4 @@ final class FindShortcutsUITests: BaseUITest {
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(findField.waitForNonExistence(timeout: 2.0), "Find bar should close again after Escape")
     }
-    
-    // MARK: - Helpers
-    
-    private func ensureWindowVisible() {
-        let sessionSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector")
-        
-        if !sessionSelector.firstMatch.exists {
-             let statusItem = app.statusItems.firstMatch
-             if statusItem.waitForExistence(timeout: 5.0) {
-                 statusItem.click()
-                 let showItem = app.menuItems["Show Quiper"]
-                 if showItem.waitForExistence(timeout: 2.0) {
-                     showItem.click()
-                 }
-             }
-        }
-
-        if !waitForElement(sessionSelector.firstMatch, timeout: 5.0) {
-            XCTFail("Main window content (SessionSelector) must be visible for tests")
-        }
-    }
 }

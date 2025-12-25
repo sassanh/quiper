@@ -97,28 +97,4 @@ final class ZoomShortcutsUITests: BaseUITest {
         let returnResult = XCTWaiter().wait(for: [returnExpectation], timeout: 2.0)
          XCTAssertEqual(returnResult, .completed, "Zoom label should return to initial value after Zoom Out")
     }
-    
-    // MARK: - Helpers
-    
-    private func ensureWindowVisible() {
-        // The main window is an overlay and may not appear in app.windows.
-        // We check for a UI element inside it to verify visibility.
-        let sessionSelector = app.descendants(matching: .any).matching(identifier: "ServiceSelector")
-        
-        if !sessionSelector.firstMatch.exists {
-             let statusItem = app.statusItems.firstMatch
-             if statusItem.waitForExistence(timeout: 5.0) {
-                 statusItem.click()
-                 
-                 let showItem = app.menuItems["Show Quiper"]
-                 if showItem.waitForExistence(timeout: 2.0) {
-                     showItem.click()
-                 }
-             }
-        }
-
-        if !waitForElement(sessionSelector.firstMatch, timeout: 5.0) {
-            XCTFail("Main window content (SessionSelector) must be visible for tests")
-        }
-    }
 }

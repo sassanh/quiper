@@ -5,14 +5,16 @@ import Carbon
 class ShortcutRecordingState: ObservableObject {
     @Published var isPresenting = false
     @Published var message = ""
+    @Published var title = ""
     
     nonisolated(unsafe) public static var isRecording = false
     
     private var currentSession: CancellableSession?
     
-    func start(session: CancellableSession) {
+    func start(session: CancellableSession, title: String = "") {
         currentSession?.cancel()
         currentSession = session
+        self.title = title
         Self.isRecording = true
         withAnimation {
             isPresenting = true
@@ -27,6 +29,7 @@ class ShortcutRecordingState: ObservableObject {
             isPresenting = false
         }
         message = ""
+        title = ""
     }
     
     func updateMessage(_ newMessage: String) {
@@ -63,7 +66,6 @@ final class StandardShortcutSession: CancellableSession, @unchecked Sendable {
         self.additionalValidation = additionalValidation
         self.reservedActionCheck = reservedActionCheck
         self.completion = completion
-        self.onUpdate("Press the new shortcut")
         attachKeyMonitor()
         attachNotificationObserver()
     }
@@ -159,8 +161,15 @@ struct ShortcutRecordingOverlay: View {
             ZStack {
                 Color.black.opacity(0.45).ignoresSafeArea()
                 VStack(spacing: 12) {
+                    if !state.title.isEmpty {
+                        Text(state.title)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                            .accessibilityIdentifier("ShortcutRecorderTitle")
+                            .accessibilityValue(state.title)
+                    }
                     Text("Press the new shortcut")
-                        .font(.headline)
+                        .font(.body)
                     if !state.message.isEmpty {
                         Text(state.message)
                             .font(.system(.body, design: .monospaced))
@@ -171,7 +180,7 @@ struct ShortcutRecordingOverlay: View {
                         state.cancel()
                     }
                 }
-                .padding(32)
+                .padding(EdgeInsets(top: 32, leading: 32, bottom: 16, trailing: 32))
                 .background(.ultraThinMaterial)
                 .cornerRadius(18)
             }

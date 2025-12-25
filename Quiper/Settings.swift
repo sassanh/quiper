@@ -422,6 +422,14 @@ class SettingsWindow: NSWindow {
         }
         contentViewController = hostingController
     }
+
+    public override func isAccessibilityElement() -> Bool {
+        return true
+    }
+    
+    public override func accessibilityTitle() -> String? {
+        return "Quiper Settings"
+    }
 }
 
 @MainActor

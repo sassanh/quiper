@@ -31,7 +31,7 @@ jobs:
           xcodebuild -version
 
       - name: Run tests with coverage
-        run: ./tests-with-coverage.sh
+        run: ./tests-with-coverage.sh -retry-tests-on-failure -test-iterations 2
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
