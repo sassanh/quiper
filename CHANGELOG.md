@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [2.5.1] - 2025-12-24
+
 ### Fixed
 
 - **Color Settings Saving**: Fixed potential color data corruption when saving custom colors by ensuring safe sRGB conversion (`CodableColor`).
