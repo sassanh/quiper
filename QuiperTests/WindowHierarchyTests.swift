@@ -11,6 +11,12 @@ final class WindowHierarchyTests: XCTestCase {
         controller.window?.setFrame(NSRect(x: 0, y: 0, width: 800, height: 600), display: false)
         controller.window?.makeKeyAndOrderFront(nil)
         
+        // Ensure we start in macOS Effects mode to verify initial hierarchy contains effect view
+        Settings.shared.windowAppearance.light.mode = .macOSEffects
+        Settings.shared.windowAppearance.dark.mode = .macOSEffects
+        NotificationCenter.default.post(name: .windowAppearanceChanged, object: nil)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        
         // 1. Verify Hierarchy
         guard let container = controller.window?.contentView else {
             XCTFail("Window should have a content view")
@@ -28,17 +34,19 @@ final class WindowHierarchyTests: XCTestCase {
         let redColor = CodableColor(red: 1.0, green: 0.0, blue: 0.0, alpha: 1.0)
         Settings.shared.windowAppearance.light.mode = .solidColor
         Settings.shared.windowAppearance.light.backgroundColor = redColor
+        Settings.shared.windowAppearance.dark.mode = .solidColor
+        Settings.shared.windowAppearance.dark.backgroundColor = redColor
         Settings.shared.colorScheme = .light
 
         NotificationCenter.default.post(name: .windowAppearanceChanged, object: nil)
         try await Task.sleep(nanoseconds: 200_000_000) // Wait for update
         
-        XCTAssertTrue(effectView?.isHidden ?? false, "Effect view should be hidden in solid color mode")
+        XCTAssertNil(effectView?.superview, "Effect view should be removed from hierarchy in solid color mode")
         XCTAssertEqual(container.layer?.backgroundColor, NSColor.red.cgColor, "Container layer should have red background")
         // XCTAssertEqual(controller.window?.backgroundColor, .clear, "Window background should be clear") // Assuming implementation details
         
         // 3. Test Blur Mode
-        Settings.shared.windowAppearance.light.mode = .blur
+        Settings.shared.windowAppearance.light.mode = .macOSEffects
         Settings.shared.windowAppearance.light.material = .hudWindow
         
         NotificationCenter.default.post(name: .windowAppearanceChanged, object: nil)

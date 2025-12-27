@@ -118,10 +118,25 @@ enum AppColorScheme: String, Codable, CaseIterable, Identifiable {
 }
 
 enum WindowBackgroundMode: String, Codable, CaseIterable, Identifiable {
-    case blur = "Blur Effect"
+    case macOSEffects = "macOS Effects"
     case solidColor = "Solid Color"
     
     var id: String { rawValue }
+    
+    // Custom decoder to migrate legacy "Blur Effect" value
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        
+        // Handle legacy "Blur Effect" value
+        if rawValue == "Blur Effect" {
+            self = .macOSEffects
+        } else if let mode = WindowBackgroundMode(rawValue: rawValue) {
+            self = mode
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown WindowBackgroundMode: \(rawValue)")
+        }
+    }
 }
 
 enum WindowMaterial: String, Codable, CaseIterable, Identifiable {
@@ -152,17 +167,20 @@ struct ThemeAppearanceSettings: Codable, Equatable {
     var mode: WindowBackgroundMode = .solidColor
     var material: WindowMaterial = .underWindowBackground
     var backgroundColor: CodableColor
+    var blurRadius: Double = 1.0  // 1 = no blur, higher = more blur
     
     static let defaultLight = ThemeAppearanceSettings(
         mode: .solidColor,
         material: .underWindowBackground,
-        backgroundColor: CodableColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 0.85)
+        backgroundColor: CodableColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 0.80),
+        blurRadius: 15.0
     )
     
     static let defaultDark = ThemeAppearanceSettings(
         mode: .solidColor,
         material: .underWindowBackground,
-        backgroundColor: CodableColor(red: 0.26, green: 0.21, blue: 0.25, alpha: 0.51)
+        backgroundColor: CodableColor(red: 0.26, green: 0.20, blue: 0.23, alpha: 0.60),
+        blurRadius: 15.0
     )
 }
 
@@ -786,6 +804,11 @@ class Settings: ObservableObject {
             }
             input-container::before {
               background: transparent !important;
+            }
+            @media (prefers-color-scheme: light) {
+              .response-content * {
+                color: black !important;
+              }
             }
             """
         ),

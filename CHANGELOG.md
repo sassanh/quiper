@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- **Custom Blur Radius**: Implemented precise variable blur control for window background.
+
+### Changed
+
+- **Window Hierarchy**: Updated window hierarchy handling to support dynamic removal of effect views, improving performance and test reliability.
+
 ## [2.5.1] - 2025-12-24
 
 ### Fixed

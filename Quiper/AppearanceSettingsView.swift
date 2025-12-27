@@ -7,8 +7,12 @@ struct AppearanceSettingsView: View {
     // Local state for color/opacity to avoid SwiftUI publishing conflicts - separate for each theme
     @State private var localLightColor: Color = Color(red: 0.95, green: 0.95, blue: 0.95)
     @State private var localLightOpacity: Double = 0.85
+    @State private var localLightBlurRadius: Double = 1.0
     @State private var localDarkColor: Color = Color(red: 0.26, green: 0.21, blue: 0.25)
     @State private var localDarkOpacity: Double = 0.51
+    @State private var localDarkBlurRadius: Double = 1.0
+    
+    private let labelWidth: CGFloat = 230
     
     var body: some View {
         ScrollView {
@@ -79,17 +83,8 @@ struct AppearanceSettingsView: View {
                     }
                 }
                 
-                // Show window settings based on color scheme selection
-                switch settings.colorScheme {
-                case .system:
-                    // Show both light and dark settings
-                    themeWindowSection(theme: .light, title: "Window (Light Theme)")
-                    themeWindowSection(theme: .dark, title: "Window (Dark Theme)")
-                case .light:
-                    themeWindowSection(theme: .light, title: "Window")
-                case .dark:
-                    themeWindowSection(theme: .dark, title: "Window")
-                }
+                // Always show 3-column layout with Light and Dark controls side by side
+                dualThemeWindowSection()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -102,64 +97,189 @@ struct AppearanceSettingsView: View {
         }
     }
     
+    // MARK: - Dual Theme Section (3-column layout for System mode)
+    
     @ViewBuilder
-    private func themeWindowSection(theme: ThemeVariant, title: String) -> some View {
-        let themeSettings = theme == .light ? settings.windowAppearance.light : settings.windowAppearance.dark
-        
-        SettingsSection(title: title) {
-            SettingsRow(
+    private func dualThemeWindowSection() -> some View {
+        SettingsSection(title: "Window") {
+            // Background Style row with Light and Dark pickers
+            DualThemeRow(
                 title: "Background Style",
-                message: "Choose between system blur effect or a solid color."
+                message: "Use macOS system materials or a solid color."
             ) {
-                Picker("", selection: modeBinding(for: theme)) {
+                Picker("", selection: modeBinding(for: .light)) {
                     ForEach(WindowBackgroundMode.allCases) { mode in
                         Text(mode.rawValue).tag(mode)
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 200)
+                .pickerStyle(.menu)
+            } darkContent: {
+                Picker("", selection: modeBinding(for: .dark)) {
+                    ForEach(WindowBackgroundMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
             }
             
-            if themeSettings.mode == .blur {
+            SettingsDivider()
+            
+            // Material/Color row - show appropriate controls based on each theme's mode
+            dualThemeMaterialOrColorRow()
+            
+            // Opacity and Blur Radius rows - only if either theme is using solid color mode
+            if settings.windowAppearance.light.mode == WindowBackgroundMode.solidColor || settings.windowAppearance.dark.mode == WindowBackgroundMode.solidColor {
                 SettingsDivider()
+                dualThemeOpacityRow()
                 
-                SettingsRow(
-                    title: "Material",
-                    message: "Select the blur material style."
-                ) {
-                    Picker("", selection: materialBinding(for: theme)) {
+                SettingsDivider()
+                dualThemeBlurRadiusRow()
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func dualThemeMaterialOrColorRow() -> some View {
+        let lightMode = settings.windowAppearance.light.mode
+        let darkMode = settings.windowAppearance.dark.mode
+        
+        // If both use macOS effects, show material pickers
+        if lightMode == WindowBackgroundMode.macOSEffects && darkMode == WindowBackgroundMode.macOSEffects {
+            DualThemeRow(
+                title: "Material",
+                message: "Select the system material style."
+            ) {
+                Picker("", selection: materialBinding(for: .light)) {
+                    ForEach(WindowMaterial.allCases) { material in
+                        Text(material.rawValue).tag(material)
+                    }
+                }
+                .pickerStyle(.menu)
+            } darkContent: {
+                Picker("", selection: materialBinding(for: .dark)) {
+                    ForEach(WindowMaterial.allCases) { material in
+                        Text(material.rawValue).tag(material)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+        }
+        // If both use solid, show color pickers
+        else if lightMode == WindowBackgroundMode.solidColor && darkMode == WindowBackgroundMode.solidColor {
+            DualThemeRow(
+                title: "Color",
+                message: "Choose the background color."
+            ) {
+                ColorPicker("", selection: colorBinding(for: .light), supportsOpacity: false)
+                    .labelsHidden()
+            } darkContent: {
+                ColorPicker("", selection: colorBinding(for: .dark), supportsOpacity: false)
+                    .labelsHidden()
+            }
+        }
+        // Mixed: one macOS effects, one solid - show appropriate control for each
+        else {
+            DualThemeRow(
+                title: lightMode == WindowBackgroundMode.macOSEffects ? "Material / Color" : "Color / Material",
+                message: "Configure appearance for each theme."
+            ) {
+                if lightMode == WindowBackgroundMode.macOSEffects {
+                    Picker("", selection: materialBinding(for: .light)) {
                         ForEach(WindowMaterial.allCases) { material in
                             Text(material.rawValue).tag(material)
                         }
                     }
                     .pickerStyle(.menu)
-                    .frame(width: 150)
-                }
-            } else {
-                SettingsDivider()
-                
-                SettingsRow(
-                    title: "Color",
-                    message: "Choose the background color."
-                ) {
-                    ColorPicker("", selection: colorBinding(for: theme), supportsOpacity: false)
+                    .frame(width: 130)
+                } else {
+                    ColorPicker("", selection: colorBinding(for: .light), supportsOpacity: false)
                         .labelsHidden()
                 }
-                
-                SettingsDivider()
-                
-                SettingsRow(
-                    title: "Opacity",
-                    message: "Adjust background transparency (0% = fully transparent)."
-                ) {
-                    HStack {
-                        Slider(value: opacityBinding(for: theme), in: 0...1)
-                            .frame(width: 150)
-                        Text("\(Int((theme == .light ? localLightOpacity : localDarkOpacity) * 100))%")
-                            .frame(width: 40, alignment: .trailing)
-                            .font(.system(.body, design: .monospaced))
+            } darkContent: {
+                if darkMode == WindowBackgroundMode.macOSEffects {
+                    Picker("", selection: materialBinding(for: .dark)) {
+                        ForEach(WindowMaterial.allCases) { material in
+                            Text(material.rawValue).tag(material)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .frame(width: 130)
+                } else {
+                    ColorPicker("", selection: colorBinding(for: .dark), supportsOpacity: false)
+                        .labelsHidden()
                 }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func dualThemeOpacityRow() -> some View {
+        let lightMode = settings.windowAppearance.light.mode
+        let darkMode = settings.windowAppearance.dark.mode
+        
+        DualThemeRow(
+            title: "Opacity",
+            message: "Adjust background transparency (0% = fully transparent)."
+        ) {
+            if lightMode == WindowBackgroundMode.solidColor {
+                HStack(spacing: 4) {
+                    Slider(value: opacityBinding(for: .light), in: 0...1)
+                        .frame(maxWidth: 100)
+                    Text("\(Int(localLightOpacity * 100))%")
+                        .font(.system(.caption, design: .monospaced))
+                }
+            } else {
+                Text("—")
+                    .foregroundStyle(.secondary)
+            }
+        } darkContent: {
+            if darkMode == WindowBackgroundMode.solidColor {
+                HStack(spacing: 4) {
+                    Slider(value: opacityBinding(for: .dark), in: 0...1)
+                        .frame(maxWidth: 100)
+                    Text("\(Int(localDarkOpacity * 100))%")
+                        .font(.system(.caption, design: .monospaced))
+                }
+            } else {
+                Text("—")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func dualThemeBlurRadiusRow() -> some View {
+        let lightMode = settings.windowAppearance.light.mode
+        let darkMode = settings.windowAppearance.dark.mode
+        
+        DualThemeRow(
+            title: "Blur Radius",
+            message: "Apply background blur (1 = no blur, higher = more blur)."
+        ) {
+            if lightMode == WindowBackgroundMode.solidColor {
+                HStack(spacing: 4) {
+                    Slider(value: blurRadiusBinding(for: .light), in: 1...50)
+                        .frame(maxWidth: 100)
+                    Text(String(format: "%.0f", localLightBlurRadius))
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 24)
+                }
+            } else {
+                Text("—")
+                    .foregroundStyle(.secondary)
+            }
+        } darkContent: {
+            if darkMode == WindowBackgroundMode.solidColor {
+                HStack(spacing: 4) {
+                    Slider(value: blurRadiusBinding(for: .dark), in: 1...50)
+                        .frame(maxWidth: 100)
+                    Text(String(format: "%.0f", localDarkBlurRadius))
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 24)
+                }
+            } else {
+                Text("—")
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -168,10 +288,12 @@ struct AppearanceSettingsView: View {
         let light = settings.windowAppearance.light.backgroundColor
         localLightColor = Color(red: light.red, green: light.green, blue: light.blue)
         localLightOpacity = light.alpha
+        localLightBlurRadius = settings.windowAppearance.light.blurRadius
         
         let dark = settings.windowAppearance.dark.backgroundColor
         localDarkColor = Color(red: dark.red, green: dark.green, blue: dark.blue)
         localDarkOpacity = dark.alpha
+        localDarkBlurRadius = settings.windowAppearance.dark.blurRadius
     }
     
     private func modeBinding(for theme: ThemeVariant) -> Binding<WindowBackgroundMode> {
@@ -244,6 +366,22 @@ struct AppearanceSettingsView: View {
         )
     }
     
+    private func blurRadiusBinding(for theme: ThemeVariant) -> Binding<Double> {
+        Binding(
+            get: {
+                theme == .light ? localLightBlurRadius : localDarkBlurRadius
+            },
+            set: { newRadius in
+                if theme == .light {
+                    localLightBlurRadius = newRadius
+                } else {
+                    localDarkBlurRadius = newRadius
+                }
+                applyBlurRadiusChange(newRadius, for: theme)
+            }
+        )
+    }
+    
     private var colorSchemeBinding: Binding<AppColorScheme> {
         Binding(
             get: { settings.colorScheme },
@@ -282,6 +420,18 @@ struct AppearanceSettingsView: View {
                 settings.windowAppearance.light.backgroundColor.alpha = newOpacity
             } else {
                 settings.windowAppearance.dark.backgroundColor.alpha = newOpacity
+            }
+            settings.saveSettings()
+            NotificationCenter.default.post(name: .windowAppearanceChanged, object: nil)
+        }
+    }
+    
+    private func applyBlurRadiusChange(_ newRadius: Double, for theme: ThemeVariant) {
+        DispatchQueue.main.async {
+            if theme == .light {
+                settings.windowAppearance.light.blurRadius = newRadius
+            } else {
+                settings.windowAppearance.dark.blurRadius = newRadius
             }
             settings.saveSettings()
             NotificationCenter.default.post(name: .windowAppearanceChanged, object: nil)

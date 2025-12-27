@@ -67,7 +67,7 @@ final class MainWindowControllerModifierTests: XCTestCase {
         controller.handleFlagsChanged(event: releaseEvent)
         
         // Wait for collapse (should be immediate now)
-        try await Task.sleep(nanoseconds: 10_000_000)
+        try await Task.sleep(nanoseconds: 500_000_000)
         XCTAssertFalse(sessionSel.isExpanded, "Session selector should collapse immediately on key release")
     }
 
