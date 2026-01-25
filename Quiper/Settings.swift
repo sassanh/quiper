@@ -172,15 +172,15 @@ struct ThemeAppearanceSettings: Codable, Equatable {
     static let defaultLight = ThemeAppearanceSettings(
         mode: .solidColor,
         material: .underWindowBackground,
-        backgroundColor: CodableColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 0.80),
-        blurRadius: 15.0
+        backgroundColor: CodableColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 0.60),
+        blurRadius: 40.0
     )
     
     static let defaultDark = ThemeAppearanceSettings(
         mode: .solidColor,
         material: .underWindowBackground,
         backgroundColor: CodableColor(red: 0.26, green: 0.20, blue: 0.23, alpha: 0.60),
-        blurRadius: 15.0
+        blurRadius: 40.0
     )
 }
 
@@ -565,76 +565,6 @@ class Settings: ObservableObject {
 
     private let defaultEngines: [Service] = [
         Service(
-            name: "ChatGPT",
-            url: "https://chat.openai.com?referrer=https://github.io/sassanh/quiper",
-            focus_selector: "#prompt-textarea",
-            actionScripts: [
-                Settings.newSessionActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                if (!document.querySelector('[href="/"]')) {
-                  document.querySelector('button[data-testid="open-sidebar-button"]').click();
-                  await waitFor(() => document.querySelector('[href="/"]'), 300);
-                  document.querySelector('[href="/"]').click();
-                  document.querySelector('button[aria-label="Close sidebar"]').click();
-                } else {
-                  document.querySelector('[href="/"]').click();
-                }
-
-                """,
-                Settings.newTemporarySessionActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                if (!document.querySelector('[href="/"]')) {
-                  document.querySelector('button[data-testid="open-sidebar-button"]').click();
-                  await waitFor(() => document.querySelector('[href="/"]'), 300);
-                  document.querySelector('[href="/"]').click();
-                  document.querySelector('button[aria-label="Close sidebar"]').click();
-                } else {
-                  document.querySelector('[href="/"]').click();
-                }
-                
-                await waitFor(() =>
-                  document.querySelector('[aria-label="Turn on temporary chat"]')
-                );
-                const button = document.querySelector(
-                  '[aria-label="Turn on temporary chat"]'
-                );
-                if (!button) { throw new Error("Turn on temporary chat button not found"); }
-                button.click();
-                """,
-                Settings.shareActionID: """
-                const share = document.querySelector('[aria-label="Share"]');
-                if (!share) { throw new Error("Share button not found"); }
-                share.click();
-                """,
-                Settings.historyActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                function getHistoryButton() {
-                  return [
-                    ...document
-                      .querySelector('nav div[data-sidebar-item="true"]')
-                      ?.querySelectorAll("div") || [],
-                  ].find((div) => (div.textContent || "").trim() === "Search chats");
-                }
-
-                if (!getHistoryButton()) {
-                  document.querySelector('button[data-testid="open-sidebar-button"]').click();
-                  await waitFor(() => getHistoryButton(), 300);
-                  getHistoryButton().click();
-                } else {
-                  getHistoryButton().click();
-                }
-                """
-            ], friendDomains: [
-                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)",
-                "^https?://([^/]*\\.)?appleid\\.apple\\.com(/|$)"
-            ],
-            customCSS: """
-            html, body {
-              background-color: transparent !important;
-            }
-            """
-        ),
-        Service(
             name: "Gemini",
             url: "https://gemini.google.com?referrer=https://github.io/sassanh/quiper",
             focus_selector: ".textarea",
@@ -805,10 +735,76 @@ class Settings: ObservableObject {
             input-container::before {
               background: transparent !important;
             }
-            @media (prefers-color-scheme: light) {
-              .response-content * {
-                color: black !important;
-              }
+            """
+        ),
+        Service(
+            name: "ChatGPT",
+            url: "https://chat.openai.com?referrer=https://github.io/sassanh/quiper",
+            focus_selector: "#prompt-textarea",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
+                if (!document.querySelector('[href="/"]')) {
+                  document.querySelector('button[data-testid="open-sidebar-button"]').click();
+                  await waitFor(() => document.querySelector('[href="/"]'), 300);
+                  document.querySelector('[href="/"]').click();
+                  document.querySelector('button[aria-label="Close sidebar"]').click();
+                } else {
+                  document.querySelector('[href="/"]').click();
+                }
+
+                """,
+                Settings.newTemporarySessionActionID: """
+                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
+                if (!document.querySelector('[href="/"]')) {
+                  document.querySelector('button[data-testid="open-sidebar-button"]').click();
+                  await waitFor(() => document.querySelector('[href="/"]'), 300);
+                  document.querySelector('[href="/"]').click();
+                  document.querySelector('button[aria-label="Close sidebar"]').click();
+                } else {
+                  document.querySelector('[href="/"]').click();
+                }
+                
+                await waitFor(() =>
+                  document.querySelector('[aria-label="Turn on temporary chat"]')
+                );
+                const button = document.querySelector(
+                  '[aria-label="Turn on temporary chat"]'
+                );
+                if (!button) { throw new Error("Turn on temporary chat button not found"); }
+                button.click();
+                """,
+                Settings.shareActionID: """
+                const share = document.querySelector('[aria-label="Share"]');
+                if (!share) { throw new Error("Share button not found"); }
+                share.click();
+                """,
+                Settings.historyActionID: """
+                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
+                function getHistoryButton() {
+                  return [
+                    ...document
+                      .querySelector('nav div[data-sidebar-item="true"]')
+                      ?.querySelectorAll("div") || [],
+                  ].find((div) => (div.textContent || "").trim() === "Search chats");
+                }
+
+                if (!getHistoryButton()) {
+                  document.querySelector('button[data-testid="open-sidebar-button"]').click();
+                  await waitFor(() => getHistoryButton(), 300);
+                  getHistoryButton().click();
+                } else {
+                  getHistoryButton().click();
+                }
+                """
+            ],
+            friendDomains: [
+                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)",
+                "^https?://([^/]*\\.)?appleid\\.apple\\.com(/|$)"
+            ],
+            customCSS: """
+            html, body {
+              background-color: transparent !important;
             }
             """
         ),
@@ -920,40 +916,6 @@ class Settings: ObservableObject {
                 const home = document.querySelector('[href="/"]');
                 if (!home) { throw new Error("Home link not found"); }
                 home.click();
-
-                const modelButton = document.querySelector('button[aria-label="Select a model"]');
-                if (modelButton && modelButton.getAttribute("data-state") === "closed") {
-                  modelButton.click();
-                }
-
-                await waitFor(() =>
-                  document.querySelector("[aria-labelledby='model-selector-0-button']")
-                );
-
-                const container = document.querySelector(
-                  "[aria-labelledby='model-selector-0-button']"
-                );
-                const buttons = container
-                  ? [...container.querySelectorAll("button")]
-                  : [];
-
-                const target = buttons.find((button) => {
-                  const hasLabel = [...button.querySelectorAll("div")].some((div) =>
-                    (div.textContent || "").trim().endsWith("Temporary Chat")
-                  );
-                  if (!hasLabel) { return false; }
-
-                  const nestedToggle = [...button.querySelectorAll("button")].find(
-                    (nested) => nested !== button
-                  );
-                  return nestedToggle && nestedToggle.getAttribute("data-state") === "checked";
-                });
-
-                if (target) {
-                  target.click();
-                } else if (modelButton && modelButton.getAttribute("data-state") === "open") {
-                  modelButton.click();
-                }
                 """,
                 Settings.newTemporarySessionActionID: """
                 \(MainWindowController.jsTools["waitFor"] ?? "undefined");
@@ -961,39 +923,21 @@ class Settings: ObservableObject {
                 if (!home) { throw new Error("Home link not found"); }
                 home.click();
 
-                const modelButton = document.querySelector('button[aria-label="Select a model"]');
-                if (modelButton && modelButton.getAttribute("data-state") === "closed") {
-                  modelButton.click();
-                }
-
-                await waitFor(() =>
-                  document.querySelector("[aria-labelledby='model-selector-0-button']")
-                );
-
-                const container = document.querySelector(
-                  "[aria-labelledby='model-selector-0-button']"
-                );
-                const buttons = container
-                  ? [...container.querySelectorAll("button")]
-                  : [];
-
-                const target = buttons.find((button) => {
-                  const hasLabel = [...button.querySelectorAll("div")].some((div) =>
+                function clickOnTemporaryButton() {
+                  const isTemporary = [...document.querySelectorAll("div")].some((div) =>
                     (div.textContent || "").trim().endsWith("Temporary Chat")
                   );
-                  if (!hasLabel) { return false; }
 
-                  const nestedToggle = [...button.querySelectorAll("button")].find(
-                    (nested) => nested !== button
-                  );
-                  return !nestedToggle || nestedToggle.getAttribute("data-state") !== "checked";
-                });
+                  console.log(isTemporary);
 
-                if (target) {
-                  target.click();
-                } else if (modelButton && modelButton.getAttribute("data-state") === "open") {
-                  modelButton.click();
+                  if (!isTemporary) {
+                    const temporaryButton = document.getElementById("temporary-chat-button");
+                    if (!temporaryButton) { throw new Error("Temporary button not found"); }
+                    temporaryButton.click();
+                  }
                 }
+
+                requestAnimationFrame(clickOnTemporaryButton);
                 """,
                 Settings.shareActionID: """
                 const shareButton = [...document.querySelectorAll('[aria-label="Copy"]')].at(-1).querySelector("button");
@@ -1005,7 +949,7 @@ class Settings: ObservableObject {
                 """
             ],
             customCSS: """
-            div.app>div, div.bg-white:has(form #chat-input-container) {
+            body, div.app>div, div.bg-white:has(form #chat-input-container) {
               background-color: transparent !important;
             }
             """
@@ -1019,8 +963,11 @@ class Settings: ObservableObject {
                 window.location = "/";
                 """,
             ],
+            friendDomains: [
+                ".*"
+            ],
             customCSS: """
-            body {
+            body, div[style*="max-width:100%;"] {
               background-color: transparent !important;
             }
             """

@@ -34,7 +34,7 @@ struct AppearanceSettingsTests {
         let settings = ThemeAppearanceSettings.defaultLight
         #expect(settings.mode == .solidColor)
         #expect(settings.material == .underWindowBackground)
-        #expect(settings.backgroundColor.alpha == 0.80)
+        #expect(settings.backgroundColor.alpha == 0.60)
     }
     
     @Test func themeAppearanceSettings_DefaultDark() {

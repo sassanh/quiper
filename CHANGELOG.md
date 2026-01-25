@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Compability: Update open-webui actions to be compatible with the 0.7.2 version
+
 ## [2.6.0] - 2025-12-27
 
 ### Added
