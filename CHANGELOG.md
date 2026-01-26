@@ -5,6 +5,7 @@
 ### Fixed
 
 - Compability: Update open-webui actions to be compatible with the 0.7.2 version
+- Compability: Update Gemini actions to be compatible with the latest Gemini UI
 
 ## [2.6.0] - 2025-12-27
 

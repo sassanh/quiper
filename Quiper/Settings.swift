@@ -570,7 +570,7 @@ class Settings: ObservableObject {
             focus_selector: ".textarea",
             actionScripts: [
                 Settings.newSessionActionID: """
-                const newChat = document.querySelector('button[aria-label="New chat"]');
+                const newChat = document.querySelector('a[aria-label="New chat"]');
                 if (!newChat || newChat.disabled) { throw new Error("New chat button not found"); }
                 newChat.click();
                 """,
@@ -663,7 +663,7 @@ class Settings: ObservableObject {
                 }
 
                 async function newSession() {
-                  const newChatButton = document.querySelector('button[aria-label="New chat"]');
+                  const newChatButton = document.querySelector('a[aria-label="New chat"]');
                   if (!newChatButton) {
                     mainMenuButton.click();
                     throw new Error("New chat button not found");
