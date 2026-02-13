@@ -933,10 +933,3 @@ private let statusKeyEquivalentMap: [UInt16: String] = [
     UInt16(kVK_ANSI_KeypadEquals): "="
 ]
 
-private final class InteractionShieldView: NSView {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func hitTest(_ point: NSPoint) -> NSView? { self }
-    override func mouseDown(with event: NSEvent) {}
-    override func rightMouseDown(with event: NSEvent) {}
-    override func otherMouseDown(with event: NSEvent) {}
-}

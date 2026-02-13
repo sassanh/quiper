@@ -738,6 +738,96 @@ class Settings: ObservableObject {
             """
         ),
         Service(
+            name: "Claude",
+            url: "https://claude.ai?referrer=https://github.io/sassanh/quiper",
+            focus_selector: "div[contenteditable='true']",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                const newChat = document.querySelector('a[href="/new"]');
+                if (!newChat) { throw new Error("New chat button not found"); }
+                newChat.click();
+                """,
+                Settings.newTemporarySessionActionID: """
+                throw new Error("Temporary chat not supported on Claude.ai");
+                """,
+                Settings.shareActionID: """
+                const buttons = [...document.querySelectorAll('button')];
+                const shareButton = buttons.find(b => b.textContent.includes('Share'));
+                if (!shareButton) { throw new Error("Share button not found"); }
+                shareButton.click();
+                """,
+                Settings.historyActionID: """
+                const sidebarButton = document.querySelector('button[aria-label="Open sidebar"]');
+                if (sidebarButton) { sidebarButton.click(); }
+                """
+            ],
+            friendDomains: [
+                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
+            ],
+            customCSS: """
+            body, .bg-bg-500, .bg-bg-400, .bg-bg-300, .bg-bg-200, .bg-bg-100 {
+              background-color: transparent !important;
+            }
+            """
+        ),
+        Service(
+            name: "Grok",
+            url: "https://grok.com?referrer=https://github.io/sassanh/quiper",
+            focus_selector: "textarea[aria-label='Ask Grok anything'],div[contenteditable=true]",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                const newChatButton = document
+                  .querySelector('[href="/"]:not([aria-label="Home page"])');
+                if (!newChatButton) {
+                  throw new Error("New Chat button not found");
+                }
+                newChatButton.click();
+                """,
+                Settings.newTemporarySessionActionID: """
+                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
+                document
+                  .querySelector('[href="/"]:not([aria-label="Home page"])')
+                  ?.click();
+
+                await waitFor(() =>
+                  document.querySelector('[aria-label="Switch to Private Chat"]')
+                );
+                const button = document.querySelector(
+                  '[aria-label="Switch to Private Chat"]'
+                );
+                if (!button) { throw new Error("Switch to Private Chat button not found"); }
+                button.click();
+                """,
+                Settings.shareActionID: """
+                const share = document.querySelector('button[aria-label="Create share link"]');
+                if (!share) { throw new Error("Create share link button not found"); }
+                share.click();
+                """,
+                Settings.historyActionID: """
+                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
+                if (!document.querySelector('div[role="button"][aria-label="History"]')) {
+                  document.querySelector('button[aria-label="Toggle sidebar"]').click();
+                  await waitFor(() =>
+                    document.querySelector('div[role="button"][aria-label="History"]')
+                  );
+                }
+                document.querySelector('div[role="button"][aria-label="History"]').click();
+                """
+            ],
+            friendDomains: [
+                "^https?://([^/]*\\.)?x\\.com(/|$)",
+                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
+            ],
+            customCSS: """
+            body {
+              background-color: transparent !important;
+            }
+            .chat-input-backdrop {
+              background-image: none;
+            }
+            """
+        ),
+        Service(
             name: "ChatGPT",
             url: "https://chat.openai.com?referrer=https://github.io/sassanh/quiper",
             focus_selector: "#prompt-textarea",
@@ -805,63 +895,6 @@ class Settings: ObservableObject {
             customCSS: """
             html, body {
               background-color: transparent !important;
-            }
-            """
-        ),
-        Service(
-            name: "Grok",
-            url: "https://grok.com?referrer=https://github.io/sassanh/quiper",
-            focus_selector: "textarea[aria-label='Ask Grok anything'],div[contenteditable=true]",
-            actionScripts: [
-                Settings.newSessionActionID: """
-                const newChatButton = document
-                  .querySelector('[href="/"]:not([aria-label="Home page"])');
-                if (!newChatButton) {
-                  throw new Error("New Chat button not found");
-                }
-                newChatButton.click();
-                """,
-                Settings.newTemporarySessionActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                document
-                  .querySelector('[href="/"]:not([aria-label="Home page"])')
-                  ?.click();
-
-                await waitFor(() =>
-                  document.querySelector('[aria-label="Switch to Private Chat"]')
-                );
-                const button = document.querySelector(
-                  '[aria-label="Switch to Private Chat"]'
-                );
-                if (!button) { throw new Error("Switch to Private Chat button not found"); }
-                button.click();
-                """,
-                Settings.shareActionID: """
-                const share = document.querySelector('button[aria-label="Create share link"]');
-                if (!share) { throw new Error("Create share link button not found"); }
-                share.click();
-                """,
-                Settings.historyActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                if (!document.querySelector('div[role="button"][aria-label="History"]')) {
-                  document.querySelector('button[aria-label="Toggle sidebar"]').click();
-                  await waitFor(() =>
-                    document.querySelector('div[role="button"][aria-label="History"]')
-                  );
-                }
-                document.querySelector('div[role="button"][aria-label="History"]').click();
-                """
-            ],
-            friendDomains: [
-                "^https?://([^/]*\\.)?x\\.com(/|$)",
-                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
-            ],
-            customCSS: """
-            body {
-              background-color: transparent !important;
-            }
-            .chat-input-backdrop {
-              background-image: none;
             }
             """
         ),
@@ -1119,21 +1152,15 @@ class Settings: ObservableObject {
                  
                  let overrideFileObj = directoryURL.appendingPathComponent(overrideFilename)
                  
-                 let html: String
                  if fileManager.fileExists(atPath: overrideFileObj.path) {
-                     if let content = try? String(contentsOf: overrideFileObj, encoding: .utf8) {
-                         html = content
-                     } else {
-                         html = "<html><head><title>Content \(index)</title></head><body><h1>Content \(index)</h1></body></html>"
-                     }
+                     return Service(name: "Engine \(index)", url: overrideFileObj.absoluteString, focus_selector: "")
                  } else {
                      // Use "Content X" to distinguish from Service Name "Engine X" in UI tests
                      // Add <title> for robust accessibility-based verification
-                     html = "<html><head><title>Content \(index)</title></head><body><h1>Content \(index)</h1></body></html>"
+                     let html = "<html><head><title>Content \(index)</title></head><body><h1>Content \(index)</h1></body></html>"
+                     let dataURL = "data:text/html;charset=utf-8," + html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+                     return Service(name: "Engine \(index)", url: dataURL, focus_selector: "")
                  }
-                 
-                 let dataURL = "data:text/html;charset=utf-8," + html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
-                 return Service(name: "Engine \(index)", url: dataURL, focus_selector: "")
              }
              return (PersistedSettings(services: testEngines,
                                        hotkey: nil,
@@ -1157,19 +1184,13 @@ class Settings: ObservableObject {
 
                  let overrideFileObj = directoryURL.appendingPathComponent(overrideFilename)
                  
-                 let html: String
                  if fileManager.fileExists(atPath: overrideFileObj.path) {
-                     if let content = try? String(contentsOf: overrideFileObj, encoding: .utf8) {
-                         html = content
-                     } else {
-                         html = "<html><head><title>Content \(index)</title></head><body><h1>Content \(index)</h1></body></html>"
-                     }
+                     return Service(name: "Engine \(index)", url: overrideFileObj.absoluteString, focus_selector: "")
                  } else {
-                     html = "<html><head><title>Content \(index)</title></head><body><h1>Content \(index)</h1></body></html>"
+                     let html = "<html><head><title>Content \(index)</title></head><body><h1>Content \(index)</h1></body></html>"
+                     let dataURL = "data:text/html;charset=utf-8," + html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+                     return Service(name: "Engine \(index)", url: dataURL, focus_selector: "")
                  }
-                 
-                 let dataURL = "data:text/html;charset=utf-8," + html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
-                 return Service(name: "Engine \(index)", url: dataURL, focus_selector: "")
              }
              return (PersistedSettings(services: testEngines,
                                        hotkey: nil,

@@ -1470,6 +1470,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
+        // If we have child windows (like login popups), don't redirect focus
+        if let childWindows = window?.childWindows, !childWindows.isEmpty {
+            return
+        }
+
         // If settings window is visible, redirect focus to it
         let settingsWindow = AppDelegate.sharedSettingsWindow
         if settingsWindow.isVisible {

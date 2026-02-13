@@ -2,8 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Added "Claude" to the list of service templates.
+
 ### Fixed
 
+- **Modal Popup Stability**: Fixed a crash that occurred when closing modal popup windows (e.g., Google login windows in Claude or Grok).
+- **Focus Restoration**: Improved reliability of restoring focus to the main window after closing a popup or the Settings window.
 - Compability: Update open-webui actions to be compatible with the 0.7.2 version
 - Compability: Update Gemini actions to be compatible with the latest Gemini UI
 

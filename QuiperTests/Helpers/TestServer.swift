@@ -25,6 +25,7 @@ class TestServer {
         <body>
             <textarea id="prompt-textarea"></textarea>
             <button id="new-chat-btn" onclick="document.getElementById('status').innerText = 'New Chat Started'">New Chat</button>
+            <button id="open-popup-btn" onclick="window.open('subpage.html', 'popup', 'width=300,height=300')">Open Popup</button>
             <div id="status"></div>
             <a id="internal-link" href="subpage.html">Internal Link</a>
             <a id="external-link" href="https://example.com">External Link</a>

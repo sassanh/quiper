@@ -215,22 +215,29 @@ final class WebViewManager: NSObject {
     }
     
     private func isInternalLink(target: URL, service: URL, friendPatterns: [String]) -> Bool {
-        guard let targetHost = target.host?.lowercased(),
-              let serviceHost = service.host?.lowercased() else {
-            return false
-        }
+        let targetHost = target.host?.lowercased()
+        let serviceHost = service.host?.lowercased()
         
-        if targetHost == serviceHost { return true }
-        
-        let rootServiceHost = serviceHost.hasPrefix("www.") ? String(serviceHost.dropFirst(4)) : serviceHost
-        if targetHost == rootServiceHost || targetHost.hasSuffix("." + rootServiceHost) {
+        if let tHost = targetHost, let sHost = serviceHost {
+            if tHost == sHost { return true }
+            
+            let rootServiceHost = sHost.hasPrefix("www.") ? String(sHost.dropFirst(4)) : sHost
+            if tHost == rootServiceHost || tHost.hasSuffix("." + rootServiceHost) {
+                return true
+            }
+        } else if target.scheme == service.scheme && (target.isFileURL || target.scheme == "data") {
+            // For file:// and data: URLs, consider them internal if schemes match (common in tests)
+            return true
+        } else if target.isFileURL && ProcessInfo.processInfo.arguments.contains("--uitesting") {
+            // During UI testing, permit all local file popups to avoid Safari redirection
             return true
         }
 
+        let targetString = target.absoluteString
         for pattern in friendPatterns {
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
-            let range = NSRange(location: 0, length: target.absoluteString.utf16.count)
-            if regex.firstMatch(in: target.absoluteString, options: [], range: range) != nil {
+            let range = NSRange(location: 0, length: targetString.utf16.count)
+            if regex.firstMatch(in: targetString, options: [], range: range) != nil {
                 return true
             }
         }
@@ -239,13 +246,100 @@ final class WebViewManager: NSObject {
 }
 
 // MARK: - WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
+
+private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
+    private var shield: InteractionShieldView?
+    private weak var parentWin: NSWindow?
+    private var isCleaningUp = false
+    
+    init(contentRect: NSRect, parentWindow: NSWindow) {
+        self.parentWin = parentWindow
+        super.init(contentRect: contentRect, styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        
+        self.level = .floating
+        self.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        self.isReleasedWhenClosed = false // Critical: Prevent double-release when used with addChildWindow
+        self.delegate = self
+        
+        parentWindow.addChildWindow(self, ordered: .above)
+        
+        // Center relative to parent
+        let parentFrame = parentWindow.frame
+        let x = parentFrame.midX - contentRect.width / 2
+        let y = parentFrame.midY - contentRect.height / 2
+        self.setFrameOrigin(NSPoint(x: x, y: y))
+        
+        if let contentView = parentWindow.contentView {
+            let shieldView = InteractionShieldView(frame: contentView.bounds)
+            shieldView.autoresizingMask = [.width, .height]
+            contentView.addSubview(shieldView, positioned: .above, relativeTo: nil)
+            self.shield = shieldView
+        }
+    }
+    
+    private func cleanup() {
+        guard !isCleaningUp else { return }
+        isCleaningUp = true
+        
+        // 1. Remove shield and restore parent window interactivity synchronously
+        shield?.removeFromSuperview()
+        shield = nil
+        
+        if let parent = parentWin, let contentView = parent.contentView {
+            contentView.subviews.filter { $0 is InteractionShieldView }.forEach { $0.removeFromSuperview() }
+        }
+        
+        // 2. Nil out webview delegates to avoid crashes from WebKit callbacks during deallocation
+        contentView?.subviews.forEach {
+            if let webView = $0 as? WKWebView {
+                webView.uiDelegate = nil
+                webView.navigationDelegate = nil
+                webView.stopLoading()
+            }
+        }
+        
+        // 3. Detach from parent
+        if let parent = parentWin {
+            parent.removeChildWindow(self)
+            
+            // 4. Asynchronously restore focus to avoid AppKit re-entrancy issues
+            DispatchQueue.main.async {
+                parent.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
+    }
+    
+    func windowWillClose(_ notification: Notification) {
+        cleanup()
+    }
+}
+
+private final class PopupUIDelegate: NSObject, WKUIDelegate {
+    static let shared = PopupUIDelegate()
+    
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if let url = navigationAction.request.url {
+            webView.load(URLRequest(url: url))
+        }
+        return nil
+    }
+    
+    func webViewDidClose(_ webView: WKWebView) {
+        webView.window?.close()
+    }
+}
+
 extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     
     @MainActor
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        let isUITesting = ProcessInfo.processInfo.arguments.contains("--uitesting")
+        let allowedSchemes = isUITesting ? ["http", "https", "file"] : ["http", "https"]
+        
         guard let url = navigationAction.request.url,
               let scheme = url.scheme?.lowercased(),
-              ["http", "https"].contains(scheme),
+              allowedSchemes.contains(scheme),
               let serviceURL = serviceURL(for: webView),
               let service = services.first(where: { $0.url == serviceURL.absoluteString }) else {
             if let url = navigationAction.request.url {
@@ -257,7 +351,24 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         let isFriend = isInternalLink(target: url, service: serviceURL, friendPatterns: service.friendDomains)
         
         if isFriend {
-            webView.load(URLRequest(url: url))
+            guard let parentWindow = webView.window else { return nil }
+            
+            // Create a modal-like window for popups (like Google Login)
+            let popupWindow = ModalPopupWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
+                parentWindow: parentWindow
+            )
+            popupWindow.center()
+            popupWindow.title = "Login - \(service.name)"
+            
+            let popupWebView = WKWebView(frame: popupWindow.contentView!.bounds, configuration: configuration)
+            popupWebView.autoresizingMask = [.width, .height]
+            popupWebView.uiDelegate = PopupUIDelegate.shared
+            
+            popupWindow.contentView?.addSubview(popupWebView)
+            popupWindow.makeKeyAndOrderFront(nil)
+            
+            return popupWebView
         } else {
             NSWorkspace.shared.open(url)
         }

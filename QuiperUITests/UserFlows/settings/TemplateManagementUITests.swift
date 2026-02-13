@@ -47,7 +47,7 @@ final class TemplateManagementUITests: BaseUITest {
         XCTAssertEqual(app.outlines.firstMatch.outlineRows.count, 0, "Engines should be empty")
         
         // --- Step 2: Add One by One ---
-        let engineTemplates = ["ChatGPT", "Gemini", "Grok", "X", "Ollama", "Google"]
+        let engineTemplates = ["Gemini", "Claude", "Grok", "ChatGPT", "X", "Ollama", "Google"]
         
         let addServiceBtn = app.descendants(matching: .any).matching(identifier: "Add Service").firstMatch
         
@@ -71,7 +71,7 @@ final class TemplateManagementUITests: BaseUITest {
                 }
             }
         }
-        XCTAssertEqual(app.outlines.firstMatch.outlineRows.count, 6, "Should have added 6 services")
+        XCTAssertEqual(app.outlines.firstMatch.outlineRows.count, 7, "Should have added 7 services")
         
         // Add Actions from Templates
         switchToSettingsTab("Shortcuts")
@@ -138,7 +138,7 @@ final class TemplateManagementUITests: BaseUITest {
              btn.click()
         }
         
-        XCTAssertEqual(app.outlines.firstMatch.outlineRows.count, 6, "Step 4: Should have 6 engines")
+        XCTAssertEqual(app.outlines.firstMatch.outlineRows.count, 7, "Step 4: Should have 7 engines")
         
         // Actions
         switchToSettingsTab("Shortcuts")

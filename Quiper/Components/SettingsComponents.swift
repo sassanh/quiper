@@ -1,4 +1,13 @@
 import SwiftUI
+import AppKit
+
+public final class InteractionShieldView: NSView {
+    public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    public override func hitTest(_ point: NSPoint) -> NSView? { self }
+    public override func mouseDown(with event: NSEvent) {}
+    public override func rightMouseDown(with event: NSEvent) {}
+    public override func otherMouseDown(with event: NSEvent) {}
+}
 
 struct SettingsSection<Content: View>: View {
     var title: String
