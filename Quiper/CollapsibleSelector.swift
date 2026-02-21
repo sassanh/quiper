@@ -304,6 +304,7 @@ class CollapsibleSelector: NSView {
         }
         
         let container = NSVisualEffectView(frame: control.bounds)
+        container.setAccessibilityIdentifier("ExpandedSelectorPanel")
         container.material = .popover // Popover usually supports active state better than menu
         container.state = .active
         container.wantsLayer = true
@@ -311,6 +312,8 @@ class CollapsibleSelector: NSView {
         container.layer?.masksToBounds = true
         container.addSubview(control)
         panel.contentView = container
+        
+        control.setAccessibilityIdentifier("ExpandedSegmentedControl")
         
         // 5. Calculate Position (Center Alignment)
         let collapsedRect = window.convertToScreen(convert(bounds, to: nil))

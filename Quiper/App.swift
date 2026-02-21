@@ -29,13 +29,13 @@ final class AppController: NSObject, NSWindowDelegate {
     private let windowController: MainWindowControlling
     let hotkeyManager: HotkeyManaging
     let engineHotkeyManager: EngineHotkeyManaging
-    private let notificationDispatcher: NotificationDispatching
-    private var lastNonQuiperApplication: NSRunningApplication?
-    private let testDataStore: WKWebsiteDataStore
+        private let notificationDispatcher: NotificationDispatching
+        private var lastNonQuiperApplication: NSRunningApplication?
+        private let testDataStore: WKWebsiteDataStore
+        private var screenshotPromptController: ScreenshotPromptController?
+        
+        init(windowController: MainWindowControlling? = nil,
     
-    
-    
-    init(windowController: MainWindowControlling? = nil,
          hotkeyManager: HotkeyManaging? = nil,
          engineHotkeyManager: EngineHotkeyManaging? = nil,
          notificationDispatcher: NotificationDispatching? = nil) {
@@ -67,6 +67,10 @@ final class AppController: NSObject, NSWindowDelegate {
     
     
     func start() {
+        if ProcessInfo.processInfo.arguments.contains("--interactive-mode") {
+            screenshotPromptController = ScreenshotPromptController()
+            showScreenshotPrompt()
+        }
         
         if Settings.shared.dockVisibility == .always {
             NSApp.setActivationPolicy(.regular)
@@ -75,7 +79,19 @@ final class AppController: NSObject, NSWindowDelegate {
         registerOverlayHotkey()
         registerEngineHotkeys()
         UpdateManager.shared.handleLaunchIfNeeded()
+    }
+    
+    private func showScreenshotPrompt() {
+        let alert = NSAlert()
+        alert.messageText = "Screenshot Generator (Interactive)"
+        alert.informativeText = "The app is ready. Click 'Go' to start.\n\nFor each screenshot, a small floating window will appear. You can interact with the app, and click 'Take Screenshot' when you're ready."
+        alert.addButton(withTitle: "Go")
+        alert.addButton(withTitle: "Cancel")
         
+        let response = alert.runModal()
+        if response != .alertFirstButtonReturn {
+            NSApp.terminate(nil)
+        }
     }
     
     

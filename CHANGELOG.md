@@ -4,7 +4,18 @@
 
 ### Added
 
+- **Screenshot Generation**: Introduced a robust, automated screenshot generation system for marketing and documentation.
+  - Added `generate-screenshots.sh` script to automate the entire flow: capture, WebP conversion (80% quality), and asset deployment.
+  - New `ScreenshotGenerator` UI test with both Interactive (human-verified) and Non-Interactive (automated) modes.
+  - Added `ScreenshotPromptController` for a floating "Take Screenshot" UI during interactive capture.
+  - Added `--screenshot-mode` argument to force a 640x480 window size optimized for documentation.
 - Added "Claude" to the list of service templates.
+
+### Changed
+
+- **Improved Selector Accessibility**: Added dedicated accessibility identifiers to `CollapsibleSelector` and `LoadingBorderView` for more reliable UI testing.
+- **Claude Action Scripts**: Updated Claude's default action scripts for better compatibility with its latest UI, including improved "New Session" and "Temporary Session" (incognito) logic.
+- **JavaScript Execution**: Switched custom action execution to `.page` content world for better compatibility with modern web app security models.
 
 ### Fixed
 

@@ -35,6 +35,7 @@ class LoadingBorderView: NSView {
     private func setupView() {
         wantsLayer = true
         layer?.masksToBounds = false
+        setAccessibilityIdentifier("LoadingIndicator")
     }
     
     override func layout() {
@@ -105,6 +106,7 @@ class LoadingBorderView: NSView {
         guard !isAnimating else { return }
         isAnimating = true
         isHidden = false
+        setAccessibilityElement(true)
         updateLayers()
     }
     
@@ -112,6 +114,7 @@ class LoadingBorderView: NSView {
         guard isAnimating else { return }
         isAnimating = false
         isHidden = true
+        setAccessibilityElement(false)
         containerLayer?.removeFromSuperlayer()
         containerLayer = nil
     }

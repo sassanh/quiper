@@ -743,12 +743,35 @@ class Settings: ObservableObject {
             focus_selector: "div[contenteditable='true']",
             actionScripts: [
                 Settings.newSessionActionID: """
+                const url = new URL(window.location.href);
+                if (url.searchParams.has('incognito')) {
+                  url.searchParams.delete('incognito');
+                  window.history.pushState(null, "", url.pathname + url.search + url.hash);
+                }
                 const newChat = document.querySelector('a[href="/new"]');
-                if (!newChat) { throw new Error("New chat button not found"); }
-                newChat.click();
+                if (newChat) {
+                  newChat.click();
+                } else {
+                  window.location.href = '/new';
+                }
                 """,
                 Settings.newTemporarySessionActionID: """
-                throw new Error("Temporary chat not supported on Claude.ai");
+                const url = new URL(window.location.href);
+
+                function openIncognito() {
+                  console.log(location);
+                  window.history.pushState(null, "", window.location.pathname + "?incognito" + window.location.hash);
+                }
+
+                if (url.search.includes('incognito')) {
+                  url.searchParams.delete('incognito');
+                  history.pushState(null, "", url.pathname + url.search + url.hash);
+                  const newChat = document.querySelector('a[href="/new"]');
+                  if (newChat) newChat.click();
+                  window.requestAnimationFrame(openIncognito);
+                } else {
+                  openIncognito();
+                }
                 """,
                 Settings.shareActionID: """
                 const buttons = [...document.querySelectorAll('button')];
@@ -757,7 +780,7 @@ class Settings: ObservableObject {
                 shareButton.click();
                 """,
                 Settings.historyActionID: """
-                const sidebarButton = document.querySelector('button[aria-label="Open sidebar"]');
+                const sidebarButton = document.querySelector('button[aria-label="Open sidebar"]') || document.querySelector('button[aria-label="Close sidebar"]');
                 if (sidebarButton) { sidebarButton.click(); }
                 """
             ],
@@ -765,7 +788,7 @@ class Settings: ObservableObject {
                 "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
             ],
             customCSS: """
-            body, .bg-bg-500, .bg-bg-400, .bg-bg-300, .bg-bg-200, .bg-bg-100 {
+            body, .bg-bg-500, .bg-bg-400, .bg-bg-300 {
               background-color: transparent !important;
             }
             """

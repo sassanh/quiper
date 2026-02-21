@@ -72,15 +72,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     
     init(services: [Service]? = nil) {
         let isUITesting = ProcessInfo.processInfo.arguments.contains("--uitesting")
-        let windowWidth: CGFloat = isUITesting ? 900 : 550
+        let isScreenshotMode = ProcessInfo.processInfo.arguments.contains("--screenshot-mode")
+        let windowWidth: CGFloat = isScreenshotMode ? 640 : (isUITesting ? 900 : 550)
+        let windowHeight: CGFloat = isScreenshotMode ? 480 : 620
         
-        let height: CGFloat = 620
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let x = screenFrame.midX - (windowWidth / 2)
-        let y = screenFrame.midY - (height / 2)
+        let y = screenFrame.midY - (windowHeight / 2)
         
         let window = OverlayWindow(
-            contentRect: NSRect(x: x, y: y, width: windowWidth, height: height),
+            contentRect: NSRect(x: x, y: y, width: windowWidth, height: windowHeight),
             styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
@@ -278,7 +279,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         """
 
-        webView.callAsyncJavaScript(wrappedScript, in: nil, in: .defaultClient) { [weak self] result in
+        webView.callAsyncJavaScript(wrappedScript, in: nil, in: .page) { [weak self] result in
             switch (result) {
             case .success (let value):
                 if let dict = value as? [String: Any], let message = dict["quiperError"] as? String {
@@ -586,12 +587,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         
         let isUITesting = ProcessInfo.processInfo.arguments.contains("--uitesting")
-        if !isUITesting {
+        let isScreenshotMode = ProcessInfo.processInfo.arguments.contains("--screenshot-mode")
+        if !isUITesting && !isScreenshotMode {
             window.setFrameAutosaveName(Constants.WINDOW_FRAME_AUTOSAVE_NAME)
         } else {
-            // Force frame for tests, overriding any potental restoration
-            let width: CGFloat = 900
-            let height: CGFloat = 400
+            // Force frame for tests/screenshots, overriding any potental restoration
+            let width: CGFloat = isScreenshotMode ? 640 : 900
+            let height: CGFloat = isScreenshotMode ? 480 : 400
             let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
             let x = screenFrame.midX - (width / 2)
             let y = screenFrame.midY - (height / 2)
@@ -706,6 +708,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Flex: shrink-to-fit (high hugging, high compression resistance)
         collapsibleServiceSel.setContentHuggingPriority(.required, for: .horizontal)
         collapsibleServiceSel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        collapsibleServiceSel.setAccessibilityIdentifier("CollapsibleServiceSelector")
         drag.addSubview(collapsibleServiceSel)
         collapsibleServiceSelector = collapsibleServiceSel
 
@@ -735,6 +738,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Flex: shrink-to-fit (high hugging, high compression resistance)
         collapsibleSessionSel.setContentHuggingPriority(.required, for: .horizontal)
         collapsibleSessionSel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        collapsibleSessionSel.setAccessibilityIdentifier("CollapsibleSessionSelector")
         drag.addSubview(collapsibleSessionSel)
         collapsibleSessionSelector = collapsibleSessionSel
         
