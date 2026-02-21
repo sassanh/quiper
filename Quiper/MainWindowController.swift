@@ -423,6 +423,34 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let appShortcuts = Settings.shared.appShortcutBindings
         let config = HotkeyManager.Configuration(keyCode: UInt32(keyCode), modifierFlags: modifiers.rawValue)
 
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let isControl = modifiers.contains(.control)
+        let isOption = modifiers.contains(.option)
+        let isShift = modifiers.contains(.shift)
+        let isCommand = modifiers.contains(.command)
+
+        // 1. GLOBAL SHORTCUTS - Always active regardless of which window is key
+        if isControl && isShift && key == "q" {
+            NSApp.terminate(nil)
+            return true
+        }
+
+        if isCommand && key == "," {
+            NotificationCenter.default.post(name: .showSettings, object: nil)
+            return true
+        }
+
+        if isCommand && key == "h" {
+            hide()
+            return true
+        }
+
+        // 2. WINDOW-SPECIFIC SHORTCUTS - Only active when the main window is key
+        // This allows Developer Tools, Settings, etc. to handle their own Cmd+F, etc.
+        guard !isInspectorFocused() else {
+            return false
+        }
+
         // Check App Bindings
         if matches(config, appShortcuts.configuration(for: .nextSession)) || matches(config, appShortcuts.alternateConfiguration(for: .nextSession)) {
             stepSession(by: 1)
@@ -484,18 +512,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
         }
 
-
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
-        let isControl = modifiers.contains(.control)
-        let isOption = modifiers.contains(.option)
-        let isShift = modifiers.contains(.shift)
-        let isCommand = modifiers.contains(.command)
-
-        if isControl && isShift && key == "q" {
-            NSApp.terminate(nil)
-            return true
-        }
-
         // Remaining built-in shortcuts require Command
         if !isCommand {
             return false
@@ -510,18 +526,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
 
         switch key {
-        case ",":
-            NotificationCenter.default.post(name: .showSettings, object: nil)
-            return true
-        case "h":
+        case "w":
             hide()
             return true
-        case "w":
-            if NSApp.keyWindow == window {
-                hide()
-                return true
-            }
-            return false
         case "r":
             reloadActiveWebView(nil)
             return true
@@ -571,6 +578,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case UInt16(kVK_ANSI_9), UInt16(kVK_ANSI_Keypad9): return 9
         default: return nil
         }
+    }
+
+    private func isInspectorFocused() -> Bool {
+        guard let responder = window?.firstResponder else { return false }
+        
+        // Walk up the view hierarchy to see if any view is an inspector view
+        var current: NSView? = responder as? NSView
+        while let view = current {
+            let className = String(describing: type(of: view))
+            // WKInspectorWKWebView is the common class name for the inspector webview
+            if className.contains("Inspector") {
+                return true
+            }
+            current = view.superview
+        }
+        
+        // Also check window class if it's a separate window (though we already check keyWindow in shortcut handler)
+        if let window = responder as? NSWindow {
+             return String(describing: type(of: window)).contains("Inspector")
+        }
+        
+        return false
     }
 
     // MARK: - Private helpers

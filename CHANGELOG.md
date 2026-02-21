@@ -2,8 +2,6 @@
 
 ## [Unreleased]
 
-### Added
-
 - **Screenshot Generation**: Introduced a robust, automated screenshot generation system for marketing and documentation.
   - Added `generate-screenshots.sh` script to automate the entire flow: capture, WebP conversion (80% quality), and asset deployment.
   - New `ScreenshotGenerator` UI test with both Interactive (human-verified) and Non-Interactive (automated) modes.
@@ -25,6 +23,7 @@
 - **Focus Restoration**: Improved reliability of restoring focus to the main window after closing a popup or the Settings window.
 - Compability: Update open-webui actions to be compatible with the 0.7.2 version
 - Compability: Update Gemini actions to be compatible with the latest Gemini UI
+- **DevTools Keyboard Shortcuts**: Improved keyboard shortcut handling to prevent app-level shortcuts (like Find, Zoom, and Service switching) from firing when Developer Tools are focused (both docked and separate window). This allows DevTools to consume native shortcuts like `Cmd+F` and `Cmd+G` for its own functionality.
 
 ## [2.6.0] - 2025-12-27
 
