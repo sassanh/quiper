@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [Unreleased]
 
 ### Added
 
@@ -10,6 +10,8 @@
   - Added `ScreenshotPromptController` for a floating "Take Screenshot" UI during interactive capture.
   - Added `--screenshot-mode` argument to force a 640x480 window size optimized for documentation.
 - Added "Claude" to the list of service templates.
+- **File Attachment Support**: Implemented `runOpenPanelWith` in the WebKit delegate, allowing the "Attach File" button to function correctly in engines like ChatGPT and Claude.
+- **JavaScript Dialogs**: Added support for standard web dialogs (`alert`, `confirm`, and `prompt`) within both main and popup webview windows.
 
 ### Changed
 
