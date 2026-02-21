@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [2.7.0] - 2026-02-13
+
+### Added
 
 - **Screenshot Generation**: Introduced a robust, automated screenshot generation system for marketing and documentation.
   - Added `generate-screenshots.sh` script to automate the entire flow: capture, WebP conversion (80% quality), and asset deployment.
