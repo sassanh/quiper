@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.7.1] - 2026-02-22
 
 ### Fixed
 
@@ -9,7 +9,7 @@
   - Replaced fixed delays with robust polling mechanisms in modifier key tests, improving execution speed and reliability.
 - **Inspector Visibility**: Fixed an issue where docked Developer Tools would not hide correctly when switching sessions or would appear blank when returning. Each session now uses a dedicated container view to reliably manage the visibility of both the web content and its inspector.
 
-## [2.7.0] - 2026-02-13
+## [2.7.0] - 2026-02-21
 
 ### Added
 
