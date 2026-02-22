@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **CI/CD Test Stability**: Resolved intermittent failures in `testModifierKeysExpandSessionSelector` and `testModifierKeysExpandServiceSelector`.
+  - Introduced `skipSafeAreaCheck` in `MainWindowController` to allow reliable keyboard-driven selector expansion in headless test environments.
+  - Replaced fixed delays with robust polling mechanisms in modifier key tests, improving execution speed and reliability.
+
 ## [2.7.0] - 2026-02-13
 
 ### Added

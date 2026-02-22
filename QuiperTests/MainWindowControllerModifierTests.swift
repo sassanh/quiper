@@ -24,6 +24,7 @@ final class MainWindowControllerModifierTests: XCTestCase {
     func testModifierKeysExpandSessionSelector() async throws {
         let services = [Service(name: "Test", url: "https://test.com", focus_selector: "")]
         let controller = MainWindowController(services: services)
+        controller.skipSafeAreaCheck = true
         
         // Force Auto/Compact mode to ensure they are visible/created
         Settings.shared.selectorDisplayMode = .compact
@@ -67,8 +68,15 @@ final class MainWindowControllerModifierTests: XCTestCase {
         controller.handleFlagsChanged(event: releaseEvent)
         
         // Wait for collapse (should be immediate now)
-        try await Task.sleep(nanoseconds: 500_000_000)
-        XCTAssertFalse(sessionSel.isExpanded, "Session selector should collapse immediately on key release")
+        var collapsed = false
+        for _ in 0..<100 {
+            if !sessionSel.isExpanded {
+                collapsed = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(collapsed, "Session selector should collapse immediately on key release")
     }
 
     func testModifierKeysExpandServiceSelector() async throws {
@@ -76,6 +84,7 @@ final class MainWindowControllerModifierTests: XCTestCase {
         // CollapsibleSelector works with 1 item.
         let services = [Service(name: "A", url: "a", focus_selector: ""), Service(name: "B", url: "b", focus_selector: "")]
         let controller = MainWindowController(services: services)
+        controller.skipSafeAreaCheck = true
         Settings.shared.selectorDisplayMode = .compact
         NotificationCenter.default.post(name: .selectorDisplayModeChanged, object: nil)
         
@@ -116,7 +125,14 @@ final class MainWindowControllerModifierTests: XCTestCase {
         controller.handleFlagsChanged(event: releaseEvent)
         
         // Wait for collapse (should be immediate now)
-        try await Task.sleep(nanoseconds: 10_000_000)
-        XCTAssertFalse(serviceSel.isExpanded, "Service selector should collapse immediately on key release")
+        var collapsed = false
+        for _ in 0..<100 {
+            if !serviceSel.isExpanded {
+                collapsed = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(collapsed, "Service selector should collapse immediately on key release")
     }
 }

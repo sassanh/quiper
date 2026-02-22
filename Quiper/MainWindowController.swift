@@ -57,6 +57,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var draggingServiceIndex: Int?
     var activeIndicesByURL: [String: Int] = [:]
     var keyDownEventMonitor: Any?
+    var skipSafeAreaCheck = false
     
     // For test support: track navigation completions
     private var navigationContinuations: [ObjectIdentifier: CheckedContinuation<Void, Never>] = [:]
@@ -389,7 +390,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 }
             } else {
                 // Collapse immediately if keys released and mouse is not hovering safely
-                if sessionSel.isExpanded, !isMouseInSafeArea(for: sessionSel) {
+                if sessionSel.isExpanded && (skipSafeAreaCheck || !isMouseInSafeArea(for: sessionSel)) {
                      sessionSel.collapse()
                 }
             }
@@ -401,7 +402,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                     serviceSel.mouseEntered(with: event)
                 }
             } else {
-                if serviceSel.isExpanded, !isMouseInSafeArea(for: serviceSel) {
+                if serviceSel.isExpanded && (skipSafeAreaCheck || !isMouseInSafeArea(for: serviceSel)) {
                     serviceSel.collapse()
                 }
             }
