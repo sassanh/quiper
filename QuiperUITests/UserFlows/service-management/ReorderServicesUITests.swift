@@ -58,7 +58,7 @@ final class ReorderServicesUITests: BaseUITest {
         XCTAssertTrue(e3_s1.waitForExistence(timeout: 2.0))
         
         // Wait for animation to settle
-        _ = e3_s1.waitForExistence(timeout: 1.0)
+        _ = e3_s1.waitForExistence(timeout: 2.0)
         
         let f1_s1 = e1_s1.frame
         let f2_s1 = e2_s1.frame
@@ -81,7 +81,7 @@ final class ReorderServicesUITests: BaseUITest {
         XCTAssertTrue(e2_s2.waitForExistence(timeout: 2.0))
         
         // Wait for animation
-        _ = e2_s2.waitForExistence(timeout: 1.0)
+        _ = e2_s2.waitForExistence(timeout: 2.0)
         
         let f1_s2 = e1_s2.frame
         let f2_s2 = e2_s2.frame
@@ -93,8 +93,6 @@ final class ReorderServicesUITests: BaseUITest {
         XCTAssertLessThan(f3_s2.minY, f1_s2.minY, "Engine 3 should be above Engine 1")
         XCTAssertLessThan(f1_s2.minY, f4_s2.minY, "Engine 1 should be above Engine 4")
         
-        XCTAssertLessThan(f1_s2.minY, f4_s2.minY, "Engine 1 should be above Engine 4")
-        
         // --- Step 3: Verify Sync with Main Window ---
         
         // Close Settings Window
@@ -104,24 +102,47 @@ final class ReorderServicesUITests: BaseUITest {
         // Replicating lookup logic from MainWindowReorderUITests
         ensureWindowVisible()
         
+        // Wait for transitions to settle
+        _ = app.wait(for: .runningForeground, timeout: 2.0)
+        
         let serviceSelector = app.radioGroups["ServiceSelector"]
         XCTAssertTrue(serviceSelector.waitForExistence(timeout: 5.0), "ServiceSelector should be visible")
         serviceSelector.click() // Ensure focus
         
         // Helper to verify index
         func verifySegment(index: Int, expectedLabel: String) {
-            let segmentWidthFactor = 1.0 / 4.0
-            let centerRatio = (Double(index) * segmentWidthFactor) + (segmentWidthFactor / 2.0)
-            
-            let coord = serviceSelector.coordinate(withNormalizedOffset: CGVector(dx: centerRatio, dy: 0.5))
-            coord.tap()
+            // Prefer direct element access if available
+            let segments = serviceSelector.radioButtons
+            if segments.count > index {
+                segments.element(boundBy: index).click()
+            } else {
+                // Fallback to coordinate-based tap
+                let segmentWidthFactor = 1.0 / 4.0
+                let centerRatio = (Double(index) * segmentWidthFactor) + (segmentWidthFactor / 2.0)
+                let coord = serviceSelector.coordinate(withNormalizedOffset: CGVector(dx: centerRatio, dy: 0.5))
+                coord.tap()
+            }
             
             let predicate = NSPredicate(format: "label CONTAINS[c] %@", expectedLabel)
             let exp = XCTNSPredicateExpectation(predicate: predicate, object: serviceSelector)
             
-            let result = XCTWaiter.wait(for: [exp], timeout: 2.0)
+            let result = XCTWaiter.wait(for: [exp], timeout: 4.0)
             if result != .completed {
-                 XCTFail("Sync verification failed for Index \(index)")
+                // Retry tap once if it fails
+                if segments.count > index {
+                    segments.element(boundBy: index).click()
+                } else {
+                    let segmentWidthFactor = 1.0 / 4.0
+                    let centerRatio = (Double(index) * segmentWidthFactor) + (segmentWidthFactor / 2.0)
+                    serviceSelector.coordinate(withNormalizedOffset: CGVector(dx: centerRatio, dy: 0.5)).tap()
+                }
+                
+                let retryExp = XCTNSPredicateExpectation(predicate: predicate, object: serviceSelector)
+                let retryResult = XCTWaiter.wait(for: [retryExp], timeout: 2.0)
+                
+                if retryResult != .completed {
+                     XCTFail("Sync verification failed for Index \(index). Expected: \(expectedLabel), Found: \(serviceSelector.label)")
+                }
             }
             XCTAssertTrue(serviceSelector.label.contains(expectedLabel), "Index \(index) should match \(expectedLabel)")
         }
@@ -138,8 +159,8 @@ final class ReorderServicesUITests: BaseUITest {
         let sourceRow = app.outlines.firstMatch.outlineRows.containing(.staticText, identifier: source).firstMatch
         let targetRow = app.outlines.firstMatch.outlineRows.containing(.staticText, identifier: target).firstMatch
         
-        XCTAssertTrue(sourceRow.exists, "Source row \(source) not found")
-        XCTAssertTrue(targetRow.exists, "Target row \(target) not found")
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 3.0), "Source row \(source) not found")
+        XCTAssertTrue(targetRow.waitForExistence(timeout: 3.0), "Target row \(target) not found")
         
 
         

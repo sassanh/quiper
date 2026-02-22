@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Service Reorder UI Test**: Improved reliability of `ReorderServicesUITests` with better timing and element selection.
+  - Increased animation settling timeouts from 1.0 to 2.0 seconds.
+  - Added fallback retry logic for segment tapping with improved element selection.
+  - Enhanced sync verification between settings window and main window selector.
+
 ## [2.7.1] - 2026-02-22
 
 ### Fixed
