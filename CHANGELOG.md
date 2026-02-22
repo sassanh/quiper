@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Window Size Toggle**: Added fixed keyboard shortcut `Cmd+M` to toggle between compact and previous window modes.
+  - **Compact Mode**: Fixed 550×400 pixels window positioned at top-right corner.
+  - **Previous Mode**: Restores the window to its previous size and position before entering compact mode.
+  - Falls back to default 800×620 centered window if no previous size is available.
+  - Includes smooth animations and proper layout updates after resize.
+  - Added comprehensive UI test suite with 3 tests covering main functionality, multiple toggles, and edge cases.
+
 ### Fixed
 
 - **Service Reorder UI Test**: Improved reliability of `ReorderServicesUITests` with better timing and element selection.

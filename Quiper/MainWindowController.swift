@@ -64,6 +64,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var backgroundEffectView: NSVisualEffectView?
 
+    // Window size toggle state
+    private var isCompactMode = false
+    private var previousWindowFrame: NSRect?
+
 
     private var inspectorVisible = false {
         didSet {
@@ -334,6 +338,48 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         setShortcutsEnabled(false)
     }
 
+    func toggleWindowSize() {
+        guard let window = window else { return }
+        
+        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        
+        if isCompactMode {
+            // Restore to previous size/position, or use default if no previous frame
+            let targetFrame: NSRect
+            if let previous = previousWindowFrame {
+                targetFrame = previous
+            } else {
+                // Default fallback size (800x620, centered)
+                let width: CGFloat = 800
+                let height: CGFloat = 620
+                let x = screenFrame.midX - (width / 2)
+                let y = screenFrame.midY - (height / 2)
+                targetFrame = NSRect(x: x, y: y, width: width, height: height)
+            }
+            
+            window.setFrame(targetFrame, display: true, animate: true)
+            isCompactMode = false
+            previousWindowFrame = nil // Clear saved frame after restoration
+        } else {
+            // Save current frame before switching to compact mode
+            previousWindowFrame = window.frame
+            
+            // Switch to compact mode: 550x400, positioned at top-right
+            let width: CGFloat = 550
+            let height: CGFloat = 400
+            let padding: CGFloat = 20
+            let x = screenFrame.maxX - width - padding
+            let y = screenFrame.maxY - height - padding
+            
+            let newFrame = NSRect(x: x, y: y, width: width, height: height)
+            window.setFrame(newFrame, display: true, animate: true)
+            isCompactMode = true
+        }
+        
+        // Update layout after resize
+        layoutSelectors()
+    }
+
     func setShortcutsEnabled(_ enabled: Bool) {
         if enabled {
             if keyDownEventMonitor == nil {
@@ -510,6 +556,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
 
         switch key {
+        case "m":
+            toggleWindowSize()
+            return true;
         case "h":
             hide();
             return true;
