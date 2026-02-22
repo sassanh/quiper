@@ -430,26 +430,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let isShift = modifiers.contains(.shift)
         let isCommand = modifiers.contains(.command)
 
-        // 1. GLOBAL SHORTCUTS - Always active regardless of which window is key
         if isControl && isShift && key == "q" {
             NSApp.terminate(nil)
             return true
-        }
-
-        if isCommand && key == "," {
-            NotificationCenter.default.post(name: .showSettings, object: nil)
-            return true
-        }
-
-        if isCommand && key == "h" {
-            hide()
-            return true
-        }
-
-        // 2. WINDOW-SPECIFIC SHORTCUTS - Only active when the main window is key
-        // This allows Developer Tools, Settings, etc. to handle their own Cmd+F, etc.
-        guard !isInspectorFocused() else {
-            return false
         }
 
         // Check App Bindings
@@ -527,22 +510,43 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
 
         switch key {
+        case "h":
+            hide();
+            return true;
         case "w":
             hide()
             return true
         case "r":
+            guard !isInspectorFocused() else {
+                return false
+            }
             reloadActiveWebView(nil)
             return true
         case "f":
+            guard !isInspectorFocused() else {
+                return false
+            }
             findBarViewController.show()
             return true
         case "g":
+            guard !isInspectorFocused() else {
+                return false
+            }
             findBarViewController.handleFindRepeat(shortcutShifted: isShift)
             return true
+        case ",":
+            NotificationCenter.default.post(name: .showSettings, object: nil)
+            return true
         case "=":
+            guard !isInspectorFocused() else {
+                return false
+            }
             zoom(by: Zoom.step)
             return true
         case "-":
+            guard !isInspectorFocused() else {
+                return false
+            }
             zoom(by: -Zoom.step)
             return true
         default:
@@ -1200,8 +1204,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         // Get or create the active one
         let activeWebview = getOrCreateWebview(for: service, sessionIndex: activeIndex)
-        activeWebview.isHidden = false
-        activeWebview.isHidden = false
+        
+        // Show the session (wrapper + webview + inspector)
+        webViewManager.showSession(activeWebview)
+        
         if let zoom = Settings.shared.serviceZoomLevels[service.url] {
              webViewManager.applyZoom(zoom, for: service.url)
         }

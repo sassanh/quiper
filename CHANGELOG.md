@@ -7,6 +7,7 @@
 - **CI/CD Test Stability**: Resolved intermittent failures in `testModifierKeysExpandSessionSelector` and `testModifierKeysExpandServiceSelector`.
   - Introduced `skipSafeAreaCheck` in `MainWindowController` to allow reliable keyboard-driven selector expansion in headless test environments.
   - Replaced fixed delays with robust polling mechanisms in modifier key tests, improving execution speed and reliability.
+- **Inspector Visibility**: Fixed an issue where docked Developer Tools would not hide correctly when switching sessions or would appear blank when returning. Each session now uses a dedicated container view to reliably manage the visibility of both the web content and its inspector.
 
 ## [2.7.0] - 2026-02-13
 

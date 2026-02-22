@@ -73,6 +73,10 @@ final class WebViewManager: NSObject {
     }
     
     func getOrCreateWebView(for service: Service, sessionIndex: Int, dragArea: NSView?) -> WKWebView {
+        if let dragArea = dragArea {
+            self.dragArea = dragArea
+        }
+        
         if let existing = webviewsByURL[service.url]?[sessionIndex] {
             return existing
         }
@@ -82,7 +86,7 @@ final class WebViewManager: NSObject {
         }
         
         // Calculate frame
-        let dragHeight = dragArea?.bounds.height ?? 0
+        let dragHeight = self.dragArea?.bounds.height ?? 0
         let availableHeight = contentView.bounds.height - dragHeight
         let frame = NSRect(
             x: 0,
@@ -90,6 +94,11 @@ final class WebViewManager: NSObject {
             width: contentView.bounds.width,
             height: availableHeight
         )
+        
+        // Wrapper View (Holds WebView + Docked Inspector)
+        let wrapperView = NSView(frame: frame)
+        wrapperView.autoresizingMask = [.width, .height]
+        wrapperView.isHidden = true
         
         let userContentController = WKUserContentController()
         let config = WKWebViewConfiguration()
@@ -108,22 +117,26 @@ final class WebViewManager: NSObject {
             userContentController.addUserScript(userScript)
         }
 
-        let webview = WKWebView(frame: frame, configuration: config)
+        // WebView inside Wrapper
+        let webview = WKWebView(frame: wrapperView.bounds, configuration: config)
         webview.setValue(false, forKey: "drawsBackground")
         webview.autoresizingMask = [.width, .height]
         webview.uiDelegate = self
         webview.navigationDelegate = self
         webview.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-        webview.isHidden = true
+        // webview.isHidden = true // No need, wrapper is hidden
         webview.pageZoom = zoomLevels[service.url] ?? 1.0
         
         attachNotificationBridge(to: webview, service: service, sessionIndex: sessionIndex)
 
-        // Add to view hierarchy
-        if let dragArea = dragArea {
-            contentView.addSubview(webview, positioned: .below, relativeTo: dragArea)
+        // Add WebView to Wrapper
+        wrapperView.addSubview(webview)
+
+        // Add Wrapper to Container
+        if let dragArea = self.dragArea {
+            contentView.addSubview(wrapperView, positioned: .below, relativeTo: dragArea)
         } else {
-            contentView.addSubview(webview)
+            contentView.addSubview(wrapperView)
         }
         
         if webviewsByURL[service.url] == nil {
@@ -151,7 +164,23 @@ final class WebViewManager: NSObject {
     
     func hideAll() {
         webviewsByURL.values.forEach { sessionMap in
-            sessionMap.values.forEach { $0.isHidden = true }
+            sessionMap.values.forEach { webView in
+                webView.superview?.isHidden = true
+            }
+        }
+    }
+    
+    func showSession(_ webView: WKWebView) {
+        guard let wrapper = webView.superview else { return }
+        
+        wrapper.isHidden = false
+        
+        if let container = containerView {
+            if let dragArea = self.dragArea {
+                container.addSubview(wrapper, positioned: .below, relativeTo: dragArea)
+            } else {
+                container.addSubview(wrapper)
+            }
         }
     }
     
