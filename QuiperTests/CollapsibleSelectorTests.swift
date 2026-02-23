@@ -163,13 +163,52 @@ final class CollapsibleSelectorTests: XCTestCase {
         
         wait(for: [expectation], timeout: 1.0)
     }
+    
+    func testInstantiationState() {
+        let delegate = MockSelectorDelegate()
+        
+        // Configure delegate to return some segments as uninstantiated
+        delegate.isInstantiatedStub = { selector, index in
+            return index == 0 // Only first segment is instantiated
+        }
+        
+        selector.delegate = delegate
+        selector.items = ["Instantiated", "Uninstantiated1", "Uninstantiated2"]
+        selector.showInstantiationState = true
+        
+        // Verify the property is set
+        XCTAssertTrue(selector.showInstantiationState)
+        
+        // Trigger a display update
+        selector.refreshInstantiationState()
+        
+        // While we can't easily test the visual appearance without complex rendering inspection,
+        // we can verify the delegate is called correctly
+        XCTAssertTrue(delegate.selector(selector, isInstantiated: 0))
+        XCTAssertFalse(delegate.selector(selector, isInstantiated: 1))
+        XCTAssertFalse(delegate.selector(selector, isInstantiated: 2))
+        
+        // Test with showInstantiationState disabled
+        selector.showInstantiationState = false
+        XCTAssertFalse(selector.showInstantiationState)
+    }
 }
 
 class MockSelectorDelegate: CollapsibleSelectorDelegate {
     var willExpandCalled = false
+    var isLoadingStub: ((Int) -> Bool)?
+    var isInstantiatedStub: ((CollapsibleSelector, Int) -> Bool)?
     
-    func isLoading(index: Int) -> Bool { false }
+    func isLoading(index: Int) -> Bool { 
+        return isLoadingStub?(index) ?? false 
+    }
+    
+    func selector(_ selector: CollapsibleSelector, isInstantiated index: Int) -> Bool {
+        return isInstantiatedStub?(selector, index) ?? true 
+    }
+    
     func selector(_ selector: CollapsibleSelector, didDragSegment index: Int, to newIndex: Int) {}
+    
     func selectorWillExpand(_ selector: CollapsibleSelector) {
         willExpandCalled = true
     }

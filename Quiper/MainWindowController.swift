@@ -562,8 +562,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case "h":
             hide();
             return true;
+        case "q":
+            hide();
+            return true;
         case "w":
-            hide()
+            closeCurrentTab()
             return true
         case "r":
             guard !isInspectorFocused() else {
@@ -766,6 +769,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             self?.handleServiceDragEnded()
         }
         serviceSel.alwaysShowTooltips = false
+        serviceSel.selectorDelegate = self  // Add delegate for instantiation state
+        serviceSel.showInstantiationState = true  // Enable instantiation state feature
 
         serviceSel.segmentCount = services.count
         for (index, service) in services.enumerated() {
@@ -782,6 +787,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         collapsibleServiceSel.target = self
         collapsibleServiceSel.action = #selector(serviceChanged(_:))
         collapsibleServiceSel.delegate = self
+        collapsibleServiceSel.showInstantiationState = true  // Enable the feature
         collapsibleServiceSel.mouseDownSegmentHandler = serviceSel.mouseDownSegmentHandler
         collapsibleServiceSel.dragBeganHandler = serviceSel.dragBeganHandler
         collapsibleServiceSel.dragChangedHandler = serviceSel.dragChangedHandler
@@ -797,7 +803,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         // Session Selector (Static)
         let sessionSel = SegmentedControl(frame: .zero)
-        sessionSel.segmentStyle = .rounded
         sessionSel.trackingMode = .selectOne
         sessionSel.segmentCount = 10
         for i in 0..<10 {
@@ -806,6 +811,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         sessionSel.target = self
         sessionSel.action = #selector(sessionChanged(_:))
         sessionSel.selectorDelegate = self
+        sessionSel.showInstantiationState = true  // Enable instantiation state feature
         sessionSel.sizeToFit()
         sessionSel.setAccessibilityIdentifier("SessionSelector")
         drag.addSubview(sessionSel)
@@ -818,6 +824,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Populate items to define segment count (10) - caller provides display labels
         collapsibleSessionSel.setItems((0..<10).map { "\($0 == 9 ? 0 : $0 + 1)" })
         collapsibleSessionSel.delegate = self
+        collapsibleSessionSel.showInstantiationState = true  // Enable the feature
         // Flex: shrink-to-fit (high hugging, high compression resistance)
         collapsibleSessionSel.setContentHuggingPriority(.required, for: .horizontal)
         collapsibleSessionSel.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -825,14 +832,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         drag.addSubview(collapsibleSessionSel)
         collapsibleSessionSelector = collapsibleSessionSel
         
-        // Initialize session tooltips with default "Session n" labels
-        for sessionIdx in 0..<10 {
-            let segIdx = segmentIndex(forSession: sessionIdx)
-            let defaultTitle = "Session \(sessionIdx == 9 ? 0 : sessionIdx + 1)"
-            sessionSel.setToolTip(defaultTitle, forSegment: segIdx)
-            collapsibleSessionSel.setToolTip(defaultTitle, forSegment: segIdx)
-        }
-
         updateSelectorsMode() // Set initial hidden states based on mode/width
 
         // Title Label
@@ -1224,7 +1223,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             NSLog("[Quiper] WARNING: getOrCreateWebview called before webViewManager initialized. Returning dummy.")
             return WKWebView(frame: .zero)
         }
-        return manager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea)
+        
+        let wasInstantiated = manager.getWebView(for: service, sessionIndex: sessionIndex) != nil
+        let webView = manager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea)
+        
+        // If this was a new instantiation, refresh the selector display
+        if !wasInstantiated {
+            refreshInstantiationState()
+        }
+        
+        return webView
+    }
+    
+    /// Refresh the instantiation state display for all selectors
+    private func refreshInstantiationState() {
+        collapsibleServiceSelector?.refreshInstantiationState()
+        collapsibleSessionSelector?.refreshInstantiationState()
+        
+        // Also refresh regular SegmentedControls
+        serviceSelector?.needsDisplay = true
+        sessionSelector?.needsDisplay = true
     }
 
     private func currentService() -> Service? {
@@ -1454,6 +1472,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         sessionSelector?.selectedSegment = segmentIdx
         collapsibleSessionSelector?.selectedSegment = segmentIdx
+        sessionSelector?.needsDisplay = true
+        collapsibleSessionSelector?.needsDisplay = true
     }
 
     private var activeServiceSelector: NSView? {
@@ -1482,6 +1502,70 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                            0
         let next = (currentIndex + delta + services.count) % services.count
         selectService(at: next)
+    }
+
+    /// Cmd+W: uninstantiate the current tab and navigate to the closest previously-used
+    /// instantiated tab, following browser heuristics:
+    ///   1. Same service — nearest instantiated session to the LEFT (lower index)
+    ///   2. Same service — nearest instantiated session to the RIGHT (higher index)
+    ///   3. Other services to the LEFT — their active session if instantiated, else any instantiated session
+    ///   4. Other services to the RIGHT — same
+    ///   5. Fallback — stay on current service, switch to session 0 (will be uninstantiated)
+    private func closeCurrentTab() {
+        guard let service = currentService() else { return }
+        let currentSession = activeIndicesByURL[service.url] ?? 0
+        let currentServiceIndex = services.firstIndex(where: { $0.url == service.url }) ?? 0
+
+        // Remove the current webview
+        webViewManager.removeWebView(for: service, sessionIndex: currentSession)
+
+        // Helper: find the nearest instantiated session in a service, biased toward `preferred` direction
+        func nearestInstantiatedSession(in svc: Service, excluding: Int? = nil) -> Int? {
+            let sessions = (0..<10).filter { $0 != excluding && webViewManager.getWebView(for: svc, sessionIndex: $0) != nil }
+            return sessions.first
+        }
+
+        // 1 & 2: Search within the same service — left first, then right
+        let leftSessions  = stride(from: currentSession - 1, through: 0, by: -1)
+        let rightSessions = stride(from: currentSession + 1, to: 10, by: 1)
+
+        for idx in leftSessions where webViewManager.getWebView(for: service, sessionIndex: idx) != nil {
+            switchSession(to: idx)
+            refreshInstantiationState()
+            return
+        }
+        for idx in rightSessions where webViewManager.getWebView(for: service, sessionIndex: idx) != nil {
+            switchSession(to: idx)
+            refreshInstantiationState()
+            return
+        }
+
+        // 3 & 4: Search other services — left first, then right
+        let leftServices  = stride(from: currentServiceIndex - 1, through: 0, by: -1).map { services[$0] }
+        let rightServices = stride(from: currentServiceIndex + 1, to: services.count, by: 1).map { services[$0] }
+
+        for svc in (leftServices + rightServices) {
+            // Prefer the previously active session for this service (user heuristic: return
+            // to where you left off). Only fall back to nearest if that session was closed.
+            let activeSession = activeIndicesByURL[svc.url] ?? 0
+            let targetSession: Int?
+            if webViewManager.getWebView(for: svc, sessionIndex: activeSession) != nil {
+                targetSession = activeSession
+            } else {
+                targetSession = nearestInstantiatedSession(in: svc)
+            }
+            if let session = targetSession {
+                let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
+                activeIndicesByURL[svc.url] = session
+                selectService(at: svcIndex)
+                refreshInstantiationState()
+                return
+            }
+        }
+
+        // 5: Fallback — nothing else is instantiated; stay on current service, session 0
+        switchSession(to: 0)
+        refreshInstantiationState()
     }
 
     private func estimatedWidthForServiceSegments() -> CGFloat {
@@ -1737,6 +1821,48 @@ extension MainWindowController: CollapsibleSelectorDelegate {
         guard let service = currentService(),
               let webView = webViewManager.getWebView(for: service, sessionIndex: index) else { return false }
         return webView.isLoading
+    }
+    
+    func selector(_ selector: CollapsibleSelector, isInstantiated index: Int) -> Bool {
+        if selector === collapsibleServiceSelector {
+            // For services: instantiated if ANY session of this service is instantiated
+            guard services.indices.contains(index) else { return false }
+            let service = services[index]
+            
+            // Check if any session (0-9) has an instantiated webview
+            for sessionIdx in 0..<10 {
+                if webViewManager.getWebView(for: service, sessionIndex: sessionIdx) != nil {
+                    return true
+                }
+            }
+            return false
+        } else if selector === collapsibleSessionSelector {
+            // For sessions: instantiated if webview exists for current service + this session
+            guard let service = currentService() else { return false }
+            return webViewManager.getWebView(for: service, sessionIndex: index) != nil
+        }
+        
+        // Fallback: assume instantiated
+        return true
+    }
+    
+    func segmentedControl(_ control: SegmentedControl, isInstantiated index: Int) -> Bool {
+        if control === serviceSelector {
+            // For services: instantiated if ANY session of this service is instantiated
+            guard services.indices.contains(index) else { return false }
+            let service = services[index]
+            for sessionIdx in 0..<10 {
+                if webViewManager.getWebView(for: service, sessionIndex: sessionIdx) != nil {
+                    return true
+                }
+            }
+            return false
+        } else if control === sessionSelector {
+            // For sessions: instantiated if webview exists for current service + this session
+            guard let service = currentService() else { return false }
+            return webViewManager.getWebView(for: service, sessionIndex: index) != nil
+        }
+        return true
     }
     
     func selector(_ selector: CollapsibleSelector, didDragSegment index: Int, to newIndex: Int) {

@@ -72,6 +72,12 @@ final class WebViewManager: NSObject {
         webviewsByURL[service.url]?[sessionIndex]
     }
     
+    func removeWebView(for service: Service, sessionIndex: Int) {
+        guard let webView = webviewsByURL[service.url]?[sessionIndex] else { return }
+        tearDownWebView(webView)
+        webviewsByURL[service.url]?.removeValue(forKey: sessionIndex)
+    }
+    
     func getOrCreateWebView(for service: Service, sessionIndex: Int, dragArea: NSView?) -> WKWebView {
         if let dragArea = dragArea {
             self.dragArea = dragArea

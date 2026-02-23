@@ -826,7 +826,7 @@ struct StatusMenuBuilder {
         addItem("Install at Login", #selector(AppController.installAtLogin(_:)), "", [], controller)
         addItem("Uninstall from Login", #selector(AppController.uninstallFromLogin(_:)), "", [], controller)
         menu.addItem(.separator())
-        let quitModifiers: NSEvent.ModifierFlags = AppController.isRunningInXcode ? [.command] : [.command, .shift, .control]
+        let quitModifiers: NSEvent.ModifierFlags = AppController.isRunningInXcode ? [.control] : [.command, .shift, .control]
         addItem("Quit", #selector(NSApplication.terminate(_:)), "q", quitModifiers, NSApp)
         
         return menu

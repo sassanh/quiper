@@ -8,6 +8,12 @@ protocol CollapsibleSelectorDelegate: AnyObject {
     /// Called to check if segment at index is loading (for spinners, etc.)
     func isLoading(index: Int) -> Bool
     
+    /// Called to check if segment at index represents an instantiated session/service (CollapsibleSelector)
+    func selector(_ selector: CollapsibleSelector, isInstantiated index: Int) -> Bool
+    
+    /// Called to check if segment at index represents an instantiated session/service (standalone SegmentedControl)
+    func segmentedControl(_ control: SegmentedControl, isInstantiated index: Int) -> Bool
+    
     /// Called when a drag reorder completes
     func selector(_ selector: CollapsibleSelector, didDragSegment index: Int, to newIndex: Int)
     
@@ -18,6 +24,8 @@ protocol CollapsibleSelectorDelegate: AnyObject {
 // Default implementation for optional methods
 extension CollapsibleSelectorDelegate {
     func isLoading(index: Int) -> Bool { false }
+    func selector(_ selector: CollapsibleSelector, isInstantiated index: Int) -> Bool { true } // Default: assume instantiated
+    func segmentedControl(_ control: SegmentedControl, isInstantiated index: Int) -> Bool { true } // Default: assume instantiated
     func selector(_ selector: CollapsibleSelector, didDragSegment index: Int, to newIndex: Int) {}
     func selectorWillExpand(_ selector: CollapsibleSelector) {}
 }
@@ -40,6 +48,16 @@ class CollapsibleSelector: NSView {
     
     /// Controls whether hover/click interaction is enabled (set to false when window loses focus)
     var isInteractionEnabled: Bool = true
+    
+    /// Controls whether to show visual indication for uninstantiated segments (grayed out)
+    var showInstantiationState: Bool = false {
+        didSet {
+            expandedControl?.showInstantiationState = showInstantiationState
+            needsDisplay = true
+            collapsedControl.needsDisplay = true
+            expandedControl?.needsDisplay = true
+        }
+    }
     
     private let collapsedControl: SegmentedControl
     
@@ -80,7 +98,14 @@ class CollapsibleSelector: NSView {
     // Actions
     var target: AnyObject?
     var action: Selector?
-    weak var delegate: CollapsibleSelectorDelegate?
+    weak var delegate: CollapsibleSelectorDelegate? {
+        didSet {
+            collapsedControl.selectorDelegate = delegate
+            collapsedControl.parentSelector = self
+            expandedControl?.selectorDelegate = delegate
+            expandedControl?.parentSelector = self
+        }
+    }
     
     // Drag handlers
     var mouseDownSegmentHandler: ((Int) -> Void)?
@@ -114,6 +139,8 @@ class CollapsibleSelector: NSView {
         collapsedControl.target = self
         collapsedControl.action = #selector(collapsedControlClicked)
         collapsedControl.alwaysShowTooltips = alwaysShowTooltips
+        collapsedControl.selectorDelegate = delegate
+        collapsedControl.parentSelector = self
         addSubview(collapsedControl)
     }
     
@@ -124,16 +151,6 @@ class CollapsibleSelector: NSView {
     }
     
     // MARK: - API
-    
-    func setLabel(_ label: String, forSegment segment: Int) {
-        if items.count <= segment {
-             // Extend if needed, or just assume items populated
-        }
-        // In this simplified version, let's assume caller sets `items` array or strict api.
-        // To match NSSegmentedControl API:
-        // We actually just need to store current label for collapsed view
-        // and all labels for expanded view.
-    }
     
     func setToolTip(_ toolTip: String?, forSegment segment: Int) {
         tooltips[segment] = toolTip
@@ -175,6 +192,12 @@ class CollapsibleSelector: NSView {
                  // If total width changes, centering might drift, but usually reorder is same items.
             }
         }
+    }
+    
+    /// Refresh the display to update instantiation state styling
+    func refreshInstantiationState() {
+        collapsedControl.needsDisplay = true
+        expandedControl?.needsDisplay = true
     }
     
     // MARK: - Internal Logic
@@ -266,6 +289,8 @@ class CollapsibleSelector: NSView {
             control.selectedSegmentBezelColor = .controlAccentColor
         }
         control.selectorDelegate = delegate
+        control.showInstantiationState = showInstantiationState
+        control.parentSelector = self
         
         // 2. Configure Items & Events
         

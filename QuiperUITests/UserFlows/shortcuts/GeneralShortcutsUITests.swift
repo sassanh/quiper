@@ -47,7 +47,7 @@ final class GeneralShortcutsUITests: BaseUITest {
         _ = app.windows["Quiper Overlay"] // Main window is often overlay, strict check needed?
         
         // Cmd+w should close/hide the active window
-        app.typeKey("w", modifierFlags: .command)
+        app.typeKey("q", modifierFlags: .command)
         
         // In Quiper, Cmd+w hides the window
         // We can check if the SessionSelector is no longer hittable

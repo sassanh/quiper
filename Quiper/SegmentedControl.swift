@@ -1,39 +1,15 @@
 import AppKit
 
-// MARK: - Accented Segmented Cell
+// MARK: - Segmented Cell
 
-class AccentedSegmentedCell: NSSegmentedCell {
+class SegmentedCell: NSSegmentedCell {
+    /// Frames captured during the most recent draw pass, keyed by segment index.
+    /// Used by SegmentedControl.draw(_:) to apply overlays at exact positions.
+    var capturedFrames: [Int: NSRect] = [:]
+
     override func drawSegment(_ segment: Int, inFrame frame: NSRect, with view: NSView) {
-        // Only apply custom accent drawing if the control has forceHighlight enabled
-        guard let control = view as? SegmentedControl, control.forceHighlight else {
-            super.drawSegment(segment, inFrame: frame, with: view)
-            return
-        }
-        
-        if isSelected(forSegment: segment) {
-            NSColor.controlAccentColor.setFill()
-            let drawRect = frame.insetBy(dx: 0, dy: -2)
-            let path = NSBezierPath(roundedRect: drawRect, xRadius: 4, yRadius: 4)
-            path.fill()
-            
-            if let label = self.label(forSegment: segment) {
-                let font = self.font ?? NSFont.systemFont(ofSize: 13)
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: NSColor.white
-                ]
-                let size = label.size(withAttributes: attrs)
-                let textRect = NSRect(
-                    x: frame.origin.x + (frame.width - size.width) / 2,
-                    y: frame.origin.y + (frame.height - size.height) / 2, 
-                    width: size.width,
-                    height: size.height
-                )
-                label.draw(in: textRect, withAttributes: attrs)
-            }
-        } else {
-            super.drawSegment(segment, inFrame: frame, with: view)
-        }
+        capturedFrames[segment] = frame
+        super.drawSegment(segment, inFrame: frame, with: view)
     }
 }
 
@@ -42,7 +18,7 @@ class AccentedSegmentedCell: NSSegmentedCell {
 /// A segmented control that supports custom tooltips, click handling for non-activating panels, and optional drag-reordering.
 class SegmentedControl: NSSegmentedControl {
     override class var cellClass: AnyClass? {
-        get { AccentedSegmentedCell.self }
+        get { SegmentedCell.self }
         set { }
     }
     
@@ -51,6 +27,14 @@ class SegmentedControl: NSSegmentedControl {
     
     weak var selectorDelegate: CollapsibleSelectorDelegate?
     
+    /// Reference to parent CollapsibleSelector for delegate calls
+    weak var parentSelector: CollapsibleSelector?
+    
+    /// Whether to show instantiation state (grayed out uninstantiated segments)
+    var showInstantiationState: Bool = false {
+        didSet { needsDisplay = true }
+    }
+    
     // Tooltips
     private var segmentToolTips: [Int: String] = [:]
     private(set) var lastHoveredSegment: Int?
@@ -58,7 +42,70 @@ class SegmentedControl: NSSegmentedControl {
 
     var forceHighlight: Bool = false
 
-    // Drag & Drop
+    // MARK: - Drawing
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard showInstantiationState else { return }
+
+        let selectedColor = NSColor.controlAccentColor
+        let color = parentSelector == nil ? NSColor.windowBackgroundColor.withAlphaComponent(0.6) : NSColor.black.withAlphaComponent(0.5)
+        // .rounded has a single outer pill; .automatic/.separated render each segment as its own pill.
+        let isOuterPill = segmentStyle == .rounded || segmentStyle == .automatic
+
+        NSGraphicsContext.saveGraphicsState()
+        if isOuterPill {
+            NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).setClip()
+        }
+
+        for i in 0..<segmentCount {
+            let isSelected = (i == selectedSegment)
+            if let sel = parentSelector {
+                guard selectorDelegate?.selector(sel, isInstantiated: i) == false || isSelected else {
+                    continue
+                }
+            } else {
+                guard selectorDelegate?.segmentedControl(self, isInstantiated: i) == false else {
+                    continue
+                }
+            }
+
+            // Use x/width from captured frame for exact AppKit positioning;
+            // always use full bounds height so the overlay matches the visual control height.
+            let captured = (cell as? SegmentedCell)?.capturedFrames[i]
+            let segX = captured?.minX ?? (bounds.width / CGFloat(segmentCount) * CGFloat(i))
+            let segW = captured?.width ?? (bounds.width / CGFloat(segmentCount))
+            let segFrame = self.backingAlignedRect(NSRect(x: segX, y: bounds.minY, width: segW, height: bounds.height), options: .alignAllEdgesNearest)
+
+            if (isSelected) {
+                selectedColor.setFill()
+            } else {
+                color.setFill()
+            }
+            segFrame.fill(using: .sourceOver)
+
+            // Draw lighter text over the gray overlay for better contrast.
+            if let label = self.label(forSegment: i), !label.isEmpty {
+                let font = self.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize(for: controlSize))
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: isSelected ? NSColor.white : NSColor.black.withAlphaComponent(0.1)
+                ]
+                let size = (label as NSString).size(withAttributes: attrs)
+                let textRect = NSRect(
+                    x: segFrame.midX - size.width / 2,
+                    y: segFrame.midY - size.height / 2,
+                    width: size.width,
+                    height: size.height
+                )
+                (label as NSString).draw(in: textRect, withAttributes: attrs)
+            }
+        }
+
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
     var enableDragReorder: Bool = false
     var mouseDownSegmentHandler: ((Int) -> Void)?
     var dragBeganHandler: ((Int) -> Void)?
@@ -216,3 +263,4 @@ class SegmentedControl: NSSegmentedControl {
         return NSRect(x: CGFloat(segment) * w, y: 0, width: w, height: bounds.height)
     }
 }
+

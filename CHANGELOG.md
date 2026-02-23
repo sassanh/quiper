@@ -11,6 +11,14 @@
   - Includes smooth animations and proper layout updates after resize.
   - Added comprehensive UI test suite with 3 tests covering main functionality, multiple toggles, and edge cases.
 
+- **Instantiation State Indicators**: Service and session selector segments now visually distinguish between instantiated (warm, webview loaded) and uninstantiated (cold, no webview) tabs.
+  - Uninstantiated segments render with a dimmed overlay and lighter text so users can see at a glance which slots have been used vs. are empty.
+  - A service is considered instantiated if any of its sessions has a loaded webview; a session is instantiated if its specific webview exists.
+  - Works across both `CollapsibleSelector` and static `SegmentedControl` variants, and updates automatically when switching services.
+  - Added UI test suite in `InstantiationStateUITests.swift` covering navigation heuristics.
+
+- **Cmd+W Closes Tab**: Pressing `Cmd+W` now uninstantiates the current session and navigates to the nearest previously-used tab (browser-style heuristics: left sessions → right sessions → left services → right services → fallback to session 0) instead of hiding the app.
+
 ### Fixed
 
 - **Service Reorder UI Test**: Improved reliability of `ReorderServicesUITests` with better timing and element selection.
