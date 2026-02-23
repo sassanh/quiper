@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.7.2] - 2026-02-23
+
 ### Added
 
 - **Window Size Toggle**: Added fixed keyboard shortcut `Cmd+M` to toggle between compact and previous window modes.
