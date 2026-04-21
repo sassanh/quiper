@@ -44,7 +44,7 @@ struct SettingsView: View {
                 }
                 .tag("Updates")
         }
-        .frame(minWidth: 700, minHeight: 400)
+        .frame(minWidth: 720, minHeight: 400)
         .onReceive(NotificationCenter.default.publisher(for: .startGlobalHotkeyCapture)) { _ in
             selectedTab = "Shortcuts"
         }

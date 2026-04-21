@@ -6,6 +6,7 @@ import AppKit
 final class UpdateManager: NSObject, ObservableObject {
     struct ReleaseInfo: Equatable {
         let version: String
+        let publishDate: Date
         let notes: String?
         let downloadURL: URL
         let pageURL: URL
@@ -32,7 +33,7 @@ final class UpdateManager: NSObject, ObservableObject {
             case .upToDate:
                 return "You’re up to date."
             case .available(let release):
-                return "Version \(release.version) is available."
+                return "A new version (\(release.version)) is available."
             case .downloading:
                 return "Downloading update…"
             case .readyToInstall:
@@ -128,7 +129,7 @@ final class UpdateManager: NSObject, ObservableObject {
                     self.lastCheckedAt = now
                     self.settings.updatePreferences.lastAutomaticCheck = now
                     self.settings.saveSettings()
-                    if self.isReleaseNewer(release.version) {
+                    if release.publishDate > self.currentAppBuildDate {
                         self.handleReleaseAvailable(release, userInitiated: userInitiated)
                     } else {
                         self.availableRelease = nil
@@ -152,10 +153,10 @@ final class UpdateManager: NSObject, ObservableObject {
         availableRelease = release
         status = .available(release)
 
-        if shouldShowPrompt(for: release.version, userInitiated: userInitiated) {
+        if shouldShowPrompt(for: release.publishDate, userInitiated: userInitiated) {
             UpdatePromptWindowController.shared.present(for: release)
             if !userInitiated {
-                settings.updatePreferences.lastNotifiedVersion = release.version
+                settings.updatePreferences.lastNotifiedDate = release.publishDate
                 settings.saveSettings()
             }
         }
@@ -338,68 +339,68 @@ final class UpdateManager: NSObject, ObservableObject {
         if CommandLine.arguments.contains("--mock-update-available") {
             // Return a dummy release that is guaranteed to be newer than local
             return ReleaseInfo(version: "999.0.0",
+                               publishDate: Date().addingTimeInterval(86400),
                                notes: "This is a mock update for testing.",
                                downloadURL: URL(string: "https://example.com/mock-update.zip")!,
                                pageURL: URL(string: "https://example.com/mock-release")!,
                                requiresBrowserDownload: false)
         }
 
-        var request = URLRequest(url: Constants.Updates.latestReleaseAPI)
+        let useNightly = settings.updatePreferences.includeNightlyChannel
+        let url = useNightly ? Constants.Updates.allReleasesAPI : Constants.Updates.latestReleaseAPI
+        
+        var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw UpdateError.invalidResponse
         }
+        
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let payload = try decoder.decode(GitHubRelease.self, from: data)
-        let version = normalizedVersion(payload.tagName)
+        decoder.dateDecodingStrategy = .iso8601
+        
+        let payload: GitHubRelease
+        if useNightly {
+            let releases = try decoder.decode([GitHubRelease].self, from: data)
+            // Pick the newest one based on update timestamp (handles nightly updates)
+            guard let first = releases.sorted(by: { $0.publishedAt > $1.publishedAt }).first else {
+                throw UpdateError.invalidResponse
+            }
+            payload = first
+        } else {
+            payload = try decoder.decode(GitHubRelease.self, from: data)
+        }
+        
+        let version = payload.tagName
+        let publishDate = payload.publishedAt
         let preferredAsset = payload.assets.first { asset in
             Constants.Updates.preferredAssetExtensions.contains(asset.browserDownloadUrl.pathExtension.lowercased())
         }
         let downloadURL = preferredAsset?.browserDownloadUrl ?? payload.htmlUrl
         let requiresBrowser = preferredAsset == nil
         return ReleaseInfo(version: version,
+                           publishDate: publishDate,
                            notes: payload.body,
                            downloadURL: downloadURL,
                            pageURL: payload.htmlUrl,
                            requiresBrowserDownload: requiresBrowser)
     }
 
-    private func isReleaseNewer(_ releaseVersion: String) -> Bool {
-        let current = currentAppVersion()
-        let lhs = normalizedComponents(from: releaseVersion)
-        let rhs = normalizedComponents(from: current)
-        let count = max(lhs.count, rhs.count)
-        for idx in 0..<count {
-            let left = idx < lhs.count ? lhs[idx] : 0
-            let right = idx < rhs.count ? rhs[idx] : 0
-            if left != right {
-                return left > right
-            }
+    private var currentAppBuildDate: Date {
+        if let url = Bundle.main.bundleURL.appendingPathComponent("Contents/Info.plist", isDirectory: false) as URL?,
+           let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let date = attrs[.creationDate] as? Date {
+            return date
         }
-        return false
+        return (try? FileManager.default.attributesOfItem(atPath: Bundle.main.bundlePath)[.creationDate] as? Date) ?? Date.distantPast
     }
 
     private func currentAppVersion() -> String {
         (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0"
     }
 
-    private func normalizedComponents(from version: String) -> [Int] {
-        return normalizedVersion(version)
-            .split(separator: ".")
-            .compactMap { Int($0) }
-    }
-
-    private func normalizedVersion(_ version: String) -> String {
-        let trimmed = version.trimmingCharacters(in: CharacterSet(charactersIn: "vV "))
-        if let dashIndex = trimmed.firstIndex(of: "-") {
-            return String(trimmed[..<dashIndex])
-        }
-        return trimmed
-    }
-
-    private func shouldShowPrompt(for releaseVersion: String, userInitiated: Bool) -> Bool {
+    private func shouldShowPrompt(for releaseDate: Date, userInitiated: Bool) -> Bool {
         // If explicitly enabled for testing, always show prompt
         if !shouldDisableAutomaticChecksInTests { return true }
 
@@ -412,7 +413,7 @@ final class UpdateManager: NSObject, ObservableObject {
 
         if userInitiated { return true }
         
-        if settings.updatePreferences.lastNotifiedVersion == releaseVersion {
+        if let last = settings.updatePreferences.lastNotifiedDate, last >= releaseDate {
             return false
         }
         return settings.updatePreferences.automaticallyChecksForUpdates
@@ -560,13 +561,15 @@ private extension FileManager {
 }
 
 
-private struct GitHubRelease: Decodable {
+internal struct GitHubRelease: Decodable {
     struct Asset: Decodable {
         let browserDownloadUrl: URL
         let name: String
     }
 
     let tagName: String
+    let prerelease: Bool
+    let publishedAt: Date
     let body: String?
     let htmlUrl: URL
     let assets: [Asset]

@@ -48,6 +48,14 @@ struct UpdatesSettingsView: View {
                         isOn: autoDownloadBinding
                     )
                     .disabled(!settings.updatePreferences.automaticallyChecksForUpdates)
+                    
+                    SettingsDivider()
+                    
+                    SettingsToggleRow(
+                        title: "Include nightly builds",
+                        message: "Get the absolute latest experimental features (less stable).",
+                        isOn: includeNightlyBinding
+                    )
                 }
             }
         }
@@ -73,6 +81,16 @@ struct UpdatesSettingsView: View {
             get: { settings.updatePreferences.automaticallyDownloadsUpdates },
             set: { newValue in
                 settings.updatePreferences.automaticallyDownloadsUpdates = newValue
+                settings.saveSettings()
+            }
+        )
+    }
+    
+    private var includeNightlyBinding: Binding<Bool> {
+        Binding(
+            get: { settings.updatePreferences.includeNightlyChannel },
+            set: { newValue in
+                settings.updatePreferences.includeNightlyChannel = newValue
                 settings.saveSettings()
             }
         )

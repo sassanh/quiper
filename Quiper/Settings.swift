@@ -104,8 +104,10 @@ enum TopBarVisibility: String, Codable, Equatable, CaseIterable, Identifiable {
 struct UpdatePreferences: Codable, Equatable {
     var automaticallyChecksForUpdates: Bool = true
     var automaticallyDownloadsUpdates: Bool = false
+    var includeNightlyChannel: Bool = false
     var lastAutomaticCheck: Date?
     var lastNotifiedVersion: String?
+    var lastNotifiedDate: Date?
 }
 
 enum AppColorScheme: String, Codable, CaseIterable, Identifiable {

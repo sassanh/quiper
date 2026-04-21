@@ -79,7 +79,7 @@ private struct UpdatePromptView: View {
                 Text("A new version of \(Constants.APP_NAME) is available")
                     .font(.title3)
                     .bold()
-                Text("Version \(release.version) is available; you have \(Bundle.main.versionDisplayString).")
+                Text("Version \(release.version) (released \(release.publishDate.formatted(date: .abbreviated, time: .shortened))) is available.")
                     .foregroundColor(.secondary)
             }
             Spacer()

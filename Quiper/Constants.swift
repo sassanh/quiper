@@ -15,6 +15,7 @@ struct Constants {
 
     struct Updates {
         static let latestReleaseAPI = URL(string: "https://api.github.com/repos/sassanh/quiper/releases/latest")!
+        static let allReleasesAPI = URL(string: "https://api.github.com/repos/sassanh/quiper/releases")!
         static let latestReleasePage = URL(string: "https://github.com/sassanh/quiper/releases/latest")!
         static let automaticCheckInterval: TimeInterval = 60 * 60 * 12 // 12 hours
         static let preferredAssetExtensions = ["zip", "dmg"]
