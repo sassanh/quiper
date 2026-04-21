@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.8.2] - 2026-04-22
+
+### Fixed
+
+- **Update Detection**: Fixed the app always prompting for updates. The binary is compiled in CI before the release is published, so any file-system timestamp is always older than `published_at`. The build script now injects an `AppBuildDate` ISO 8601 timestamp into `Info.plist` at compile time; the app reads this value directly to accurately compare against the latest release's `published_at`.
+
 ## [2.8.1] - 2026-04-22
 
 ### Fixed

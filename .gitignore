@@ -26,6 +26,7 @@ xcuserdata/
 coverage.json
 coverage.lcov
 coverage-html/
+default.profraw
 test_output*.txt
 result*.json
 *.log
