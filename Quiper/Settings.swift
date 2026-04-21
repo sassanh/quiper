@@ -94,6 +94,13 @@ enum SelectorDisplayMode: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum TopBarVisibility: String, Codable, Equatable, CaseIterable, Identifiable {
+    case visible = "Visible"
+    case hidden = "Hidden"
+    
+    var id: String { rawValue }
+}
+
 struct UpdatePreferences: Codable, Equatable {
     var automaticallyChecksForUpdates: Bool = true
     var automaticallyDownloadsUpdates: Bool = false
@@ -374,6 +381,8 @@ private struct PersistedSettings: Codable {
     var sessionDigitsAlternateModifiers: UInt?
     var dockVisibility: DockVisibility?
     var selectorDisplayMode: SelectorDisplayMode?
+    var topBarVisibility: TopBarVisibility?
+    var showHiddenBarOnModifiers: Bool?
     var windowAppearance: WindowAppearanceSettings?
     var colorScheme: AppColorScheme?
 }
@@ -470,6 +479,12 @@ class Settings: ObservableObject {
             NotificationCenter.default.post(name: .selectorDisplayModeChanged, object: nil)
         }
     }
+    @Published var topBarVisibility: TopBarVisibility = .visible {
+        didSet {
+            NotificationCenter.default.post(name: .topBarVisibilityChanged, object: nil)
+        }
+    }
+    @Published var showHiddenBarOnModifiers: Bool = true
     @Published var windowAppearance: WindowAppearanceSettings = .default
     @Published var colorScheme: AppColorScheme = .system {
         didSet {
@@ -485,6 +500,8 @@ class Settings: ObservableObject {
         serviceZoomLevels = [:]
         appShortcutBindings = .defaults
         selectorDisplayMode = .auto
+        topBarVisibility = .visible
+        showHiddenBarOnModifiers = true
         windowAppearance = .default
         colorScheme = .system
     }
@@ -1058,6 +1075,12 @@ class Settings: ObservableObject {
         if selectorDisplayMode != (persisted.selectorDisplayMode ?? .auto) {
             selectorDisplayMode = persisted.selectorDisplayMode ?? .auto
         }
+        if topBarVisibility != (persisted.topBarVisibility ?? .visible) {
+            topBarVisibility = persisted.topBarVisibility ?? .visible
+        }
+        if showHiddenBarOnModifiers != (persisted.showHiddenBarOnModifiers ?? true) {
+            showHiddenBarOnModifiers = persisted.showHiddenBarOnModifiers ?? true
+        }
         if windowAppearance != (persisted.windowAppearance ?? .default) {
             windowAppearance = persisted.windowAppearance ?? .default
         }
@@ -1096,6 +1119,8 @@ class Settings: ObservableObject {
                                             sessionDigitsAlternateModifiers: appShortcutBindings.sessionDigitsAlternateModifiers,
                                             dockVisibility: dockVisibility,
                                             selectorDisplayMode: selectorDisplayMode,
+                                            topBarVisibility: topBarVisibility,
+                                            showHiddenBarOnModifiers: showHiddenBarOnModifiers,
                                             windowAppearance: windowAppearance,
                                             colorScheme: colorScheme)
             let data = try JSONEncoder().encode(payload)

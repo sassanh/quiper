@@ -92,7 +92,8 @@ final class WebViewManager: NSObject {
         }
         
         // Calculate frame
-        let dragHeight = self.dragArea?.bounds.height ?? 0
+        let isHeaderHidden = Settings.shared.topBarVisibility == .hidden
+        let dragHeight = isHeaderHidden ? 0 : (self.dragArea?.bounds.height ?? 0)
         let availableHeight = contentView.bounds.height - dragHeight
         let frame = NSRect(
             x: 0,
@@ -172,6 +173,31 @@ final class WebViewManager: NSObject {
         webviewsByURL.values.forEach { sessionMap in
             sessionMap.values.forEach { webView in
                 webView.superview?.isHidden = true
+            }
+        }
+    }
+    
+
+    func updateLayout(dragArea: NSView? = nil) {
+        if let dragArea = dragArea {
+            self.dragArea = dragArea
+        }
+        guard let container = containerView else { return }
+        
+        let isHeaderHidden = Settings.shared.topBarVisibility == .hidden
+        let dragHeight = isHeaderHidden ? 0 : (self.dragArea?.bounds.height ?? 0)
+        let availableHeight = container.bounds.height - dragHeight
+        
+        let frame = NSRect(
+            x: 0,
+            y: 0,
+            width: container.bounds.width,
+            height: availableHeight
+        )
+        
+        for sessionMap in webviewsByURL.values {
+            for webView in sessionMap.values {
+                webView.superview?.frame = frame
             }
         }
     }

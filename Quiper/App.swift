@@ -14,6 +14,7 @@ extension Notification.Name {
     static let notificationPermissionChanged = Notification.Name("QuiperNotificationPermissionChanged")
     static let dockVisibilityChanged = Notification.Name("QuiperDockVisibilityChanged")
     static let selectorDisplayModeChanged = Notification.Name("QuiperSelectorDisplayModeChanged")
+    static let topBarVisibilityChanged = Notification.Name("QuiperTopBarVisibilityChanged")
     static let windowAppearanceChanged = Notification.Name("QuiperWindowAppearanceChanged")
     static let colorSchemeChanged = Notification.Name("QuiperColorSchemeChanged")
     static let windowDidShow = Notification.Name("QuiperWindowDidShow")

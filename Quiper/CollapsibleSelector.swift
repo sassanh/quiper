@@ -269,7 +269,7 @@ class CollapsibleSelector: NSView {
 
     // MARK: - Expansion Logic
     
-    private func expand() {
+    func expand() {
         guard !isExpanded, let window = window, !items.isEmpty else { return }
         
         // Notify delegate before expanding

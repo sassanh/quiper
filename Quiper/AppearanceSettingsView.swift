@@ -49,6 +49,37 @@ struct AppearanceSettingsView: View {
                         }
                     }
                 }
+                SettingsSection(title: "Top Bar") {
+                    SettingsRow(
+                        title: "Header Visibility",
+                        message: "Controls whether the top header is always visible or only shown when needed."
+                    ) {
+                        Picker("", selection: $settings.topBarVisibility) {
+                            ForEach(TopBarVisibility.allCases) { visibility in
+                                Text(visibility.rawValue).tag(visibility)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 250)
+                    }
+                    .onChange(of: settings.topBarVisibility) { _, _ in
+                        settings.saveSettings()
+                    }
+                    
+                    if settings.topBarVisibility == .hidden {
+                        SettingsDivider()
+                        SettingsRow(
+                            title: "Show on Modifier Keys",
+                            message: "Show the hidden bar while holding tab/engine shortcut modifiers."
+                        ) {
+                            Toggle("", isOn: $settings.showHiddenBarOnModifiers)
+                                .toggleStyle(.switch)
+                                .onChange(of: settings.showHiddenBarOnModifiers) { _, _ in
+                                    settings.saveSettings()
+                                }
+                        }
+                    }
+                }
                 
                 SettingsSection(title: "Selectors") {
                     SettingsRow(

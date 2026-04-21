@@ -36,6 +36,18 @@
             testExecutionOrdering = "random">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "915536A82EDAE8C50024996F"
+               BuildableName = "QuiperTests.xctest"
+               BlueprintName = "QuiperTests"
+               ReferencedContainer = "container:Quiper.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "YES"
+            testExecutionOrdering = "random">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "915536B22EDAE8C50024996F"
                BuildableName = "QuiperUITests.xctest"
                BlueprintName = "QuiperUITests"

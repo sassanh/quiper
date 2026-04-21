@@ -89,8 +89,6 @@ class SegmentedControl: NSSegmentedControl {
         let segFont = font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize(for: controlSize))
         for i in 0..<segmentCount {
             let isSelected = (i == selectedSegment)
-            // guard !instantiated[i] || isSelected else { continue }
-
             guard let originalLabel = label(forSegment: i), !originalLabel.isEmpty else { continue }
 
             let captured = (cell as? SegmentedCell)?.capturedFrames[i]

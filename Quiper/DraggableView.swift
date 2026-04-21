@@ -18,6 +18,11 @@ public class DraggableView: NSView {
         updateBackgroundColor()
     }
 
+    public override func hitTest(_ point: NSPoint) -> NSView? {
+        if self.alphaValue < 0.05 { return nil }
+        return super.hitTest(point)
+    }
+
     func updateBackgroundColor() {
         if effectiveAppearance.name.rawValue.contains("Dark") {
             self.layer?.backgroundColor = NSColor(calibratedWhite: 0.2, alpha: 0.8).cgColor

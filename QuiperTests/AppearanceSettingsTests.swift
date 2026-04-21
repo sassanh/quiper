@@ -183,4 +183,48 @@ struct AppearanceSettingsTests {
         // Specific values depend on system appearance, but shouldn't crash and should be valid.
         #expect(codableDynamic.alpha > 0)
     }
+    
+    // MARK: - TopBarVisibility Tests
+    
+    @Test func topBarVisibility_RawValues() {
+        #expect(TopBarVisibility.visible.rawValue == "Visible")
+        #expect(TopBarVisibility.hidden.rawValue == "Hidden")
+    }
+    
+    @Test func topBarVisibility_AllCasesCount() {
+        #expect(TopBarVisibility.allCases.count == 2)
+    }
+    
+    @Test func topBarVisibility_Codable() throws {
+        for visibility in TopBarVisibility.allCases {
+            let encoded = try JSONEncoder().encode(visibility)
+            let decoded = try JSONDecoder().decode(TopBarVisibility.self, from: encoded)
+            #expect(decoded == visibility)
+        }
+    }
+    
+    @Test func settings_TopBarVisibilityDefault() {
+        let settings = Settings.shared
+        let original = settings.topBarVisibility
+        settings.reset()
+        #expect(settings.topBarVisibility == .visible)
+        settings.topBarVisibility = original
+    }
+    
+    @Test func settings_ShowHiddenBarOnModifiersDefault() {
+        let settings = Settings.shared
+        let original = settings.showHiddenBarOnModifiers
+        settings.reset()
+        #expect(settings.showHiddenBarOnModifiers == true)
+        settings.showHiddenBarOnModifiers = original
+    }
+    
+    @Test func settings_ResetIncludesTopBarVisibility() {
+        let settings = Settings.shared
+        settings.topBarVisibility = .hidden
+        settings.showHiddenBarOnModifiers = false
+        settings.reset()
+        #expect(settings.topBarVisibility == .visible)
+        #expect(settings.showHiddenBarOnModifiers == true)
+    }
 }

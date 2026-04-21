@@ -4,6 +4,11 @@
 
 ### Added
 
+- **Auto-Hiding Top Bar**: Added a new "Hidden" visibility mode for the top bar header.
+  - Header renders as an overlay (floating over web content) when hidden, increasing vertical space.
+  - Reveal triggers: Mouse hover near the top edge (8pt trigger zone), holding tab/engine shortcut modifier keys, or during session/service switches (0.75s).
+  - Added "Show on Modifier Keys" toggle in Appearance settings to allow disabling keyboard-driven reveals.
+- **Top Bar Visibility Unit Tests**: Added comprehensive test suite covering settings, alpha state management, modifier key detection, and temporary reveal triggers.
 - **Gray Accent Color**: App accent color is now gray via an `Assets.xcassets` color set, replacing the system accent color.
 
 ### Changed

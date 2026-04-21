@@ -63,6 +63,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var navigationContinuations: [ObjectIdentifier: CheckedContinuation<Void, Never>] = [:]
     private var cancellables = Set<AnyCancellable>()
     private var backgroundEffectView: NSVisualEffectView?
+    
+    // Header Visibility logic
+    private var headerTrackingArea: NSTrackingArea?
+    private var headerActionTimer: Timer?
+    private var isHeaderHovered = false
+    private var isModifiersForHeaderDown = false
+    private var isHeaderForcedVisibleForAction = false
 
     // Window size toggle state
     private var isCompactMode = false
@@ -180,6 +187,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateActiveWebview(focusWebView: focusWebView)
         updateSessionSelector()
         layoutSelectors()
+        
+        showHeaderTemporarily()
     }
 
     func switchSession(to index: Int) {
@@ -197,6 +206,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         updateActiveWebview()
         layoutSelectors() // Re-layout after session change to update selector width
+        
+        showHeaderTemporarily()
     }
 
     // Protocol conformance
@@ -404,27 +415,43 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
     
+    // MARK: - Input Handling
+    
+    func showHeaderTemporarily() {
+        guard Settings.shared.topBarVisibility == .hidden else { return }
+        isHeaderForcedVisibleForAction = true
+        updateHeaderVisibility()
+        headerActionTimer?.invalidate()
+        headerActionTimer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.isHeaderForcedVisibleForAction = false
+                self?.updateHeaderVisibility()
+            }
+        }
+    }
+
     func handleFlagsChanged(event: NSEvent) {
-        // We only care about specific combinations if they match exactly
-        // But users might press Cmd then Shift. We want to react as soon as the combo is valid.
-        // Also if they release one key, it might become invalid.
-        
-        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        // Mask out device-specific bits so comparison with stored modifier values works reliably
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let appShortcuts = Settings.shared.appShortcutBindings
         
-        // Session Digits (e.g. Cmd+Shift)
+        // Check for session expander logic
         var shouldExpandSession = false
-        if appShortcuts.sessionDigitsModifiers > 0 && modifiers.rawValue == appShortcuts.sessionDigitsModifiers {
+        let sessionMask = NSEvent.ModifierFlags(rawValue: appShortcuts.sessionDigitsModifiers)
+        if appShortcuts.sessionDigitsModifiers > 0 && modifiers == sessionMask {
              shouldExpandSession = true
-        } else if let alt = appShortcuts.sessionDigitsAlternateModifiers, alt > 0, modifiers.rawValue == alt {
+        } else if let alt = appShortcuts.sessionDigitsAlternateModifiers, alt > 0,
+                  modifiers == NSEvent.ModifierFlags(rawValue: alt) {
              shouldExpandSession = true
         }
         
         // Service Digits (e.g. Cmd+Ctrl)
         var shouldExpandService = false
-        if appShortcuts.serviceDigitsPrimaryModifiers > 0 && modifiers.rawValue == appShortcuts.serviceDigitsPrimaryModifiers {
+        let servicePrimaryMask = NSEvent.ModifierFlags(rawValue: appShortcuts.serviceDigitsPrimaryModifiers)
+        if appShortcuts.serviceDigitsPrimaryModifiers > 0 && modifiers == servicePrimaryMask {
              shouldExpandService = true
-        } else if let sec = appShortcuts.serviceDigitsSecondaryModifiers, sec > 0, modifiers.rawValue == sec {
+        } else if let sec = appShortcuts.serviceDigitsSecondaryModifiers, sec > 0,
+                  modifiers == NSEvent.ModifierFlags(rawValue: sec) {
              shouldExpandService = true
         }
         
@@ -434,7 +461,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if let sessionSel = collapsibleSessionSelector, !sessionSel.isHidden {
             if shouldExpandSession {
                 if !sessionSel.isExpanded {
-                    sessionSel.mouseEntered(with: event) 
+                    sessionSel.expand() 
                 }
             } else {
                 // Collapse immediately if keys released and mouse is not hovering safely
@@ -447,13 +474,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if let serviceSel = collapsibleServiceSelector, !serviceSel.isHidden {
             if shouldExpandService {
                 if !serviceSel.isExpanded {
-                    serviceSel.mouseEntered(with: event)
+                    serviceSel.expand()
                 }
             } else {
                 if serviceSel.isExpanded && (skipSafeAreaCheck || !isMouseInSafeArea(for: serviceSel)) {
                     serviceSel.collapse()
                 }
             }
+        }
+        
+        let shouldShowHeader = (shouldExpandSession || shouldExpandService) && Settings.shared.showHiddenBarOnModifiers
+        if isModifiersForHeaderDown != shouldShowHeader {
+            isModifiersForHeaderDown = shouldShowHeader
+            updateHeaderVisibility()
         }
     }
     
@@ -740,6 +773,69 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         findBarViewController.addTo(contentView: contentView, bottomOffset: Constants.DRAGGABLE_AREA_HEIGHT)
 
         updateActiveWebview()
+        updateHeaderTrackingArea()
+        updateHeaderVisibility(animated: false)
+    }
+
+    private func updateHeaderTrackingArea() {
+        guard let contentView = window?.contentView else { return }
+        if let area = headerTrackingArea {
+            contentView.removeTrackingArea(area)
+        }
+        // Narrow 8pt strip at the very top edge - only show header when mouse is very close to top
+        let edgeStrip: CGFloat = 50
+        let trackingRect = NSRect(x: 0, y: contentView.bounds.height - edgeStrip, width: contentView.bounds.width, height: edgeStrip)
+        let area = NSTrackingArea(rect: trackingRect, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways], owner: self, userInfo: nil)
+        contentView.addTrackingArea(area)
+        headerTrackingArea = area
+    }
+    
+    override func mouseEntered(with event: NSEvent) {
+        if let area = headerTrackingArea, event.trackingArea == area {
+            isHeaderHovered = true
+            updateHeaderVisibility()
+        } else {
+            super.mouseEntered(with: event)
+        }
+    }
+    
+    override func mouseExited(with event: NSEvent) {
+        if let area = headerTrackingArea, event.trackingArea == area {
+            isHeaderHovered = false
+            updateHeaderVisibility()
+        } else {
+            super.mouseExited(with: event)
+        }
+    }
+    
+    @objc private func topBarVisibilityChanged() {
+        updateHeaderTrackingArea()
+        updateHeaderVisibility()
+        webViewManager.updateLayout(dragArea: dragArea)
+    }
+
+    func updateHeaderVisibility(animated: Bool = true) {
+        let isHiddenMode = Settings.shared.topBarVisibility == .hidden
+        guard isHiddenMode else {
+            if animated {
+                dragArea.animator().alphaValue = 1.0
+            } else {
+                dragArea.alphaValue = 1.0
+            }
+            return
+        }
+
+        let shouldShow = isHeaderHovered || isModifiersForHeaderDown || isHeaderForcedVisibleForAction
+        let targetAlpha: CGFloat = shouldShow ? 1.0 : 0.0
+        
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                dragArea.animator().alphaValue = targetAlpha
+            }
+        } else {
+            dragArea.alphaValue = targetAlpha
+        }
     }
 
     private func createDragArea(in contentView: NSView) {
@@ -887,6 +983,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         layoutSelectors()
         NotificationCenter.default.addObserver(self, selector: #selector(handleDockVisibilityChanged), name: .dockVisibilityChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleSelectorDisplayModeChanged), name: .selectorDisplayModeChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(topBarVisibilityChanged), name: .topBarVisibilityChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowAppearanceChanged), name: .windowAppearanceChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleColorSchemeChanged), name: .colorSchemeChanged, object: nil)
         
@@ -916,6 +1013,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             updateSelectorsMode()
             layoutSelectors()
         }
+        updateHeaderTrackingArea()
     }
     
     @objc private func handleWindowAppearanceChanged(_ notification: Notification) {
