@@ -124,6 +124,8 @@ final class UpdateManager: NSObject, ObservableObject {
             do {
                 let release = try await self.fetchLatestRelease()
                 let now = Date()
+print(release.publishDate)
+print(self.currentAppBuildDate)
                 await MainActor.run {
                     self.isChecking = false
                     self.lastCheckedAt = now
@@ -388,12 +390,12 @@ final class UpdateManager: NSObject, ObservableObject {
     }
 
     private var currentAppBuildDate: Date {
-        if let url = Bundle.main.bundleURL.appendingPathComponent("Contents/Info.plist", isDirectory: false) as URL?,
-           let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let date = attrs[.creationDate] as? Date {
-            return date
+        guard let executableURL = Bundle.main.executableURL,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: executableURL.path),
+              let date = attrs[.modificationDate] as? Date else {
+            return .distantPast
         }
-        return (try? FileManager.default.attributesOfItem(atPath: Bundle.main.bundlePath)[.creationDate] as? Date) ?? Date.distantPast
+        return date
     }
 
     private func currentAppVersion() -> String {

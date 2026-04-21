@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.8.1] - 2026-04-22
+
+### Fixed
+
+- **Update Detection**: Fixed a bug where the app's build date was read from the `creationDate` of `Info.plist`, which is preserved when extracting zip archives and therefore always appeared older than the latest release. The app now reads the `modificationDate` of the executable binary, which is reliably set by the linker at build time.
+
 ## [2.8.0] - 2026-04-21
 
 ### Added
