@@ -21,6 +21,16 @@ class SegmentedControl: NSSegmentedControl {
         get { SegmentedCell.self }
         set { }
     }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        wantsLayer = true
+    }
     
     // Prevent focus from being stolen from webview
     override var acceptsFirstResponder: Bool { false }
@@ -45,62 +55,78 @@ class SegmentedControl: NSSegmentedControl {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
+        guard showInstantiationState else {
+            super.draw(dirtyRect)
+            return
+        }
 
-        guard showInstantiationState else { return }
-
-        let selectedColor = NSColor.controlAccentColor
-        let color = parentSelector == nil ? NSColor.windowBackgroundColor.withAlphaComponent(0.6) : NSColor.black.withAlphaComponent(0.5)
-        // .rounded has a single outer pill; .automatic/.separated render each segment as its own pill.
+        let uninstantiatedFontColor = parentSelector == nil
+            ? NSColor.controlBackgroundColor.withAlphaComponent(0.2)
+            : NSColor.underPageBackgroundColor.withAlphaComponent(0.3)
+        let instantiatedFontColor = NSColor.textColor
+        let uninstantiatedBackgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.5)
+        let instantiatedBackgroundColor = NSColor.underPageBackgroundColor.withAlphaComponent(0.3)
+        
         let isOuterPill = segmentStyle == .rounded || segmentStyle == .automatic
+
+        // Determine instantiation state per segment up front
+        var instantiated = [Bool](repeating: false, count: segmentCount)
+        for i in 0..<segmentCount {
+            if let sel = parentSelector {
+                instantiated[i] = selectorDelegate?.selector(sel, isInstantiated: i) == true
+            } else {
+                instantiated[i] = selectorDelegate?.segmentedControl(self, isInstantiated: i) == true
+            }
+        }
 
         NSGraphicsContext.saveGraphicsState()
         if isOuterPill {
             NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).setClip()
         }
 
+        super.draw(dirtyRect) // capturedFrames updated by drawSegment during this call
+
+        let segFont = font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize(for: controlSize))
         for i in 0..<segmentCount {
             let isSelected = (i == selectedSegment)
-            if let sel = parentSelector {
-                guard selectorDelegate?.selector(sel, isInstantiated: i) == false || isSelected else {
-                    continue
-                }
-            } else {
-                guard selectorDelegate?.segmentedControl(self, isInstantiated: i) == false else {
-                    continue
-                }
-            }
+            // guard !instantiated[i] || isSelected else { continue }
 
-            // Use x/width from captured frame for exact AppKit positioning;
-            // always use full bounds height so the overlay matches the visual control height.
+            guard let originalLabel = label(forSegment: i), !originalLabel.isEmpty else { continue }
+
             let captured = (cell as? SegmentedCell)?.capturedFrames[i]
             let segX = captured?.minX ?? (bounds.width / CGFloat(segmentCount) * CGFloat(i))
             let segW = captured?.width ?? (bounds.width / CGFloat(segmentCount))
-            let segFrame = self.backingAlignedRect(NSRect(x: segX, y: bounds.minY, width: segW, height: bounds.height), options: .alignAllEdgesNearest)
+            let segFrame = backingAlignedRect(NSRect(x: segX, y: bounds.minY, width: segW, height: bounds.height), options: .alignAllEdgesNearest)
 
-            if (isSelected) {
-                selectedColor.setFill()
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: segFont,
+                .foregroundColor: isSelected
+                    ? NSColor.white
+                    : instantiated[i] ? instantiatedFontColor : uninstantiatedFontColor
+            ]
+            let size = (originalLabel as NSString).size(withAttributes: attrs)
+            let textRect = NSRect(
+                x: segFrame.midX - size.width / 2,
+                y: segFrame.midY - size.height / 2,
+                width: size.width,
+                height: size.height
+            )
+
+            NSGraphicsContext.saveGraphicsState()
+            if isSelected {
+                NSColor.controlAccentColor.setFill()
+                segFrame.fill(using: .sourceOver)
+            } else if (instantiated[i]) {
+                instantiatedBackgroundColor.setFill()
+                segFrame.insetBy(dx: 0, dy: 1).fill(using: .sourceOver)
             } else {
-                color.setFill()
+                uninstantiatedBackgroundColor.setFill()
+                segFrame.insetBy(dx: 0, dy: 1).fill(using: .sourceOver)
+                // textRect.insetBy(dx: -1, dy: -2).fill()
             }
-            segFrame.fill(using: .sourceOver)
+            NSGraphicsContext.restoreGraphicsState()
 
-            // Draw lighter text over the gray overlay for better contrast.
-            if let label = self.label(forSegment: i), !label.isEmpty {
-                let font = self.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize(for: controlSize))
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: isSelected ? NSColor.white : NSColor.black.withAlphaComponent(0.1)
-                ]
-                let size = (label as NSString).size(withAttributes: attrs)
-                let textRect = NSRect(
-                    x: segFrame.midX - size.width / 2,
-                    y: segFrame.midY - size.height / 2,
-                    width: size.width,
-                    height: size.height
-                )
-                (label as NSString).draw(in: textRect, withAttributes: attrs)
-            }
+            (originalLabel as NSString).draw(in: textRect, withAttributes: attrs)
         }
 
         NSGraphicsContext.restoreGraphicsState()

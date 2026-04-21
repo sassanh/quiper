@@ -205,7 +205,7 @@ final class ScreenshotGenerator: BaseUITest {
             engineButton.click()
             waitForPageLoad()
             requestUserConfirmation(name: "hero")
-            saveScreenshot(name: "hero", element: overlayWindow)
+            saveScreenshot(name: "hero", element: app)
         } else {
             XCTFail("Could not find first engine for hero screenshot.")
         }

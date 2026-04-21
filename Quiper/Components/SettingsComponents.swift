@@ -54,23 +54,23 @@ struct SettingsRow<Content: View>: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(title)
                     .fontWeight(.semibold)
                     .frame(width: labelWidth, alignment: .leading)
                 
-                Spacer(minLength: 16)
+                if let message, !message.isEmpty {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: 16)
                 
-                content()
-            }
-            
-            if let message, !message.isEmpty {
-                Text(message)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
@@ -126,43 +126,24 @@ struct DualThemeRow<LightContent: View, DarkContent: View>: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .fontWeight(.semibold)
-                }
-                .frame(width: labelWidth, alignment: .leading)
-                
-                Spacer(minLength: 8)
-                
-                // Light column - fixed width for alignment
-                VStack(alignment: .center, spacing: 4) {
-                    Text("Light")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    lightContent()
-                }
-                .frame(width: controlColumnWidth)
-                
-                // Dark column - fixed width for alignment
-                VStack(alignment: .center, spacing: 4) {
-                    Text("Dark")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    darkContent()
-                }
-                .frame(width: controlColumnWidth)
-            }
-            
-            if let message, !message.isEmpty {
-                Text(message)
+        SettingsRow(title: title, message: message) {
+            // Light column - fixed width for alignment
+            VStack(alignment: .center, spacing: 4) {
+                Text("Light")
                     .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(.secondary)
+                lightContent()
             }
+            .frame(width: controlColumnWidth)
+            
+            // Dark column - fixed width for alignment
+            VStack(alignment: .center, spacing: 4) {
+                Text("Dark")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                darkContent()
+            }
+            .frame(width: controlColumnWidth)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
     }
 }

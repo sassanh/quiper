@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Gray Accent Color**: App accent color is now gray via an `Assets.xcassets` color set, replacing the system accent color.
+
+### Changed
+
+- **UI Refinements**: Improved Segmented Control styling for instantiation state and selected segments, refined Collapsible Selector animations, and updated Settings layout logic.
+- **Screenshot Generator**: Updated hero screenshot generation to snapshot the app element instead of the overlay window.
+
+### Fixed
+
+- **Dock Icon Not Removed on Hide**: `Cmd+Q`, `Cmd+H`, and the in-window hide menu item now correctly run the full hide lifecycle (dock policy update, settings dismissal, focus restore). Previously, these paths called `MainWindowController.hide()` directly, bypassing the logic in `AppController.hideWindow()`. The window controller now posts `windowDidShow`/`windowDidHide` notifications after each visibility change, and `AppController` observes them to consistently apply all lifecycle side-effects regardless of what triggered the hide or show.
+
 ## [2.7.2] - 2026-02-23
 
 ### Added

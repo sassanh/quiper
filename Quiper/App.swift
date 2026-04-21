@@ -16,6 +16,8 @@ extension Notification.Name {
     static let selectorDisplayModeChanged = Notification.Name("QuiperSelectorDisplayModeChanged")
     static let windowAppearanceChanged = Notification.Name("QuiperWindowAppearanceChanged")
     static let colorSchemeChanged = Notification.Name("QuiperColorSchemeChanged")
+    static let windowDidShow = Notification.Name("QuiperWindowDidShow")
+    static let windowDidHide = Notification.Name("QuiperWindowDidHide")
 }
 
 @objc protocol StandardEditActions {
@@ -55,6 +57,8 @@ final class AppController: NSObject, NSWindowDelegate {
                                                           name: NSWorkspace.didActivateApplicationNotification,
                                                           object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDockVisibilityChanged), name: .dockVisibilityChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidShow), name: .windowDidShow, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidHide), name: .windowDidHide, object: nil)
     }
     
     
@@ -97,21 +101,25 @@ final class AppController: NSObject, NSWindowDelegate {
     
     
     @objc func showWindow(_ sender: Any?) {
-        
         captureFrontmostNonQuiperApplication()
+        windowController.show()
+    }
+
+
+
+    @objc func hideWindow(_ sender: Any?) {
+        windowController.hide()
+    }
+
+    @objc private func handleWindowDidShow(_ notification: Notification) {
         let visibility = Settings.shared.dockVisibility
         if visibility == .always || visibility == .whenVisible {
             NSApp.setActivationPolicy(.regular)
         }
-        windowController.show()
         NotificationCenter.default.post(name: .appVisibilityChanged, object: true)
-        
     }
-    
-    
-    
-    @objc func hideWindow(_ sender: Any?) {
-        windowController.hide()
+
+    @objc private func handleWindowDidHide(_ notification: Notification) {
         let visibility = Settings.shared.dockVisibility
         if visibility == .whenVisible {
             NSApp.setActivationPolicy(.accessory)
@@ -826,8 +834,7 @@ struct StatusMenuBuilder {
         addItem("Install at Login", #selector(AppController.installAtLogin(_:)), "", [], controller)
         addItem("Uninstall from Login", #selector(AppController.uninstallFromLogin(_:)), "", [], controller)
         menu.addItem(.separator())
-        let quitModifiers: NSEvent.ModifierFlags = AppController.isRunningInXcode ? [.control] : [.command, .shift, .control]
-        addItem("Quit", #selector(NSApplication.terminate(_:)), "q", quitModifiers, NSApp)
+        addItem("Quit", #selector(NSApplication.terminate(_:)), "q", [.command, .shift, .control], NSApp)
         
         return menu
     }

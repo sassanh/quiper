@@ -325,7 +325,7 @@ class CollapsibleSelector: NSView {
         panel.worksWhenModal = true
         
         if #available(macOS 10.14, *) {
-            panel.appearance = NSApp.effectiveAppearance
+            panel.appearance = Settings.shared.colorScheme.nsAppearance ?? NSApp.effectiveAppearance
         }
         
         let container = NSVisualEffectView(frame: control.bounds)
@@ -358,7 +358,7 @@ class CollapsibleSelector: NSView {
         panel.setFrameOrigin(NSPoint(x: panelX, y: collapsedRect.minY))
         
         window.addChildWindow(panel, ordered: .above)
-        panel.alphaValue = 0
+        panel.alphaValue = 0.4
         panel.animator().alphaValue = 1
         
         self.expandedPanel = panel

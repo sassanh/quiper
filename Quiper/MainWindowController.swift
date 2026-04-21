@@ -331,11 +331,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         focusInputInActiveWebview()
         setShortcutsEnabled(true)
+        NotificationCenter.default.post(name: .windowDidShow, object: nil)
     }
 
     func hide() {
         window?.orderOut(nil)
         setShortcutsEnabled(false)
+        NotificationCenter.default.post(name: .windowDidHide, object: nil)
     }
 
     func toggleWindowSize() {
