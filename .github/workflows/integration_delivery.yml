@@ -18,9 +18,12 @@ jobs:
   tests:
     name: Tests
     runs-on: macos-26
+    environment:
+      name: test
+      url: https://app.codecov.io/gh/${{ github.repository }}/
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Select Xcode 26.1.1
         run: sudo xcode-select -s /Applications/Xcode_26.1.1.app
@@ -34,7 +37,7 @@ jobs:
         run: ./tests-with-coverage.sh -retry-tests-on-failure -test-iterations 2
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.lcov
@@ -43,14 +46,14 @@ jobs:
           root_dir: ${{ github.workspace }}
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage-html
 
       - name: Upload Test Result Bundle
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TestResult.xcresult
           path: build/DerivedData/TestResult.xcresult
@@ -61,7 +64,7 @@ jobs:
     runs-on: macos-26
     needs: tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set nightly app version
         if: github.event_name == 'schedule'
         run: |
@@ -72,7 +75,7 @@ jobs:
       - name: Compress App
         run: ditto -c -k --sequesterRsrc --keepParent Quiper.app Quiper.app.zip
       - name: Upload App
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app
           path: Quiper.app.zip
@@ -85,8 +88,8 @@ jobs:
     needs:
       - build
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
         with:
           name: app
           path: artifacts
@@ -97,7 +100,7 @@ jobs:
         run: |
           gh release delete nightly --yes --cleanup-tag || true
       - name: Create Nightly Pre-release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
           tag_name: nightly
@@ -119,8 +122,8 @@ jobs:
     needs:
       - build
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
         with:
           name: app
           path: artifacts
@@ -135,7 +138,7 @@ jobs:
           version: ${{ steps.release_version.outputs.value }}
           path: ./CHANGELOG.md
       - name: Publish Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
           tag_name: ${{ github.ref_name }}

@@ -11,6 +11,7 @@
 - **Top Bar Visibility Unit Tests**: Added comprehensive test suite covering settings, alpha state management, modifier key detection, and temporary reveal triggers.
 - **Nightly Update Channel**: Added an opt-in setting in the Updates tab to follow experimental build streams.
 - **Date-Based Update Checking**: Replaced semantic version parsing with publication date comparisons. This ensures nightly builds are correctly detected based on when they were released, even if the version string is unchanged.
+- **CI/CD Maintenance**: Updated GitHub Actions dependencies (Checkout to v6 and Upload-Artifact to v7) for improved reliability.
 - **Gray Accent Color**: App accent color is now gray via an `Assets.xcassets` color set, replacing the system accent color.
 
 ### Changed
