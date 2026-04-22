@@ -1,6 +1,10 @@
 # Changelog
 
-## [2.8.2] - 2026-04-22
+## [Unreleased]
+
+### Added
+
+- **Config Export / Import**: Added Export and Import buttons in Settings → General. Exports all settings and action scripts to a single `.quiper` JSON file that can be imported on any machine.
 
 ### Fixed
 

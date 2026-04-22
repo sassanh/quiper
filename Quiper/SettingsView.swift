@@ -62,6 +62,11 @@ struct GeneralSettingsView: View {
     @State private var showClearWebConfirmation = false
     @State private var showEraseEnginesConfirmation = false
     @State private var showEraseActionsConfirmation = false
+    @State private var showImportConfirmation = false
+    @State private var exportError: String?
+    @State private var importError: String?
+    @State private var exportSuccessMessage: String?
+
     
     var body: some View {
         ScrollView {
@@ -98,6 +103,43 @@ struct GeneralSettingsView: View {
                     }
                 }
                 
+                SettingsSection(title: "Config") {
+                    SettingsRow(
+                        title: "Export Config",
+                        message: "Save all settings and action scripts to a .quiper file."
+                    ) {
+                        Button("Export") {
+                            ConfigPortManager.showExportPanel(in: NSApp.keyWindow) { result in
+                                switch result {
+                                case .success(let url):
+                                    exportSuccessMessage = "Config exported to \(url.lastPathComponent)"
+                                case .failure(let error):
+                                    exportError = error.localizedDescription
+                                }
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+
+                    Divider()
+
+                    SettingsRow(
+                        title: "Import Config",
+                        message: "Restore settings and action scripts from a .quiper file. This will overwrite your current configuration."
+                    ) {
+                        Button("Import") {
+                            ConfigPortManager.showImportPanel(in: NSApp.keyWindow) { result in
+                                if case .failure(let error) = result {
+                                    importError = error.localizedDescription
+                                } else {
+                                    appController?.reloadServices()
+                                }
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+
                 SettingsSection(title: "Danger Zone", cardBackground: Color.red.opacity(0.05)) {
                     SettingsRow(title: "Clear Web Data",
                                 message: "Delete cookies, caches, and storage so every site behaves like a fresh login.") {
@@ -168,6 +210,21 @@ struct GeneralSettingsView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Removes every custom action and the scripts stored for them.")
+        }
+        .alert("Export failed", isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } })) {
+            Button("OK", role: .cancel) { exportError = nil }
+        } message: {
+            Text(exportError ?? "")
+        }
+        .alert("Import failed", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
+            Button("OK", role: .cancel) { importError = nil }
+        } message: {
+            Text(importError ?? "")
+        }
+        .alert("Export successful", isPresented: Binding(get: { exportSuccessMessage != nil }, set: { if !$0 { exportSuccessMessage = nil } })) {
+            Button("OK", role: .cancel) { exportSuccessMessage = nil }
+        } message: {
+            Text(exportSuccessMessage ?? "")
         }
     }
     

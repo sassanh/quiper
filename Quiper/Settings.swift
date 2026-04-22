@@ -373,7 +373,7 @@ struct AppShortcutBindings: Codable, Equatable {
     }
 }
 
-private struct PersistedSettings: Codable {
+struct PersistedSettings: Codable {
     var services: [Service]
     var hotkey: HotkeyManager.Configuration?
     var customActions: [CustomAction]?
@@ -387,6 +387,7 @@ private struct PersistedSettings: Codable {
     var showHiddenBarOnModifiers: Bool?
     var windowAppearance: WindowAppearanceSettings?
     var colorScheme: AppColorScheme?
+    var version: Int? = 1
 }
 
 class SettingsWindow: NSWindow {
@@ -1128,6 +1129,44 @@ class Settings: ObservableObject {
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
+        }
+    }
+
+    func makePersistedSettings() -> PersistedSettings {
+        PersistedSettings(
+            services: services,
+            hotkey: hotkeyConfiguration,
+            customActions: customActions,
+            updatePreferences: updatePreferences,
+            serviceZoomLevels: serviceZoomLevels.mapValues { Double($0) },
+            appShortcuts: appShortcutBindings,
+            sessionDigitsAlternateModifiers: appShortcutBindings.sessionDigitsAlternateModifiers,
+            dockVisibility: dockVisibility,
+            selectorDisplayMode: selectorDisplayMode,
+            topBarVisibility: topBarVisibility,
+            showHiddenBarOnModifiers: showHiddenBarOnModifiers,
+            windowAppearance: windowAppearance,
+            colorScheme: colorScheme
+        )
+    }
+
+    func applyPersistedSettings(_ persisted: PersistedSettings) {
+        services = persisted.services
+        customActions = persisted.customActions ?? []
+        updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
+        serviceZoomLevels = (persisted.serviceZoomLevels ?? [:]).mapValues { CGFloat($0) }
+        appShortcutBindings = persisted.appShortcuts ?? .defaults
+        if let altSessionDigits = persisted.sessionDigitsAlternateModifiers {
+            appShortcutBindings.sessionDigitsAlternateModifiers = altSessionDigits
+        }
+        dockVisibility = persisted.dockVisibility ?? .whenVisible
+        selectorDisplayMode = persisted.selectorDisplayMode ?? .auto
+        topBarVisibility = persisted.topBarVisibility ?? .visible
+        showHiddenBarOnModifiers = persisted.showHiddenBarOnModifiers ?? true
+        windowAppearance = persisted.windowAppearance ?? .default
+        colorScheme = persisted.colorScheme ?? .system
+        if let storedHotkey = persisted.hotkey {
+            hotkeyConfiguration = storedHotkey
         }
     }
 
