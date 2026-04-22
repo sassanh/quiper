@@ -112,6 +112,7 @@ jobs:
             Commit: ${{ github.sha }}
 
             ⚠️ This is a pre-release build for testing purposes only.
+            <!-- BuildNumber: ${{ github.run_number }} -->
           prerelease: true
           draft: false
 
@@ -143,6 +144,8 @@ jobs:
           files: artifacts/*
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
-          body: ${{ steps.changelog_reader.outputs.changes }}
+          body: |
+            ${{ steps.changelog_reader.outputs.changes }}
+            <!-- BuildNumber: ${{ github.run_number }} -->
           draft: false
           prerelease: false

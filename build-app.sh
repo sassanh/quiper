@@ -30,9 +30,6 @@ echo "🏗️  Building $APP_NAME v$APP_VERSION ($APP_BUILD)..."
 # Clean previous builds
 rm -rf "$BUILD_DIR"
 
-# Build timestamp — will be injected into Info.plist after build
-BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
 # Build with xcodebuild
 xcodebuild \
     -project "$PROJECT" \
@@ -55,12 +52,6 @@ fi
 
 # Copy to root for easy access
 cp -R "$APP_PATH" .
-
-# Inject build date into Info.plist (before re-signing so signature covers it)
-PLIST="$APP_NAME.app/Contents/Info.plist"
-echo "📅 Injecting build date: $BUILD_DATE"
-/usr/libexec/PlistBuddy -c "Set :AppBuildDate $BUILD_DATE" "$PLIST" 2>/dev/null \
-    || /usr/libexec/PlistBuddy -c "Add :AppBuildDate string $BUILD_DATE" "$PLIST"
 
 # Re-sign manually to ensure exact entitlements (Option 3: Downloads entitlement without Sandbox)
 # This overrides Xcode's automatic injection of app-sandbox

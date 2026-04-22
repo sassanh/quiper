@@ -8,6 +8,7 @@ final class UpdateManager: NSObject, ObservableObject {
         let version: String
         let publishDate: Date
         let notes: String?
+        let buildNumber: Int?
         let downloadURL: URL
         let pageURL: URL
         let requiresBrowserDownload: Bool
@@ -129,7 +130,16 @@ final class UpdateManager: NSObject, ObservableObject {
                     self.lastCheckedAt = now
                     self.settings.updatePreferences.lastAutomaticCheck = now
                     self.settings.saveSettings()
-                    if release.publishDate > self.currentAppBuildDate {
+                    
+                    let isNewer: Bool
+                    if let releaseBN = release.buildNumber, self.currentAppBuildNumber > 0 {
+                        isNewer = releaseBN > self.currentAppBuildNumber
+                    } else {
+                        // Fallback to standard semantic version compare if no build numbers present (safety net)
+                        isNewer = release.version.compare(self.currentAppVersion(), options: .numeric) == .orderedDescending
+                    }
+                    
+                    if isNewer {
                         self.handleReleaseAvailable(release, userInitiated: userInitiated)
                     } else {
                         self.availableRelease = nil
@@ -341,6 +351,7 @@ final class UpdateManager: NSObject, ObservableObject {
             return ReleaseInfo(version: "999.0.0",
                                publishDate: Date().addingTimeInterval(86400),
                                notes: "This is a mock update for testing.",
+                               buildNumber: 99999999999999,
                                downloadURL: URL(string: "https://example.com/mock-update.zip")!,
                                pageURL: URL(string: "https://example.com/mock-release")!,
                                requiresBrowserDownload: false)
@@ -379,20 +390,27 @@ final class UpdateManager: NSObject, ObservableObject {
         }
         let downloadURL = preferredAsset?.browserDownloadUrl ?? payload.htmlUrl
         let requiresBrowser = preferredAsset == nil
+        
+        var buildNumber: Int? = nil
+        if let body = payload.body, let range = body.range(of: "<!-- BuildNumber: (\\d+) -->", options: .regularExpression) {
+            let extracted = String(body[range])
+            if let numberStr = extracted.components(separatedBy: CharacterSet.decimalDigits.inverted).filter({ !$0.isEmpty }).first {
+                buildNumber = Int(numberStr)
+            }
+        }
+        
         return ReleaseInfo(version: version,
                            publishDate: publishDate,
                            notes: payload.body,
+                           buildNumber: buildNumber,
                            downloadURL: downloadURL,
                            pageURL: payload.htmlUrl,
                            requiresBrowserDownload: requiresBrowser)
     }
 
-    private var currentAppBuildDate: Date {
-        guard let rawDate = Bundle.main.infoDictionary?["AppBuildDate"] as? String else {
-            return .distantPast
-        }
-        let formatter = ISO8601DateFormatter()
-        return formatter.date(from: rawDate) ?? .distantPast
+    private var currentAppBuildNumber: Int {
+        guard let numStr = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else { return 0 }
+        return Int(numStr) ?? 0
     }
 
     private func currentAppVersion() -> String {

@@ -8,7 +8,7 @@
 
 ### Fixed
 
-- **Update Detection**: Fixed the app always prompting for updates. The binary is compiled in CI before the release is published, so any file-system timestamp is always older than `published_at`. The build script now injects an `AppBuildDate` ISO 8601 timestamp into `Info.plist` at compile time; the app reads this value directly to accurately compare against the latest release's `published_at`.
+- **Update Detection**: Completely rewrote the mechanism for tracking newer releases. The app now embeds the `GITHUB_RUN_NUMBER` generated during continuous integration as its internal Build Number. The GitHub update payload explicitly includes this number `<!-- BuildNumber: X -->`, ensuring that date-drifting and identical nightly version strings no longer trigger infinite update loops.
 
 ## [2.8.1] - 2026-04-22
 
