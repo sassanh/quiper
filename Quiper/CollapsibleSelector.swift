@@ -19,6 +19,9 @@ protocol CollapsibleSelectorDelegate: AnyObject {
     
     /// Called when the selector is about to expand
     func selectorWillExpand(_ selector: CollapsibleSelector)
+    
+    /// Called when the expansion state changes
+    func collapsibleSelector(_ selector: CollapsibleSelector, didChangeExpansionState isExpanded: Bool)
 }
 
 // Default implementation for optional methods
@@ -28,6 +31,7 @@ extension CollapsibleSelectorDelegate {
     func segmentedControl(_ control: SegmentedControl, isInstantiated index: Int) -> Bool { true } // Default: assume instantiated
     func selector(_ selector: CollapsibleSelector, didDragSegment index: Int, to newIndex: Int) {}
     func selectorWillExpand(_ selector: CollapsibleSelector) {}
+    func collapsibleSelector(_ selector: CollapsibleSelector, didChangeExpansionState isExpanded: Bool) {}
 }
 
 // MARK: - Collapsible Selector
@@ -276,6 +280,7 @@ class CollapsibleSelector: NSView {
         delegate?.selectorWillExpand(self)
         
         isExpanded = true
+        delegate?.collapsibleSelector(self, didChangeExpansionState: true)
         collapseTimer?.invalidate()
         
         // 1. Create Control
@@ -368,6 +373,7 @@ class CollapsibleSelector: NSView {
     func collapse() {
         guard isExpanded, let panel = expandedPanel else { return }
         isExpanded = false
+        delegate?.collapsibleSelector(self, didChangeExpansionState: false)
         
         NSAnimationContext.runAnimationGroup { context in
              context.duration = animationDuration

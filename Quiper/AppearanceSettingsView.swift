@@ -117,6 +117,7 @@ struct AppearanceSettingsView: View {
                 // Always show 3-column layout with Light and Dark controls side by side
                 dualThemeWindowSection()
             }
+            .padding(16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))

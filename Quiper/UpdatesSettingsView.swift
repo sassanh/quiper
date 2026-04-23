@@ -58,6 +58,7 @@ struct UpdatesSettingsView: View {
                     )
                 }
             }
+            .padding(16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))

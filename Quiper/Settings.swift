@@ -420,6 +420,19 @@ class SettingsWindow: NSWindow {
         center()
 
         configureContentForGlass()
+
+        // Apply the initial color scheme and observe future changes
+        appearance = Settings.shared.colorScheme.nsAppearance
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleColorSchemeChanged),
+            name: .colorSchemeChanged,
+            object: nil
+        )
+    }
+
+    @objc private func handleColorSchemeChanged() {
+        appearance = Settings.shared.colorScheme.nsAppearance
     }
 
     required init?(coder: NSCoder) {

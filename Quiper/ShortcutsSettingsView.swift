@@ -93,9 +93,9 @@ struct KeyBindingsSettingsView: View {
 
                 serviceHotkeysSection
             }
+            .contentMargins(16)
             .accessibilityIdentifier("ShortcutsList")
         }
-        .padding()
         .toolbar {
             ToolbarItem {
                 Menu {

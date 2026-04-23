@@ -9,13 +9,40 @@ public final class InteractionShieldView: NSView {
     public override func otherMouseDown(with event: NSEvent) {}
 }
 
+struct ColoredFrameGroupBoxStyle: GroupBoxStyle {
+    var frameColor: Color
+    var lineWidth: CGFloat = 1.0
+
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading) {
+            configuration.label
+                .font(.headline)
+            
+            configuration.content
+                .padding(.top, 4)
+        }
+        .padding()
+        // 2. Apply the custom border (frame) and background
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(frameColor, lineWidth: lineWidth)
+                .background(Color(NSColor.windowBackgroundColor).cornerRadius(8)) // Keeps standard background
+        )
+    }
+}
+
 struct SettingsSection<Content: View>: View {
     var title: String
     var titleColor: Color
     var cardBackground: Color
     var content: () -> Content
     
-    init(title: String, titleColor: Color = .primary, cardBackground: Color = Color(NSColor.controlBackgroundColor), @ViewBuilder content: @escaping () -> Content) {
+    init(
+        title: String,
+        titleColor: Color = .primary,
+        cardBackground: Color = Color(NSColor.controlBackgroundColor),
+        @ViewBuilder content: @escaping () -> Content
+    ) {
         self.title = title
         self.titleColor = titleColor
         self.cardBackground = cardBackground
@@ -37,7 +64,7 @@ struct SettingsSection<Content: View>: View {
                 .font(.headline)
                 .foregroundColor(titleColor)
         }
-        .groupBoxStyle(DefaultGroupBoxStyle())
+        .groupBoxStyle(ColoredFrameGroupBoxStyle(frameColor: Color(NSColor.separatorColor)))
     }
 }
 

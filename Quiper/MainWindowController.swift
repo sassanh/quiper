@@ -431,6 +431,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func handleFlagsChanged(event: NSEvent) {
+        // Suppress expansion when any modal window is open over the main window.
+        // We check if any window other than the main window is currently key — this
+        // covers the settings window (child window) and any future modal dialogs.
+        let mainWindow = window
+        let isSelectorPanel: (NSWindow) -> Bool = { [weak self] win in
+            win === self?.collapsibleSessionSelector?.expandedPanel ||
+            win === self?.collapsibleServiceSelector?.expandedPanel
+        }
+        
+        let hasModalWindow = mainWindow?.attachedSheet != nil
+            || NSApp.windows.contains { $0 !== mainWindow && $0.isVisible && $0.isKeyWindow && !isSelectorPanel($0) }
+        
+        if hasModalWindow { return }
+
         // Mask out device-specific bits so comparison with stored modifier values works reliably
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let appShortcuts = Settings.shared.appShortcutBindings
@@ -825,7 +839,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return
         }
 
-        let shouldShow = isHeaderHovered || isModifiersForHeaderDown || isHeaderForcedVisibleForAction
+        let isAnySelectorExpanded = (collapsibleSessionSelector?.isExpanded == true) || (collapsibleServiceSelector?.isExpanded == true)
+        let shouldShow = isHeaderHovered || isModifiersForHeaderDown || isHeaderForcedVisibleForAction || isAnySelectorExpanded
         let targetAlpha: CGFloat = shouldShow ? 1.0 : 0.0
         
         if animated {
@@ -1975,6 +1990,10 @@ extension MainWindowController: CollapsibleSelectorDelegate {
         } else if selector === collapsibleSessionSelector {
             collapsibleServiceSelector?.collapse()
         }
+    }
+    
+    func collapsibleSelector(_ selector: CollapsibleSelector, didChangeExpansionState isExpanded: Bool) {
+        updateHeaderVisibility()
     }
 }
 
