@@ -57,13 +57,19 @@ final class ActivationAndFocusTests: XCTestCase {
         
         // Action: Focus Input (Manual trigger since windowDidBecomeKey might not fire in headless test)
         windowController.focusInputInActiveWebview()
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5s
         
-        // Verify 3: Input is focused
-        let isFocused = try await webView?.evaluateJavaScript("""
-            document.activeElement.id === 'prompt-textarea'
-        """) as? Bool
+        var isFocused = false
+        for _ in 0..<20 {
+            let result = try await webView?.evaluateJavaScript("""
+                document.activeElement.id === 'prompt-textarea'
+            """) as? Bool
+            if result == true {
+                isFocused = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 200_000_000) // 0.2s
+        }
         
-        XCTAssertTrue(isFocused == true, "Input field #prompt-textarea should be focused")
+        XCTAssertTrue(isFocused, "Input field #prompt-textarea should be focused")
     }
 }

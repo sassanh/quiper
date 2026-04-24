@@ -81,6 +81,7 @@ final class TopBarVisibilityTests: XCTestCase {
     func testDragArea_IsFullyVisibleByDefault() {
         let services = [Service(name: "Test", url: "https://test.com", focus_selector: "")]
         let controller = MainWindowController(services: services)
+        controller.skipModalCheck = true
         // topBarVisibility defaults to .visible — alpha should be 1.0
         let dragArea: DraggableView? = getPrivateProperty(controller, "dragArea")
         XCTAssertNotNil(dragArea)
@@ -102,6 +103,7 @@ final class TopBarVisibilityTests: XCTestCase {
     func testDragArea_BecomesVisibleAgainWhenModeRestoredToVisible() {
         let services = [Service(name: "Test", url: "https://test.com", focus_selector: "")]
         let controller = MainWindowController(services: services)
+        controller.skipModalCheck = true
 
         Settings.shared.topBarVisibility = .hidden
         NotificationCenter.default.post(name: .topBarVisibilityChanged, object: nil)
@@ -230,6 +232,7 @@ final class TopBarVisibilityTests: XCTestCase {
     func testShowHeaderTemporarily_ShowsHeaderInHiddenMode() {
         let services = [Service(name: "Test", url: "https://test.com", focus_selector: "")]
         let controller = MainWindowController(services: services)
+        controller.skipModalCheck = true
 
         Settings.shared.topBarVisibility = .hidden
         NotificationCenter.default.post(name: .topBarVisibilityChanged, object: nil)
@@ -246,6 +249,7 @@ final class TopBarVisibilityTests: XCTestCase {
             Service(name: "B", url: "https://b.com", focus_selector: "")
         ]
         let controller = MainWindowController(services: services)
+        controller.skipModalCheck = true
 
         Settings.shared.topBarVisibility = .hidden
         NotificationCenter.default.post(name: .topBarVisibilityChanged, object: nil)
@@ -260,6 +264,7 @@ final class TopBarVisibilityTests: XCTestCase {
     func testSwitchSession_TriggersHeaderReveal() {
         let services = [Service(name: "Test", url: "https://test.com", focus_selector: "")]
         let controller = MainWindowController(services: services)
+        controller.skipModalCheck = true
 
         Settings.shared.topBarVisibility = .hidden
         NotificationCenter.default.post(name: .topBarVisibilityChanged, object: nil)

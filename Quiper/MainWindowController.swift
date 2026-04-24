@@ -859,15 +859,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func updateHeaderVisibility(animated: Bool = true) {
+        let isHiddenMode = Settings.shared.topBarVisibility == .hidden
         let isHeaderHovered = isMouseInHeaderTrackingArea
+        let isAnySelectorExpanded = (collapsibleSessionSelector?.isExpanded == true) || (collapsibleServiceSelector?.isExpanded == true)
         
-        let shouldShow = (Settings.shared.topBarVisibility == .visible) ||
-                         isHeaderHovered ||
-                         isModifiersForHeaderDown ||
-                         isHeaderForcedVisibleForAction
+        let shouldShowHeaderIfHidden = isHeaderHovered ||
+                                       isModifiersForHeaderDown ||
+                                       isHeaderForcedVisibleForAction ||
+                                       isAnySelectorExpanded
         
-        // Use skipModalCheck to bypass environment-dependent modal checks in unit tests
-        let finalVisible = shouldShow && (skipModalCheck || !hasModalWindow)
+        // In .hidden mode, if a modal is active, it forcibly overrides any temporary reveals.
+        let temporaryRevealAllowed = skipModalCheck || !hasModalWindow
+        
+        // Header should always be visible in .visible mode, ignoring modal checks entirely.
+        let finalVisible = !isHiddenMode || (shouldShowHeaderIfHidden && temporaryRevealAllowed)
         
         if animated {
             NSAnimationContext.runAnimationGroup { context in
