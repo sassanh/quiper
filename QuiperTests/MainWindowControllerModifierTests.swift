@@ -25,6 +25,7 @@ final class MainWindowControllerModifierTests: XCTestCase {
         let services = [Service(name: "Test", url: "https://test.com", focus_selector: "")]
         let controller = MainWindowController(services: services)
         controller.skipSafeAreaCheck = true
+        controller.skipModalCheck = true
         
         // Force Auto/Compact mode to ensure they are visible/created
         Settings.shared.selectorDisplayMode = .compact
@@ -85,6 +86,7 @@ final class MainWindowControllerModifierTests: XCTestCase {
         let services = [Service(name: "A", url: "a", focus_selector: ""), Service(name: "B", url: "b", focus_selector: "")]
         let controller = MainWindowController(services: services)
         controller.skipSafeAreaCheck = true
+        controller.skipModalCheck = true
         Settings.shared.selectorDisplayMode = .compact
         NotificationCenter.default.post(name: .selectorDisplayModeChanged, object: nil)
         

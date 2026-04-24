@@ -119,6 +119,7 @@ final class TopBarVisibilityTests: XCTestCase {
         let services = [Service(name: "Test", url: "https://test.com", focus_selector: "")]
         let controller = MainWindowController(services: services)
         controller.skipSafeAreaCheck = true
+        controller.skipModalCheck = true
 
         Settings.shared.topBarVisibility = .hidden
         Settings.shared.showHiddenBarOnModifiers = true
@@ -138,6 +139,7 @@ final class TopBarVisibilityTests: XCTestCase {
         let services = [Service(name: "Test", url: "https://test.com", focus_selector: "")]
         let controller = MainWindowController(services: services)
         controller.skipSafeAreaCheck = true
+        controller.skipModalCheck = true
 
         Settings.shared.topBarVisibility = .hidden
         Settings.shared.showHiddenBarOnModifiers = true
@@ -160,6 +162,7 @@ final class TopBarVisibilityTests: XCTestCase {
         ]
         let controller = MainWindowController(services: services)
         controller.skipSafeAreaCheck = true
+        controller.skipModalCheck = true
 
         Settings.shared.topBarVisibility = .hidden
         Settings.shared.showHiddenBarOnModifiers = true
@@ -179,6 +182,7 @@ final class TopBarVisibilityTests: XCTestCase {
         let services = [Service(name: "Test", url: "https://test.com", focus_selector: "")]
         let controller = MainWindowController(services: services)
         controller.skipSafeAreaCheck = true
+        controller.skipModalCheck = true
 
         Settings.shared.topBarVisibility = .hidden
         Settings.shared.showHiddenBarOnModifiers = false
@@ -195,6 +199,7 @@ final class TopBarVisibilityTests: XCTestCase {
         let services = [Service(name: "Test", url: "https://test.com", focus_selector: "")]
         let controller = MainWindowController(services: services)
         controller.skipSafeAreaCheck = true
+        controller.skipModalCheck = true
 
         // Mode is visible (default)
         XCTAssertEqual(Settings.shared.topBarVisibility, .visible)

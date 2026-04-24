@@ -58,6 +58,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var activeIndicesByURL: [String: Int] = [:]
     var keyDownEventMonitor: Any?
     var skipSafeAreaCheck = false
+    var skipModalCheck = false
     
     // For test support: track navigation completions
     private var backgroundEffectView: NSVisualEffectView?
@@ -441,7 +442,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Suppress expansion when any modal window is open over the main window.
         // We check if any window other than the main window is currently key — this
         // covers the settings window (child window) and any future modal dialogs.
-        if hasModalWindow { return }
+        if !(skipModalCheck || !hasModalWindow) { return }
 
         // Mask out device-specific bits so comparison with stored modifier values works reliably
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -470,7 +471,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Apply expansion states
         // Only expand if we have collapsible selectors and they are not hidden (i.e. in Compact/Auto mode)
         
-        if let sessionSel = collapsibleSessionSelector, !sessionSel.isHidden {
+        if let sessionSel = collapsibleSessionSelector, !sessionSel.isHidden && Settings.shared.showHiddenBarOnModifiers {
             if shouldExpandSession {
                 if !sessionSel.isExpanded {
                     sessionSel.expand() 
@@ -483,7 +484,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
         }
         
-        if let serviceSel = collapsibleServiceSelector, !serviceSel.isHidden {
+        if let serviceSel = collapsibleServiceSelector, !serviceSel.isHidden && Settings.shared.showHiddenBarOnModifiers {
             if shouldExpandService {
                 if !serviceSel.isExpanded {
                     serviceSel.expand()
@@ -857,28 +858,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateHeaderTrackingArea()
     }
 
-    func updateHeaderVisibility(animated: Bool = true) {
-        let isHiddenMode = Settings.shared.topBarVisibility == .hidden
-        guard isHiddenMode else {
-            if animated {
-                dragArea.animator().alphaValue = 1.0
-            } else {
-                dragArea.alphaValue = 1.0
-            }
-            return
-        }
-
-        let isAnySelectorExpanded = (collapsibleSessionSelector?.isExpanded == true) || (collapsibleServiceSelector?.isExpanded == true)
-        let shouldShow = (isHeaderHovered || isModifiersForHeaderDown || isHeaderForcedVisibleForAction || isAnySelectorExpanded) && !hasModalWindow
-        let targetAlpha: CGFloat = shouldShow ? 1.0 : 0.0
+    private func updateHeaderVisibility(animated: Bool = true) {
+        let isHeaderHovered = isMouseInHeaderTrackingArea
+        
+        let shouldShow = (Settings.shared.topBarVisibility == .visible) ||
+                         isHeaderHovered ||
+                         isModifiersForHeaderDown ||
+                         isHeaderForcedVisibleForAction
+        
+        // Use skipModalCheck to bypass environment-dependent modal checks in unit tests
+        let finalVisible = shouldShow && (skipModalCheck || !hasModalWindow)
         
         if animated {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.2
-                dragArea.animator().alphaValue = targetAlpha
+                dragArea?.animator().alphaValue = finalVisible ? 1.0 : 0.0
             }
         } else {
-            dragArea.alphaValue = targetAlpha
+            dragArea?.alphaValue = finalVisible ? 1.0 : 0.0
         }
     }
 
