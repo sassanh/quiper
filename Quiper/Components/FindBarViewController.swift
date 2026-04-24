@@ -31,15 +31,15 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         setupFindBar()
     }
     
-    func addTo(contentView: NSView, bottomOffset: CGFloat) {
+    func addTo(contentView: NSView, topOffset: CGFloat) {
         contentView.addSubview(view, positioned: .above, relativeTo: nil)
-        layoutIn(contentView: contentView, bottomOffset: bottomOffset)
+        layoutIn(contentView: contentView, topOffset: topOffset)
     }
     
-    func layoutIn(contentView: NSView, bottomOffset: CGFloat) {
+    func layoutIn(contentView: NSView, topOffset: CGFloat) {
         let padding: CGFloat = 12
         let originX = contentView.bounds.width - barWidth - padding
-        let originY = contentView.bounds.height - bottomOffset - barHeight - padding
+        let originY = contentView.bounds.height - topOffset - barHeight - padding
         
         view.frame = NSRect(x: originX, y: originY, width: barWidth, height: barHeight)
     }

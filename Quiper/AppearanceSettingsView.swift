@@ -66,6 +66,23 @@ struct AppearanceSettingsView: View {
                         settings.saveSettings()
                     }
                     
+                    SettingsDivider()
+                    SettingsRow(
+                        title: "Drag Area Position",
+                        message: "Controls whether the window drag area is at the top or bottom edge."
+                    ) {
+                        Picker("", selection: $settings.dragAreaPosition) {
+                            ForEach(DragAreaPosition.allCases) { position in
+                                Text(position.rawValue).tag(position)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 250)
+                    }
+                    .onChange(of: settings.dragAreaPosition) { _, _ in
+                        settings.saveSettings()
+                    }
+                    
                     if settings.topBarVisibility == .hidden {
                         SettingsDivider()
                         SettingsRow(

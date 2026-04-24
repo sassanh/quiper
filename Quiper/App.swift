@@ -15,10 +15,13 @@ extension Notification.Name {
     static let dockVisibilityChanged = Notification.Name("QuiperDockVisibilityChanged")
     static let selectorDisplayModeChanged = Notification.Name("QuiperSelectorDisplayModeChanged")
     static let topBarVisibilityChanged = Notification.Name("QuiperTopBarVisibilityChanged")
+    static let dragAreaPositionChanged = Notification.Name("QuiperDragAreaPositionChanged")
     static let windowAppearanceChanged = Notification.Name("QuiperWindowAppearanceChanged")
     static let colorSchemeChanged = Notification.Name("QuiperColorSchemeChanged")
     static let windowDidShow = Notification.Name("QuiperWindowDidShow")
     static let windowDidHide = Notification.Name("QuiperWindowDidHide")
+    static let settingsWindowDidOpen = Notification.Name("QuiperSettingsWindowDidOpen")
+    static let settingsWindowDidClose = Notification.Name("QuiperSettingsWindowDidClose")
 }
 
 @objc protocol StandardEditActions {
@@ -310,6 +313,7 @@ final class AppController: NSObject, NSWindowDelegate {
                 }
                 settingsWindow.makeKeyAndOrderFront(nil as Any?)
                 NSApp.activate(ignoringOtherApps: true)
+                NotificationCenter.default.post(name: .settingsWindowDidOpen, object: nil)
             }
             return
         }
@@ -331,6 +335,7 @@ final class AppController: NSObject, NSWindowDelegate {
         }
         settingsWindow.makeKeyAndOrderFront(nil as Any?)
         NSApp.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(name: .settingsWindowDidOpen, object: nil)
     }
     
     private func dismissSettingsWindow() {
@@ -347,6 +352,7 @@ final class AppController: NSObject, NSWindowDelegate {
         if isWindowVisible == false && visibility == .whenVisible {
             NSApp.setActivationPolicy(.accessory)
         }
+        NotificationCenter.default.post(name: .settingsWindowDidClose, object: nil)
     }
     
     private func registerOverlayHotkey() {

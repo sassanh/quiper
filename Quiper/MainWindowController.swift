@@ -60,9 +60,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var skipSafeAreaCheck = false
     
     // For test support: track navigation completions
-    private var navigationContinuations: [ObjectIdentifier: CheckedContinuation<Void, Never>] = [:]
-    private var cancellables = Set<AnyCancellable>()
     private var backgroundEffectView: NSVisualEffectView?
+
+    override var acceptsFirstResponder: Bool { true }
     
     // Header Visibility logic
     private var headerTrackingArea: NSTrackingArea?
@@ -430,19 +430,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    private var hasModalWindow: Bool {
+        let mainWindow = window
+        
+        return mainWindow?.attachedSheet != nil
+            || NSApp.windows.contains { $0 !== mainWindow && $0.isVisible && $0.isKeyWindow && !($0 is ActivePanel) }
+    }
+
     func handleFlagsChanged(event: NSEvent) {
         // Suppress expansion when any modal window is open over the main window.
         // We check if any window other than the main window is currently key — this
         // covers the settings window (child window) and any future modal dialogs.
-        let mainWindow = window
-        let isSelectorPanel: (NSWindow) -> Bool = { [weak self] win in
-            win === self?.collapsibleSessionSelector?.expandedPanel ||
-            win === self?.collapsibleServiceSelector?.expandedPanel
-        }
-        
-        let hasModalWindow = mainWindow?.attachedSheet != nil
-            || NSApp.windows.contains { $0 !== mainWindow && $0.isVisible && $0.isKeyWindow && !isSelectorPanel($0) }
-        
         if hasModalWindow { return }
 
         // Mask out device-specific bits so comparison with stored modifier values works reliably
@@ -784,7 +782,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         findBarViewController = FindBarViewController()
         findBarViewController.delegate = self
-        findBarViewController.addTo(contentView: contentView, bottomOffset: Constants.DRAGGABLE_AREA_HEIGHT)
+        findBarViewController.addTo(contentView: contentView, topOffset: Settings.shared.dragAreaPosition == .top ? Constants.DRAGGABLE_AREA_HEIGHT : 0)
 
         updateActiveWebview()
         updateHeaderTrackingArea()
@@ -798,10 +796,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         // Narrow 8pt strip at the very top edge - only show header when mouse is very close to top
         let edgeStrip: CGFloat = 50
-        let trackingRect = NSRect(x: 0, y: contentView.bounds.height - edgeStrip, width: contentView.bounds.width, height: edgeStrip)
+        let isBottom = Settings.shared.dragAreaPosition == .bottom
+        let y = isBottom ? 0 : contentView.bounds.height - edgeStrip
+        let trackingRect = NSRect(x: 0, y: y, width: contentView.bounds.width, height: edgeStrip)
         let area = NSTrackingArea(rect: trackingRect, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways], owner: self, userInfo: nil)
         contentView.addTrackingArea(area)
         headerTrackingArea = area
+    }
+    
+    private var isMouseInHeaderTrackingArea: Bool {
+        guard let window = self.window,
+              let trackingArea = headerTrackingArea,
+              let contentView = window.contentView else { return false }
+        
+        let mouseLocation = NSEvent.mouseLocation
+        let windowLocation = window.convertPoint(fromScreen: mouseLocation)
+        let viewLocation = contentView.convert(windowLocation, from: nil)
+        
+        return trackingArea.rect.contains(viewLocation)
     }
     
     override func mouseEntered(with event: NSEvent) {
@@ -827,6 +839,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateHeaderVisibility()
         webViewManager.updateLayout(dragArea: dragArea)
     }
+    
+    @objc private func dragAreaPositionChanged() {
+        guard let contentView = window?.contentView, let drag = dragArea else { return }
+        let isBottom = Settings.shared.dragAreaPosition == .bottom
+        
+        drag.frame = NSRect(
+            x: 0,
+            y: isBottom ? 0 : contentView.bounds.height - Constants.DRAGGABLE_AREA_HEIGHT,
+            width: contentView.bounds.width,
+            height: Constants.DRAGGABLE_AREA_HEIGHT
+        )
+        drag.autoresizingMask = isBottom ? [.width, .maxYMargin] : [.width, .minYMargin]
+        
+        webViewManager.updateLayout(dragArea: drag)
+        findBarViewController?.layoutIn(contentView: contentView, topOffset: isBottom ? 0 : Constants.DRAGGABLE_AREA_HEIGHT)
+        updateHeaderTrackingArea()
+    }
 
     func updateHeaderVisibility(animated: Bool = true) {
         let isHiddenMode = Settings.shared.topBarVisibility == .hidden
@@ -840,7 +869,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
 
         let isAnySelectorExpanded = (collapsibleSessionSelector?.isExpanded == true) || (collapsibleServiceSelector?.isExpanded == true)
-        let shouldShow = isHeaderHovered || isModifiersForHeaderDown || isHeaderForcedVisibleForAction || isAnySelectorExpanded
+        let shouldShow = (isHeaderHovered || isModifiersForHeaderDown || isHeaderForcedVisibleForAction || isAnySelectorExpanded) && !hasModalWindow
         let targetAlpha: CGFloat = shouldShow ? 1.0 : 0.0
         
         if animated {
@@ -854,13 +883,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func createDragArea(in contentView: NSView) {
+        let isBottom = Settings.shared.dragAreaPosition == .bottom
         let drag = DraggableView(frame: NSRect(
             x: 0,
-            y: contentView.bounds.height - Constants.DRAGGABLE_AREA_HEIGHT,
+            y: isBottom ? 0 : contentView.bounds.height - Constants.DRAGGABLE_AREA_HEIGHT,
             width: contentView.bounds.width,
             height: Constants.DRAGGABLE_AREA_HEIGHT
         ))
-        drag.autoresizingMask = [.width, .minYMargin]
+        drag.autoresizingMask = isBottom ? [.width, .maxYMargin] : [.width, .minYMargin]
         contentView.addSubview(drag)
         dragArea = drag
 
@@ -999,8 +1029,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleDockVisibilityChanged), name: .dockVisibilityChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleSelectorDisplayModeChanged), name: .selectorDisplayModeChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(topBarVisibilityChanged), name: .topBarVisibilityChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(dragAreaPositionChanged), name: .dragAreaPositionChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowAppearanceChanged), name: .windowAppearanceChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleColorSchemeChanged), name: .colorSchemeChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettings), name: .settingsWindowDidOpen, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleCloseSettings), name: .settingsWindowDidClose, object: nil)
         
         // Observe window width for Auto mode
         if let window = self.window {
@@ -1038,6 +1071,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     @objc private func handleColorSchemeChanged(_ notification: Notification) {
         applyColorScheme()
     }
+    
+    @objc private func handleShowSettings(_ notification: Notification) {
+        collapsibleServiceSelector?.collapse()
+        collapsibleSessionSelector?.collapse()
+        updateHeaderVisibility(animated: true)
+    }
+    
+    @objc private func handleCloseSettings(_ notification: Notification) {
+        isHeaderHovered = isMouseInHeaderTrackingArea
+        updateHeaderVisibility(animated: true)
+    }
+    
     private func applyColorScheme() {
         let scheme = Settings.shared.colorScheme
         window?.appearance = scheme.nsAppearance
@@ -1218,7 +1263,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Original code called layoutFindBar() inside layoutSelectors() or windowDidResize.
         // FindBarViewController has active auto-layout or manual frame logic?
         // It has `layoutIn`. Let's assume we should call it if we want it to stay positioned.
-        findBarViewController?.layoutIn(contentView: window!.contentView!, bottomOffset: Constants.DRAGGABLE_AREA_HEIGHT)
+        let isBottom = Settings.shared.dragAreaPosition == .bottom
+        findBarViewController?.layoutIn(contentView: window!.contentView!, topOffset: isBottom ? 0 : Constants.DRAGGABLE_AREA_HEIGHT)
 
         
         // Find visible selectors

@@ -2,8 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Configurable Drag Area Position**: Added a new setting in Appearance → Top Bar to toggle the window drag area between the top and bottom edges of the window.
+  - All layout components (web views, find bar, and mouse-hover tracking areas) dynamically adjust their positioning based on the selected setting.
+
 ### Fixed
 
+- **Header Visibility and Modal Windows**: Implemented a robust, declarative `hasModalWindow` system to ensure the auto-hiding header remains hidden whenever the Settings window or any other modal dialog is open.
+- **Selector Expansion Race Condition**: Fixed a race condition where rapidly toggling modifiers could cause animating-out selector panels to be incorrectly classified as modal windows, leading to the header being stuck in a hidden state.
+- **Mouse Hover Tracking on Move**: The 50pt sensory area for revealing the hidden header now correctly switches to the bottom edge when the drag area position is set to `.bottom`.
 - **Selector Expansion Blocked by Modal Windows**: Modifier-key selector expansion (e.g. holding `Cmd` to reveal engine/session digits) is now suppressed whenever any modal window is open. The check is generic — not tied specifically to the settings window — so it covers all future modal dialogs as well.
 - **Settings Window Color Scheme**: Changing the app's color scheme (Light/Dark/System) in Appearance settings now also updates the Settings window immediately. Previously only the main window was updated.
 

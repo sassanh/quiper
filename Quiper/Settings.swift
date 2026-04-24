@@ -101,6 +101,13 @@ enum TopBarVisibility: String, Codable, Equatable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum DragAreaPosition: String, Codable, Equatable, CaseIterable, Identifiable {
+    case top = "Top"
+    case bottom = "Bottom"
+    
+    var id: String { rawValue }
+}
+
 struct UpdatePreferences: Codable, Equatable {
     var automaticallyChecksForUpdates: Bool = true
     var automaticallyDownloadsUpdates: Bool = false
@@ -384,6 +391,7 @@ struct PersistedSettings: Codable {
     var dockVisibility: DockVisibility?
     var selectorDisplayMode: SelectorDisplayMode?
     var topBarVisibility: TopBarVisibility?
+    var dragAreaPosition: DragAreaPosition?
     var showHiddenBarOnModifiers: Bool?
     var windowAppearance: WindowAppearanceSettings?
     var colorScheme: AppColorScheme?
@@ -500,6 +508,11 @@ class Settings: ObservableObject {
             NotificationCenter.default.post(name: .topBarVisibilityChanged, object: nil)
         }
     }
+    @Published var dragAreaPosition: DragAreaPosition = .top {
+        didSet {
+            NotificationCenter.default.post(name: .dragAreaPositionChanged, object: nil)
+        }
+    }
     @Published var showHiddenBarOnModifiers: Bool = true
     @Published var windowAppearance: WindowAppearanceSettings = .default
     @Published var colorScheme: AppColorScheme = .system {
@@ -517,6 +530,7 @@ class Settings: ObservableObject {
         appShortcutBindings = .defaults
         selectorDisplayMode = .auto
         topBarVisibility = .visible
+        dragAreaPosition = .top
         showHiddenBarOnModifiers = true
         windowAppearance = .default
         colorScheme = .system
@@ -1094,6 +1108,9 @@ class Settings: ObservableObject {
         if topBarVisibility != (persisted.topBarVisibility ?? .visible) {
             topBarVisibility = persisted.topBarVisibility ?? .visible
         }
+        if dragAreaPosition != (persisted.dragAreaPosition ?? .top) {
+            dragAreaPosition = persisted.dragAreaPosition ?? .top
+        }
         if showHiddenBarOnModifiers != (persisted.showHiddenBarOnModifiers ?? true) {
             showHiddenBarOnModifiers = persisted.showHiddenBarOnModifiers ?? true
         }
@@ -1136,6 +1153,7 @@ class Settings: ObservableObject {
                                             dockVisibility: dockVisibility,
                                             selectorDisplayMode: selectorDisplayMode,
                                             topBarVisibility: topBarVisibility,
+                                            dragAreaPosition: dragAreaPosition,
                                             showHiddenBarOnModifiers: showHiddenBarOnModifiers,
                                             windowAppearance: windowAppearance,
                                             colorScheme: colorScheme)
@@ -1175,6 +1193,7 @@ class Settings: ObservableObject {
         dockVisibility = persisted.dockVisibility ?? .whenVisible
         selectorDisplayMode = persisted.selectorDisplayMode ?? .auto
         topBarVisibility = persisted.topBarVisibility ?? .visible
+        dragAreaPosition = persisted.dragAreaPosition ?? .top
         showHiddenBarOnModifiers = persisted.showHiddenBarOnModifiers ?? true
         windowAppearance = persisted.windowAppearance ?? .default
         colorScheme = persisted.colorScheme ?? .system

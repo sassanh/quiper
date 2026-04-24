@@ -188,12 +188,22 @@ final class WebViewManager: NSObject {
         let dragHeight = isHeaderHidden ? 0 : (self.dragArea?.bounds.height ?? 0)
         let availableHeight = container.bounds.height - dragHeight
         
-        let frame = NSRect(
-            x: 0,
-            y: 0,
-            width: container.bounds.width,
-            height: availableHeight
-        )
+        let frame: NSRect
+        if Settings.shared.dragAreaPosition == .top {
+            frame = NSRect(
+                x: 0,
+                y: 0,
+                width: container.bounds.width,
+                height: availableHeight
+            )
+        } else {
+            frame = NSRect(
+                x: 0,
+                y: dragHeight,
+                width: container.bounds.width,
+                height: availableHeight
+            )
+        }
         
         for sessionMap in webviewsByURL.values {
             for webView in sessionMap.values {
