@@ -4,5 +4,9 @@
 <dict>
 	<key>CFBundleIconFile</key>
 	<string>QuiperIcon</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Quiper requires camera access to enable video functionality in web applications like meetings and chat.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Quiper requires microphone access to enable audio functionality in web applications.</string>
 </dict>
 </plist>

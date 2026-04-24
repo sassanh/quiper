@@ -6,6 +6,9 @@
 
 - **Configurable Drag Area Position**: Added a new setting in Appearance → Top Bar to toggle the window drag area between the top and bottom edges of the window.
   - All layout components (web views, find bar, and mouse-hover tracking areas) dynamically adjust their positioning based on the selected setting.
+- **Media Capture Support**: Enabled camera and microphone access within webviews.
+  - Implemented `WKUIDelegate` hooks to automatically bridge website media requests to the native macOS permission system.
+  - Added required camera and microphone hardware entitlements and usage description strings.
 
 ### Fixed
 

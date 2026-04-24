@@ -474,6 +474,12 @@ private final class PopupUIDelegate: NSObject, WKUIDelegate {
             completionHandler(alert.runModal() == .alertFirstButtonReturn ? input.stringValue : nil)
         }
     }
+
+    @available(macOS 12.0, *)
+    @MainActor
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void) {
+        decisionHandler(.grant)
+    }
 }
 
 extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
@@ -594,6 +600,12 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         } else {
             completionHandler(alert.runModal() == .alertFirstButtonReturn ? input.stringValue : nil)
         }
+    }
+
+    @available(macOS 12.0, *)
+    @MainActor
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void) {
+        decisionHandler(.grant)
     }
 
     @MainActor
