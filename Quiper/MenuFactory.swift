@@ -51,7 +51,7 @@ enum MenuFactory {
         let zoomOutItem = createMenuItem(title: "Zoom Out", iconName: "minus.magnifyingglass", action: #selector(MainWindowController.performMenuZoomOut(_:)), keyEquivalent: "-")
         menu.addItem(zoomOutItem)
         
-        let resetZoomItem = createMenuItem(title: "Reset Zoom", iconName: "arrow.uturn.backward", action: #selector(MainWindowController.performMenuResetZoom(_:)), keyEquivalent: "0")
+        let resetZoomItem = createMenuItem(title: "Reset Zoom", iconName: "arrow.uturn.backward", action: #selector(MainWindowController.performMenuResetZoom(_:)), keyEquivalent: String(UnicodeScalar(8)))
         menu.addItem(resetZoomItem)
         
         return menu

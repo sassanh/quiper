@@ -19,6 +19,7 @@
 - **Mouse Hover Tracking on Move**: The 50pt sensory area for revealing the hidden header now correctly switches to the bottom edge when the drag area position is set to `.bottom`.
 - **Selector Expansion Blocked by Modal Windows**: Modifier-key selector expansion (e.g. holding `Cmd` to reveal engine/session digits) is now suppressed whenever any modal window is open. The check is generic — not tied specifically to the settings window — so it covers all future modal dialogs as well.
 - **Settings Window Color Scheme**: Changing the app's color scheme (Light/Dark/System) in Appearance settings now also updates the Settings window immediately. Previously only the main window was updated.
+- **Reset Zoom Menu Shortcut**: The reset zoom menu item in the View menu now correctly shows its shortcut "⌘+⌫".
 
 ## [2.9.0] - 2026-04-22
 
