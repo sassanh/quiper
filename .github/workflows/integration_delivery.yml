@@ -10,6 +10,7 @@ on:
   pull_request:
   schedule:
     - cron: "0 0 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -65,11 +66,12 @@ jobs:
     needs: tests
     steps:
       - uses: actions/checkout@v6
-      - name: Set nightly app version
-        if: github.event_name == 'schedule'
+      - name: Set release app version
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
           VERSION_BASE=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
-          echo "APP_VERSION=${VERSION_BASE}-nightly-nonproduction" >>"$GITHUB_ENV"
+          SUFFIX=$(if [ "${{ github.event_name }}" == "schedule" ]; then echo "nightly"; else echo "beta"; fi)
+          echo "APP_VERSION=${VERSION_BASE}-${SUFFIX}-nonproduction" >>"$GITHUB_ENV"
       - name: Build Swift App
         run: ./build-app.sh
       - name: Compress App
@@ -104,9 +106,44 @@ jobs:
         with:
           files: artifacts/*
           tag_name: nightly
-          name: Quiper Development build
+          name: Quiper Nightly Build
           body: |
             **Automated nightly build** from the latest `main` branch.
+
+            Built on: ${{ github.run_started_at }}
+            Commit: ${{ github.sha }}
+
+            ⚠️ This is a pre-release build for testing purposes only.
+            <!-- BuildNumber: ${{ github.run_number }} -->
+          prerelease: true
+          draft: false
+
+  beta-release:
+    if: github.event_name == 'workflow_dispatch'
+    name: Beta Pre-release
+    runs-on: macos-latest
+    needs:
+      - build
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: app
+          path: artifacts
+      - name: Delete previous beta release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete beta --yes --cleanup-tag || true
+      - name: Create Beta Pre-release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: artifacts/*
+          tag_name: beta
+          name: Quiper Beta Build
+          body: |
+            **Manual beta build** for feature testing.
 
             Built on: ${{ github.run_started_at }}
             Commit: ${{ github.sha }}

@@ -357,8 +357,11 @@ final class UpdateManager: NSObject, ObservableObject {
                                requiresBrowserDownload: false)
         }
 
-        let useNightly = settings.updatePreferences.includeNightlyChannel
-        let url = useNightly ? Constants.Updates.allReleasesAPI : Constants.Updates.latestReleaseAPI
+        let includeNightly = settings.updatePreferences.includeNightlyChannel
+        let includeBeta = settings.updatePreferences.includeBetaChannel
+        
+        let useAllReleasesAPI = includeNightly || includeBeta
+        let url = useAllReleasesAPI ? Constants.Updates.allReleasesAPI : Constants.Updates.latestReleaseAPI
         
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -372,9 +375,30 @@ final class UpdateManager: NSObject, ObservableObject {
         decoder.dateDecodingStrategy = .iso8601
         
         let payload: GitHubRelease
-        if useNightly {
-            let releases = try decoder.decode([GitHubRelease].self, from: data)
-            // Pick the newest one based on update timestamp (handles nightly updates)
+        if useAllReleasesAPI {
+            var releases = try decoder.decode([GitHubRelease].self, from: data)
+            
+            // Filter based on preferences
+            if !includeNightly {
+                // Remove nightlies if not requested
+                releases = releases.filter { $0.tagName != "nightly" }
+            }
+            
+            if !includeBeta {
+                // If beta NOT included, we only want stable releases
+                // (Though if includeNightly is true, we already allowed those)
+                // To be precise: if they only wanted nightly, they probably don't mind beta too as they are both pre-releases.
+                // But if they specifically chose NONE of them, they'd use the latestReleaseAPI anyway.
+                // If they ONLY chose Nightly, we should probably still show them Beta as it's "less" experimental than nightly.
+                // Usually, the order is: Stable < Beta < Nightly.
+                // If someone opts into Nightly, they opt into everything below it.
+                // If someone opts into Beta, they only opt into Stable + Beta.
+                if !includeNightly {
+                    releases = releases.filter { !$0.prerelease }
+                }
+            }
+            
+            // Re-pick the newest one from the filtered set
             guard let first = releases.sorted(by: { $0.publishedAt > $1.publishedAt }).first else {
                 throw UpdateError.invalidResponse
             }

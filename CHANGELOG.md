@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Beta Update Channel**: Users can now opt-in to manually-triggered pre-release builds in Settings → Updates. This allows testing of new features before they are officially released without needing to use the more experimental nightly builds.
 - **Smart Selector Display Mode**: The "Auto" display mode now dynamically switches between static and compact (collapsible) selectors based on available window width.
   - It automatically collapses whenever there isn't enough room to show at least 120px of the page title between the selectors.
 - **Configurable Drag Area Position**: Added a new setting in Appearance → Top Bar to toggle the window drag area between the top and bottom edges of the window.

@@ -52,6 +52,14 @@ struct UpdatesSettingsView: View {
                     SettingsDivider()
                     
                     SettingsToggleRow(
+                        title: "Include beta builds",
+                        message: "Get manually-triggered pre-release builds for testing new features.",
+                        isOn: includeBetaBinding
+                    )
+                    
+                    SettingsDivider()
+                    
+                    SettingsToggleRow(
                         title: "Include nightly builds",
                         message: "Get the absolute latest experimental features (less stable).",
                         isOn: includeNightlyBinding
@@ -82,6 +90,16 @@ struct UpdatesSettingsView: View {
             get: { settings.updatePreferences.automaticallyDownloadsUpdates },
             set: { newValue in
                 settings.updatePreferences.automaticallyDownloadsUpdates = newValue
+                settings.saveSettings()
+            }
+        )
+    }
+    
+    private var includeBetaBinding: Binding<Bool> {
+        Binding(
+            get: { settings.updatePreferences.includeBetaChannel },
+            set: { newValue in
+                settings.updatePreferences.includeBetaChannel = newValue
                 settings.saveSettings()
             }
         )

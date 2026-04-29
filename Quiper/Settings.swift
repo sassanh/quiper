@@ -111,6 +111,7 @@ enum DragAreaPosition: String, Codable, Equatable, CaseIterable, Identifiable {
 struct UpdatePreferences: Codable, Equatable {
     var automaticallyChecksForUpdates: Bool = true
     var automaticallyDownloadsUpdates: Bool = false
+    var includeBetaChannel: Bool = false
     var includeNightlyChannel: Bool = false
     var lastAutomaticCheck: Date?
     var lastNotifiedVersion: String?
