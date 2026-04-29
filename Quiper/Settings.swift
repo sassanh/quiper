@@ -1011,7 +1011,7 @@ class Settings: ObservableObject {
             """
         ),
         Service(
-            name: "Ollama",
+            name: "Open WebUI",
             url: "http://localhost:8080",
             focus_selector: "#chat-input[contenteditable='true']",
             actionScripts: [

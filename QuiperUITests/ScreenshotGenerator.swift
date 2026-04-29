@@ -133,7 +133,7 @@ final class ScreenshotGenerator: BaseUITest {
     private func runScreenshotFlow() throws {
         ensureWindowVisible()
         let overlayWindow = app.windows["Quiper Overlay"]
-        let engines = ["Gemini", "Claude", "Grok", "ChatGPT", "X", "Ollama", "Google"]
+        let engines = ["Gemini", "Claude", "Grok", "ChatGPT", "X", "Open WebUI", "Google"]
         let selectorDialog = app.dialogs.element
 
         // 1. 🔥 Pre-warm engines: click each one once to trigger loading

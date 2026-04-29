@@ -11,7 +11,7 @@ Quiper is a macOS status-bar app that keeps your AI chat services in a single fl
 
 ## Highlights
 
-- **Overlay built for AI sites** – Define any site that works in Safari (Gemini, Claude, Grok, ChatGPT, Ollama, internal tools, etc.). Quiper opens each one inside its own `WKWebView` stack so session switches are instant.
+- **Overlay built for AI sites** – Define any site that works in Safari (Gemini, Claude, Grok, ChatGPT, Open WebUI, internal tools, etc.). Quiper opens each one inside its own `WKWebView` stack so session switches are instant.
 - **Keyboard first** – The default global shortcut is `⌥ Space`, but you can record any combination.
 - **Persistent sessions** – Each service owns ten live `WKWebView`s. They keep scrollback and form contents, while cookies/cache live in the shared WebKit store so authentication survives next launch.
 - **Notification bridge** – A JavaScript shim mirrors the browser `Notification` API into `UNUserNotificationCenter`.
@@ -28,7 +28,7 @@ Quiper is a macOS status-bar app that keeps your AI chat services in a single fl
   <img src=".github/assets/main_google.webp" width="49%" />
 </p>
 <p float="left">
-  <img src=".github/assets/main_ollama.webp" width="49%" />
+  <img src=".github/assets/main_open-webui.webp" width="49%" />
   <img src=".github/assets/main_x.webp" width="49%" />
 </p>
 
@@ -157,7 +157,7 @@ Define hotkeys for specific services:
 
 - Each service entry in `settings.json` spawns ten `WKWebView`s during startup. Quiper hides all but the active view, so switching is instantaneous.
 - WebKit data (cookies, local storage, cache) is shared. Logging out of a service in one session signs out the others.
-- The default services (Gemini, Claude, Grok, ChatGPT, Ollama) live in `Settings.shared.defaultEngines`.
+- The default services (Gemini, Claude, Grok, ChatGPT, Open WebUI) live in `Settings.shared.defaultEngines`.
 
 ### Notifications
 

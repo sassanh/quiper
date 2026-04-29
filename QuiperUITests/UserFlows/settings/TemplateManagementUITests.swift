@@ -47,7 +47,7 @@ final class TemplateManagementUITests: BaseUITest {
         XCTAssertEqual(app.outlines.firstMatch.outlineRows.count, 0, "Engines should be empty")
         
         // --- Step 2: Add One by One ---
-        let engineTemplates = ["Gemini", "Claude", "Grok", "ChatGPT", "X", "Ollama", "Google"]
+        let engineTemplates = ["Gemini", "Claude", "Grok", "ChatGPT", "X", "Open WebUI", "Google"]
         
         let addServiceBtn = app.descendants(matching: .any).matching(identifier: "Add Service").firstMatch
         
