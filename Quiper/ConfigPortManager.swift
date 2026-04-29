@@ -59,7 +59,15 @@ enum ConfigPortManager {
     static func importConfig(from data: Data) throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let ps = try decoder.decode(PersistedSettings.self, from: data)
+        
+        let ps: PersistedSettings
+        do {
+            ps = try decoder.decode(PersistedSettings.self, from: data)
+        } catch let error as DecodingError {
+            throw ConfigPortError.decodingFailed(error)
+        } catch {
+            throw error
+        }
 
         // Restore settings
         Settings.shared.applyPersistedSettings(ps)
@@ -128,6 +136,40 @@ enum ConfigPortManager {
             panel.beginSheetModal(for: window, completionHandler: handler)
         } else {
             panel.begin(completionHandler: handler)
+        }
+    }
+}
+
+enum ConfigPortError: LocalizedError {
+    case decodingFailed(DecodingError)
+
+    var errorDescription: String? {
+        switch self {
+        case .decodingFailed(let error):
+            return "Failed to read the config file: \(error.detailedDescription)"
+        }
+    }
+}
+
+extension DecodingError {
+    var detailedDescription: String {
+        switch self {
+        case .keyNotFound(let key, let context):
+            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
+            let location = path.isEmpty ? "" : " at '\(path)'"
+            return "Missing field '\(key.stringValue)'\(location)."
+        case .typeMismatch(let type, let context):
+            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
+            return "Incorrect type for field '\(path)': expected \(type). \(context.debugDescription)"
+        case .valueNotFound(let type, let context):
+            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
+            return "Value of type '\(type)' not found at '\(path)'."
+        case .dataCorrupted(let context):
+            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
+            let location = path.isEmpty ? "" : " at '\(path)'"
+            return "Data corrupted\(location): \(context.debugDescription)"
+        @unknown default:
+            return self.localizedDescription
         }
     }
 }

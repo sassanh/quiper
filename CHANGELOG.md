@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Resilient Config Import**: The settings system is now more permissive and "self-healing," allowing for seamless imports of configuration files from older versions even as the internal schema evolves.
+- **Detailed Import Diagnostics**: Failed configuration imports now provide specific technical feedback (e.g., exactly which field or data type is missing/incorrect) instead of generic error messages.
+
+### Changed
+
+- **Settings Migration Path**: Added comprehensive fallback mechanisms for all core configuration structures (`Service`, `AppShortcutBindings`, `CustomAction`, `WindowAppearance`), ensuring the app can gracefully recover data from partial or outdated `.quiper` files.
 - **Beta Update Channel**: Users can now opt-in to manually-triggered pre-release builds in Settings → Updates. This allows testing of new features before they are officially released without needing to use the more experimental nightly builds.
 - **Smart Selector Display Mode**: The "Auto" display mode now dynamically switches between static and compact (collapsible) selectors based on available window width.
   - It automatically collapses whenever there isn't enough room to show at least 120px of the page title between the selectors.

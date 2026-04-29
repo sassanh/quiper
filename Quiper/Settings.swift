@@ -46,9 +46,9 @@ struct Service: Codable, Identifiable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        name = try container.decode(String.self, forKey: .name)
-        url = try container.decode(String.self, forKey: .url)
-        focus_selector = try container.decode(String.self, forKey: .focus_selector)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Untitled Service"
+        url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
+        focus_selector = try container.decodeIfPresent(String.self, forKey: .focus_selector) ?? ""
         actionScripts = try container.decodeIfPresent([UUID: String].self, forKey: .actionScripts) ?? [:]
         activationShortcut = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .activationShortcut)
         friendDomains = try container.decodeIfPresent([String].self, forKey: .friendDomains) ?? []
@@ -116,6 +116,19 @@ struct UpdatePreferences: Codable, Equatable {
     var lastAutomaticCheck: Date?
     var lastNotifiedVersion: String?
     var lastNotifiedDate: Date?
+}
+
+extension UpdatePreferences {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        automaticallyChecksForUpdates = try container.decodeIfPresent(Bool.self, forKey: .automaticallyChecksForUpdates) ?? true
+        automaticallyDownloadsUpdates = try container.decodeIfPresent(Bool.self, forKey: .automaticallyDownloadsUpdates) ?? false
+        includeBetaChannel = try container.decodeIfPresent(Bool.self, forKey: .includeBetaChannel) ?? false
+        includeNightlyChannel = try container.decodeIfPresent(Bool.self, forKey: .includeNightlyChannel) ?? false
+        lastAutomaticCheck = try container.decodeIfPresent(Date.self, forKey: .lastAutomaticCheck)
+        lastNotifiedVersion = try container.decodeIfPresent(String.self, forKey: .lastNotifiedVersion)
+        lastNotifiedDate = try container.decodeIfPresent(Date.self, forKey: .lastNotifiedDate)
+    }
 }
 
 enum AppColorScheme: String, Codable, CaseIterable, Identifiable {
@@ -201,6 +214,16 @@ struct ThemeAppearanceSettings: Codable, Equatable {
     )
 }
 
+extension ThemeAppearanceSettings {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try container.decodeIfPresent(WindowBackgroundMode.self, forKey: .mode) ?? .solidColor
+        material = try container.decodeIfPresent(WindowMaterial.self, forKey: .material) ?? .underWindowBackground
+        backgroundColor = try container.decodeIfPresent(CodableColor.self, forKey: .backgroundColor) ?? ThemeAppearanceSettings.defaultDark.backgroundColor
+        blurRadius = try container.decodeIfPresent(Double.self, forKey: .blurRadius) ?? 40.0
+    }
+}
+
 struct WindowAppearanceSettings: Codable, Equatable {
     var light: ThemeAppearanceSettings = .defaultLight
     var dark: ThemeAppearanceSettings = .defaultDark
@@ -269,6 +292,18 @@ struct CodableColor: Codable, Equatable {
         self.blue = Double(converted.blueComponent)
         self.alpha = Double(converted.alphaComponent)
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        red = try container.decodeIfPresent(Double.self, forKey: .red) ?? 0.0
+        green = try container.decodeIfPresent(Double.self, forKey: .green) ?? 0.0
+        blue = try container.decodeIfPresent(Double.self, forKey: .blue) ?? 0.0
+        alpha = try container.decodeIfPresent(Double.self, forKey: .alpha) ?? 1.0
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case red, green, blue, alpha
+    }
 }
 
 
@@ -300,6 +335,13 @@ struct AppShortcutBindings: Codable, Equatable {
     var sessionDigitsAlternateModifiers: UInt?
     var serviceDigitsPrimaryModifiers: UInt
     var serviceDigitsSecondaryModifiers: UInt?
+
+    private enum CodingKeys: String, CodingKey {
+        case nextSession, previousSession, nextService, previousService
+        case alternateNextSession, alternatePreviousSession, alternateNextService, alternatePreviousService
+        case sessionDigitsModifiers, sessionDigitsAlternateModifiers
+        case serviceDigitsPrimaryModifiers, serviceDigitsSecondaryModifiers
+    }
 
     static let defaults = AppShortcutBindings(
         nextSession: HotkeyManager.Configuration(
@@ -381,6 +423,24 @@ struct AppShortcutBindings: Codable, Equatable {
     }
 }
 
+extension AppShortcutBindings {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        nextSession = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .nextSession) ?? AppShortcutBindings.defaults.nextSession
+        previousSession = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .previousSession) ?? AppShortcutBindings.defaults.previousSession
+        nextService = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .nextService) ?? AppShortcutBindings.defaults.nextService
+        previousService = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .previousService) ?? AppShortcutBindings.defaults.previousService
+        alternateNextSession = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternateNextSession)
+        alternatePreviousSession = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternatePreviousSession)
+        alternateNextService = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternateNextService)
+        alternatePreviousService = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternatePreviousService)
+        sessionDigitsModifiers = try container.decodeIfPresent(UInt.self, forKey: .sessionDigitsModifiers) ?? AppShortcutBindings.defaults.sessionDigitsModifiers
+        sessionDigitsAlternateModifiers = try container.decodeIfPresent(UInt.self, forKey: .sessionDigitsAlternateModifiers)
+        serviceDigitsPrimaryModifiers = try container.decodeIfPresent(UInt.self, forKey: .serviceDigitsPrimaryModifiers) ?? AppShortcutBindings.defaults.serviceDigitsPrimaryModifiers
+        serviceDigitsSecondaryModifiers = try container.decodeIfPresent(UInt.self, forKey: .serviceDigitsSecondaryModifiers)
+    }
+}
+
 struct PersistedSettings: Codable {
     var services: [Service]
     var hotkey: HotkeyManager.Configuration?
@@ -397,6 +457,63 @@ struct PersistedSettings: Codable {
     var windowAppearance: WindowAppearanceSettings?
     var colorScheme: AppColorScheme?
     var version: Int? = 1
+
+    enum CodingKeys: String, CodingKey {
+        case services, hotkey, customActions, updatePreferences, serviceZoomLevels, appShortcuts
+        case sessionDigitsAlternateModifiers, dockVisibility, selectorDisplayMode, topBarVisibility
+        case dragAreaPosition, showHiddenBarOnModifiers, windowAppearance, colorScheme, version
+    }
+
+    init(services: [Service],
+         hotkey: HotkeyManager.Configuration? = nil,
+         customActions: [CustomAction]? = nil,
+         updatePreferences: UpdatePreferences? = nil,
+         serviceZoomLevels: [String: Double]? = nil,
+         appShortcuts: AppShortcutBindings? = nil,
+         sessionDigitsAlternateModifiers: UInt? = nil,
+         dockVisibility: DockVisibility? = nil,
+         selectorDisplayMode: SelectorDisplayMode? = nil,
+         topBarVisibility: TopBarVisibility? = nil,
+         dragAreaPosition: DragAreaPosition? = nil,
+         showHiddenBarOnModifiers: Bool? = nil,
+         windowAppearance: WindowAppearanceSettings? = nil,
+         colorScheme: AppColorScheme? = nil,
+         version: Int? = 1) {
+        self.services = services
+        self.hotkey = hotkey
+        self.customActions = customActions
+        self.updatePreferences = updatePreferences
+        self.serviceZoomLevels = serviceZoomLevels
+        self.appShortcuts = appShortcuts
+        self.sessionDigitsAlternateModifiers = sessionDigitsAlternateModifiers
+        self.dockVisibility = dockVisibility
+        self.selectorDisplayMode = selectorDisplayMode
+        self.topBarVisibility = topBarVisibility
+        self.dragAreaPosition = dragAreaPosition
+        self.showHiddenBarOnModifiers = showHiddenBarOnModifiers
+        self.windowAppearance = windowAppearance
+        self.colorScheme = colorScheme
+        self.version = version
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        services = try container.decodeIfPresent([Service].self, forKey: .services) ?? []
+        hotkey = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .hotkey)
+        customActions = try container.decodeIfPresent([CustomAction].self, forKey: .customActions)
+        updatePreferences = try container.decodeIfPresent(UpdatePreferences.self, forKey: .updatePreferences)
+        serviceZoomLevels = try container.decodeIfPresent([String: Double].self, forKey: .serviceZoomLevels)
+        appShortcuts = try container.decodeIfPresent(AppShortcutBindings.self, forKey: .appShortcuts)
+        sessionDigitsAlternateModifiers = try container.decodeIfPresent(UInt.self, forKey: .sessionDigitsAlternateModifiers)
+        dockVisibility = try container.decodeIfPresent(DockVisibility.self, forKey: .dockVisibility)
+        selectorDisplayMode = try container.decodeIfPresent(SelectorDisplayMode.self, forKey: .selectorDisplayMode)
+        topBarVisibility = try container.decodeIfPresent(TopBarVisibility.self, forKey: .topBarVisibility)
+        dragAreaPosition = try container.decodeIfPresent(DragAreaPosition.self, forKey: .dragAreaPosition)
+        showHiddenBarOnModifiers = try container.decodeIfPresent(Bool.self, forKey: .showHiddenBarOnModifiers)
+        windowAppearance = try container.decodeIfPresent(WindowAppearanceSettings.self, forKey: .windowAppearance)
+        colorScheme = try container.decodeIfPresent(AppColorScheme.self, forKey: .colorScheme)
+        version = try container.decodeIfPresent(Int.self, forKey: .version)
+    }
 }
 
 class SettingsWindow: NSWindow {
