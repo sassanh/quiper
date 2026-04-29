@@ -1226,25 +1226,40 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func updateSelectorsMode() {
         let mode = Settings.shared.selectorDisplayMode
         let windowWidth = window?.frame.width ?? 0
-        let threshold: CGFloat = 800
-        
+
         let useCompact: Bool
         switch mode {
         case .expanded: useCompact = false
         case .compact: useCompact = true
-        case .auto: useCompact = windowWidth < threshold
+        case .auto:
+            let inset: CGFloat = 4
+            let gap: CGFloat = 4
+            let buttonSize: CGFloat = 24
+            let minimumServiceWidth: CGFloat = 150
+            let titleAreaMargin: CGFloat = 2
+            let minTitleWidth: CGFloat = 120
+
+            let showActionsButton = Settings.shared.dockVisibility == .never
+            let rightOffset = showActionsButton ? (inset + buttonSize + gap) : inset
+
+            let staticServiceWidth = max(minimumServiceWidth, estimatedWidthForServiceSegments())
+            let staticSessionWidth = sessionSelector?.fittingSize.width ?? 0
+
+            // Total width required for static mode with minimum title width
+            let requiredWidth = minTitleWidth + rightOffset + inset + staticSessionWidth + staticServiceWidth + (2 * gap) + (2 * titleAreaMargin)
+
+            useCompact = windowWidth < requiredWidth
         }
-        
+
         serviceSelector?.isHidden = useCompact
         collapsibleServiceSelector?.isHidden = !useCompact
-        
+
         sessionSelector?.isHidden = useCompact
         collapsibleSessionSelector?.isHidden = !useCompact
-        
+
         // Sync selections
         syncSelectorSelections()
     }
-
     private func syncSelectorSelections() {
         let serviceIdx = services.firstIndex(where: { $0.url == currentServiceURL }) ?? 0
         serviceSelector?.selectedSegment = serviceIdx

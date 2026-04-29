@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Smart Selector Display Mode**: The "Auto" display mode now dynamically switches between static and compact (collapsible) selectors based on available window width.
+  - It automatically collapses whenever there isn't enough room to show at least 120px of the page title between the selectors.
 - **Configurable Drag Area Position**: Added a new setting in Appearance → Top Bar to toggle the window drag area between the top and bottom edges of the window.
   - All layout components (web views, find bar, and mouse-hover tracking areas) dynamically adjust their positioning based on the selected setting.
 - **Media Capture Support**: Enabled camera and microphone access within webviews.
