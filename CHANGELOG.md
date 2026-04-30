@@ -8,7 +8,9 @@
   - A thin outline ring is always visible around the window to mark its boundary, fading out when the thick border is revealed.
   - The window casts a drop shadow to distinguish it from windows beneath.
 
-- **Resilient Config Import**: The settings system is now more permissive and "self-healing," allowing for seamless imports of configuration files from older versions even as the internal schema evolves.
+- **Selector Auto-Collapse**: Collapsible selectors now reliably collapse when the cursor moves away, regardless of how they were opened (hover or keyboard shortcut). Collapse policy is centralised in the window controller via a cursor-position monitor rather than being owned by the selector itself.
+
+ and "self-healing," allowing for seamless imports of configuration files from older versions even as the internal schema evolves.
 - **Detailed Import Diagnostics**: Failed configuration imports now provide specific technical feedback (e.g., exactly which field or data type is missing/incorrect) instead of generic error messages.
 
 ### Fixed

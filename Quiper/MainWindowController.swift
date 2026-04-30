@@ -73,6 +73,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var isModifiersForHeaderDown = false
     private var isHeaderForcedVisibleForAction = false
     private var isUpdatingHeaderVisibility = false
+    private var selectorCursorMonitor: Timer?
 
     // Window size toggle state
     private var isCompactMode = false
@@ -1002,6 +1003,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 // Collapse any open selectors — re-entry is blocked by the guard above
                 collapsibleSessionSelector?.collapse()
                 collapsibleServiceSelector?.collapse()
+                stopSelectorCursorMonitor()
                 windowFrameView?.setRevealed(false, edge: edge, animated: animated)
                 // Only animate if bar isn't already hidden
                 if animated && alreadyVisible {
@@ -2285,7 +2287,40 @@ extension MainWindowController: CollapsibleSelectorDelegate {
     }
     
     func collapsibleSelector(_ selector: CollapsibleSelector, didChangeExpansionState isExpanded: Bool) {
+        if isExpanded {
+            startSelectorCursorMonitorIfNeeded()
+        }
         updateHeaderVisibility()
+    }
+    
+    private func startSelectorCursorMonitorIfNeeded() {
+        guard selectorCursorMonitor == nil else { return }
+        selectorCursorMonitor = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.checkSelectorSafeZones() }
+        }
+    }
+    
+    private func stopSelectorCursorMonitor() {
+        selectorCursorMonitor?.invalidate()
+        selectorCursorMonitor = nil
+    }
+    
+    private func checkSelectorSafeZones() {
+        let mouse = NSEvent.mouseLocation
+        let selectors = [collapsibleSessionSelector, collapsibleServiceSelector].compactMap { $0 }
+        var anyExpanded = false
+        // Only collapse if nothing else is holding the bar open (cmd, hover, forced action)
+        let barHeldOpenByOther = isModifiersForHeaderDown || isMouseInHeaderTrackingArea || isHeaderForcedVisibleForAction
+        for selector in selectors where selector.isExpanded {
+            anyExpanded = true
+            if !barHeldOpenByOther, let panel = selector.expandedPanel {
+                let safeRect = panel.frame.insetBy(dx: -selector.safeAreaPadding, dy: -selector.safeAreaPadding)
+                if !safeRect.contains(mouse) {
+                    selector.collapse()
+                }
+            }
+        }
+        if !anyExpanded { stopSelectorCursorMonitor() }
     }
 }
 

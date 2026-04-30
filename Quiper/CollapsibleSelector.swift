@@ -69,7 +69,6 @@ class CollapsibleSelector: NSView {
     private(set) var expandedPanel: NSPanel?
     private var expandedControl: SegmentedControl?
     private(set) var isExpanded = false
-    private var collapseTimer: Timer?
     
     // State
     private var _selectedSegment: Int = 0
@@ -119,7 +118,6 @@ class CollapsibleSelector: NSView {
     
     // Constants
     private let animationDuration: TimeInterval = 0.15
-    private let collapseDelay: TimeInterval = 0.3
     var safeAreaPadding: CGFloat = 50
     
     // MARK: - Initialization
@@ -247,28 +245,8 @@ class CollapsibleSelector: NSView {
     
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
-        scheduleCollapse()
-    }
-    
-    private func scheduleCollapse() {
-        collapseTimer?.invalidate()
-        collapseTimer = Timer.scheduledTimer(withTimeInterval: collapseDelay, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                
-                // Safe Area Logic
-                if let panel = self.expandedPanel {
-                    let mouseInScreen = NSEvent.mouseLocation
-                    let safeFrame = panel.frame.insetBy(dx: -self.safeAreaPadding, dy: -self.safeAreaPadding)
-                    // If mouse is in safe area, keep open
-                    if safeFrame.contains(mouseInScreen) {
-                        self.scheduleCollapse()
-                        return
-                    }
-                }
-                self.collapse()
-            }
-        }
+        // Collapse policy is owned by the parent controller via cursor monitoring.
+        // Nothing to do here.
     }
 
     // MARK: - Expansion Logic
@@ -281,7 +259,6 @@ class CollapsibleSelector: NSView {
         
         isExpanded = true
         delegate?.collapsibleSelector(self, didChangeExpansionState: true)
-        collapseTimer?.invalidate()
         
         // 1. Create Control
         let control = SegmentedControl(frame: .zero)
