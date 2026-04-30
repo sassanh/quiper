@@ -123,11 +123,7 @@ final class ReorderServicesUITests: BaseUITest {
                 coord.tap()
             }
             
-            let predicate = NSPredicate(format: "label CONTAINS[c] %@", expectedLabel)
-            let exp = XCTNSPredicateExpectation(predicate: predicate, object: serviceSelector)
-            
-            let result = XCTWaiter.wait(for: [exp], timeout: 4.0)
-            if result != .completed {
+            if !waitForLabel(in: serviceSelector, contains: expectedLabel, timeout: 4.0) {
                 // Retry tap once if it fails
                 if segments.count > index {
                     segments.element(boundBy: index).click()
@@ -136,11 +132,8 @@ final class ReorderServicesUITests: BaseUITest {
                     let centerRatio = (Double(index) * segmentWidthFactor) + (segmentWidthFactor / 2.0)
                     serviceSelector.coordinate(withNormalizedOffset: CGVector(dx: centerRatio, dy: 0.5)).tap()
                 }
-                
-                let retryExp = XCTNSPredicateExpectation(predicate: predicate, object: serviceSelector)
-                let retryResult = XCTWaiter.wait(for: [retryExp], timeout: 2.0)
-                
-                if retryResult != .completed {
+
+                if !waitForLabel(in: serviceSelector, contains: expectedLabel, timeout: 2.0) {
                      XCTFail("Sync verification failed for Index \(index). Expected: \(expectedLabel), Found: \(serviceSelector.label)")
                 }
             }

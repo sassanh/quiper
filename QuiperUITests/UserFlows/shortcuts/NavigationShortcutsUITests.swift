@@ -123,9 +123,7 @@ final class NavigationShortcutsUITests: BaseUITest {
             
             // Verify Engine
             let expectedEngineLabel = "Active: \(engine)"
-            let enginePred = NSPredicate(format: "label CONTAINS %@", expectedEngineLabel)
-            let engineExp = XCTNSPredicateExpectation(predicate: enginePred, object: serviceSelector)
-            if XCTWaiter.wait(for: [engineExp], timeout: 5.0) != .completed {
+            if !waitForLabel(in: serviceSelector, contains: expectedEngineLabel, timeout: 5.0) {
                  XCTFail("Expected \(expectedEngineLabel), got '\(serviceSelector.label)'")
             }
         }

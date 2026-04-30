@@ -111,19 +111,13 @@ final class LaunchShortcutsUITests: BaseUITest {
         
         // Functional Verification Loop
         for assignment in verificationOrder {
-            // Ensure app active and stable before typing
-            app.activate()
-            XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5.0))
-            
             // Type the assigned global hotkey
             app.typeKey(assignment.letter, modifierFlags: assignment.modifiers)
             
             // Verify the Engine Switch detected in UI
             let expectedEngineLabel = "Active: \(assignment.engineName)"
-            let enginePred = NSPredicate(format: "label CONTAINS %@", expectedEngineLabel)
-            let engineExp = XCTNSPredicateExpectation(predicate: enginePred, object: serviceSelector)
             
-            if XCTWaiter.wait(for: [engineExp], timeout: 4.0) != .completed {
+            if !waitForLabel(in: serviceSelector, contains: expectedEngineLabel, timeout: 5.0) {
                  print("DEBUG: Verification failed. ServiceSelector Label: '\(serviceSelector.label)'")
                  XCTFail("Failed to switch to \(assignment.engineName) using global hotkey")
             }

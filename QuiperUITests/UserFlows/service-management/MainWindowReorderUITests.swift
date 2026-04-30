@@ -52,19 +52,14 @@ final class MainWindowReorderUITests: BaseUITest {
         
         let targetNormalized = CGVector(dx: 0.125, dy: 0.5) // Index 0
         serviceSelector.coordinate(withNormalizedOffset: targetNormalized).tap()
-        
-        let initialPredicate = NSPredicate(format: "label CONTAINS[c] 'Active: Engine 1'")
-        let initialExp = XCTNSPredicateExpectation(predicate: initialPredicate, object: serviceSelector)
-        let initialResult = XCTWaiter.wait(for: [initialExp], timeout: 3.0)
-        
-        if initialResult != .completed {
-             // Handle timeout
+
+        if !waitForLabel(in: serviceSelector, contains: "Active: Engine 1", timeout: 3.0) {
+             // Handle timeout or continue
         }
-        
+
         if !serviceSelector.label.contains("Active: Engine 1") {
              // Handle failure
         }
-        
         // --- Step 2: Helper for Drag & Verify ---
         func performDragAndVerify(from sourceIndex: Int, targetX: Double, verifyIndex: Int, expectedActiveLabel: String) {
             let segmentWidthFactor = 1.0 / 4.0
@@ -89,14 +84,9 @@ final class MainWindowReorderUITests: BaseUITest {
             let verifyX = getCenter(verifyIndex)
             let verifyCoord = serviceSelector.coordinate(withNormalizedOffset: CGVector(dx: verifyX, dy: 0.5))
             verifyCoord.tap()
-            
-            let predicate = NSPredicate(format: "label CONTAINS[c] %@", expectedActiveLabel)
-            let exp = XCTNSPredicateExpectation(predicate: predicate, object: serviceSelector)
-            let result = XCTWaiter.wait(for: [exp], timeout: 3.0)
-            
-            if result != .completed {
-                // Failure
-            }
+
+            _ = waitForLabel(in: serviceSelector, contains: expectedActiveLabel, timeout: 3.0)
+
             XCTAssertTrue(serviceSelector.label.contains(expectedActiveLabel), "Active engine should be \(expectedActiveLabel)")
         }
         

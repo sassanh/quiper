@@ -160,4 +160,18 @@ class BaseUITest: XCTestCase {
     func wait(_ duration: TimeInterval) {
         Thread.sleep(forTimeInterval: duration)
     }
+
+    /// Wait for an element's label to contain a specific string using polling.
+    /// This is more resilient in CI than XCTNSPredicateExpectation because it reduces the frequency of full AX snapshots.
+    @discardableResult
+    func waitForLabel(in element: XCUIElement, contains string: String, timeout: TimeInterval = 5.0) -> Bool {
+        let startTime = Date()
+        while Date().timeIntervalSince(startTime) < timeout {
+            if element.label.contains(string) {
+                return true
+            }
+            wait(0.5) // Reduced polling frequency to help CI/WebContent stability
+        }
+        return element.label.contains(string)
+    }
 }
