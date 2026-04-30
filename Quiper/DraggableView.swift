@@ -3,6 +3,12 @@ import AppKit
 public class DraggableView: NSView {
     // Prevent focus from being stolen from webview
     public override var acceptsFirstResponder: Bool { false }
+
+    /// When true the view background is clear; the WindowFrameView border fill acts as background.
+    var isTransparentBackground: Bool = false {
+        didSet { updateBackgroundColor() }
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         self.wantsLayer = true
@@ -24,6 +30,10 @@ public class DraggableView: NSView {
     }
 
     func updateBackgroundColor() {
+        guard !isTransparentBackground else {
+            self.layer?.backgroundColor = NSColor.clear.cgColor
+            return
+        }
         if effectiveAppearance.name.rawValue.contains("Dark") {
             self.layer?.backgroundColor = NSColor(calibratedWhite: 0.2, alpha: 0.8).cgColor
         } else {

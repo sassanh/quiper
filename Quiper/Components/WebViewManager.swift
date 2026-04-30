@@ -22,6 +22,7 @@ final class WebViewManager: NSObject {
     // Dependencies
     private weak var containerView: NSView?
     private weak var dragArea: NSView? // for positioning below
+    private var currentContentFrame: NSRect?
     
     // Test support
     private var navigationContinuations: [ObjectIdentifier: CheckedContinuation<Void, Never>] = [:]
@@ -91,20 +92,29 @@ final class WebViewManager: NSObject {
             fatalError("WebViewManager containerView is nil")
         }
         
-        // Calculate frame
-        let isHeaderHidden = Settings.shared.topBarVisibility == .hidden
-        let dragHeight = isHeaderHidden ? 0 : (self.dragArea?.bounds.height ?? 0)
-        let availableHeight = contentView.bounds.height - dragHeight
-        let frame = NSRect(
-            x: 0,
-            y: 0,
-            width: contentView.bounds.width,
-            height: availableHeight
-        )
+        // Calculate frame - use current content frame if available (e.g. border expansion active)
+        let frame: NSRect
+        if let contentFrame = currentContentFrame {
+            frame = contentFrame
+        } else {
+            let isHeaderHidden = Settings.shared.topBarVisibility == .hidden
+            let dragHeight = isHeaderHidden ? 0 : (self.dragArea?.bounds.height ?? 0)
+            let availableHeight = contentView.bounds.height - dragHeight
+            let isBottom = Settings.shared.dragAreaPosition == .bottom
+            frame = NSRect(
+                x: 0,
+                y: isBottom ? dragHeight : 0,
+                width: contentView.bounds.width,
+                height: availableHeight
+            )
+        }
         
         // Wrapper View (Holds WebView + Docked Inspector)
         let wrapperView = NSView(frame: frame)
-        wrapperView.autoresizingMask = [.width, .height]
+        wrapperView.autoresizingMask = []
+        wrapperView.wantsLayer = true
+        wrapperView.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
+        wrapperView.layer?.masksToBounds = true
         wrapperView.isHidden = true
         
         let userContentController = WKUserContentController()
@@ -178,36 +188,49 @@ final class WebViewManager: NSObject {
     }
     
 
-    func updateLayout(dragArea: NSView? = nil) {
+    func updateLayout(dragArea: NSView? = nil, contentRect: NSRect? = nil, animated: Bool = false) {
         if let dragArea = dragArea {
             self.dragArea = dragArea
         }
         guard let container = containerView else { return }
         
-        let isHeaderHidden = Settings.shared.topBarVisibility == .hidden
-        let dragHeight = isHeaderHidden ? 0 : (self.dragArea?.bounds.height ?? 0)
-        let availableHeight = container.bounds.height - dragHeight
-        
         let frame: NSRect
-        if Settings.shared.dragAreaPosition == .top {
-            frame = NSRect(
-                x: 0,
-                y: 0,
-                width: container.bounds.width,
-                height: availableHeight
-            )
+        if let contentRect = contentRect {
+            currentContentFrame = contentRect
+            frame = contentRect
         } else {
-            frame = NSRect(
-                x: 0,
-                y: dragHeight,
-                width: container.bounds.width,
-                height: availableHeight
-            )
+            let isHeaderHidden = Settings.shared.topBarVisibility == .hidden
+            let dragHeight = isHeaderHidden ? 0 : (self.dragArea?.bounds.height ?? 0)
+            let availableHeight = container.bounds.height - dragHeight
+            
+            if Settings.shared.dragAreaPosition == .top {
+                frame = NSRect(
+                    x: 0,
+                    y: 0,
+                    width: container.bounds.width,
+                    height: availableHeight
+                )
+            } else {
+                frame = NSRect(
+                    x: 0,
+                    y: dragHeight,
+                    width: container.bounds.width,
+                    height: availableHeight
+                )
+            }
         }
         
         for sessionMap in webviewsByURL.values {
             for webView in sessionMap.values {
-                webView.superview?.frame = frame
+                if let wrapper = webView.superview {
+                    // Ensure no autoresizing conflicts with manual layout
+                    wrapper.autoresizingMask = []
+                    if animated {
+                        wrapper.animator().frame = frame
+                    } else {
+                        wrapper.frame = frame
+                    }
+                }
             }
         }
     }

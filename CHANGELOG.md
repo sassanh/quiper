@@ -4,6 +4,10 @@
 
 ### Added
 
+- **Expanding Frame Auto-Hide Bar**: When the top/bottom bar is in auto-hide mode, hovering near the window edge reveals the bar outside the content area via an animated border ring — preventing accidental clicks on web content underneath.
+  - A thin outline ring is always visible around the window to mark its boundary, fading out when the thick border is revealed.
+  - The window casts a drop shadow to distinguish it from windows beneath.
+
 - **Resilient Config Import**: The settings system is now more permissive and "self-healing," allowing for seamless imports of configuration files from older versions even as the internal schema evolves.
 - **Detailed Import Diagnostics**: Failed configuration imports now provide specific technical feedback (e.g., exactly which field or data type is missing/incorrect) instead of generic error messages.
 

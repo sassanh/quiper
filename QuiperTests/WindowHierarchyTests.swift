@@ -42,7 +42,9 @@ final class WindowHierarchyTests: XCTestCase {
         try await Task.sleep(nanoseconds: 200_000_000) // Wait for update
         
         XCTAssertNil(effectView?.superview, "Effect view should be removed from hierarchy in solid color mode")
-        XCTAssertEqual(container.layer?.backgroundColor, NSColor.red.cgColor, "Container layer should have red background")
+        let colorView = controller.contentColorView
+        XCTAssertNotNil(colorView, "contentColorView should exist in solid color mode")
+        XCTAssertEqual(colorView?.layer?.backgroundColor, NSColor.red.cgColor, "contentColorView layer should have red background")
         // XCTAssertEqual(controller.window?.backgroundColor, .clear, "Window background should be clear") // Assuming implementation details
         
         // 3. Test Blur Mode
