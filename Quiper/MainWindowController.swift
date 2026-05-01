@@ -2106,18 +2106,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window?.makeFirstResponder(webView)
         }
         focusInputInActiveWebview()
-        // Re-enable selector interaction when window gains focus
-        collapsibleServiceSelector?.isInteractionEnabled = true
-        collapsibleSessionSelector?.isInteractionEnabled = true
     }
     
     func windowDidResignKey(_ notification: Notification) {
         // Collapse all collapsible selectors when window loses focus
         collapsibleServiceSelector?.collapse()
         collapsibleSessionSelector?.collapse()
-        // Disable hover interaction while window is not key
-        collapsibleServiceSelector?.isInteractionEnabled = false
-        collapsibleSessionSelector?.isInteractionEnabled = false
     }
 
     private func buildSessionActionsMenu() -> NSMenu {
@@ -2346,11 +2340,22 @@ extension MainWindowController: CollapsibleSelectorDelegate {
         let mouse = NSEvent.mouseLocation
         let selectors = [collapsibleSessionSelector, collapsibleServiceSelector].compactMap { $0 }
         var anyExpanded = false
-        // Only collapse if nothing else is holding the bar open (cmd, hover, forced action)
-        let barHeldOpenByOther = isModifiersForHeaderDown || isMouseInHeaderTrackingArea || isHeaderForcedVisibleForAction
+        
         for selector in selectors where selector.isExpanded {
             anyExpanded = true
-            if !barHeldOpenByOther, let panel = selector.expandedPanel {
+            
+            // If the user is holding the modifier keys, keep it expanded regardless of mouse position.
+            // (Collapse will be triggered when they release the keys).
+            if isModifiersForHeaderDown { continue }
+            
+            // If the user is currently dragging a segment to reorder, keep it expanded.
+            if draggingServiceIndex != nil { continue }
+            
+            // If the user is currently tracking a drag or click inside the selector itself, keep it expanded.
+            if selector.isTrackingMouse { continue }
+            
+            if let panel = selector.expandedPanel {
+                // Outset panel frame by safeAreaPadding
                 let safeRect = panel.frame.insetBy(dx: -selector.safeAreaPadding, dy: -selector.safeAreaPadding)
                 if !safeRect.contains(mouse) {
                     selector.collapse()

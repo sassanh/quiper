@@ -143,6 +143,10 @@ class SegmentedControl: NSSegmentedControl {
     private let dragThreshold: CGFloat = 5
     private var initialMouseLocation: NSPoint?
     
+    var isTrackingMouse: Bool {
+        return draggedSegment != nil || initialMouseLocation != nil || isDragging
+    }
+    
     private var trackingArea: NSTrackingArea?
     
     override func updateTrackingAreas() {
@@ -184,9 +188,11 @@ class SegmentedControl: NSSegmentedControl {
                 mouseDownSegmentHandler?(clickedSegment)
             }
             
-            if !isDragging {
-                 selectedSegment = clickedSegment
-                 sendAction(action, to: target)
+            // If dragging is enabled, we MUST wait for mouseUp to distinguish between a click and a drag.
+            // Sending the action here would trigger a collapse in collapsible selectors, killing the drag.
+            if !enableDragReorder {
+                selectedSegment = clickedSegment
+                sendAction(action, to: target)
             }
         }
     }
@@ -218,13 +224,19 @@ class SegmentedControl: NSSegmentedControl {
     }
     
     override func mouseUp(with event: NSEvent) {
+        let wasDragging = isDragging
         initialMouseLocation = nil
+        isDragging = false
         
-        if isDragging {
-            isDragging = false
+        if wasDragging {
             draggedSegment = nil
             dragEndedHandler?()
+        } else if let segment = draggedSegment {
+            // It was a click, not a drag. Send action now.
+            selectedSegment = segment
+            sendAction(action, to: target)
         }
+        
         draggedSegment = nil
     }
     
@@ -280,11 +292,22 @@ class SegmentedControl: NSSegmentedControl {
     }
     
     private func rect(forSegment segment: Int) -> NSRect {
-        let count = segmentCount
-        guard count > 0 else { return .zero }
+        guard segment >= 0 && segment < segmentCount else { return .zero }
         
-        let w = bounds.width / CGFloat(count)
-        return NSRect(x: CGFloat(segment) * w, y: 0, width: w, height: bounds.height)
+        // Use actually captured frames if available (accurate for variable widths)
+        if let captured = (cell as? SegmentedCell)?.capturedFrames[segment] {
+            return captured
+        }
+        
+        // Fallback: Use programmed width if set, otherwise equal distribution
+        var xOffset: CGFloat = 0
+        for i in 0..<segment {
+            let w = width(forSegment: i)
+            xOffset += (w > 0 ? w : bounds.width / CGFloat(segmentCount))
+        }
+        let w = width(forSegment: segment)
+        let segW = w > 0 ? w : bounds.width / CGFloat(segmentCount)
+        return NSRect(x: xOffset, y: 0, width: segW, height: bounds.height)
     }
 }
 

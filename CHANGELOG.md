@@ -45,6 +45,10 @@
 - **Selector Expansion Blocked by Modal Windows**: Modifier-key selector expansion (e.g. holding `Cmd` to reveal engine/session digits) is now suppressed whenever any modal window is open. The check is generic — not tied specifically to the settings window — so it covers all future modal dialogs as well.
 - **Settings Window Color Scheme**: Changing the app's color scheme (Light/Dark/System) in Appearance settings now also updates the Settings window immediately. Previously only the main window was updated.
 - **Reset Zoom Menu Shortcut**: The reset zoom menu item in the View menu now correctly shows its shortcut "⌘+⌫".
+- **Collapsible Selector Hover Expansion**: Fixed hover expansion for selectors when the window is not the key window (e.g., in accessory mode) and ensured they expand immediately when the top bar is revealed under the cursor.
+- **Collapsible Selector Behavior**: Selectors now stay open during drag-reordering and after selection, only closing when the mouse leaves the safe zone.
+- **Collapsible Selector Accuracy**: Fixed segment hit-testing to accurately handle variable-width labels by using actual rendered frames.
+- **Collapsible Selector Stability**: Fixed a memory leak in tracking area management and resolved an issue where dragging would trigger premature collapsing.
 
 ## [2.9.0] - 2026-04-22
 

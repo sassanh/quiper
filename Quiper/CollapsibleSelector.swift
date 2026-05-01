@@ -70,6 +70,10 @@ class CollapsibleSelector: NSView {
     private var expandedControl: SegmentedControl?
     private(set) var isExpanded = false
     
+    var isTrackingMouse: Bool {
+        return expandedControl?.isTrackingMouse ?? false
+    }
+    
     // State
     private var _selectedSegment: Int = 0
     var selectedSegment: Int {
@@ -146,10 +150,21 @@ class CollapsibleSelector: NSView {
         addSubview(collapsedControl)
     }
     
+    private var trackingArea: NSTrackingArea?
+    
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingArea {
+            removeTrackingArea(existing)
+        }
+        let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .mouseMoved, .activeAlways]
+        trackingArea = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
+        addTrackingArea(trackingArea!)
+    }
+    
     override func layout() {
         super.layout()
         collapsedControl.frame = bounds
-        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow], owner: self, userInfo: nil))
     }
     
     // MARK: - API
@@ -243,6 +258,12 @@ class CollapsibleSelector: NSView {
         expand()
     }
     
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        guard isInteractionEnabled, !isExpanded else { return }
+        expand()
+    }
+    
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         // Collapse policy is owned by the parent controller via cursor monitoring.
@@ -288,7 +309,9 @@ class CollapsibleSelector: NSView {
         control.mouseDownSegmentHandler = mouseDownSegmentHandler
         control.dragBeganHandler = dragBeganHandler
         control.dragChangedHandler = dragChangedHandler
-        control.dragEndedHandler = dragEndedHandler
+        control.dragEndedHandler = { [weak self] in
+            self?.dragEndedHandler?()
+        }
         control.alwaysShowTooltips = alwaysShowTooltips
         
         control.sizeToFit()
