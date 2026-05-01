@@ -196,6 +196,21 @@ Reset options and general configuration:
 2. Run `swift build` before opening a pull request.
 3. Include macOS version, Quiper build hash, repro steps, and screenshots for UI changes.
 
+## Versioning
+
+Quiper follows **[Pride Versioning](https://pridever.org/)** (PrideVer). This means we release when we are genuinely proud of the progress and quality, and our version numbers reflect our sentiment toward each release. Since Quiper is an end-user desktop application and not a library, this human-centric approach allows us to prioritize architectural integrity and user experience over rigid semantic constraints.
+
+### Update Channels
+
+In addition to stable releases, Quiper provides two pre-production channels for testing:
+
+- **Nightly**: Automatically generated every day at midnight (UTC) from the latest code in the `main` branch. These builds are experimental and intended for developers or those who want the absolute latest features.
+- **Beta**: Manually triggered pre-releases used to validate specific features before they are merged into a stable version.
+
+Both pre-production channels use the GitHub Actions **Run Number** as an internal build identifier. This ensures that the app can reliably detect updates even if the version string remains the same. Pre-production builds are explicitly marked with a `-nonproduction` suffix in their version string (e.g., `2.1.0-nightly-nonproduction`).
+
+You can opt-in to these channels in **Settings → Updates**.
+
 ## License
 
 Quiper is released under the [MIT License](LICENSE).

@@ -108,14 +108,52 @@ enum DragAreaPosition: String, Codable, Equatable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum UpdateChannel: String, Codable, Equatable, CaseIterable, Identifiable {
+    case stable = "Stable"
+    case beta = "Beta"
+    case nightly = "Nightly"
+    
+    var id: String { rawValue }
+    
+    var description: String {
+        switch self {
+        case .stable: return "Production-ready builds"
+        case .beta: return "Stable + Pre-releases"
+        case .nightly: return "Stable + Beta + Nightlies"
+        }
+    }
+}
+
 struct UpdatePreferences: Codable, Equatable {
     var automaticallyChecksForUpdates: Bool = true
     var automaticallyDownloadsUpdates: Bool = false
-    var includeBetaChannel: Bool = false
-    var includeNightlyChannel: Bool = false
+    var channel: UpdateChannel = .stable
     var lastAutomaticCheck: Date?
     var lastNotifiedVersion: String?
     var lastNotifiedDate: Date?
+    
+    private enum CodingKeys: String, CodingKey {
+        case automaticallyChecksForUpdates
+        case automaticallyDownloadsUpdates
+        case channel
+        case lastAutomaticCheck
+        case lastNotifiedVersion
+        case lastNotifiedDate
+        
+        // Legacy keys for migration (decoding only)
+        case includeBetaChannel
+        case includeNightlyChannel
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(automaticallyChecksForUpdates, forKey: .automaticallyChecksForUpdates)
+        try container.encode(automaticallyDownloadsUpdates, forKey: .automaticallyDownloadsUpdates)
+        try container.encode(channel, forKey: .channel)
+        try container.encodeIfPresent(lastAutomaticCheck, forKey: .lastAutomaticCheck)
+        try container.encodeIfPresent(lastNotifiedVersion, forKey: .lastNotifiedVersion)
+        try container.encodeIfPresent(lastNotifiedDate, forKey: .lastNotifiedDate)
+    }
 }
 
 extension UpdatePreferences {
@@ -123,8 +161,23 @@ extension UpdatePreferences {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         automaticallyChecksForUpdates = try container.decodeIfPresent(Bool.self, forKey: .automaticallyChecksForUpdates) ?? true
         automaticallyDownloadsUpdates = try container.decodeIfPresent(Bool.self, forKey: .automaticallyDownloadsUpdates) ?? false
-        includeBetaChannel = try container.decodeIfPresent(Bool.self, forKey: .includeBetaChannel) ?? false
-        includeNightlyChannel = try container.decodeIfPresent(Bool.self, forKey: .includeNightlyChannel) ?? false
+        
+        // Handle migration from individual toggles to hierarchical channel
+        if let channel = try container.decodeIfPresent(UpdateChannel.self, forKey: .channel) {
+            self.channel = channel
+        } else {
+            let nightly = try container.decodeIfPresent(Bool.self, forKey: .includeNightlyChannel) ?? false
+            let beta = try container.decodeIfPresent(Bool.self, forKey: .includeBetaChannel) ?? false
+            
+            if nightly {
+                self.channel = .nightly
+            } else if beta {
+                self.channel = .beta
+            } else {
+                self.channel = .stable
+            }
+        }
+        
         lastAutomaticCheck = try container.decodeIfPresent(Date.self, forKey: .lastAutomaticCheck)
         lastNotifiedVersion = try container.decodeIfPresent(String.self, forKey: .lastNotifiedVersion)
         lastNotifiedDate = try container.decodeIfPresent(Date.self, forKey: .lastNotifiedDate)

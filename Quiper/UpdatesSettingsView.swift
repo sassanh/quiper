@@ -51,19 +51,12 @@ struct UpdatesSettingsView: View {
                     
                     SettingsDivider()
                     
-                    SettingsToggleRow(
-                        title: "Include beta builds",
-                        message: "Get manually-triggered pre-release builds for testing new features.",
-                        isOn: includeBetaBinding
-                    )
-                    
-                    SettingsDivider()
-                    
-                    SettingsToggleRow(
-                        title: "Include nightly builds",
-                        message: "Get the absolute latest experimental features (less stable).",
-                        isOn: includeNightlyBinding
-                    )
+                    SettingsRow(
+                        title: "Update channel",
+                        message: settings.updatePreferences.channel.description
+                    ) {
+                        InclusiveChannelPicker(selection: updateChannelBinding)
+                    }
                 }
             }
             .padding(16)
@@ -95,23 +88,63 @@ struct UpdatesSettingsView: View {
         )
     }
     
-    private var includeBetaBinding: Binding<Bool> {
+    private var updateChannelBinding: Binding<UpdateChannel> {
         Binding(
-            get: { settings.updatePreferences.includeBetaChannel },
+            get: { settings.updatePreferences.channel },
             set: { newValue in
-                settings.updatePreferences.includeBetaChannel = newValue
+                settings.updatePreferences.channel = newValue
                 settings.saveSettings()
             }
         )
     }
+}
+
+struct InclusiveChannelPicker: View {
+    @Binding var selection: UpdateChannel
+    private let channels = UpdateChannel.allCases
     
-    private var includeNightlyBinding: Binding<Bool> {
-        Binding(
-            get: { settings.updatePreferences.includeNightlyChannel },
-            set: { newValue in
-                settings.updatePreferences.includeNightlyChannel = newValue
-                settings.saveSettings()
+    var body: some View {
+        ZStack(alignment: .leading) {
+            // Background track
+            Capsule()
+                .fill(Color(NSColor.quaternaryLabelColor))
+                .frame(height: 24)
+            
+            // Highlight track (Selected from left)
+            GeometryReader { geo in
+                let totalWidth = geo.size.width
+                let segmentWidth = totalWidth / CGFloat(channels.count)
+                let selectedIndex = CGFloat(channels.firstIndex(of: selection) ?? 0)
+                let highlightWidth = (selectedIndex + 1) * segmentWidth
+                
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: highlightWidth, height: 24)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selection)
             }
-        )
+            .frame(height: 24)
+            
+            // Buttons
+            HStack(spacing: 0) {
+                ForEach(channels) { channel in
+                    Button(action: { selection = channel }) {
+                        Text(channel.rawValue)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(isHighlighted(channel) ? .white : .primary)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(width: 210)
+    }
+    
+    private func isHighlighted(_ channel: UpdateChannel) -> Bool {
+        let selectedIdx = channels.firstIndex(of: selection) ?? 0
+        let channelIdx = channels.firstIndex(of: channel) ?? 0
+        return channelIdx <= selectedIdx
     }
 }

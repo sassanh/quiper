@@ -4,6 +4,10 @@
 
 ### Added
 
+- **Hierarchical Update Channels**: Refactored update settings into a single, intuitive channel selector (Stable, Beta, Nightly).
+  - Introduced an inclusive selection UI where choosing a more experimental channel automatically encompasses all stable and pre-release updates to its left.
+  - Added seamless data migration to preserve existing user update preferences.
+
 - **Two-Window Architecture for High-Performance Blur**: Implemented a dual-window system that separates window structure from background effects.
   - The main "Host" window handles resizing and UI controls with a minimal blur radius of 1, ensuring the entire frame remains hit-testable for resizes while maintaining a truly transparent border when the bar is hidden.
   - A dedicated "Guest" child window provides hardware-accelerated background blurring using the optimized SkyLight private API, supporting custom user-defined blur radii.
@@ -16,6 +20,7 @@
 - **Selector Auto-Collapse**: Collapsible selectors now reliably collapse when the cursor moves away, regardless of how they were opened (hover or keyboard shortcut). Collapse policy is centralised in the window controller via a cursor-position monitor rather than being owned by the selector itself.
 
  and "self-healing," allowing for seamless imports of configuration files from older versions even as the internal schema evolves.
+
 - **Detailed Import Diagnostics**: Failed configuration imports now provide specific technical feedback (e.g., exactly which field or data type is missing/incorrect) instead of generic error messages.
 
 ### Fixed
@@ -24,7 +29,6 @@
   - Replaced high-overhead `XCTNSPredicateExpectation` with a more efficient polling mechanism in `BaseUITest`.
   - Optimized verification loops in `LaunchShortcutsUITests`, `NavigationShortcutsUITests`, and `ReorderServicesUITests` to reduce accessibility snapshot pressure on `WebContent` processes.
 - **Settings Migration Path**: Added comprehensive fallback mechanisms for all core configuration structures (`Service`, `AppShortcutBindings`, `CustomAction`, `WindowAppearance`), ensuring the app can gracefully recover data from partial or outdated `.quiper` files.
-
 - **Beta Update Channel**: Users can now opt-in to manually-triggered pre-release builds in Settings → Updates. This allows testing of new features before they are officially released without needing to use the more experimental nightly builds.
 - **Smart Selector Display Mode**: The "Auto" display mode now dynamically switches between static and compact (collapsible) selectors based on available window width.
   - It automatically collapses whenever there isn't enough room to show at least 120px of the page title between the selectors.
@@ -33,9 +37,6 @@
 - **Media Capture Support**: Enabled camera and microphone access within webviews.
   - Implemented `WKUIDelegate` hooks to automatically bridge website media requests to the native macOS permission system.
   - Added required camera and microphone hardware entitlements and usage description strings.
-
-### Fixed
-
 - **Header Visibility and Modal Windows**: Implemented a robust, declarative `hasModalWindow` system to ensure the auto-hiding header remains hidden whenever the Settings window or any other modal dialog is open.
 - **Selector Expansion Race Condition**: Fixed a race condition where rapidly toggling modifiers could cause animating-out selector panels to be incorrectly classified as modal windows, leading to the header being stuck in a hidden state.
 - **CI Test Reliability**: Added `skipModalCheck` to `MainWindowController` to allow unit tests to bypass environmental modal window checks, resolving intermittent failures in CI.

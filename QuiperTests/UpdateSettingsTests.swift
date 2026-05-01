@@ -7,26 +7,26 @@ struct UpdateSettingsTests {
     
     @Test func updatePreferences_DefaultValue() {
         let prefs = UpdatePreferences()
-        #expect(prefs.includeNightlyChannel == false)
+        #expect(prefs.channel == .stable)
         #expect(prefs.automaticallyChecksForUpdates == true)
         #expect(prefs.automaticallyDownloadsUpdates == false)
     }
     
     @Test func settings_ResetIncludesUpdateNightly() {
         let settings = Settings.shared
-        settings.updatePreferences.includeNightlyChannel = true
+        settings.updatePreferences.channel = .nightly
         settings.reset()
-        #expect(settings.updatePreferences.includeNightlyChannel == false)
+        #expect(settings.updatePreferences.channel == .stable)
     }
     
     @Test func updatePreferences_Codable() throws {
         var prefs = UpdatePreferences()
-        prefs.includeNightlyChannel = true
+        prefs.channel = .nightly
         
         let encoded = try JSONEncoder().encode(prefs)
         let decoded = try JSONDecoder().decode(UpdatePreferences.self, from: encoded)
         
-        #expect(decoded.includeNightlyChannel == true)
+        #expect(decoded.channel == .nightly)
     }
     
     @Test func gitHubRelease_Sorting() throws {
