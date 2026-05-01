@@ -4,6 +4,11 @@
 
 ### Added
 
+- **Two-Window Architecture for High-Performance Blur**: Implemented a dual-window system that separates window structure from background effects.
+  - The main "Host" window handles resizing and UI controls with a minimal blur radius of 1, ensuring the entire frame remains hit-testable for resizes while maintaining a truly transparent border when the bar is hidden.
+  - A dedicated "Guest" child window provides hardware-accelerated background blurring using the optimized SkyLight private API, supporting custom user-defined blur radii.
+  - Automatically synchronizes geometry and corner radii between windows and manages state resets during application switching for robust multitasking behavior.
+
 - **Expanding Frame Auto-Hide Bar**: When the top/bottom bar is in auto-hide mode, hovering near the window edge reveals the bar outside the content area via an animated border ring — preventing accidental clicks on web content underneath.
   - A thin outline ring is always visible around the window to mark its boundary, fading out when the thick border is revealed.
   - The window casts a drop shadow to distinguish it from windows beneath.

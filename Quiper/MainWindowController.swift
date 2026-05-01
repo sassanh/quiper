@@ -2,6 +2,40 @@ import AppKit
 import WebKit
 import Carbon
 import Combine
+import CoreImage
+import QuartzCore
+
+@MainActor
+private struct CGSFuncs {
+    typealias CGSConnectionID = UInt32
+    typealias CGSWindowID = UInt32
+    typealias CGSSetWindowBackgroundBlurRadiusFunc = @convention(c) (CGSConnectionID, CGSWindowID, Int32) -> Int32
+    typealias CGSMainConnectionIDFunc = @convention(c) () -> CGSConnectionID
+
+    static var getMainConnection: CGSMainConnectionIDFunc?
+    static var setBlurRadius: CGSSetWindowBackgroundBlurRadiusFunc?
+    static var initialized = false
+    
+    static func initialize() {
+        if initialized { return }
+        
+        var handle = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/Versions/Current/SkyLight", RTLD_LAZY)
+        if handle == nil {
+             handle = dlopen("/System/Library/Frameworks/CoreGraphics.framework/Versions/Current/CoreGraphics", RTLD_LAZY)
+        }
+        
+        if let validHandle = handle {
+            if let mainConnSym = dlsym(validHandle, "CGSMainConnectionID") ?? dlsym(validHandle, "SLSMainConnectionID") {
+                getMainConnection = unsafeBitCast(mainConnSym, to: CGSMainConnectionIDFunc.self)
+            }
+            
+            if let setBlurSym = dlsym(validHandle, "SLSSetWindowBackgroundBlurRadius") ?? dlsym(validHandle, "CGSSetWindowBackgroundBlurRadius") {
+                setBlurRadius = unsafeBitCast(setBlurSym, to: CGSSetWindowBackgroundBlurRadiusFunc.self)
+            }
+        }
+        initialized = true
+    }
+}
 
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
@@ -79,9 +113,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var isCompactMode = false
     private var previousWindowFrame: NSRect?
     // Width of the transparent margin on each side in hidden mode (bar lives in this margin on one edge).
-    private let barBorderWidth: CGFloat = 3
+    private let barBorderWidth: CGFloat = 8
     // Solid-color background view for .solidColor appearance mode; positioned at content rect
     var contentColorView: NSView?
+    @MainActor internal private(set) var blurWindow: NSWindow?
+
+    deinit {
+        let bw = blurWindow
+        let win = window
+        if let bw = bw {
+            DispatchQueue.main.async { [weak win] in
+                win?.removeChildWindow(bw)
+                bw.orderOut(nil)
+                bw.close()
+            }
+        }
+    }
 
 
     private var inspectorVisible = false {
@@ -747,6 +794,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let dRect = hiddenModeDragRect(in: contentView.bounds)
         backgroundEffectView?.frame = cRect
         contentColorView?.frame = cRect
+        
+        // Refresh blur window frame for the new content rect
+        updateBlurWindowFrame()
+        
         webViewManager.updateLayout(contentRect: cRect, animated: false)
         dragArea?.frame = dRect
         dragArea?.autoresizingMask = []
@@ -998,6 +1049,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                     dragArea?.layer?.transform = CATransform3DIdentity
                     dragArea?.alphaValue = 1.0
                 }
+                // Update blur window frame to account for bar revelation
+                updateBlurWindowFrame()
                 // else: already visible and animated=true — nothing to do, keep current state
             } else {
                 // Collapse any open selectors — re-entry is blocked by the guard above
@@ -1028,6 +1081,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                     dragArea?.layer?.transform = CATransform3DIdentity
                     dragArea?.alphaValue = 0.0
                 }
+                // Update blur window frame to account for bar hiding
+                updateBlurWindowFrame()
                 // else: already hidden and animated=true — nothing to do
             }
         } else {
@@ -1205,6 +1260,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(topBarVisibilityChanged), name: .topBarVisibilityChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(dragAreaPositionChanged), name: .dragAreaPositionChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowAppearanceChanged), name: .windowAppearanceChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationStatusChanged), name: NSApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationStatusChanged), name: NSApplication.didResignActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleColorSchemeChanged), name: .colorSchemeChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettings), name: .settingsWindowDidOpen, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleCloseSettings), name: .settingsWindowDidClose, object: nil)
@@ -1219,6 +1276,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         // Apply initial color scheme
         applyColorScheme()
+    }
+
+    @objc private func handleApplicationStatusChanged(_ notification: Notification) {
+        if notification.name == NSApplication.didResignActiveNotification {
+            // Reset modifier-driven visibility states when leaving the app
+            // to prevent the header from getting stuck due to missed key-up events (e.g. Cmd+Tab)
+            isModifiersForHeaderDown = false
+            collapsibleSessionSelector?.collapse()
+            collapsibleServiceSelector?.collapse()
+        }
+        updateHeaderVisibility(animated: true)
     }
 
     @objc private func handleDockVisibilityChanged(_ notification: Notification) {
@@ -1264,138 +1332,103 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         applyWindowAppearance()
     }
     
-    private func applyWindowAppearance() {
-        guard let win = window else { return }
-        
-        // Determine which theme settings to use based on effective appearance
+    private func currentThemeSettings() -> ThemeAppearanceSettings? {
+        guard let win = window else { return nil }
         let effectiveAppearance = win.effectiveAppearance
         let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let themeSettings = isDark ? Settings.shared.windowAppearance.dark : Settings.shared.windowAppearance.light
+        return isDark ? Settings.shared.windowAppearance.dark : Settings.shared.windowAppearance.light
+    }
+    
+    private func applyWindowAppearance() {
+        guard let win = window, let themeSettings = currentThemeSettings() else { return }
         
-        guard let effect = backgroundEffectView else {
-            // Fallback when effect view isn't available
-            switch themeSettings.mode {
-            case .macOSEffects:
-                win.backgroundColor = .clear
-            case .solidColor:
-                win.backgroundColor = themeSettings.backgroundColor.nsColor
-            }
-            return
+        // Ensure main window is transparent and hit-testable via radius 1 blur
+        win.isOpaque = false
+        win.backgroundColor = .clear
+        setWindowBlurRadius(win, radius: 1)
+        
+        // 1. Manage the Blur Window (Child)
+        if blurWindow == nil {
+            let bw = NSWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
+            bw.isOpaque = false
+            bw.backgroundColor = .clear
+            bw.hasShadow = false
+            bw.ignoresMouseEvents = true
+            bw.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
+            win.addChildWindow(bw, ordered: .below)
+            blurWindow = bw
         }
         
-        // Always keep effect view attached
-        effect.alphaValue = 1.0
+        guard let bw = blurWindow else { return }
         
-        // Main content view (container)
-        guard let container = win.contentView else { return }
+        // 2. Apply theme to the blur window
+        bw.backgroundColor = .clear
+        bw.contentView?.wantsLayer = true
         
         switch themeSettings.mode {
         case .macOSEffects:
-            // MACOS EFFECTS MODE:
-            // Ensure effect view is present
-            if effect.superview == nil {
-                container.addSubview(effect, positioned: .below, relativeTo: nil)
-            }
-            effect.isHidden = false
-            effect.material = themeSettings.material.nsMaterial
-            effect.blendingMode = .behindWindow
-            effect.state = .active
+            bw.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+            setWindowBlurRadius(bw, radius: themeSettings.blurRadius)
             
-            // 2. Ensure container is transparent so effects show through
-            win.backgroundColor = .clear
-            container.layer?.backgroundColor = NSColor.clear.cgColor
-            
-            // 3. Clear any custom blur radius (reset to system default behavior implicitly by effect view presence, or explicit 0)
-            setWindowBlurRadius(win, radius: 0)
+            // Sync with main window's effect view
+            backgroundEffectView?.isHidden = false
+            backgroundEffectView?.material = themeSettings.material.nsMaterial
+            contentColorView?.isHidden = true
             
         case .solidColor:
-            // SOLID COLOR MODE with optional blur:
-            // 1. Remove the system effect view entirely to prevent interference
-            effect.removeFromSuperview()
-
-            // 2. Use a dedicated contentColorView at the content rect (not the whole container)
-            //    so the transparent margins stay transparent.
-            let color = themeSettings.backgroundColor.nsColor
-            win.backgroundColor = .clear
-            container.wantsLayer = true
-            container.layer?.backgroundColor = NSColor.clear.cgColor
-            if contentColorView == nil {
-                let cv = NSView()
-                cv.wantsLayer = true
-                cv.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
-                cv.layer?.masksToBounds = true
-                container.addSubview(cv, positioned: .below, relativeTo: nil)
-                contentColorView = cv
-            }
-            contentColorView?.layer?.backgroundColor = color.cgColor
-            // Frame will be set by applyHiddenModeLayout / visible-mode layout calls
-
-            // 3. Apply custom blur radius using window's private API
-            let blurRadius = themeSettings.blurRadius
-            setWindowBlurRadius(win, radius: blurRadius > 1 ? blurRadius : 0)
+            backgroundEffectView?.isHidden = true
+            contentColorView?.isHidden = true
+            
+            // Apply the solid color to the layer and the optimized blur to the child window
+            bw.contentView?.layer?.backgroundColor = themeSettings.backgroundColor.nsColor.cgColor
+            setWindowBlurRadius(bw, radius: themeSettings.blurRadius)
         }
         
-        container.needsDisplay = true
+        updateBlurWindowFrame()
+        win.contentView?.needsDisplay = true
+    }
+    
+    /// Synchronizes the blur window's frame with the current content area in screen coordinates.
+    private func updateBlurWindowFrame() {
+        guard let win = window, let bw = blurWindow, let contentView = win.contentView else { return }
+        
+        let isHiddenMode = Settings.shared.topBarVisibility == .hidden
+        let contentRect = isHiddenMode ? hiddenModeContentRect(in: contentView.bounds) : contentView.bounds
+        
+        // Convert contentRect from view coordinates to screen coordinates
+        let rectInWindow = contentView.convert(contentRect, to: nil)
+        let rectInScreen = win.convertToScreen(rectInWindow)
+        
+        // Use setFrame with display: true and ensure the window is ordered correctly
+        bw.setFrame(rectInScreen, display: true)
+        
+        // Ensure corner radius is applied to the child window's content
+        bw.contentView?.wantsLayer = true
+        bw.contentView?.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
+        bw.contentView?.layer?.masksToBounds = true
     }
     
     /// Sets the window's background blur radius using CoreGraphics Services private API
     /// This directly talks to the WindowServer to set blur behind the window
-    /// Sets the window's background blur radius using CoreGraphics Services private API
-    /// This directly talks to the WindowServer to set blur behind the window
     private func setWindowBlurRadius(_ window: NSWindow, radius: Double) {
-        // CGSSetWindowBackgroundBlurRadius is a private WindowServer API
-        // Signature often cited as: (CGSConnectionID, NSInteger/Int32, int) -> OSStatus
-        typealias CGSConnectionID = UInt32
-        typealias CGSWindowID = UInt32 
-        typealias CGSSetWindowBackgroundBlurRadiusFunc = @convention(c) (CGSConnectionID, CGSWindowID, Int32) -> Int32
-        typealias CGSMainConnectionIDFunc = @convention(c) () -> CGSConnectionID
+        CGSFuncs.initialize()
         
-        // Try SkyLight first (Modern macOS), then CoreGraphics
-        var handle = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/Versions/Current/SkyLight", RTLD_LAZY)
-        if handle == nil {
-             handle = dlopen("/System/Library/Frameworks/CoreGraphics.framework/Versions/Current/CoreGraphics", RTLD_LAZY)
-        }
+        guard let getMainConnection = CGSFuncs.getMainConnection,
+              let setBlurRadius = CGSFuncs.setBlurRadius else { return }
         
-        guard let validHandle = handle else {
-            NSLog("[Quiper] Error: Could not load SkyLight or CoreGraphics framework")
-            return
-        }
-        
-        // Get Main Connection ID
-        guard let cgsMainConnectionID = dlsym(validHandle, "CGSMainConnectionID") ?? dlsym(validHandle, "SLSMainConnectionID") else {
-            NSLog("[Quiper] Error: Could not find CGSMainConnectionID/SLSMainConnectionID")
-            return
-        }
-        let getMainConnection = unsafeBitCast(cgsMainConnectionID, to: CGSMainConnectionIDFunc.self)
         let connection = getMainConnection()
         
-        // Try to get CGSSetWindowBackgroundBlurRadius or SLSSetWindowBackgroundBlurRadius
-        var setBlurSym = dlsym(validHandle, "SLSSetWindowBackgroundBlurRadius")
-        if setBlurSym == nil {
-            setBlurSym = dlsym(validHandle, "CGSSetWindowBackgroundBlurRadius")
-        }
-        
-        guard let finalSym = setBlurSym else {
-            NSLog("[Quiper] Error: Could not find *SetWindowBackgroundBlurRadius symbol")
-            return
-        }
-        
-        let setBlurRadius = unsafeBitCast(finalSym, to: CGSSetWindowBackgroundBlurRadiusFunc.self)
-        
-        // Apply
         if window.windowNumber > 0 {
-             let wid = CGSWindowID(window.windowNumber)
+             let wid = UInt32(window.windowNumber)
              let intRadius = Int32(radius)
              
-             // IMPORTANT: For variable blur to work correctly without artifacts or static material:
-             // 1. Shadow should often be disabled or it clips/interferes
-             // 2. Window must be translucent
+             // For the blur to be visible:
+             // 1. Shadow should be disabled
+             // 2. Window must be non-opaque
              if intRadius > 0 {
                  window.hasShadow = false
                  window.isOpaque = false
-                 window.backgroundColor = .clear
              } 
-
 
              let result = setBlurRadius(connection, wid, intRadius)
              if result != 0 {
@@ -2046,6 +2079,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             let barHeight = CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
             backgroundEffectView?.frame = containerView.bounds
             contentColorView?.frame = containerView.bounds
+            
+            // Refresh blur window frame
+            updateBlurWindowFrame()
+            
             dragArea?.frame = NSRect(x: 0, y: isBottom ? 0 : containerView.bounds.height - barHeight, width: containerView.bounds.width, height: barHeight)
             webViewManager.updateLayout(dragArea: dragArea, animated: false)
         }
