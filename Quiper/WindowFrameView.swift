@@ -162,7 +162,7 @@ class WindowFrameView: NSView {
         // Outline traces the webview-only area (excludes the transparent bar slot).
         // Uses barEdge (set at last reveal) so it's correct even after the border hides.
         let barHeight = CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
-        var outlineRect = bounds.insetBy(dx: contentInset, dy: contentInset)
+        var outlineRect = bounds.insetBy(dx: contentInset - 1, dy: contentInset - 1)
         switch barEdge {
         case .top:
             outlineRect.size.height -= barHeight

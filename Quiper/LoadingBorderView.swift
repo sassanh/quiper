@@ -73,33 +73,34 @@ class LoadingBorderView: NSView {
         borderFull.lineWidth = borderWidth
         container.addSublayer(borderFull)
         
-        // Create the animated "bright" segment using stroke animation
+        // Create the animated "bright" segment using dash animation for perfect continuity
         let brightSegment = CAShapeLayer()
         brightSegment.path = borderPath
         brightSegment.fillColor = nil
         brightSegment.strokeColor = lineColor.cgColor
         brightSegment.lineWidth = borderWidth
         brightSegment.lineCap = .round
-        brightSegment.strokeStart = 0
-        brightSegment.strokeEnd = 0.15  // 15% of the path is "lit up"
+        
+        // Calculate path length for perfect dash wrapping
+        // Perimeter of rounded rect: 2(w-2r) + 2(h-2r) + 2*pi*r
+        let w = borderRect.width
+        let h = borderRect.height
+        let r = cornerRadius
+        let pathLength = 2 * (w - 2 * r) + 2 * (h - 2 * r) + 2 * .pi * r
+        
+        let segmentLength = pathLength * 0.15
+        brightSegment.lineDashPattern = [segmentLength, pathLength - segmentLength] as [NSNumber]
         container.addSublayer(brightSegment)
         
-        // Add animation to move the bright segment around the path
-        let startAnimation = CABasicAnimation(keyPath: "strokeStart")
-        startAnimation.fromValue = 0
-        startAnimation.toValue = 1
+        // Add animation to move the bright segment around the path using lineDashPhase
+        let dashAnimation = CABasicAnimation(keyPath: "lineDashPhase")
+        dashAnimation.fromValue = 0
+        dashAnimation.toValue = -pathLength // Negative to move clockwise
+        dashAnimation.duration = 1.5
+        dashAnimation.repeatCount = .infinity
+        dashAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
         
-        let endAnimation = CABasicAnimation(keyPath: "strokeEnd")
-        endAnimation.fromValue = 0.15
-        endAnimation.toValue = 1.15  // Goes past 1.0 and wraps
-        
-        let animationGroup = CAAnimationGroup()
-        animationGroup.animations = [startAnimation, endAnimation]
-        animationGroup.duration = 1.5
-        animationGroup.repeatCount = .infinity
-        animationGroup.timingFunction = CAMediaTimingFunction(name: .linear)
-        
-        brightSegment.add(animationGroup, forKey: "strokeAnimation")
+        brightSegment.add(dashAnimation, forKey: "lineDashPhaseAnimation")
     }
     
     func startAnimating() {

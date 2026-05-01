@@ -1606,25 +1606,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let minTitleAreaWidth: CGFloat = 60
         let shouldHideTitleArea = titleAreaWidth < minTitleAreaWidth
         
-        // Loading border view frames the title area
+        // Loading border view frames the title area, aligned with selectors
         if let borderView = loadingBorderView {
-            // User requested robust full-height hover area
-            // We'll give it the full height of the header minus a small margin for aesthetics if needed,
-            // or literally full header height to ensure no gaps.
-            let fullHeight = headerHeight
-            
             borderView.frame = NSRect(
                 x: titleAreaX,
-                y: 0,
+                y: selectorY,
                 width: titleAreaWidth,
-                height: fullHeight
+                height: selectorHeight
             )
             // Hide border if no room, but don't stop animation (it may resume when resized)
             borderView.isHidden = shouldHideTitleArea || !borderView.isAnimating
         }
         
         // Title label positioned inside the border with padding
-        let titlePadding: CGFloat = 8  // Padding from border edges
+        let titlePadding: CGFloat = 4  // Padding from border edges
         let titleWidth = max(0, titleAreaWidth - titlePadding * 2)
         let titleHeight = title.intrinsicContentSize.height
         let titleY: CGFloat = {
