@@ -4,6 +4,9 @@
 
 ### Added
 
+- **Build Provenance Attestation**: All release builds are now stamped with a GitHub artifact attestation — a cryptographically signed record linking the binary to the exact source commit and workflow run that produced it. Verify any release zip with `gh attestation verify Quiper.app.zip --repo sassanh/quiper`.
+- **Reproducible CI Builds**: Release artifacts are produced exclusively by GitHub Actions. The README now documents this and explains how to verify the provenance of any downloaded build.
+
 - **Hierarchical Update Channels**: Refactored update settings into a single, intuitive channel selector (Stable, Beta, Nightly).
   - Introduced an inclusive selection UI where choosing a more experimental channel automatically encompasses all stable and pre-release updates to its left.
   - Added seamless data migration to preserve existing user update preferences.

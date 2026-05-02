@@ -56,6 +56,20 @@ Configuring automatic checks and downloads:
 ![Update Settings](.github/assets/settings_updates.webp)
 </details>
 
+#### Build provenance
+
+Every release `.zip` is built entirely by [GitHub Actions](https://github.com/sassanh/quiper/actions/workflows/integration_delivery.yml) — no builds are produced on a developer's local machine and uploaded manually. This means you can inspect the exact steps that produced the binary by looking at the [workflow file](https://github.com/sassanh/quiper/blob/main/.github/workflows/integration_delivery.yml) in the repository.
+
+On top of that, each build is stamped with a **[build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)**. Think of it as a tamper-evident seal: GitHub Signs a record that says *"this exact file was produced by this exact workflow run, triggered from this exact commit."* The signature is stored publicly on GitHub's transparency log, so anyone can verify it — without trusting anything you say.
+
+If you have the [GitHub CLI](https://cli.github.com/) installed, you can verify any release zip before running it:
+
+```bash
+gh attestation verify Quiper.app.zip --repo sassanh/quiper
+```
+
+A passing result confirms the file came from this repository's CI and hasn't been tampered with since it was built. A failure means the file should not be trusted.
+
 ### Build from source
 
 ```bash
