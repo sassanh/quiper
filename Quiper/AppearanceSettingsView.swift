@@ -5,12 +5,15 @@ struct AppearanceSettingsView: View {
     @ObservedObject private var settings = Settings.shared
     
     // Local state for color/opacity to avoid SwiftUI publishing conflicts - separate for each theme
-    @State private var localLightColor: Color = Color(red: 0.95, green: 0.95, blue: 0.95)
-    @State private var localLightOpacity: Double = 0.85
+    @State private var localLightColor: Color = Color(red: 0.95, green: 0.95, blue: 0.95, opacity: 0.85)
     @State private var localLightBlurRadius: Double = 1.0
-    @State private var localDarkColor: Color = Color(red: 0.26, green: 0.21, blue: 0.25)
-    @State private var localDarkOpacity: Double = 0.51
+    @State private var localDarkColor: Color = Color(red: 0.26, green: 0.21, blue: 0.25, opacity: 0.51)
     @State private var localDarkBlurRadius: Double = 1.0
+    
+    @State private var localLightOutlineColor: Color = Color(red: 0.0, green: 0.0, blue: 0.0)
+    @State private var localDarkOutlineColor: Color = Color(red: 1.0, green: 1.0, blue: 1.0)
+    @State private var localLightOutlineWidth: Double = 1.0
+    @State private var localDarkOutlineWidth: Double = 1.0
     
     private let labelWidth: CGFloat = 230
     
@@ -176,14 +179,16 @@ struct AppearanceSettingsView: View {
             // Material/Color row - show appropriate controls based on each theme's mode
             dualThemeMaterialOrColorRow()
             
-            // Opacity and Blur Radius rows - only if either theme is using solid color mode
+            // Blur Radius row - only if either theme is using solid color mode
             if settings.windowAppearance.light.mode == WindowBackgroundMode.solidColor || settings.windowAppearance.dark.mode == WindowBackgroundMode.solidColor {
-                SettingsDivider()
-                dualThemeOpacityRow()
-                
                 SettingsDivider()
                 dualThemeBlurRadiusRow()
             }
+            
+            SettingsDivider()
+            dualThemeOutlineWidthRow()
+            SettingsDivider()
+            dualThemeOutlineColorRow()
         }
     }
     
@@ -217,12 +222,12 @@ struct AppearanceSettingsView: View {
         else if lightMode == WindowBackgroundMode.solidColor && darkMode == WindowBackgroundMode.solidColor {
             DualThemeRow(
                 title: "Color",
-                message: "Choose the background color."
+                message: "Choose the background color and opacity."
             ) {
-                ColorPicker("", selection: colorBinding(for: .light), supportsOpacity: false)
+                ColorPicker("", selection: colorBinding(for: .light), supportsOpacity: true)
                     .labelsHidden()
             } darkContent: {
-                ColorPicker("", selection: colorBinding(for: .dark), supportsOpacity: false)
+                ColorPicker("", selection: colorBinding(for: .dark), supportsOpacity: true)
                     .labelsHidden()
             }
         }
@@ -241,7 +246,7 @@ struct AppearanceSettingsView: View {
                     .pickerStyle(.menu)
                     .frame(width: 130)
                 } else {
-                    ColorPicker("", selection: colorBinding(for: .light), supportsOpacity: false)
+                    ColorPicker("", selection: colorBinding(for: .light), supportsOpacity: true)
                         .labelsHidden()
                 }
             } darkContent: {
@@ -254,47 +259,14 @@ struct AppearanceSettingsView: View {
                     .pickerStyle(.menu)
                     .frame(width: 130)
                 } else {
-                    ColorPicker("", selection: colorBinding(for: .dark), supportsOpacity: false)
+                    ColorPicker("", selection: colorBinding(for: .dark), supportsOpacity: true)
                         .labelsHidden()
                 }
             }
         }
     }
     
-    @ViewBuilder
-    private func dualThemeOpacityRow() -> some View {
-        let lightMode = settings.windowAppearance.light.mode
-        let darkMode = settings.windowAppearance.dark.mode
-        
-        DualThemeRow(
-            title: "Opacity",
-            message: "Adjust background transparency (0% = fully transparent)."
-        ) {
-            if lightMode == WindowBackgroundMode.solidColor {
-                HStack(spacing: 4) {
-                    Slider(value: opacityBinding(for: .light), in: 0...1)
-                        .frame(maxWidth: 100)
-                    Text("\(Int(localLightOpacity * 100))%")
-                        .font(.system(.caption, design: .monospaced))
-                }
-            } else {
-                Text("—")
-                    .foregroundStyle(.secondary)
-            }
-        } darkContent: {
-            if darkMode == WindowBackgroundMode.solidColor {
-                HStack(spacing: 4) {
-                    Slider(value: opacityBinding(for: .dark), in: 0...1)
-                        .frame(maxWidth: 100)
-                    Text("\(Int(localDarkOpacity * 100))%")
-                        .font(.system(.caption, design: .monospaced))
-                }
-            } else {
-                Text("—")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
+
     
     @ViewBuilder
     private func dualThemeBlurRadiusRow() -> some View {
@@ -335,14 +307,20 @@ struct AppearanceSettingsView: View {
     
     private func syncLocalState() {
         let light = settings.windowAppearance.light.backgroundColor
-        localLightColor = Color(red: light.red, green: light.green, blue: light.blue)
-        localLightOpacity = light.alpha
+        localLightColor = Color(red: light.red, green: light.green, blue: light.blue, opacity: light.alpha)
         localLightBlurRadius = settings.windowAppearance.light.blurRadius
         
         let dark = settings.windowAppearance.dark.backgroundColor
-        localDarkColor = Color(red: dark.red, green: dark.green, blue: dark.blue)
-        localDarkOpacity = dark.alpha
+        localDarkColor = Color(red: dark.red, green: dark.green, blue: dark.blue, opacity: dark.alpha)
         localDarkBlurRadius = settings.windowAppearance.dark.blurRadius
+        
+        let lightOutline = settings.windowAppearance.light.outlineColor
+        localLightOutlineColor = Color(red: lightOutline.red, green: lightOutline.green, blue: lightOutline.blue, opacity: lightOutline.alpha)
+        localLightOutlineWidth = settings.windowAppearance.light.outlineWidth
+        
+        let darkOutline = settings.windowAppearance.dark.outlineColor
+        localDarkOutlineColor = Color(red: darkOutline.red, green: darkOutline.green, blue: darkOutline.blue, opacity: darkOutline.alpha)
+        localDarkOutlineWidth = settings.windowAppearance.dark.outlineWidth
     }
     
     private func modeBinding(for theme: ThemeVariant) -> Binding<WindowBackgroundMode> {
@@ -399,21 +377,7 @@ struct AppearanceSettingsView: View {
         )
     }
     
-    private func opacityBinding(for theme: ThemeVariant) -> Binding<Double> {
-        Binding(
-            get: {
-                theme == .light ? localLightOpacity : localDarkOpacity
-            },
-            set: { newOpacity in
-                if theme == .light {
-                    localLightOpacity = newOpacity
-                } else {
-                    localDarkOpacity = newOpacity
-                }
-                applyOpacityChange(newOpacity, for: theme)
-            }
-        )
-    }
+
     
     private func blurRadiusBinding(for theme: ThemeVariant) -> Binding<Double> {
         Binding(
@@ -427,6 +391,34 @@ struct AppearanceSettingsView: View {
                     localDarkBlurRadius = newRadius
                 }
                 applyBlurRadiusChange(newRadius, for: theme)
+            }
+        )
+    }
+    
+    private func outlineWidthBinding(for theme: ThemeVariant) -> Binding<Double> {
+        Binding(
+            get: { theme == .light ? localLightOutlineWidth : localDarkOutlineWidth },
+            set: { newWidth in
+                if theme == .light {
+                    localLightOutlineWidth = newWidth
+                } else {
+                    localDarkOutlineWidth = newWidth
+                }
+                applyOutlineWidthChange(newWidth, for: theme)
+            }
+        )
+    }
+    
+    private func outlineColorBinding(for theme: ThemeVariant) -> Binding<Color> {
+        Binding(
+            get: { theme == .light ? localLightOutlineColor : localDarkOutlineColor },
+            set: { newColor in
+                if theme == .light {
+                    localLightOutlineColor = newColor
+                } else {
+                    localDarkOutlineColor = newColor
+                }
+                applyOutlineColorChange(newColor, for: theme)
             }
         )
     }
@@ -445,30 +437,13 @@ struct AppearanceSettingsView: View {
     
     private func applyColorChange(_ newColor: Color, for theme: ThemeVariant) {
         let nsColor = NSColor(newColor)
-        NSLog("[Quiper] SettingsView received color change: \(nsColor)")
         DispatchQueue.main.async {
-            let currentAlpha = theme == .light
-                ? settings.windowAppearance.light.backgroundColor.alpha
-                : settings.windowAppearance.dark.backgroundColor.alpha
-            
-            let newColorValue = CodableColor(nsColor: nsColor.withAlphaComponent(currentAlpha))
+            let newColorValue = CodableColor(nsColor: nsColor)
             
             if theme == .light {
                 settings.windowAppearance.light.backgroundColor = newColorValue
             } else {
                 settings.windowAppearance.dark.backgroundColor = newColorValue
-            }
-            settings.saveSettings()
-            NotificationCenter.default.post(name: .windowAppearanceChanged, object: nil)
-        }
-    }
-    
-    private func applyOpacityChange(_ newOpacity: Double, for theme: ThemeVariant) {
-        DispatchQueue.main.async {
-            if theme == .light {
-                settings.windowAppearance.light.backgroundColor.alpha = newOpacity
-            } else {
-                settings.windowAppearance.dark.backgroundColor.alpha = newOpacity
             }
             settings.saveSettings()
             NotificationCenter.default.post(name: .windowAppearanceChanged, object: nil)
@@ -484,6 +459,70 @@ struct AppearanceSettingsView: View {
             }
             settings.saveSettings()
             NotificationCenter.default.post(name: .windowAppearanceChanged, object: nil)
+        }
+    }
+    
+    private func applyOutlineWidthChange(_ newWidth: Double, for theme: ThemeVariant) {
+        DispatchQueue.main.async {
+            if theme == .light {
+                settings.windowAppearance.light.outlineWidth = newWidth
+            } else {
+                settings.windowAppearance.dark.outlineWidth = newWidth
+            }
+            settings.saveSettings()
+            NotificationCenter.default.post(name: .windowAppearanceChanged, object: nil)
+        }
+    }
+    
+    private func applyOutlineColorChange(_ newColor: Color, for theme: ThemeVariant) {
+        let nsColor = NSColor(newColor)
+        DispatchQueue.main.async {
+            let newColorValue = CodableColor(nsColor: nsColor)
+            if theme == .light {
+                settings.windowAppearance.light.outlineColor = newColorValue
+            } else {
+                settings.windowAppearance.dark.outlineColor = newColorValue
+            }
+            settings.saveSettings()
+            NotificationCenter.default.post(name: .windowAppearanceChanged, object: nil)
+        }
+    }
+    
+    @ViewBuilder
+    private func dualThemeOutlineWidthRow() -> some View {
+        DualThemeRow(
+            title: "Border Width",
+            message: "Thickness of the window edge border."
+        ) {
+            HStack(spacing: 4) {
+                Slider(value: outlineWidthBinding(for: .light), in: 0...4, step: 0.5)
+                    .frame(maxWidth: 100)
+                Text(String(format: "%.1f", localLightOutlineWidth))
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 24)
+            }
+        } darkContent: {
+            HStack(spacing: 4) {
+                Slider(value: outlineWidthBinding(for: .dark), in: 0...4, step: 0.5)
+                    .frame(maxWidth: 100)
+                Text(String(format: "%.1f", localDarkOutlineWidth))
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 24)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func dualThemeOutlineColorRow() -> some View {
+        DualThemeRow(
+            title: "Border Color",
+            message: "Color of the window edge border."
+        ) {
+            ColorPicker("", selection: outlineColorBinding(for: .light), supportsOpacity: true)
+                .labelsHidden()
+        } darkContent: {
+            ColorPicker("", selection: outlineColorBinding(for: .dark), supportsOpacity: true)
+                .labelsHidden()
         }
     }
 }

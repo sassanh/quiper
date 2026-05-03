@@ -114,6 +114,7 @@ final class WebViewManager: NSObject {
         wrapperView.autoresizingMask = []
         wrapperView.wantsLayer = true
         wrapperView.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
+        updateMaskedCorners(for: wrapperView)
         wrapperView.layer?.masksToBounds = true
         wrapperView.isHidden = true
         
@@ -230,7 +231,23 @@ final class WebViewManager: NSObject {
                     } else {
                         wrapper.frame = frame
                     }
+                    updateMaskedCorners(for: wrapper)
                 }
+            }
+        }
+    }
+    
+    private func updateMaskedCorners(for wrapper: NSView) {
+        let isHeaderHidden = Settings.shared.topBarVisibility == .hidden
+        if isHeaderHidden {
+            wrapper.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        } else {
+            if Settings.shared.dragAreaPosition == .top {
+                // Top bar is at the top, so we want the bottom corners of the webview to be rounded
+                wrapper.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+            } else {
+                // Top bar is at the bottom, so we want the top corners of the webview to be rounded
+                wrapper.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
             }
         }
     }

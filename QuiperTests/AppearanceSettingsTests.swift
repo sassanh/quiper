@@ -48,7 +48,8 @@ struct AppearanceSettingsTests {
         let settings = ThemeAppearanceSettings(
             mode: .macOSEffects,
             material: .sidebar,
-            backgroundColor: CodableColor(red: 0.5, green: 0.6, blue: 0.7, alpha: 0.8)
+            backgroundColor: CodableColor(red: 0.5, green: 0.6, blue: 0.7, alpha: 0.8),
+            outlineColor: CodableColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0)
         )
         
         let data = try JSONEncoder().encode(settings)

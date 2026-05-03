@@ -70,7 +70,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var collapsibleSessionSelector: CollapsibleSelector?
     private var titleLabel: HoverTextField!
 
-    private var windowFrameView: WindowFrameView!
+    private var windowMarginView: WindowMarginView!
+    private var windowOutlineView: WindowOutlineView!
     private var loadingBorderView: LoadingBorderView!
     private var isLoadingObservation: NSKeyValueObservation?
     private var sessionActionsButton: NSButton!
@@ -112,11 +113,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     // Window size toggle state
     private var isCompactMode = false
     private var previousWindowFrame: NSRect?
-    // Width of the transparent margin on each side in hidden mode (bar lives in this margin on one edge).
-    private let barBorderWidth: CGFloat = 8
+    // Original constant width of the transparent margin on each side in hidden mode
+    internal let barBorderWidth: CGFloat = 8
+    
+    // Dynamic margin applied to the window frame. In hidden mode, it's the full barBorderWidth.
+    // In visible mode, it's just the thickness of the outline, allowing the outline to grow outwards
+    // without being clipped by the window frame.
+    internal var currentMargin: CGFloat {
+        let isHiddenMode = Settings.shared.topBarVisibility == .hidden
+        if isHiddenMode {
+            return barBorderWidth
+        } else {
+            let isDark = window?.effectiveAppearance.name.rawValue.contains("Dark") ?? false
+            let settings = isDark ? Settings.shared.windowAppearance.dark : Settings.shared.windowAppearance.light
+            // Align outward to integral boundary
+            return ceil(settings.outlineWidth)
+        }
+    }
     // Solid-color background view for .solidColor appearance mode; positioned at content rect
     var contentColorView: NSView?
     @MainActor internal private(set) var blurWindow: NSWindow?
+    
 
     deinit {
         let bw = blurWindow
@@ -128,6 +145,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 bw.close()
             }
         }
+        NotificationCenter.default.removeObserver(self)
     }
 
 
@@ -761,51 +779,125 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return false
     }
 
-    // MARK: - Hidden-mode layout helpers
-
-    /// Rect for web content within the container when in hidden mode.
-    /// The bar lives in a transparent margin on one edge; content is inset on all sides.
-    private func hiddenModeContentRect(in bounds: NSRect) -> NSRect {
-        let bar = CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
-        let thin = barBorderWidth
-        let isBottom = Settings.shared.dragAreaPosition == .bottom
-        return NSRect(x: thin,
-                      y: isBottom ? thin + bar : thin,
-                      width: bounds.width - 2 * thin,
-                      height: bounds.height - 2 * thin - bar)
-    }
-
-    /// Rect for the drag/bar area within the container when in hidden mode (sits in the margin).
-    private func hiddenModeDragRect(in bounds: NSRect) -> NSRect {
-        let bar = CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
-        let thin = barBorderWidth
-        let isBottom = Settings.shared.dragAreaPosition == .bottom
-        return NSRect(x: thin,
-                      y: isBottom ? thin : bounds.height - thin - bar,
-                      width: bounds.width - 2 * thin,
-                      height: bar)
-    }
-
-    /// Applies the permanent hidden-mode layout (content rect, drag rect) to all views.
-    /// Call when entering hidden mode or when the window size changes in hidden mode.
-    private func applyHiddenModeLayout() {
-        guard let contentView = window?.contentView else { return }
-        let cRect = hiddenModeContentRect(in: contentView.bounds)
-        let dRect = hiddenModeDragRect(in: contentView.bounds)
-        backgroundEffectView?.frame = cRect
-        contentColorView?.frame = cRect
+    // MARK: - Dynamic Window Layout
+    
+    /// Unifies the layout logic for both hidden and visible modes.
+    /// Dynamically adjusts the main window frame if the required margin changes,
+    /// and repositions the internal content/drag rects accordingly.
+    private func updateWindowMarginAndLayout() {
+        guard let win = window, let containerView = win.contentView else { return }
         
-        // Refresh blur window frame for the new content rect
-        updateBlurWindowFrame()
+        let newMargin = currentMargin
+        let oldMargin = windowMarginView?.contentInset ?? 0
+        
+        // If the required margin has changed (e.g. toggling visibility mode, or changing outline width),
+        // adjust the physical window frame to accommodate the new margin while keeping content static.
+        if newMargin != oldMargin {
+            let diff = newMargin - oldMargin
+            var frame = win.frame
+            
+            let targetWidth = frame.size.width + 2 * diff
+            let targetHeight = frame.size.height + 2 * diff
+            
+            // Constrain to screen size
+            let screenFrame = win.screen?.frame ?? NSRect(x: 0, y: 0, width: 10000, height: 10000)
+            let finalWidth = min(targetWidth, screenFrame.width)
+            let finalHeight = min(targetHeight, screenFrame.height)
+            
+            let actualDiffW = (finalWidth - frame.size.width) / 2
+            let actualDiffH = (finalHeight - frame.size.height) / 2
+            
+            frame.origin.x -= actualDiffW
+            frame.origin.y -= actualDiffH
+            frame.size.width = finalWidth
+            frame.size.height = finalHeight
+            // Update state BEFORE calling setFrame to prevent infinite recursion in windowDidResize
+            windowMarginView?.contentInset = newMargin
+            windowOutlineView?.contentInset = newMargin
+            
+            win.setFrame(frame, display: true)
+        }
+        
+        let isHiddenMode = Settings.shared.topBarVisibility == .hidden
+        let isBottom = Settings.shared.dragAreaPosition == .bottom
+        let bar = CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
+        
+        let cRect: NSRect
+        let dRect: NSRect
+        
+        if isHiddenMode {
+            cRect = NSRect(x: newMargin,
+                           y: isBottom ? newMargin + bar : newMargin,
+                           width: containerView.bounds.width - 2 * newMargin,
+                           height: containerView.bounds.height - 2 * newMargin - bar)
+            dRect = NSRect(x: newMargin,
+                           y: isBottom ? newMargin : containerView.bounds.height - newMargin - bar,
+                           width: containerView.bounds.width - 2 * newMargin,
+                           height: bar)
+            dragArea?.isTransparentBackground = true
+        } else {
+            // In visible mode, the bar and content are separate.
+            cRect = NSRect(x: newMargin,
+                           y: isBottom ? newMargin + bar : newMargin,
+                           width: containerView.bounds.width - 2 * newMargin,
+                           height: containerView.bounds.height - 2 * newMargin - bar)
+            dRect = NSRect(x: newMargin,
+                           y: isBottom ? newMargin : containerView.bounds.height - newMargin - bar,
+                           width: containerView.bounds.width - 2 * newMargin,
+                           height: bar)
+            dragArea?.isTransparentBackground = false
+        }
+        
+        let contentMaskedCorners: CACornerMask // For standard (unflipped) views like NSView
+        let flippedMaskedCorners: CACornerMask // For flipped views like NSVisualEffectView
+        if isHiddenMode {
+            contentMaskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+            flippedMaskedCorners = contentMaskedCorners
+        } else {
+            if isBottom {
+                // Bar at bottom: round TOP corners
+                contentMaskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner] // maxY is top in unflipped
+                flippedMaskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner] // minY is top in flipped
+            } else {
+                // Bar at top: round BOTTOM corners
+                contentMaskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner] // minY is bottom in unflipped
+                flippedMaskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner] // maxY is bottom in flipped
+            }
+        }
+        
+        backgroundEffectView?.frame = cRect
+        // NSVisualEffectView is flipped by default, so it needs the flipped corners
+        backgroundEffectView?.layer?.maskedCorners = flippedMaskedCorners
+        
+        contentColorView?.frame = cRect
+        // contentColorView is a standard NSView, so it needs the unflipped corners
+        contentColorView?.layer?.maskedCorners = contentMaskedCorners
         
         webViewManager.updateLayout(contentRect: cRect, animated: false)
         dragArea?.frame = dRect
         dragArea?.autoresizingMask = []
-        // In hidden mode the border fill is the bar background; dragArea should be clear
-        dragArea?.isTransparentBackground = true
-        // Tell the frame view which edge the bar is on so the outline excludes the transparent slot
-        let isBottom = Settings.shared.dragAreaPosition == .bottom
-        windowFrameView?.configureBarEdge(isBottom ? .bottom : .top)
+        
+        // Round the bar's outer corners so they align with the window border curve
+        if isHiddenMode {
+            dragArea?.layer?.cornerRadius = 0
+            dragArea?.layer?.maskedCorners = []
+        } else {
+            dragArea?.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
+            if isBottom {
+                // Bar at bottom: round its bottom corners (minY in standard coords)
+                dragArea?.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+            } else {
+                // Bar at top: round its top corners (maxY in standard coords)
+                dragArea?.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+            }
+        }
+        
+        // Tell the frame views which edge the bar is on so they can align correctly
+        windowMarginView?.configureBarEdge(isBottom ? .bottom : .top)
+        windowOutlineView?.configureBarEdge(isBottom ? .bottom : .top)
+        
+        // Ensure blur window strictly follows the content frame, ignoring the transparent margin
+        updateBlurWindowFrame()
     }
 
     // MARK: - Private helpers
@@ -834,7 +926,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             let y = screenFrame.midY - (height / 2)
 
             window.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
-            }
+        }
+        
+        // Final clamp to ensure no oversized or undersized frames persist from previous sessions/crashes
+        if let screen = window.screen {
+            let sf = screen.frame
+            var f = window.frame
+            
+            // Constrain to physical screen dimensions (MAX)
+            f.size.width = min(f.width, sf.width)
+            f.size.height = min(f.height, sf.height)
+            
+            // Constrain to sane minimum dimensions (MIN)
+            f.size.width = max(f.width, Constants.WINDOW_MIN_WIDTH)
+            f.size.height = max(f.height, Constants.WINDOW_MIN_HEIGHT)
+            
+            window.setFrame(f, display: true)
+        }
+        
+        window.minSize = NSSize(width: Constants.WINDOW_MIN_WIDTH, height: Constants.WINDOW_MIN_HEIGHT)
+        
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
@@ -848,17 +959,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // or be transparent to let the visual effect view show through.
         let containerView = NSView(frame: frame)
         containerView.wantsLayer = true
-        containerView.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS + barBorderWidth
+        containerView.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
         containerView.layer?.masksToBounds = true
         containerView.autoresizingMask = [.width, .height]
         window.contentView = containerView
         
-        // WINDOW FRAME VIEW
-        // Created here; added to contentView in setupUI above all other views so its border
-        // ring renders on top of content while mouse events pass through (hitTest returns nil).
-        windowFrameView = WindowFrameView(frame: containerView.bounds)
-        windowFrameView.contentInset = barBorderWidth
-        windowFrameView.autoresizingMask = [.width, .height]
+        windowMarginView = WindowMarginView(frame: containerView.bounds)
+        windowMarginView.contentInset = currentMargin
+        windowMarginView.autoresizingMask = [.width, .height]
+        
+        windowOutlineView = WindowOutlineView(frame: containerView.bounds)
+        windowOutlineView.contentInset = currentMargin
+        windowOutlineView.autoresizingMask = [.width, .height]
         
         // VISUAL EFFECT VIEW (Background Only)
         // Placed as a subview of containerView, at the very bottom (z-index).
@@ -895,18 +1007,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         findBarViewController = FindBarViewController()
         findBarViewController.delegate = self
         findBarViewController.addTo(contentView: contentView, topOffset: Settings.shared.dragAreaPosition == .top ? Constants.DRAGGABLE_AREA_HEIGHT : 0)
-
-        // Add windowFrameView BELOW dragArea so border ring renders behind the bar's controls.
-        // In hidden mode the dragArea background is clear, letting the border fill show through.
-        // Mouse events still pass through because hitTest returns nil.
-        contentView.addSubview(windowFrameView, positioned: .below, relativeTo: dragArea)
+        
+        // windowMarginView handles the thick border and hit target, placed behind dragArea
+        contentView.addSubview(windowMarginView, positioned: .below, relativeTo: dragArea)
+        // windowOutlineView handles the thin outline, placed in front of everything
+        contentView.addSubview(windowOutlineView, positioned: .above, relativeTo: nil)
 
         updateActiveWebview()
         updateHeaderTrackingArea()
         // Apply static layout before first visibility update
-        if Settings.shared.topBarVisibility == .hidden {
-            applyHiddenModeLayout()
-        }
+        updateWindowMarginAndLayout()
         updateHeaderVisibility(animated: false)
     }
 
@@ -957,37 +1067,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
     
     @objc private func topBarVisibilityChanged() {
-        guard let window = self.window else { return }
-        let isHiddenMode = Settings.shared.topBarVisibility == .hidden
-        let thin = barBorderWidth
-        let current = window.frame
-        if isHiddenMode {
-            // Grow window outward by `thin` on each side so content stays put
-            let newFrame = NSRect(x: current.origin.x - thin,
-                                  y: current.origin.y - thin,
-                                  width: current.width + 2 * thin,
-                                  height: current.height + 2 * thin)
-            window.setFrame(newFrame, display: false)
-            applyHiddenModeLayout()
-        } else {
-            // Shrink window inward by `thin` on each side
-            let newFrame = NSRect(x: current.origin.x + thin,
-                                  y: current.origin.y + thin,
-                                  width: current.width - 2 * thin,
-                                  height: current.height - 2 * thin)
-            window.setFrame(newFrame, display: false)
-        }
+        updateWindowMarginAndLayout()
         updateHeaderTrackingArea()
         updateHeaderVisibility(animated: false)
+    }
+    
+    @objc private func appearanceSettingsChanged() {
+        updateWindowMarginAndLayout()
     }
 
     @objc private func dragAreaPositionChanged() {
         guard let contentView = window?.contentView else { return }
-        // Immediately hide the frame view; reposition drag area for new edge
-        windowFrameView?.setRevealed(false, edge: .none, animated: false)
-        if Settings.shared.topBarVisibility == .hidden {
-            applyHiddenModeLayout()
-        }
+        windowMarginView?.setRevealed(false, edge: .none, animated: false)
+        windowOutlineView?.setRevealed(false, edge: .none, animated: false)
+        
+        updateWindowMarginAndLayout()
         findBarViewController?.layoutIn(contentView: contentView, topOffset: Settings.shared.dragAreaPosition == .top ? Constants.DRAGGABLE_AREA_HEIGHT : 0)
         updateHeaderTrackingArea()
         updateHeaderVisibility(animated: false)
@@ -1011,7 +1105,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let finalVisible = !isHiddenMode || (shouldShowHeaderIfHidden && temporaryRevealAllowed)
 
         let isBottom = Settings.shared.dragAreaPosition == .bottom
-        let edge: WindowFrameView.ThickEdge = isBottom ? .bottom : .top
+        let edge: WindowMarginView.ThickEdge = isBottom ? .bottom : .top
 
         if isHiddenMode {
             let currentAlpha = dragArea?.alphaValue ?? 0
@@ -1019,7 +1113,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             if finalVisible {
                 // Snap selectors to final position before animating in
                 layoutSelectors()
-                windowFrameView?.setRevealed(true, edge: edge, animated: animated)
+                windowMarginView?.setRevealed(true, edge: edge, animated: animated)
+                windowOutlineView?.setRevealed(true, edge: edge, animated: animated)
                 // Only animate if bar isn't already fully visible (avoids flash on expand/collapse events)
                 if animated && !alreadyVisible {
                     let slideOffset: CGFloat = 8
@@ -1049,15 +1144,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                     dragArea?.layer?.transform = CATransform3DIdentity
                     dragArea?.alphaValue = 1.0
                 }
-                // Update blur window frame to account for bar revelation
-                updateBlurWindowFrame()
                 // else: already visible and animated=true — nothing to do, keep current state
             } else {
                 // Collapse any open selectors — re-entry is blocked by the guard above
                 collapsibleSessionSelector?.collapse()
                 collapsibleServiceSelector?.collapse()
                 stopSelectorCursorMonitor()
-                windowFrameView?.setRevealed(false, edge: edge, animated: animated)
+                windowMarginView?.setRevealed(false, edge: edge, animated: animated)
+                windowOutlineView?.setRevealed(false, edge: edge, animated: animated)
                 // Only animate if bar isn't already hidden
                 if animated && alreadyVisible {
                     let slideOffset: CGFloat = 8
@@ -1081,42 +1175,29 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                     dragArea?.layer?.transform = CATransform3DIdentity
                     dragArea?.alphaValue = 0.0
                 }
-                // Update blur window frame to account for bar hiding
-                updateBlurWindowFrame()
                 // else: already hidden and animated=true — nothing to do
             }
         } else {
             // Visible mode: bar always shown inside window, no frame ring
-            windowFrameView?.setRevealed(false, edge: .none, animated: false)
-            // Restore the bar's own background (was cleared in hidden mode)
+            windowMarginView?.setRevealed(false, edge: .none, animated: false)
+            windowOutlineView?.setRevealed(false, edge: .none, animated: false)
+            // Restore the bar's own background and visibility (was cleared/hidden in hidden mode)
             dragArea?.isTransparentBackground = false
-            guard let containerView = window?.contentView else { return }
-            let barHeight = CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
-            dragArea?.frame = NSRect(x: 0,
-                                     y: isBottom ? 0 : containerView.bounds.height - barHeight,
-                                     width: containerView.bounds.width,
-                                     height: barHeight)
-            dragArea?.autoresizingMask = isBottom ? [.width, .maxYMargin] : [.width, .minYMargin]
+            dragArea?.layer?.removeAllAnimations()
+            dragArea?.layer?.transform = CATransform3DIdentity
             dragArea?.alphaValue = 1.0
-            backgroundEffectView?.frame = containerView.bounds
-            contentColorView?.frame = containerView.bounds
-            webViewManager.updateLayout(dragArea: dragArea, animated: false)
+            updateWindowMarginAndLayout()
         }
     }
 
     private func createDragArea(in contentView: NSView) {
         let isHiddenMode = Settings.shared.topBarVisibility == .hidden
         let isBottom = Settings.shared.dragAreaPosition == .bottom
-        let initialFrame: NSRect
-        if isHiddenMode {
-            initialFrame = hiddenModeDragRect(in: contentView.bounds)
-        } else {
-            let barHeight = CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
-            initialFrame = NSRect(x: 0,
+        let barHeight = CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
+        let initialFrame = NSRect(x: 0,
                                   y: isBottom ? 0 : contentView.bounds.height - barHeight,
                                   width: contentView.bounds.width,
                                   height: barHeight)
-        }
         let drag = DraggableView(frame: initialFrame)
         drag.autoresizingMask = isHiddenMode ? [] : (isBottom ? [.width, .maxYMargin] : [.width, .minYMargin])
         drag.alphaValue = isHiddenMode ? 0.0 : 1.0
@@ -1303,11 +1384,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             updateSelectorsMode()
             layoutSelectors()
         }
+        updateWindowMarginAndLayout()
         updateHeaderTrackingArea()
     }
     
     @objc private func handleWindowAppearanceChanged(_ notification: Notification) {
         applyWindowAppearance()
+        updateWindowMarginAndLayout()
     }
     
     @objc private func handleColorSchemeChanged(_ notification: Notification) {
@@ -1327,7 +1410,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     
     private func applyColorScheme() {
         let scheme = Settings.shared.colorScheme
-        window?.appearance = scheme.nsAppearance
+        let appearance = scheme.nsAppearance
+        window?.appearance = appearance
+        blurWindow?.appearance = appearance
         // Also update window appearance when color scheme changes
         applyWindowAppearance()
     }
@@ -1392,12 +1477,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func updateBlurWindowFrame() {
         guard let win = window, let bw = blurWindow, let contentView = win.contentView else { return }
         
-        let isHiddenMode = Settings.shared.topBarVisibility == .hidden
-        let contentRect = isHiddenMode ? hiddenModeContentRect(in: contentView.bounds) : contentView.bounds
-        
-        // Convert contentRect from view coordinates to screen coordinates
-        let rectInWindow = contentView.convert(contentRect, to: nil)
-        let rectInScreen = win.convertToScreen(rectInWindow)
+        // Map exactly to the visual content bounds, ignoring any transparent margin
+        let targetFrame = backgroundEffectView?.frame ?? contentView.bounds
+        let rectInScreen = win.convertToScreen(targetFrame)
         
         // Use setFrame with display: true and ensure the window is ordered correctly
         bw.setFrame(rectInScreen, display: true)
@@ -1406,8 +1488,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         bw.contentView?.wantsLayer = true
         bw.contentView?.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
         bw.contentView?.layer?.masksToBounds = true
+        
+        let isHiddenMode = Settings.shared.topBarVisibility == .hidden
+        let isBottom = Settings.shared.dragAreaPosition == .bottom
+        
+        if isHiddenMode {
+            bw.contentView?.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        } else {
+            if isBottom {
+                // Bar at bottom, round top corners. Standard view, so maxY is top.
+                bw.contentView?.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+            } else {
+                // Bar at top, round bottom corners. Standard view, so minY is bottom.
+                bw.contentView?.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+            }
+        }
     }
-    
     /// Sets the window's background blur radius using CoreGraphics Services private API
     /// This directly talks to the WindowServer to set blur behind the window
     private func setWindowBlurRadius(_ window: NSWindow, radius: Double) {
@@ -2063,24 +2159,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     // MARK: - NSWindowDelegate
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        guard let screen = sender.screen else { return frameSize }
+        let screenFrame = screen.frame
+        
+        // Constrain to physical screen dimensions
+        return NSSize(width: min(frameSize.width, screenFrame.width),
+                      height: min(frameSize.height, screenFrame.height))
+    }
+
     func windowDidResize(_ notification: Notification) {
+        updateWindowMarginAndLayout()
         layoutSelectors()
-        guard let containerView = window?.contentView else { return }
-        let isHiddenMode = Settings.shared.topBarVisibility == .hidden
-        if isHiddenMode {
-            applyHiddenModeLayout()
-        } else {
-            let isBottom = Settings.shared.dragAreaPosition == .bottom
-            let barHeight = CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
-            backgroundEffectView?.frame = containerView.bounds
-            contentColorView?.frame = containerView.bounds
-            
-            // Refresh blur window frame
-            updateBlurWindowFrame()
-            
-            dragArea?.frame = NSRect(x: 0, y: isBottom ? 0 : containerView.bounds.height - barHeight, width: containerView.bounds.width, height: barHeight)
-            webViewManager.updateLayout(dragArea: dragArea, animated: false)
-        }
+        updateHeaderTrackingArea()
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

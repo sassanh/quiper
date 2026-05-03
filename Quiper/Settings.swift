@@ -251,19 +251,25 @@ struct ThemeAppearanceSettings: Codable, Equatable {
     var material: WindowMaterial = .underWindowBackground
     var backgroundColor: CodableColor
     var blurRadius: Double = 1.0  // 1 = no blur, higher = more blur
+    var outlineWidth: Double = 1.0
+    var outlineColor: CodableColor
     
     static let defaultLight = ThemeAppearanceSettings(
         mode: .solidColor,
         material: .underWindowBackground,
         backgroundColor: CodableColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 0.60),
-        blurRadius: 40.0
+        blurRadius: 40.0,
+        outlineWidth: 1.0,
+        outlineColor: CodableColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0)
     )
     
     static let defaultDark = ThemeAppearanceSettings(
         mode: .solidColor,
         material: .underWindowBackground,
         backgroundColor: CodableColor(red: 0.26, green: 0.20, blue: 0.23, alpha: 0.60),
-        blurRadius: 40.0
+        blurRadius: 40.0,
+        outlineWidth: 1.5,
+        outlineColor: CodableColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.40)
     )
 }
 
@@ -274,6 +280,8 @@ extension ThemeAppearanceSettings {
         material = try container.decodeIfPresent(WindowMaterial.self, forKey: .material) ?? .underWindowBackground
         backgroundColor = try container.decodeIfPresent(CodableColor.self, forKey: .backgroundColor) ?? ThemeAppearanceSettings.defaultDark.backgroundColor
         blurRadius = try container.decodeIfPresent(Double.self, forKey: .blurRadius) ?? 40.0
+        outlineWidth = try container.decodeIfPresent(Double.self, forKey: .outlineWidth) ?? 1.0
+        outlineColor = try container.decodeIfPresent(CodableColor.self, forKey: .outlineColor) ?? ThemeAppearanceSettings.defaultDark.outlineColor
     }
 }
 
@@ -287,8 +295,14 @@ struct WindowAppearanceSettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
-        if let light = try container.decodeIfPresent(ThemeAppearanceSettings.self, forKey: .light),
+        if var light = try container.decodeIfPresent(ThemeAppearanceSettings.self, forKey: .light),
            let dark = try container.decodeIfPresent(ThemeAppearanceSettings.self, forKey: .dark) {
+            // The ThemeAppearanceSettings decoder can't distinguish light vs dark,
+            // so outlineColor falls back to defaultDark. Fix it for the light theme
+            // if the decoded value matches the dark default (meaning it was missing).
+            if light.outlineColor == ThemeAppearanceSettings.defaultDark.outlineColor {
+                light.outlineColor = ThemeAppearanceSettings.defaultLight.outlineColor
+            }
             self.light = light
             self.dark = dark
         } else {
@@ -297,7 +311,7 @@ struct WindowAppearanceSettings: Codable, Equatable {
             let material = try container.decodeIfPresent(WindowMaterial.self, forKey: .material) ?? .underWindowBackground
             let backgroundColor = try container.decodeIfPresent(CodableColor.self, forKey: .backgroundColor) ?? ThemeAppearanceSettings.defaultDark.backgroundColor
             
-            let legacySettings = ThemeAppearanceSettings(mode: mode, material: material, backgroundColor: backgroundColor)
+            var legacySettings = ThemeAppearanceSettings(mode: mode, material: material, backgroundColor: backgroundColor, blurRadius: 40.0, outlineWidth: 1.0, outlineColor: ThemeAppearanceSettings.defaultDark.outlineColor)
             self.dark = legacySettings
             self.light = .defaultLight
         }

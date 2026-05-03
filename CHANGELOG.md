@@ -48,6 +48,10 @@
 - **Selector Expansion Blocked by Modal Windows**: Modifier-key selector expansion (e.g. holding `Cmd` to reveal engine/session digits) is now suppressed whenever any modal window is open. The check is generic — not tied specifically to the settings window — so it covers all future modal dialogs as well.
 - **Settings Window Color Scheme**: Changing the app's color scheme (Light/Dark/System) in Appearance settings now also updates the Settings window immediately. Previously only the main window was updated.
 - **Reset Zoom Menu Shortcut**: The reset zoom menu item in the View menu now correctly shows its shortcut "⌘+⌫".
+- **Customizable Window Border**: The window outline color and width are now configurable per theme (Light/Dark) in Appearance settings. Width ranges from 0 (hidden) to 4 pt in 0.5 steps; color supports full opacity control.
+- **Background Opacity in Color Picker**: The separate Opacity slider has been removed. Background opacity is now set directly through the color picker, which now supports transparency.
+- **Selective Web View Corner Masking**: Web view corners are now only rounded on the edge opposite the bar (top bar → bottom corners rounded, bottom bar → top corners rounded), matching the window shape more precisely.
+- **Reduced Window Corner Radius**: Corner radius tightened from 10 pt to 6 pt for a cleaner, more modern look.
 - **Loading Spinner Alignment**: Vertically aligned the title's loading spinner with the selectors and reduced internal padding for a more balanced layout.
 - **Loading Spinner Animation**: Improved animation continuity by switching to a dash-phase based loop, resolving a visual glitch where the spinner would break at the path's seam.
 - **Collapsible Selector Hover Expansion**: Fixed hover expansion for selectors when the window is not the key window (e.g., in accessory mode) and ensured they expand immediately when the top bar is revealed under the cursor.
