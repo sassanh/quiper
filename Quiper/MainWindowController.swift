@@ -1015,7 +1015,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         findBarViewController = FindBarViewController()
         findBarViewController.delegate = self
-        findBarViewController.addTo(contentView: contentView, topOffset: Settings.shared.dragAreaPosition == .top ? Constants.DRAGGABLE_AREA_HEIGHT : 0)
+        findBarViewController.addTo(parentWindow: window!, topOffset: Settings.shared.dragAreaPosition == .top ? Constants.DRAGGABLE_AREA_HEIGHT : 0)
         
         // windowMarginView handles the thick border and hit target, placed behind dragArea
         contentView.addSubview(windowMarginView, positioned: .below, relativeTo: dragArea)
@@ -1092,7 +1092,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         windowOutlineView?.setRevealed(false, edge: .none, animated: false)
         
         updateWindowMarginAndLayout()
-        findBarViewController?.layoutIn(contentView: contentView, topOffset: Settings.shared.dragAreaPosition == .top ? Constants.DRAGGABLE_AREA_HEIGHT : 0)
+        findBarViewController?.layoutIn(parentWindow: window!, topOffset: Settings.shared.dragAreaPosition == .top ? Constants.DRAGGABLE_AREA_HEIGHT : 0)
         updateHeaderTrackingArea()
         updateHeaderVisibility(animated: false)
     }
@@ -1602,7 +1602,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // FindBarViewController has active auto-layout or manual frame logic?
         // It has `layoutIn`. Let's assume we should call it if we want it to stay positioned.
         let isBottom = Settings.shared.dragAreaPosition == .bottom
-        findBarViewController?.layoutIn(contentView: window!.contentView!, topOffset: isBottom ? 0 : Constants.DRAGGABLE_AREA_HEIGHT)
+        findBarViewController?.layoutIn(parentWindow: window!, topOffset: isBottom ? 0 : Constants.DRAGGABLE_AREA_HEIGHT)
 
         
         // Find visible selectors
@@ -2205,6 +2205,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
     
     func windowDidResignKey(_ notification: Notification) {
+        // Don't collapse selectors if key moved to the find bar panel (child window)
+        if let keyWindow = NSApp.keyWindow,
+           window?.childWindows?.contains(keyWindow) == true {
+            return
+        }
         // Collapse all collapsible selectors when window loses focus
         collapsibleServiceSelector?.collapse()
         collapsibleSessionSelector?.collapse()

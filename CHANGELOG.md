@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Find Bar Close Button**: Added a dedicated "Done" button to the find bar overlay, allowing it to be closed via mouse click in addition to the `Escape` key.
+
+### Fixed
+
+- **Find Bar Hover Leaks**: Re-architected the find bar to host its content in a dedicated child `NSPanel` window instead of a subview. This genuinely blocks all mouse hover and scroll events from "leaking" through to the `WKWebView` underneath, resolving an issue where background elements would react to mouse movement over the find bar.
+
 ## [3.0.0] - 2026-05-08
 
 ### Added

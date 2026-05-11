@@ -15,6 +15,11 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     private var findStatusLabel: NSTextField!
     private var findPreviousButton: NSButton!
     private var findNextButton: NSButton!
+    private var closeButton: NSButton!
+    
+    // Child window that hosts the find bar above the WKWebView
+    private var findBarPanel: NSPanel?
+    private weak var parentWindow: NSWindow?
     
     // State
     private var isFindBarVisible = false
@@ -22,7 +27,7 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     private var findDebouncer = FindDebouncer()
     
     // Constants
-    private let barWidth: CGFloat = 360
+    private let barWidth: CGFloat = 424
     private let barHeight: CGFloat = 46
     
     override func loadView() {
@@ -31,17 +36,65 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         setupFindBar()
     }
     
-    func addTo(contentView: NSView, topOffset: CGFloat) {
-        contentView.addSubview(view, positioned: .above, relativeTo: nil)
-        layoutIn(contentView: contentView, topOffset: topOffset)
+    func addTo(parentWindow: NSWindow, topOffset: CGFloat) {
+        self.parentWindow = parentWindow
+        createPanelIfNeeded()
+        layoutIn(parentWindow: parentWindow, topOffset: topOffset)
     }
     
-    func layoutIn(contentView: NSView, topOffset: CGFloat) {
+    func layoutIn(parentWindow: NSWindow, topOffset: CGFloat) {
+        guard let panel = findBarPanel,
+              let contentView = parentWindow.contentView else { return }
+        
         let padding: CGFloat = 12
+        // Compute position in parent content view coordinates
         let originX = contentView.bounds.width - barWidth - padding
         let originY = contentView.bounds.height - topOffset - barHeight - padding
         
-        view.frame = NSRect(x: originX, y: originY, width: barWidth, height: barHeight)
+        // Convert from content view coords to screen coords
+        let rectInWindow = NSRect(x: originX, y: originY, width: barWidth, height: barHeight)
+        let rectInScreen = parentWindow.convertToScreen(rectInWindow)
+        
+        panel.setFrame(rectInScreen, display: true)
+    }
+    
+    // Legacy compatibility shim for callers using contentView-based API
+    func addTo(contentView: NSView, topOffset: CGFloat) {
+        guard let window = contentView.window else { return }
+        addTo(parentWindow: window, topOffset: topOffset)
+    }
+    
+    func layoutIn(contentView: NSView, topOffset: CGFloat) {
+        guard let window = contentView.window ?? parentWindow else { return }
+        layoutIn(parentWindow: window, topOffset: topOffset)
+    }
+    
+    private func createPanelIfNeeded() {
+        guard findBarPanel == nil, let parentWindow = parentWindow else { return }
+        
+        let panel = FindBarPanel(
+            contentRect: NSRect(x: 0, y: 0, width: barWidth, height: barHeight),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = parentWindow.level
+        panel.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.isFloatingPanel = true
+        
+        // Set the find bar as the panel's content
+        panel.contentView = view
+        view.frame = NSRect(x: 0, y: 0, width: barWidth, height: barHeight)
+        
+        parentWindow.addChildWindow(panel, ordered: .above)
+        panel.orderOut(nil) // Start hidden
+        
+        findBarPanel = panel
     }
     
     private func setupFindBar() {
@@ -51,12 +104,6 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         bar.wantsLayer = true
         bar.layer?.cornerRadius = 10
         bar.layer?.masksToBounds = true
-        // Although the view controller's view is the container, we can just treat 'bar' as the main view content
-        // Or make 'bar' the view? Let's make view a container and add bar to it, or just make view = bar.
-        // Let's make view = bar for simplicity.
-        
-        // However, loadView requires we set self.view.
-        // Let's rebuild the internal structure matching the original manual layout.
         
         let field = NSSearchField(frame: .zero)
         field.placeholderString = "Find in page"
@@ -80,6 +127,10 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         let nextButton = NSButton(title: "›", target: self, action: #selector(findNextTapped))
         nextButton.bezelStyle = .roundRect
         nextButton.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        
+        let closeBtn = NSButton(title: "Done", target: self, action: #selector(closeTapped))
+        closeBtn.bezelStyle = .roundRect
+        closeBtn.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         
         // Layout
         let padding: CGFloat = 12
@@ -115,10 +166,19 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
             height: buttonHeight
         )
         
+        let doneWidth: CGFloat = 50
+        closeBtn.frame = NSRect(
+            x: nextButton.frame.maxX + 8,
+            y: nextButton.frame.minY,
+            width: doneWidth,
+            height: buttonHeight
+        )
+        
         bar.addSubview(field)
         bar.addSubview(status)
         bar.addSubview(prevButton)
         bar.addSubview(nextButton)
+        bar.addSubview(closeBtn)
         
         self.view = bar
         self.findBar = bar
@@ -126,9 +186,7 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         self.findStatusLabel = status
         self.findPreviousButton = prevButton
         self.findNextButton = nextButton
-        
-        // Start hidden
-        self.view.isHidden = true
+        self.closeButton = closeBtn
         
         findDebouncer.callback = { [weak self] in
             self?.performFind(forward: true, newSearch: true)
@@ -138,9 +196,11 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     // MARK: - API
     
     func show() {
-        view.isHidden = false
+        createPanelIfNeeded()
+        findBarPanel?.orderFront(nil)
         isFindBarVisible = true
-        view.window?.makeFirstResponder(findField)
+        findBarPanel?.makeKey()
+        findBarPanel?.makeFirstResponder(findField)
         if findField.stringValue.isEmpty {
             findField.stringValue = currentFindString
         }
@@ -152,12 +212,13 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     
     func hide() {
         currentFindString = findField.stringValue
-        view.isHidden = true
+        findBarPanel?.orderOut(nil)
         isFindBarVisible = false
         findStatusLabel.stringValue = ""
         resetFind()
         if let webView = delegate?.activeWebViewForFind() {
-            view.window?.makeFirstResponder(webView)
+            parentWindow?.makeKeyAndOrderFront(nil)
+            parentWindow?.makeFirstResponder(webView)
         }
     }
     
@@ -172,31 +233,19 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     func handleFindRepeat(shortcutShifted: Bool) {
         if !isFindBarVisible {
             show()
-            // Should we focus the webview? The original code did:
-            // showFindBar(), then window?.makeFirstResponder(currentWebView()).
-            // But showFindBar() focuses the field.
-            // Let's stick to the behavior: if bar wasn't visible, show it.
-            // If it IS visible, perform find next.
-            // Wait, original:
-            /*
-            if !isFindBarVisible {
-                showFindBar()
-                window?.makeFirstResponder(currentWebView()) // Why? Maybe to allow Cmd+G to work immediately on webview focus?
-            }
-             */
-             // If I'm supposed to refactor, I should probably keep behavior.
-             // But if I show the bar, I usually want to type in it.
-             // However, Cmd+G (Find Next) implies you want to navigate *results*, not type.
-             // The original code focuses the webview if opened via Cmd+G.
+            // Cmd+G (Find Next) implies you want to navigate results, not type.
+            // The original code focuses the webview if opened via Cmd+G.
              if let webView = delegate?.activeWebViewForFind() {
-                 view.window?.makeFirstResponder(webView)
+                 parentWindow?.makeKeyAndOrderFront(nil)
+                 parentWindow?.makeFirstResponder(webView)
              }
         }
         
         let trimmedField = findField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedField.isEmpty {
             if currentFindString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                view.window?.makeFirstResponder(findField)
+                findBarPanel?.makeKey()
+                findBarPanel?.makeFirstResponder(findField)
                 delegate?.playErrorSound()
                 return
             }
@@ -213,6 +262,10 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     
     @objc func findNextTapped() {
         performFind(forward: true)
+    }
+    
+    @objc func closeTapped() {
+        hide()
     }
     
     private func resetFind() {
@@ -407,5 +460,11 @@ private final class FindDebouncer: NSObject {
     
     @objc private func timerFired() {
         callback?()
+    }
+}
+
+private final class FindBarPanel: NSPanel {
+    override var canBecomeKey: Bool {
+        return true
     }
 }
