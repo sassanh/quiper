@@ -58,6 +58,7 @@
 - **Collapsible Selector Behavior**: Selectors now stay open during drag-reordering and after selection, only closing when the mouse leaves the safe zone.
 - **Collapsible Selector Accuracy**: Fixed segment hit-testing to accurately handle variable-width labels by using actual rendered frames.
 - **Collapsible Selector Stability**: Fixed a memory leak in tracking area management and resolved an issue where dragging would trigger premature collapsing.
+- **File Selector Modal Lockup**: Fixed an issue where hiding the application via the global shortcut while a file picker (`NSOpenPanel`) was open would permanently detach the dialog, causing the web view to lock up. The application now auto-cancels any active file pickers gracefully before hiding.
 
 ## [2.9.0] - 2026-04-22
 

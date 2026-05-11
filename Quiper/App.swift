@@ -248,12 +248,16 @@ final class AppController: NSObject, NSWindowDelegate {
             guard let self else { return }
             self.windowController.window?.makeKeyAndOrderFront(nil)
             
-            // Make webview first responder so it receives keyboard events
-            if let webView = self.windowController.activeWebView {
-                self.windowController.window?.makeFirstResponder(webView)
+            if let sheet = self.windowController.window?.attachedSheet {
+                sheet.makeKeyAndOrderFront(nil)
+            } else {
+                // Make webview first responder so it receives keyboard events
+                if let webView = self.windowController.activeWebView {
+                    self.windowController.window?.makeFirstResponder(webView)
+                }
+                
+                self.windowController.focusInputInActiveWebview()
             }
-            
-            self.windowController.focusInputInActiveWebview()
         }
         
     }

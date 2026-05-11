@@ -410,15 +410,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func show() {
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        if let webView = currentWebView() {
-            window?.makeFirstResponder(webView)
+        
+        if let sheet = window?.attachedSheet {
+            sheet.makeKeyAndOrderFront(nil)
+        } else {
+            if let webView = currentWebView() {
+                window?.makeFirstResponder(webView)
+            }
+            focusInputInActiveWebview()
         }
-        focusInputInActiveWebview()
+        
         setShortcutsEnabled(true)
         NotificationCenter.default.post(name: .windowDidShow, object: nil)
     }
 
     func hide() {
+        if let sheet = window?.attachedSheet {
+            window?.endSheet(sheet, returnCode: .cancel)
+        }
         window?.orderOut(nil)
         setShortcutsEnabled(false)
         NotificationCenter.default.post(name: .windowDidHide, object: nil)
