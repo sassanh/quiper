@@ -742,7 +742,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             zoom(by: -Zoom.step)
             return true
         }
-        if keyCode == UInt16(kVK_Delete) {
+        if (keyCode == UInt16(kVK_Delete) || keyCode == UInt16(kVK_ForwardDelete)) && isShift {
             performMenuResetZoom(nil)
             return true
         }

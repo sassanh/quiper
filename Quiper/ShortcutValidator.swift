@@ -86,7 +86,7 @@ enum ShortcutValidator {
             return "Zoom Out"
         }
         
-        if (keyCode == UInt16(kVK_Delete) || keyCode == UInt16(kVK_ForwardDelete)) && !hasOption && !hasControl && !hasShift { // Reset Zoom (Cmd+Delete)
+        if (keyCode == UInt16(kVK_Delete) || keyCode == UInt16(kVK_ForwardDelete)) && !hasOption && !hasControl && hasShift { // Reset Zoom (Cmd+Shift+Delete)
              return "Reset Zoom"
         }
         

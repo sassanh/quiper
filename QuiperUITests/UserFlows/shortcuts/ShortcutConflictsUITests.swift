@@ -43,7 +43,7 @@ final class ShortcutConflictsUITests: BaseUITest {
         
         verifyConflictInChain(key: "-", modifiers: [.command])
         
-        verifyConflictInChain(key: XCUIKeyboardKey.delete.rawValue, modifiers: [.command])
+        verifyConflictInChain(key: XCUIKeyboardKey.delete.rawValue, modifiers: [.command, .shift])
 
         verifyConflictInChain(key: String(UnicodeScalar(8)), modifiers: [.command])
 
