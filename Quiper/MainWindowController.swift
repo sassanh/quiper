@@ -1026,6 +1026,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateHeaderTrackingArea()
         // Apply static layout before first visibility update
         updateWindowMarginAndLayout()
+        layoutSelectors()
         updateHeaderVisibility(animated: false)
     }
 
