@@ -19,6 +19,11 @@
 
 ### Fixed
 
+- **Memory Leaks in Tab Closure**: Resolved multiple issues where closed tabs would fail to release memory, causing it to accumulate in `kernel_task`.
+  - Added explicit `stopLoading()` and delegate nil'ing to signal WebKit to terminate background processes.
+  - Fixed an issue where orphaned "wrapper" views remained in the view hierarchy after tabs were closed.
+  - Implemented `WKUserContentController` cleanup to break configuration-level retain cycles.
+- **Popup Window Retain Cycle**: Fixed a self-delegate retain cycle in login/modal popups that prevented them from being deallocated after closing.
 - **Find Bar Hover Leaks**: Re-architected the find bar to host its content in a dedicated child `NSPanel` window instead of a subview. This genuinely blocks all mouse hover and scroll events from "leaking" through to the `WKWebView` underneath, resolving an issue where background elements would react to mouse movement over the find bar.
 
 ## [3.0.0] - 2026-05-08

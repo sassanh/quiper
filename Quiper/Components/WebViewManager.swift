@@ -303,10 +303,25 @@ final class WebViewManager: NSObject {
     // MARK: - Private Helpers
     
     private func tearDownWebView(_ webView: WKWebView) {
+        // Stop any in-progress loading to signal WebKit to release the content process
+        webView.stopLoading()
+
+        // Nil delegates to prevent callbacks during/after deallocation
+        webView.uiDelegate = nil
+        webView.navigationDelegate = nil
+
         detachNotificationBridge(from: webView)
+
+        // Clean user content controller to break configuration references
+        webView.configuration.userContentController.removeAllUserScripts()
+
         webView.removeObserver(self, forKeyPath: "title")
         webView.removeObserver(self, forKeyPath: "loading")
+
+        // Remove the wrapper view (parent) from the view hierarchy, then the webview
+        let wrapper = webView.superview
         webView.removeFromSuperview()
+        wrapper?.removeFromSuperview()
     }
 
     private func attachNotificationBridge(to webView: WKWebView, service: Service, sessionIndex: Int) {
@@ -406,6 +421,7 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
                 webView.uiDelegate = nil
                 webView.navigationDelegate = nil
                 webView.stopLoading()
+                webView.configuration.userContentController.removeAllUserScripts()
             }
         }
         
@@ -419,6 +435,9 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
                 NSApp.activate(ignoringOtherApps: true)
             }
         }
+        
+        // 5. Break self-delegate cycle to allow deallocation
+        self.delegate = nil
     }
     
     func windowWillClose(_ notification: Notification) {
