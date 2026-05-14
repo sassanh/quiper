@@ -69,6 +69,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var sessionSelector: SegmentedControl?
     private var collapsibleSessionSelector: CollapsibleSelector?
     private var titleLabel: HoverTextField!
+    private var navigationButtonGroup: NavigationButtonGroup!
+    private var refreshStopButton: RefreshStopButton!
+    private var canGoBackObservation: NSKeyValueObservation?
+    private var canGoForwardObservation: NSKeyValueObservation?
+    private var isLoadingNavObservation: NSKeyValueObservation?
 
     private var windowMarginView: WindowMarginView!
     private var windowOutlineView: WindowOutlineView!
@@ -1307,6 +1312,40 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         drag.addSubview(title)
         titleLabel = title
 
+        // Back/Forward Navigation Button Group (shown only when history exists)
+        let navGroup = NavigationButtonGroup()
+        navGroup.isHidden = true
+        navGroup.onBack = { [weak self] in self?.currentWebView()?.goBack() }
+        navGroup.onForward = { [weak self] in self?.currentWebView()?.goForward() }
+        navGroup.onLongPressBack = { [weak self] in
+            guard let wv = self?.currentWebView() else { return [] }
+            return wv.backForwardList.backList.reversed().map { ($0.title ?? "", $0.url) }
+        }
+        navGroup.onLongPressForward = { [weak self] in
+            guard let wv = self?.currentWebView() else { return [] }
+            return wv.backForwardList.forwardList.map { ($0.title ?? "", $0.url) }
+        }
+        navGroup.onNavigateToBackItem = { [weak self] (index: Int) in
+            guard let wv = self?.currentWebView() else { return }
+            let backList = Array(wv.backForwardList.backList.reversed())
+            guard index < backList.count else { return }
+            wv.go(to: backList[index])
+        }
+        navGroup.onNavigateToForwardItem = { [weak self] (index: Int) in
+            guard let wv = self?.currentWebView() else { return }
+            let forwardList = wv.backForwardList.forwardList
+            guard index < forwardList.count else { return }
+            wv.go(to: forwardList[index])
+        }
+        drag.addSubview(navGroup)
+        navigationButtonGroup = navGroup
+        
+        // Refresh/Stop Button (after the title, always visible)
+        let rsButton = RefreshStopButton()
+        rsButton.target = self
+        rsButton.action = #selector(refreshStopTapped(_:))
+        drag.addSubview(rsButton)
+        refreshStopButton = rsButton
 
 
         // Loading Border View (animated border around title when loading resources)
@@ -1337,11 +1376,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
 
         // Session Actions Button
-        let iconConfig = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
-        let actionsBtn = NSButton(image: NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "Session Actions")!.withSymbolConfiguration(iconConfig)!, target: self, action: #selector(sessionActionsButtonTapped(_:)))
-        actionsBtn.bezelStyle = .texturedRounded
-        actionsBtn.contentTintColor = .secondaryLabelColor
-        actionsBtn.refusesFirstResponder = true  // Prevent focus from being stolen from webview
+        let iconConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        let actionsImage = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Session Actions")!.withSymbolConfiguration(iconConfig)!
+        let actionsBtn = HoverIconButton(image: actionsImage, target: self, action: #selector(sessionActionsButtonTapped(_:)))
         drag.addSubview(actionsBtn)
         sessionActionsButton = actionsBtn
 
@@ -1430,7 +1467,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func currentThemeSettings() -> ThemeAppearanceSettings? {
         guard let win = window else { return nil }
         let effectiveAppearance = win.effectiveAppearance
-        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         return isDark ? Settings.shared.windowAppearance.dark : Settings.shared.windowAppearance.light
     }
     
@@ -1469,7 +1506,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             backgroundEffectView?.isHidden = false
             backgroundEffectView?.material = themeSettings.material.nsMaterial
             contentColorView?.isHidden = true
-            
+  
         case .solidColor:
             backgroundEffectView?.isHidden = true
             contentColorView?.isHidden = true
@@ -1567,7 +1604,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             let staticSessionWidth = sessionSelector?.fittingSize.width ?? 0
 
             // Total width required for static mode with minimum title width
-            let requiredWidth = minTitleWidth + rightOffset + inset + staticSessionWidth + staticServiceWidth + (2 * gap) + (2 * titleAreaMargin)
+            let rsButtonSpace: CGFloat = 20 + gap  // Refresh/Stop button
+            let requiredWidth = minTitleWidth + rsButtonSpace + rightOffset + inset + staticSessionWidth + staticServiceWidth + (2 * gap) + (2 * titleAreaMargin)
 
             useCompact = windowWidth < requiredWidth
         }
@@ -1703,30 +1741,61 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             height: selectorHeight
         )
 
-        // Calculate available space for title area (between selectors with margin)
-        let titleAreaMargin: CGFloat = 2  // Margin from selectors
-        let titleAreaX = serviceSel.frame.maxX + gap + titleAreaMargin
-        let titleAreaWidth = max(0, sessionSel.frame.minX - gap - titleAreaX - titleAreaMargin)
+        let titleAreaMargin: CGFloat = 2
+        
+        // Navigation button group (immediately after service selector)
+        let navGroupWidth = navigationButtonGroup.idealWidth
+        let showNav = !navigationButtonGroup.isHidden && navGroupWidth > 0
+        
+        let leftSideMaxX: CGFloat
+        if showNav {
+            let navX = serviceSel.frame.maxX + gap
+            navigationButtonGroup.frame = NSRect(
+                x: navX,
+                y: selectorY,
+                width: navGroupWidth,
+                height: selectorHeight
+            )
+            leftSideMaxX = navigationButtonGroup.frame.maxX
+        } else {
+            leftSideMaxX = serviceSel.frame.maxX
+        }
+        
+        // Refresh/Stop button (immediately before session selector)
+        // Match the sizing style of other toolbar buttons like actionsBtn (24x24)
+        let rsButtonSize: CGFloat = 24
+        let rsX = sessionSel.frame.minX - gap - rsButtonSize
+        
+        refreshStopButton.frame = NSRect(
+            x: rsX,
+            y: buttonY, // standard button vertical centering
+            width: rsButtonSize,
+            height: rsButtonSize
+        )
+        let rightSideMinX = refreshStopButton.frame.minX
+        
+        // Calculate title area width
+        let titleAreaX = leftSideMaxX + gap + titleAreaMargin
+        let titleWidth = max(0, rightSideMinX - gap - titleAreaMargin - titleAreaX)
         
         // Minimum width to show title and border meaningfully
-        let minTitleAreaWidth: CGFloat = 60
-        let shouldHideTitleArea = titleAreaWidth < minTitleAreaWidth
+        let minTitleAreaWidth: CGFloat = 40
+        let shouldHideTitleArea = titleWidth < minTitleAreaWidth
         
-        // Loading border view frames the title area, aligned with selectors
+        // Loading border view frames the title area
         if let borderView = loadingBorderView {
             borderView.frame = NSRect(
                 x: titleAreaX,
                 y: selectorY,
-                width: titleAreaWidth,
+                width: titleWidth,
                 height: selectorHeight
             )
-            // Hide border if no room, but don't stop animation (it may resume when resized)
             borderView.isHidden = shouldHideTitleArea || !borderView.isAnimating
         }
         
         // Title label positioned inside the border with padding
-        let titlePadding: CGFloat = 4  // Padding from border edges
-        let titleWidth = max(0, titleAreaWidth - titlePadding * 2)
+        let titlePadding: CGFloat = 4
+        let titleLabelWidth = max(0, titleWidth - titlePadding * 2)
         let titleHeight = title.intrinsicContentSize.height
         let titleY: CGFloat = {
             if isHiddenMode {
@@ -1740,10 +1809,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         title.frame = NSRect(
             x: titleAreaX + titlePadding,
             y: titleY,
-            width: titleWidth,
+            width: titleLabelWidth,
             height: titleHeight
         )
         title.isHidden = shouldHideTitleArea
+
 
     }
 
@@ -1816,6 +1886,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Load initial state (observers handled by manager now, but we need to update UI)
         updateTitleLabel(from: activeWebview)
         
+        // Observe canGoBack/canGoForward for navigation buttons
+        observeNavigationState(of: activeWebview)
+        
         // Listeners for internal state changes
         // Manager uses delegate pattern now
 
@@ -1823,6 +1896,48 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if focusWebView {
             window?.makeFirstResponder(activeWebview)
             focusInputInActiveWebview()
+        }
+    }
+    
+    private func observeNavigationState(of webView: WKWebView) {
+        // Tear down previous observations
+        canGoBackObservation = nil
+        canGoForwardObservation = nil
+        isLoadingNavObservation = nil
+        
+        // Immediately sync
+        updateNavigationButtons(for: webView)
+        
+        canGoBackObservation = webView.observe(\.canGoBack, options: [.new]) { [weak self] webView, _ in
+            DispatchQueue.main.async {
+                self?.updateNavigationButtons(for: webView)
+            }
+        }
+        canGoForwardObservation = webView.observe(\.canGoForward, options: [.new]) { [weak self] webView, _ in
+            DispatchQueue.main.async {
+                self?.updateNavigationButtons(for: webView)
+            }
+        }
+        isLoadingNavObservation = webView.observe(\.isLoading, options: [.new]) { [weak self] webView, _ in
+            DispatchQueue.main.async {
+                self?.refreshStopButton?.isLoadingState = webView.isLoading
+            }
+        }
+    }
+    
+    private func updateNavigationButtons(for webView: WKWebView) {
+        let showBack = webView.canGoBack
+        let showForward = webView.canGoForward
+        
+        let wasHidden = navigationButtonGroup.isHidden
+        
+        navigationButtonGroup.update(showBack: showBack, showForward: showForward)
+        refreshStopButton.isLoadingState = webView.isLoading
+        
+        // Always re-layout when visibility or state changes (single ↔ double buttons changes width)
+        let nowHidden = navigationButtonGroup.isHidden
+        if wasHidden != nowHidden || !nowHidden {
+            layoutSelectors()
         }
     }
     
@@ -2166,6 +2281,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard !menu.items.isEmpty else { return }
         let origin = NSPoint(x: 0, y: sender.bounds.height + 4)
         menu.popUp(positioning: nil, at: origin, in: sender)
+    }
+
+    @objc private func refreshStopTapped(_ sender: NSButton) {
+        guard let webView = currentWebView() else { return }
+        if webView.isLoading {
+            webView.stopLoading()
+        } else {
+            webView.reload()
+        }
     }
 
     // MARK: - NSWindowDelegate
@@ -2585,5 +2709,250 @@ final class HoverTextField: NSTextField {
     
     override func mouseExited(with event: NSEvent) {
         QuickTooltip.shared.hide(for: self)
+    }
+}
+
+// MARK: - Navigation Button Group
+
+/// A unified back/forward button group that renders as a single rounded-rect capsule.
+/// When only one button is visible it appears as a single rounded button;
+/// when both are visible they share one background with a hairline divider.
+/// Long-pressing a button shows the back/forward history list.
+final class NavigationButtonGroup: NSView {
+    
+    var onBack: (() -> Void)?
+    var onForward: (() -> Void)?
+    var onLongPressBack: (() -> [(title: String, url: URL)])?
+    var onLongPressForward: (() -> [(title: String, url: URL)])?
+    var onNavigateToBackItem: ((Int) -> Void)?
+    var onNavigateToForwardItem: ((Int) -> Void)?
+    
+    private(set) var showBack = false
+    private(set) var showForward = false
+    
+    private let buttonSize: CGFloat = 24
+    private let spacing: CGFloat = 2
+    
+    private let backButton: HoverIconButton
+    private let forwardButton: HoverIconButton
+    
+    override var acceptsFirstResponder: Bool { false }
+    
+    init() {
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        let backImage = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: "Go Back")!
+            .withSymbolConfiguration(config)!
+        let forwardImage = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: "Go Forward")!
+            .withSymbolConfiguration(config)!
+        
+        backButton = HoverIconButton(image: backImage, target: nil, action: nil)
+        forwardButton = HoverIconButton(image: forwardImage, target: nil, action: nil)
+        
+        super.init(frame: .zero)
+        setAccessibilityIdentifier("NavigationButtonGroup")
+        
+        backButton.target = self
+        backButton.action = #selector(backClicked)
+        forwardButton.target = self
+        forwardButton.action = #selector(forwardClicked)
+        
+        backButton.onLongPress = { [weak self] in self?.showHistoryMenu(forBack: true) }
+        forwardButton.onLongPress = { [weak self] in self?.showHistoryMenu(forBack: false) }
+        
+        addSubview(backButton)
+        addSubview(forwardButton)
+    }
+    
+    required init?(coder: NSCoder) { fatalError() }
+    
+    func update(showBack: Bool, showForward: Bool) {
+        self.showBack = showBack
+        self.showForward = showForward
+        isHidden = !showBack && !showForward
+        
+        backButton.isHidden = !showBack
+        forwardButton.isHidden = !showForward
+        
+        updateFrames()
+    }
+    
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        updateFrames()
+    }
+    
+    private func updateFrames() {
+        let y = (bounds.height - buttonSize) / 2
+        if showBack && showForward {
+            backButton.frame = NSRect(x: 0, y: y, width: buttonSize, height: buttonSize)
+            forwardButton.frame = NSRect(x: buttonSize + spacing, y: y, width: buttonSize, height: buttonSize)
+        } else if showBack {
+            backButton.frame = NSRect(x: 0, y: y, width: buttonSize, height: buttonSize)
+        } else if showForward {
+            forwardButton.frame = NSRect(x: 0, y: y, width: buttonSize, height: buttonSize)
+        }
+    }
+    
+    var idealWidth: CGFloat {
+        if showBack && showForward { return buttonSize * 2 + spacing }
+        if showBack || showForward { return buttonSize }
+        return 0
+    }
+    
+    @objc private func backClicked() { onBack?() }
+    @objc private func forwardClicked() { onForward?() }
+    
+    private func showHistoryMenu(forBack isBack: Bool) {
+        let items: [(title: String, url: URL)]
+        let handler: ((Int) -> Void)?
+        let anchorView: NSView
+        
+        if isBack {
+            items = onLongPressBack?() ?? []
+            handler = onNavigateToBackItem
+            anchorView = backButton
+        } else {
+            items = onLongPressForward?() ?? []
+            handler = onNavigateToForwardItem
+            anchorView = forwardButton
+        }
+        
+        guard !items.isEmpty else { return }
+        
+        let menu = NSMenu()
+        for (index, item) in items.enumerated() {
+            let title = item.title.isEmpty ? item.url.absoluteString : item.title
+            let menuItem = NSMenuItem(title: title, action: #selector(historyItemClicked(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.tag = index
+            menuItem.representedObject = handler
+            menu.addItem(menuItem)
+        }
+        
+        let origin = NSPoint(x: 0, y: anchorView.bounds.height + 4)
+        menu.popUp(positioning: nil, at: origin, in: anchorView)
+    }
+    
+    @objc private func historyItemClicked(_ sender: NSMenuItem) {
+        if let handler = sender.representedObject as? (Int) -> Void {
+            handler(sender.tag)
+        }
+    }
+}
+
+// MARK: - Refresh/Stop Button
+
+/// A single toolbar button that toggles between refresh (arrow.clockwise) and stop (xmark) icons
+/// based on whether the webview is currently loading.
+final class RefreshStopButton: HoverIconButton {
+    
+    private static let refreshImage: NSImage = {
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        return NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "Reload")!
+            .withSymbolConfiguration(config)!
+    }()
+    
+    private static let stopImage: NSImage = {
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        return NSImage(systemSymbolName: "xmark", accessibilityDescription: "Stop Loading")!
+            .withSymbolConfiguration(config)!
+    }()
+    
+    var isLoadingState = false {
+        didSet {
+            image = isLoadingState ? Self.stopImage : Self.refreshImage
+            toolTip = isLoadingState ? "Stop" : "Reload"
+        }
+    }
+    
+    init() {
+        super.init(image: Self.refreshImage, target: nil, action: nil)
+        toolTip = "Reload"
+        setAccessibilityIdentifier("RefreshStopButton")
+    }
+    
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+class HoverIconButton: NSButton {
+    
+    private var trackingArea: NSTrackingArea?
+    private var isHovered = false { didSet { needsDisplay = true } }
+    private var isPressed = false { didSet { needsDisplay = true } }
+    
+    var onLongPress: (() -> Void)? {
+        didSet {
+            if onLongPress != nil && pressGesture == nil {
+                let gesture = NSPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+                gesture.minimumPressDuration = 0.35
+                addGestureRecognizer(gesture)
+                pressGesture = gesture
+            }
+        }
+    }
+    private var pressGesture: NSPressGestureRecognizer?
+    
+    override var acceptsFirstResponder: Bool { false }
+    
+    init(image: NSImage, target: AnyObject?, action: Selector?) {
+        super.init(frame: .zero)
+        self.image = image
+        self.target = target
+        self.action = action
+        self.bezelStyle = .regularSquare
+        self.isBordered = false
+        self.setButtonType(.momentaryPushIn)
+        self.imagePosition = .imageOnly
+        self.contentTintColor = .secondaryLabelColor
+    }
+    
+    required init?(coder: NSCoder) { fatalError() }
+    
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea = trackingArea { removeTrackingArea(trackingArea) }
+        let newTrackingArea = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self, userInfo: nil)
+        addTrackingArea(newTrackingArea)
+        self.trackingArea = newTrackingArea
+    }
+    
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        contentTintColor = .labelColor
+    }
+    
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        contentTintColor = .secondaryLabelColor
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        isPressed = true
+        super.mouseDown(with: event)
+        isPressed = false
+    }
+    
+    @objc private func handleLongPress(_ gesture: NSPressGestureRecognizer) {
+        if gesture.state == .began {
+            onLongPress?()
+            isPressed = false
+        }
+    }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        let grayColor = NSColor(white: 0.8, alpha: 1.0) // Half-dark half-light equivalent
+        
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
+        
+        if isHovered || isPressed {
+            grayColor.setFill()
+            path.fill()
+        }
+        
+        grayColor.setStroke()
+        path.lineWidth = 1.0
+        path.stroke()
+        
+        super.draw(dirtyRect)
     }
 }

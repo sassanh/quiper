@@ -4,10 +4,17 @@
 
 ### Added
 
+- **Navigation Buttons**: Added native back and forward navigation buttons to the top bar.
+  - Implemented a custom `NavigationButtonGroup` that renders as a unified, glassy capsule.
+  - Buttons automatically show/hide based on `WKWebView` history availability (`canGoBack`/`canGoForward`).
+  - Added a long-press history menu (Safari/Chrome style) for both buttons to navigate directly to any page in the history stack.
+- **Refresh/Stop Button**: Added a dedicated button after the title that toggles between "Reload" (clockwise arrow) and "Stop" (x-mark) icons based on the current loading state.
 - **Find Bar Close Button**: Added a dedicated "Done" button to the find bar overlay, allowing it to be closed via mouse click in addition to the `Escape` key.
 
 ### Changed
 
+- **Top Bar Layout**: Re-architected the middle section of the top bar to position navigation buttons immediately before the title and the refresh/stop button immediately after it.
+- **Auto-Mode Threshold**: Updated the "Auto" display mode calculation to account for the new navigation and refresh/stop buttons, ensuring the title area remains readable.
 - **Reset Zoom Shortcut**: Changed the "Reset Zoom" shortcut from `Cmd+Backspace` to `Cmd+Shift+Backspace` to prevent accidental resets while typing. This is reflected in the View menu, shortcut validator, and manual key event handling.
 
 ### Fixed
