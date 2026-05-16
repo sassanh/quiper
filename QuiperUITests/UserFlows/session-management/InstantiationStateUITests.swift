@@ -54,6 +54,26 @@ final class InstantiationStateUITests: BaseUITest {
         waitForExpectations(timeout: 3.0)
     }
 
+    /// Asserts that no session is selected in the session selector.
+    private func verifyNoSessionSelected(file: StaticString = #file, line: UInt = #line) {
+        let sel = sessionSelector
+        for i in 1...10 {
+            let label = i == 10 ? "0" : "\(i)"
+            let btn = sel.radioButtons[label].exists ? sel.radioButtons[label] : sel.buttons[label]
+            if btn.exists {
+                XCTAssertFalse(btn.isSelected, "Session \(label) should not be selected", file: file, line: line)
+                XCTAssertNotEqual(btn.value as? Int, 1, "Session \(label) should not be selected", file: file, line: line)
+            }
+        }
+    }
+
+    /// Asserts that the empty state view is visible.
+    private func verifyEmptyStateVisible(file: StaticString = #file, line: UInt = #line) {
+        let emptyState = app.groups["EmptyStateView"]
+        XCTAssertTrue(emptyState.waitForExistence(timeout: 3), "Empty State View not found", file: file, line: line)
+        XCTAssertTrue(emptyState.isHittable, "Empty State View should be visible", file: file, line: line)
+    }
+
     /// Sends Cmd+W to the main window and waits for navigation to settle.
     private func cmdW() {
         mainWindow.typeKey("w", modifierFlags: .command)
@@ -101,10 +121,10 @@ final class InstantiationStateUITests: BaseUITest {
         verifyActiveSession(3)
     }
 
-    /// Cmd+W with only one instantiated session (and no others) falls back to session 1 (index 0).
+    /// Cmd+W with only one instantiated session (and no others) navigates to empty state.
     ///
     /// Scenario: Only Session 1 is instantiated at launch. Close it.
-    /// Expected: stay on Session 1 (fallback index 0), now uninstantiated.
+    /// Expected: navigate to empty state page, no session selected.
     func testCmdWFallbackWhenAloneInService() throws {
         ensureWindowVisible()
 
@@ -113,8 +133,9 @@ final class InstantiationStateUITests: BaseUITest {
 
         cmdW()
 
-        // No other sessions instantiated; fallback keeps focus on session index 0 (label "1").
-        verifyActiveSession(1)
+        // No other sessions instantiated; should now show empty state
+        verifyEmptyStateVisible()
+        verifyNoSessionSelected()
     }
 
     /// Cmd+W navigates to an adjacent service when the current service has no other

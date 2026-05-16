@@ -94,6 +94,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var currentServiceName: String?
     var currentServiceURL: String?
     private var webViewManager: WebViewManager!
+    private var emptyStateView: EmptyStateView!
     private var findBarViewController: FindBarViewController!
     private var draggingServiceIndex: Int?
     var activeIndicesByURL: [String: Int] = [:]
@@ -188,6 +189,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         
         webViewManager = WebViewManager(containerView: contentView)
+        
+        // Empty state view — shown when no sessions are instantiated
+        emptyStateView = EmptyStateView(frame: contentView.bounds)
+        emptyStateView.onEngineSelected = { [weak self] index in
+            self?.selectService(at: index)
+        }
+        emptyStateView.isHidden = true
+        contentView.addSubview(emptyStateView)
+        
         self.services = initialServices
         webViewManager.updateServices(initialServices)
         
@@ -277,6 +287,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let segmentIdx = segmentIndex(forSession: bounded)
         sessionSelector?.selectedSegment = segmentIdx
         collapsibleSessionSelector?.selectedSegment = segmentIdx
+        
+        // Sync service selector as well (needed if transitioning from empty state)
+        if let svcIndex = services.firstIndex(where: { $0.url == service.url }) {
+            serviceSelector?.selectedSegment = svcIndex
+            collapsibleServiceSelector?.selectedSegment = svcIndex
+        }
         
         if let sel = activeSessionSelector {
             NSAccessibility.post(element: sel, notification: .valueChanged)
@@ -887,6 +903,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // contentColorView is a standard NSView, so it needs the unflipped corners
         contentColorView?.layer?.maskedCorners = contentMaskedCorners
         
+        emptyStateView?.frame = cRect
+        emptyStateView?.layer?.maskedCorners = contentMaskedCorners
+        emptyStateView?.layer?.masksToBounds = true
+        
         webViewManager.updateLayout(contentRect: cRect, animated: false)
         dragArea?.frame = dRect
         dragArea?.autoresizingMask = []
@@ -1266,6 +1286,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         collapsibleServiceSel.middleClickHandler = serviceSel.middleClickHandler
         collapsibleServiceSel.alwaysShowTooltips = false
         collapsibleServiceSel.setItems(services.map { $0.name })
+        collapsibleServiceSel.placeholderLabel = "Engines"
+        collapsibleServiceSel.emptyStateAlignment = .right
         // Flex: shrink-to-fit (high hugging, high compression resistance)
         collapsibleServiceSel.setContentHuggingPriority(.required, for: .horizontal)
         collapsibleServiceSel.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -1298,6 +1320,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         collapsibleSessionSel.action = #selector(sessionChanged(_:))
         // Populate items to define segment count (10) - caller provides display labels
         collapsibleSessionSel.setItems((0..<10).map { "\($0 == 9 ? 0 : $0 + 1)" })
+        collapsibleSessionSel.placeholderLabel = "Sessions"
+        collapsibleSessionSel.emptyStateAlignment = .left
         collapsibleSessionSel.delegate = self
         collapsibleSessionSel.showInstantiationState = true  // Enable the feature
         collapsibleSessionSel.middleClickHandler = { [weak self] segmentIndex in
@@ -1601,7 +1625,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .compact: useCompact = true
         case .auto:
             let inset: CGFloat = 4
-            let gap: CGFloat = 4
+            let isHiddenMode = Settings.shared.topBarVisibility == .hidden
+            let gap: CGFloat = isHiddenMode ? 8 : 4
             let buttonSize: CGFloat = 24
             let minimumServiceWidth: CGFloat = 150
             let titleAreaMargin: CGFloat = 2
@@ -1660,13 +1685,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard let serviceSel = activeServiceSel,
               let sessionSel = activeSessionSel else { return }
 
+        let isHiddenMode = Settings.shared.topBarVisibility == .hidden
+
         let headerHeight = drag.bounds.size.height
         let selectorHeight: CGFloat = 25
-        let gap: CGFloat = 4   // consistent gap between controls
+        let gap: CGFloat = isHiddenMode ? 8 : 4
         let buttonSize: CGFloat = 24
         let minimumServiceWidth: CGFloat = 150
 
-        let isHiddenMode = Settings.shared.topBarVisibility == .hidden
         // In hidden mode the dragArea is already inset by barBorderWidth from the window edge,
         // so its x=0 aligns with the webview left edge — no extra inset needed.
         let inset: CGFloat = isHiddenMode ? 0 : 4
@@ -1877,7 +1903,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         let activeIndex = activeIndicesByURL[service.url] ?? 0
         
-        // Hide all existing webviews
+        // Hide empty state and all existing webviews
+        hideEmptyState()
         webViewManager.hideAll()
         
         // Get or create the active one
@@ -2175,6 +2202,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Remove the current webview
         webViewManager.removeWebView(for: service, sessionIndex: currentSession)
 
+        let remainingSessionsCount = (0..<10).filter { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }.count
+        if remainingSessionsCount == 0 {
+            activeIndicesByURL[service.url] = 0
+        }
+
         // Helper: find the nearest instantiated session in a service, biased toward `preferred` direction
         func nearestInstantiatedSession(in svc: Service, excluding: Int? = nil) -> Int? {
             let sessions = (0..<10).filter { $0 != excluding && webViewManager.getWebView(for: svc, sessionIndex: $0) != nil }
@@ -2219,8 +2251,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
         }
 
-        // 5: Fallback — nothing else is instantiated; stay on current service, session 0
-        switchSession(to: 0)
+        // 5: Fallback — nothing else is instantiated; show empty state
+        showEmptyState()
         refreshInstantiationState()
     }
 
@@ -2236,6 +2268,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         // Remove the webview
         webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
+        
+        let remainingSessionsCount = (0..<10).filter { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }.count
+        if remainingSessionsCount == 0 {
+            activeIndicesByURL[service.url] = 0
+        }
         
         // If we closed the currently active session, navigate to the nearest one
         if sessionIndex == currentSession {
@@ -2277,8 +2314,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 }
             }
             
-            // Nothing else instantiated — stay, session 0
-            switchSession(to: 0)
+            // Nothing else instantiated — show empty state
+            showEmptyState()
         }
         
         refreshInstantiationState()
@@ -2300,6 +2337,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             // Only one session, and this is the current service — close directly
             let sessionIndex = instantiatedSessions[0]
             webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
+            activeIndicesByURL[service.url] = 0
             
             // Navigate away to nearest service
             navigateAwayFromService(at: serviceIndex)
@@ -2342,6 +2380,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
             }
         }
+        activeIndicesByURL[service.url] = 0
         
         // If we were on this service, navigate away
         if currentServiceURL == service.url {
@@ -2371,8 +2410,47 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
         }
         
-        // Nothing else instantiated — stay on current service, session 0
-        switchSession(to: 0)
+        // Nothing else instantiated — show empty state
+        showEmptyState()
+    }
+    
+    /// Show the empty state view (logo + message) when no sessions are open.
+    private func showEmptyState() {
+        webViewManager.hideAll()
+        
+        // Tear down navigation observers since there's no active webview
+        canGoBackObservation = nil
+        canGoForwardObservation = nil
+        isLoadingNavObservation = nil
+        
+        titleLabel?.stringValue = ""
+        
+        // Deselect all selectors — no segment should be highlighted
+        serviceSelector?.selectedSegment = -1
+        sessionSelector?.selectedSegment = -1
+        collapsibleServiceSelector?.selectedSegment = -1
+        collapsibleSessionSelector?.selectedSegment = -1
+        
+        serviceSelector?.needsDisplay = true
+        sessionSelector?.needsDisplay = true
+        
+        layoutSelectors()
+        
+        // Position and show
+        if let contentView = window?.contentView {
+            updateWindowMarginAndLayout()
+            // Place ABOVE everything (including drag area) to ensure mouse interactivity.
+            // EmptyStateView handles its own hitTesting and mouseDown to allow dragging.
+            contentView.addSubview(emptyStateView, positioned: .above, relativeTo: nil)
+        }
+        
+        emptyStateView.updateShortcuts(services: services, appShortcuts: Settings.shared.appShortcutBindings)
+        emptyStateView.isHidden = false
+    }
+    
+    /// Hide the empty state view (called when a session becomes active).
+    private func hideEmptyState() {
+        emptyStateView?.isHidden = true
     }
 
     private func estimatedWidthForServiceSegments() -> CGFloat {
@@ -3101,7 +3179,7 @@ class HoverIconButton: NSButton {
     }
     
     override func draw(_ dirtyRect: NSRect) {
-        let grayColor = NSColor(white: 0.8, alpha: 1.0) // Half-dark half-light equivalent
+        let grayColor = NSColor.tertiaryLabelColor
         
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
         

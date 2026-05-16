@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Empty State Page**: Introduced a dedicated "No open sessions" page that appears when all sessions are closed, featuring a responsive grid of configured engines and their keyboard shortcuts.
+  - Engine rows are interactive; clicking a row instantly launches the engine.
 - **Navigation Buttons**: Added native back and forward navigation buttons to the top bar.
   - Implemented a custom `NavigationButtonGroup` that renders as a unified, glassy capsule.
   - Buttons automatically show/hide based on `WKWebView` history availability (`canGoBack`/`canGoForward`).
@@ -14,12 +16,15 @@
 
 ### Changed
 
+- **Session State Reset**: Closing the last active session of an engine now resets its active session index to the first session, ensuring it opens fresh the next time the engine is launched.
+- **Selector Alignment**: Dropdown panels for engine and session selectors now open directionally (left/right) to prevent obscuring their buttons in the empty state.
 - **Top Bar Layout**: Re-architected the middle section of the top bar to position navigation buttons immediately before the title and the refresh/stop button immediately after it.
 - **Auto-Mode Threshold**: Updated the "Auto" display mode calculation to account for the new navigation and refresh/stop buttons, ensuring the title area remains readable.
 - **Reset Zoom Shortcut**: Changed the "Reset Zoom" shortcut from `Cmd+Backspace` to `Cmd+Shift+Backspace` to prevent accidental resets while typing. This is reflected in the View menu, shortcut validator, and manual key event handling.
 
 ### Fixed
 
+- **Selector Synchronization**: Fixed an issue where the "Engines" placeholder could persist in the engine selector when transitioning out of the empty state.
 - **Memory Leaks in Tab Closure**: Resolved multiple issues where closed tabs would fail to release memory, causing it to accumulate in `kernel_task`.
   - Added explicit `stopLoading()` and delegate nil'ing to signal WebKit to terminate background processes.
   - Fixed an issue where orphaned "wrapper" views remained in the view hierarchy after tabs were closed.

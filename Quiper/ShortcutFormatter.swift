@@ -10,6 +10,25 @@ enum ShortcutFormatter {
         return string(for: modifiers, keyCode: UInt16(configuration.keyCode), characters: nil)
     }
 
+    static func string(for modifierFlags: UInt, digit: Int) -> String {
+        let modifiers = NSEvent.ModifierFlags(rawValue: modifierFlags)
+        let keyCode: UInt16
+        switch digit {
+        case 1: keyCode = UInt16(kVK_ANSI_1)
+        case 2: keyCode = UInt16(kVK_ANSI_2)
+        case 3: keyCode = UInt16(kVK_ANSI_3)
+        case 4: keyCode = UInt16(kVK_ANSI_4)
+        case 5: keyCode = UInt16(kVK_ANSI_5)
+        case 6: keyCode = UInt16(kVK_ANSI_6)
+        case 7: keyCode = UInt16(kVK_ANSI_7)
+        case 8: keyCode = UInt16(kVK_ANSI_8)
+        case 9: keyCode = UInt16(kVK_ANSI_9)
+        case 0: keyCode = UInt16(kVK_ANSI_0)
+        default: return ""
+        }
+        return string(for: modifiers, keyCode: keyCode, characters: nil)
+    }
+
     static func string(for modifiers: NSEvent.ModifierFlags, keyCode: UInt16, characters: String?) -> String {
         var components: [String] = []
         let modifierString = modifierSymbols(modifiers)

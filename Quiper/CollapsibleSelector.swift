@@ -76,12 +76,28 @@ class CollapsibleSelector: NSView {
     
     // State
     private var _selectedSegment: Int = 0
+    
+    /// Alignment preference when in empty state (_selectedSegment < 0)
+    enum EmptyStateAlignment {
+        case center
+        case left   // Open to the left of the button (right edge aligned with button left edge)
+        case right  // Open to the right of the button (left edge aligned with button right edge)
+    }
+    var emptyStateAlignment: EmptyStateAlignment = .center
+    
+    /// Label shown when no segment is selected (empty state)
+    var placeholderLabel: String = "—"
+    
     var selectedSegment: Int {
         get { _selectedSegment }
         set {
             _selectedSegment = newValue
             updateCollapsedControlTitle()
-            expandedControl?.selectedSegment = newValue
+            if newValue >= 0 {
+                expandedControl?.selectedSegment = newValue
+            } else {
+                expandedControl?.selectedSegment = -1
+            }
             invalidateIntrinsicContentSize()
         }
     }
@@ -221,8 +237,14 @@ class CollapsibleSelector: NSView {
     // MARK: - Internal Logic
     
     private func updateCollapsedControlTitle() {
-        let label = items.indices.contains(_selectedSegment) ? items[_selectedSegment] : "?"
+        let label: String
+        if _selectedSegment >= 0, items.indices.contains(_selectedSegment) {
+            label = items[_selectedSegment]
+        } else {
+            label = placeholderLabel
+        }
         collapsedControl.setLabel(label, forSegment: 0)
+        collapsedControl.selectedSegment = _selectedSegment >= 0 ? 0 : -1
         
         // Calculate dynamic width + padding
         let font = NSFont.systemFont(ofSize: 13)
@@ -237,7 +259,12 @@ class CollapsibleSelector: NSView {
     }
     
     var currentWidth: CGFloat {
-        let label = items.indices.contains(_selectedSegment) ? items[_selectedSegment] : "?"
+        let label: String
+        if _selectedSegment >= 0, items.indices.contains(_selectedSegment) {
+            label = items[_selectedSegment]
+        } else {
+            label = placeholderLabel
+        }
         let width = (label as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width + labelPadding
         return width
     }
@@ -360,17 +387,31 @@ class CollapsibleSelector: NSView {
         let collapsedRect = window.convertToScreen(convert(bounds, to: nil))
         let collapsedCenter = collapsedRect.midX
         
-        // Calculate Active Segment Center using Measured Strategy (Unified)
-        var currentX: CGFloat = 0
-        for i in 0..<_selectedSegment {
-            let w = (items[i] as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width + labelPadding + 1 // Segment separator is 1pt
-            currentX += w
+        let panelX: CGFloat
+        if _selectedSegment >= 0, items.indices.contains(_selectedSegment) {
+            // Calculate Active Segment Center using Measured Strategy (Unified)
+            var currentX: CGFloat = 0
+            for i in 0..<_selectedSegment {
+                let w = (items[i] as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width + labelPadding + 1 // Segment separator is 1pt
+                currentX += w
+            }
+            
+            let selectedWidth = (items[_selectedSegment] as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width + labelPadding
+            let selectedCenter = currentX + selectedWidth / 2
+            panelX = collapsedCenter - selectedCenter
+        } else {
+            // No segment selected — position based on alignment preference
+            switch emptyStateAlignment {
+            case .center:
+                panelX = collapsedCenter - controlWidth / 2
+            case .left:
+                // Panel's right edge aligned with button's left edge
+                panelX = collapsedRect.minX - controlWidth - 4
+            case .right:
+                // Panel's left edge aligned with button's right edge
+                panelX = collapsedRect.maxX + 4
+            }
         }
-        
-        let selectedWidth = (items[_selectedSegment] as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width + labelPadding
-        let selectedCenter = currentX + selectedWidth / 2
-        
-        let panelX = collapsedCenter - selectedCenter
         panel.setFrameOrigin(NSPoint(x: panelX, y: collapsedRect.minY))
         
         window.addChildWindow(panel, ordered: .above)
