@@ -1236,6 +1236,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         serviceSel.dragEndedHandler = { [weak self] in
             self?.handleServiceDragEnded()
         }
+        serviceSel.middleClickHandler = { [weak self] index in
+            self?.handleServiceMiddleClick(at: index)
+        }
         serviceSel.alwaysShowTooltips = false
         serviceSel.selectorDelegate = self  // Add delegate for instantiation state
         serviceSel.showInstantiationState = true  // Enable instantiation state feature
@@ -1260,6 +1263,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         collapsibleServiceSel.dragBeganHandler = serviceSel.dragBeganHandler
         collapsibleServiceSel.dragChangedHandler = serviceSel.dragChangedHandler
         collapsibleServiceSel.dragEndedHandler = serviceSel.dragEndedHandler
+        collapsibleServiceSel.middleClickHandler = serviceSel.middleClickHandler
         collapsibleServiceSel.alwaysShowTooltips = false
         collapsibleServiceSel.setItems(services.map { $0.name })
         // Flex: shrink-to-fit (high hugging, high compression resistance)
@@ -1280,6 +1284,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         sessionSel.action = #selector(sessionChanged(_:))
         sessionSel.selectorDelegate = self
         sessionSel.showInstantiationState = true  // Enable instantiation state feature
+        sessionSel.middleClickHandler = { [weak self] segmentIndex in
+            self?.handleSessionMiddleClick(at: segmentIndex)
+        }
         sessionSel.sizeToFit()
         sessionSel.setAccessibilityIdentifier("SessionSelector")
         drag.addSubview(sessionSel)
@@ -1293,6 +1300,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         collapsibleSessionSel.setItems((0..<10).map { "\($0 == 9 ? 0 : $0 + 1)" })
         collapsibleSessionSel.delegate = self
         collapsibleSessionSel.showInstantiationState = true  // Enable the feature
+        collapsibleSessionSel.middleClickHandler = { [weak self] segmentIndex in
+            self?.handleSessionMiddleClick(at: segmentIndex)
+        }
         // Flex: shrink-to-fit (high hugging, high compression resistance)
         collapsibleSessionSel.setContentHuggingPriority(.required, for: .horizontal)
         collapsibleSessionSel.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -2212,6 +2222,157 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // 5: Fallback — nothing else is instantiated; stay on current service, session 0
         switchSession(to: 0)
         refreshInstantiationState()
+    }
+
+    /// Middle-click on a session segment — close that specific session tab.
+    private func handleSessionMiddleClick(at segmentIndex: Int) {
+        let sessionIndex = self.sessionIndex(forSegment: segmentIndex)
+        guard let service = currentService() else { return }
+        
+        // Only close if the session is actually instantiated
+        guard webViewManager.getWebView(for: service, sessionIndex: sessionIndex) != nil else { return }
+        
+        let currentSession = activeIndicesByURL[service.url] ?? 0
+        
+        // Remove the webview
+        webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
+        
+        // If we closed the currently active session, navigate to the nearest one
+        if sessionIndex == currentSession {
+            // Reuse closeCurrentTab's navigation logic: find nearest instantiated session
+            let leftSessions  = stride(from: sessionIndex - 1, through: 0, by: -1)
+            let rightSessions = stride(from: sessionIndex + 1, to: 10, by: 1)
+            
+            for idx in leftSessions where webViewManager.getWebView(for: service, sessionIndex: idx) != nil {
+                switchSession(to: idx)
+                refreshInstantiationState()
+                return
+            }
+            for idx in rightSessions where webViewManager.getWebView(for: service, sessionIndex: idx) != nil {
+                switchSession(to: idx)
+                refreshInstantiationState()
+                return
+            }
+            
+            // No other session in this service — try other services
+            let currentServiceIndex = services.firstIndex(where: { $0.url == service.url }) ?? 0
+            let leftServices  = stride(from: currentServiceIndex - 1, through: 0, by: -1).map { services[$0] }
+            let rightServices = stride(from: currentServiceIndex + 1, to: services.count, by: 1).map { services[$0] }
+            
+            for svc in (leftServices + rightServices) {
+                let activeSession = activeIndicesByURL[svc.url] ?? 0
+                if webViewManager.getWebView(for: svc, sessionIndex: activeSession) != nil {
+                    let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
+                    selectService(at: svcIndex)
+                    refreshInstantiationState()
+                    return
+                }
+                // Check any instantiated session in this service
+                if let anySession = (0..<10).first(where: { webViewManager.getWebView(for: svc, sessionIndex: $0) != nil }) {
+                    let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
+                    activeIndicesByURL[svc.url] = anySession
+                    selectService(at: svcIndex)
+                    refreshInstantiationState()
+                    return
+                }
+            }
+            
+            // Nothing else instantiated — stay, session 0
+            switchSession(to: 0)
+        }
+        
+        refreshInstantiationState()
+    }
+    
+    /// Middle-click on a service segment — close the service's sessions.
+    /// If only one session is instantiated and it's the current view, close it directly.
+    /// Otherwise, show a confirmation before closing all sessions.
+    private func handleServiceMiddleClick(at serviceIndex: Int) {
+        guard services.indices.contains(serviceIndex) else { return }
+        let service = services[serviceIndex]
+        
+        // Count instantiated sessions for this service
+        let instantiatedSessions = (0..<10).filter { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }
+        
+        guard !instantiatedSessions.isEmpty else { return }
+        
+        if instantiatedSessions.count == 1, currentServiceURL == service.url {
+            // Only one session, and this is the current service — close directly
+            let sessionIndex = instantiatedSessions[0]
+            webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
+            
+            // Navigate away to nearest service
+            navigateAwayFromService(at: serviceIndex)
+            refreshInstantiationState()
+        } else {
+            // Multiple sessions or not the active service — ask for confirmation
+            
+            // Collapse selectors and disable interaction to prevent hover-blinking
+            collapsibleServiceSelector?.collapse()
+            collapsibleSessionSelector?.collapse()
+            collapsibleServiceSelector?.isInteractionEnabled = false
+            collapsibleSessionSelector?.isInteractionEnabled = false
+            
+            let alert = NSAlert()
+            alert.messageText = "Close all sessions for \(service.name)?"
+            alert.informativeText = "\(instantiatedSessions.count) session\(instantiatedSessions.count == 1 ? "" : "s") will be closed."
+            alert.addButton(withTitle: "Close All")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .warning
+            
+            let response = alert.runModal()
+            
+            // Re-enable interaction
+            collapsibleServiceSelector?.isInteractionEnabled = true
+            collapsibleSessionSelector?.isInteractionEnabled = true
+            
+            if response == .alertFirstButtonReturn {
+                closeAllSessionsForService(at: serviceIndex)
+            }
+        }
+    }
+    
+    /// Close all instantiated sessions for the service at the given index.
+    private func closeAllSessionsForService(at serviceIndex: Int) {
+        guard services.indices.contains(serviceIndex) else { return }
+        let service = services[serviceIndex]
+        
+        for sessionIndex in 0..<10 {
+            if webViewManager.getWebView(for: service, sessionIndex: sessionIndex) != nil {
+                webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
+            }
+        }
+        
+        // If we were on this service, navigate away
+        if currentServiceURL == service.url {
+            navigateAwayFromService(at: serviceIndex)
+        }
+        
+        refreshInstantiationState()
+    }
+    
+    /// Navigate to the nearest service that has an instantiated session.
+    private func navigateAwayFromService(at serviceIndex: Int) {
+        let leftServices  = stride(from: serviceIndex - 1, through: 0, by: -1).map { services[$0] }
+        let rightServices = stride(from: serviceIndex + 1, to: services.count, by: 1).map { services[$0] }
+        
+        for svc in (leftServices + rightServices) {
+            let activeSession = activeIndicesByURL[svc.url] ?? 0
+            if webViewManager.getWebView(for: svc, sessionIndex: activeSession) != nil {
+                let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
+                selectService(at: svcIndex)
+                return
+            }
+            if let anySession = (0..<10).first(where: { webViewManager.getWebView(for: svc, sessionIndex: $0) != nil }) {
+                let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
+                activeIndicesByURL[svc.url] = anySession
+                selectService(at: svcIndex)
+                return
+            }
+        }
+        
+        // Nothing else instantiated — stay on current service, session 0
+        switchSession(to: 0)
     }
 
     private func estimatedWidthForServiceSegments() -> CGFloat {

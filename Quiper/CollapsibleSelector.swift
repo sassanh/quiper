@@ -116,6 +116,7 @@ class CollapsibleSelector: NSView {
     
     // Drag handlers
     var mouseDownSegmentHandler: ((Int) -> Void)?
+    var middleClickHandler: ((Int) -> Void)?
     var dragBeganHandler: ((Int) -> Void)?
     var dragChangedHandler: ((Int) -> Void)?
     var dragEndedHandler: (() -> Void)?
@@ -269,6 +270,15 @@ class CollapsibleSelector: NSView {
         // Collapse policy is owned by the parent controller via cursor monitoring.
         // Nothing to do here.
     }
+    
+    override func otherMouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 2 else {
+            super.otherMouseDown(with: event)
+            return
+        }
+        // When collapsed, the single visible segment represents _selectedSegment
+        middleClickHandler?(_selectedSegment)
+    }
 
     // MARK: - Expansion Logic
     
@@ -307,6 +317,7 @@ class CollapsibleSelector: NSView {
         control.action = #selector(overlayAction(_:))
         control.enableDragReorder = enableDragReorder
         control.mouseDownSegmentHandler = mouseDownSegmentHandler
+        control.middleClickHandler = middleClickHandler
         control.dragBeganHandler = dragBeganHandler
         control.dragChangedHandler = dragChangedHandler
         control.dragEndedHandler = { [weak self] in

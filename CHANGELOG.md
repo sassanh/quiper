@@ -10,6 +10,7 @@
   - Added a long-press history menu (Safari/Chrome style) for both buttons to navigate directly to any page in the history stack.
 - **Refresh/Stop Button**: Added a dedicated button after the title that toggles between "Reload" (clockwise arrow) and "Stop" (x-mark) icons based on the current loading state.
 - **Find Bar Close Button**: Added a dedicated "Done" button to the find bar overlay, allowing it to be closed via mouse click in addition to the `Escape` key.
+- **Close with Middle Click**: Middle-clicking a session closes it immediately, navigating to the nearest other open session or engine. Middle-clicking an engine closes all of its open sessions — a confirmation dialog is shown unless it has exactly one open session and is the currently active engine.
 
 ### Changed
 

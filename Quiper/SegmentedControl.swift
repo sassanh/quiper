@@ -132,6 +132,7 @@ class SegmentedControl: NSSegmentedControl {
 
     var enableDragReorder: Bool = false
     var mouseDownSegmentHandler: ((Int) -> Void)?
+    var middleClickHandler: ((Int) -> Void)?
     var dragBeganHandler: ((Int) -> Void)?
     var dragChangedHandler: ((Int) -> Void)?
     var dragEndedHandler: (() -> Void)?
@@ -194,6 +195,18 @@ class SegmentedControl: NSSegmentedControl {
                 selectedSegment = clickedSegment
                 sendAction(action, to: target)
             }
+        }
+    }
+    
+    override func otherMouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 2 else {
+            super.otherMouseDown(with: event)
+            return
+        }
+        let location = convert(event.locationInWindow, from: nil)
+        let clickedSegment = segmentIndex(at: location)
+        if clickedSegment >= 0 {
+            middleClickHandler?(clickedSegment)
         }
     }
     
