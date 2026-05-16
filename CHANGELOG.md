@@ -24,6 +24,7 @@
 
 ### Fixed
 
+- **Find Bar on Window Hide**: Fixed an issue where the find bar (Cmd+F) would remain visible on screen after the global shortcut hid the main window. The find bar is now explicitly closed when the window hides, and it does not reappear on the next window show.
 - **Selector Synchronization**: Fixed an issue where the "Engines" placeholder could persist in the engine selector when transitioning out of the empty state.
 - **Memory Leaks in Tab Closure**: Resolved multiple issues where closed tabs would fail to release memory, causing it to accumulate in `kernel_task`.
   - Added explicit `stopLoading()` and delegate nil'ing to signal WebKit to terminate background processes.

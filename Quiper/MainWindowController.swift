@@ -450,6 +450,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window?.endSheet(sheet, returnCode: .cancel)
         }
         window?.orderOut(nil)
+        findBarViewController?.hide()
         setShortcutsEnabled(false)
         NotificationCenter.default.post(name: .windowDidHide, object: nil)
     }

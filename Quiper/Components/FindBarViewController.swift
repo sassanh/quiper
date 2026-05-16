@@ -216,9 +216,10 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         isFindBarVisible = false
         findStatusLabel.stringValue = ""
         resetFind()
-        if let webView = delegate?.activeWebViewForFind() {
-            parentWindow?.makeKeyAndOrderFront(nil)
-            parentWindow?.makeFirstResponder(webView)
+        if let webView = delegate?.activeWebViewForFind(),
+           let window = parentWindow, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            window.makeFirstResponder(webView)
         }
     }
     
