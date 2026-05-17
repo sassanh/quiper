@@ -4,6 +4,14 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [3.1.0] - 2026-05-17
+
+### Added
+
 - **Empty State Page**: Introduced a dedicated "No open sessions" page that appears when all sessions are closed, featuring a responsive grid of configured engines and their keyboard shortcuts.
   - Engine rows are interactive; clicking a row instantly launches the engine.
 - **Navigation Buttons**: Added native back and forward navigation buttons to the top bar.
