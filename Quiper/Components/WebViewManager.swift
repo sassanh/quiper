@@ -377,6 +377,8 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
     private var shield: InteractionShieldView?
     private weak var parentWin: NSWindow?
     private var isCleaningUp = false
+    private var titleObservation: NSKeyValueObservation?
+    private var fallbackTitle: String = ""
     
     init(contentRect: NSRect, parentWindow: NSWindow) {
         self.parentWin = parentWindow
@@ -403,9 +405,26 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
         }
     }
     
+    func observeWebViewTitle(_ webView: WKWebView, fallbackTitle: String) {
+        self.fallbackTitle = fallbackTitle
+        self.title = fallbackTitle
+        
+        titleObservation = webView.observe(\.title, options: [.new]) { [weak self] _, change in
+            guard let self = self else { return }
+            if let newTitle = change.newValue as? String, !newTitle.isEmpty {
+                self.title = "\(newTitle) - \(self.fallbackTitle)"
+            } else {
+                self.title = self.fallbackTitle
+            }
+        }
+    }
+    
     private func cleanup() {
         guard !isCleaningUp else { return }
         isCleaningUp = true
+        
+        titleObservation?.invalidate()
+        titleObservation = nil
         
         // 1. Remove shield and restore parent window interactivity synchronously
         shield?.removeFromSuperview()
@@ -570,11 +589,12 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
                 parentWindow: parentWindow
             )
             popupWindow.center()
-            popupWindow.title = "Login - \(service.name)"
             
             let popupWebView = WKWebView(frame: popupWindow.contentView!.bounds, configuration: configuration)
             popupWebView.autoresizingMask = [.width, .height]
             popupWebView.uiDelegate = PopupUIDelegate.shared
+            
+            popupWindow.observeWebViewTitle(popupWebView, fallbackTitle: service.name)
             
             popupWindow.contentView?.addSubview(popupWebView)
             popupWindow.makeKeyAndOrderFront(nil)

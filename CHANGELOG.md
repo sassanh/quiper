@@ -24,6 +24,7 @@
 
 ### Fixed
 
+- **Dynamic Popup Window Titles**: Replaced the hardcoded "Login" prefix in internal popup window titles with dynamic key-value observation (KVO) on the popup webview's title property, falling back gracefully to the service name if the page title is empty.
 - **Disabled Global Shortcut Mapping**: Fixed a Carbon API registration issue where clearing/unsetting the main global shortcut registered the physical `A` key (keycode `0`) without modifiers as the hotkey and displayed `"A"` in the status bar menu.
 - **Find Bar on Window Hide**: Fixed an issue where the find bar (Cmd+F) would remain visible on screen after the global shortcut hid the main window. The find bar is now explicitly closed when the window hides, and it does not reappear on the next window show.
 - **Selector Synchronization**: Fixed an issue where the "Engines" placeholder could persist in the engine selector when transitioning out of the empty state.
