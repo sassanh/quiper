@@ -851,6 +851,7 @@ struct StatusMenuBuilder {
     }
 
     private func keyEquivalent(for configuration: HotkeyManager.Configuration) -> (key: String, modifiers: NSEvent.ModifierFlags)? {
+        guard !configuration.isDisabled else { return nil }
         let modifiers = NSEvent.ModifierFlags(rawValue: configuration.modifierFlags).intersection([.command, .option, .control, .shift])
         guard let key = character(for: UInt16(configuration.keyCode)) else { return nil }
         let normalizedKey = key.count == 1 ? key.lowercased() : key

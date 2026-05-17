@@ -73,6 +73,12 @@ final class HotkeyManager {
     @discardableResult
     private func registerHotKey(with configuration: Configuration) -> Bool {
         unregisterHotKey()
+        
+        if configuration.isDisabled {
+            NSLog("[Quiper] Hotkey configuration is disabled. Skipping registration.")
+            return true
+        }
+
         installHandlerIfNeeded()
 
         let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: 1)
