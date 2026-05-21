@@ -40,4 +40,4 @@
 
 ## Agent Behavior Rules
 
-- **NEVER** modify app code (add test hooks) to facilitate testing without explicit permission.
+- **BUILD WARNINGS ARE NOT ACCEPTABLE**: When implementing or refactoring code, always aim for zero compiler warnings. Code must be written cleanly, following the strict concurrency guidelines of Swift 6, and avoiding deprecated APIs. Any warnings introduced during changes must be resolved immediately before completing the task.

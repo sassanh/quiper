@@ -6,7 +6,11 @@
 
 ### Changed
 
+- **Agent Guidelines**: Updated [AGENTS.md](file:///Users/sassanharadji/Projects/Personal/quiper/AGENTS.md) behavior rules to establish a clear expectation that zero compiler warnings are acceptable across all implementation and refactoring tasks.
+
 ### Fixed
+
+- **Dynamic Theme Synchronization**: Resolved a synchronization failure where the [EmptyStateView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/EmptyStateView.swift)'s labels, icons, hover highlights, and shortcut key pills did not dynamically adapt to system appearance changes (light/dark mode shift) or manual theme overrides without an application restart. Refactored the static key pill layout into a reactive `KeyPillView` subclass, added `viewDidChangeEffectiveAppearance()` overrides to the subview hierarchy, and enabled automatic, dynamic reconstruction of the empty state layout on appearance transitions.
 
 ## [3.1.0] - 2026-05-17
 

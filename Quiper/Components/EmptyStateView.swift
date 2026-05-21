@@ -26,6 +26,8 @@ final class EmptyStateView: NSView {
     private var isSnapping = false
     private var lastOffsetY: CGFloat = 0
     private var scrollDirection: CGFloat = 0 // 1 for down (collapsing), -1 for up (expanding)
+    private var lastServices: [Service] = []
+    private var lastAppShortcuts: AppShortcutBindings = .defaults
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -328,7 +330,14 @@ final class EmptyStateView: NSView {
         return from + (to - from) * p
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateShortcuts(services: lastServices, appShortcuts: lastAppShortcuts)
+    }
+
     func updateShortcuts(services: [Service], appShortcuts: AppShortcutBindings) {
+        self.lastServices = services
+        self.lastAppShortcuts = appShortcuts
         detailsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
         let enginesSection = createSection(title: "ENGINES")
@@ -444,7 +453,7 @@ private final class EngineRowView: NSView {
         let shortcutStack = NSStackView()
         shortcutStack.orientation = .horizontal
         shortcutStack.spacing = 8
-        shortcutStack.addArrangedSubview(Self.createKeyPill(modifiers: modifiers, digitText: digitText))
+        shortcutStack.addArrangedSubview(KeyPillView(modifiers: modifiers, digitText: digitText))
         
         if let secondary = secondaryModifiers, secondary > 0 {
             let separator = NSTextField(labelWithString: "/")
@@ -455,7 +464,7 @@ private final class EngineRowView: NSView {
             separator.drawsBackground = false
             separator.isBezeled = false
             shortcutStack.addArrangedSubview(separator)
-            shortcutStack.addArrangedSubview(Self.createKeyPill(modifiers: secondary, digitText: digitText))
+            shortcutStack.addArrangedSubview(KeyPillView(modifiers: secondary, digitText: digitText))
         }
         
         let rightContainer = NSView()
@@ -511,20 +520,36 @@ private final class EngineRowView: NSView {
         isPressed = false
     }
     
-    static func createKeyPill(modifiers: UInt, digitText: String) -> NSView {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.cornerRadius = 6
-        container.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
-        container.layer?.borderWidth = 1
-        container.layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateHighlight()
+    }
+}
+
+private final class KeyPillView: NSView {
+    private let modifiers: UInt
+    private let digitText: String
+    
+    init(modifiers: UInt, digitText: String) {
+        self.modifiers = modifiers
+        self.digitText = digitText
+        super.init(frame: .zero)
+        setup()
+    }
+    
+    required init?(coder: NSCoder) { fatalError() }
+    
+    private func setup() {
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        updateColors()
         
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.spacing = 4
         stack.edgeInsets = NSEdgeInsets(top: 3, left: 8, bottom: 3, right: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
+        addSubview(stack)
         
         let modStr = ShortcutFormatter.string(for: modifiers, digit: 1).replacingOccurrences(of: "1", with: "").trimmingCharacters(in: .whitespaces)
         for char in modStr {
@@ -548,12 +573,21 @@ private final class EngineRowView: NSView {
         stack.addArrangedSubview(digitLabel)
         
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: container.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
-        
-        return container
+    }
+    
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateColors()
+    }
+    
+    private func updateColors() {
+        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
     }
 }
