@@ -1,5 +1,31 @@
 import AppKit
 
+// MARK: - Dynamic Colors
+// These use NSColor(name:dynamicProvider:) so they remain fully dynamic and
+// re-resolve against the correct appearance at draw time, even when views are
+// created outside of a standard layout/draw pass (e.g. programmatic rebuilds
+// triggered by engine switches).
+private enum EmptyStateColors {
+    static let sectionTitle = NSColor(name: nil) { _ in
+        .secondaryLabelColor.withAlphaComponent(0.4)
+    }
+    static let engineNameActive = NSColor(name: nil) { _ in
+        .labelColor.withAlphaComponent(0.95)
+    }
+    static let engineNameInactive = NSColor(name: nil) { _ in
+        .labelColor.withAlphaComponent(0.55)
+    }
+    static let iconTint = NSColor(name: nil) { _ in
+        .secondaryLabelColor.withAlphaComponent(0.6)
+    }
+    static let separatorSlash = NSColor(name: nil) { _ in
+        .secondaryLabelColor.withAlphaComponent(0.3)
+    }
+    static let sessionChildText = NSColor(name: nil) { _ in
+        .secondaryLabelColor.withAlphaComponent(0.8)
+    }
+}
+
 private class FlippedView: NSView {
     override var isFlipped: Bool { true }
 }
@@ -27,10 +53,6 @@ final class EmptyStateView: NSView {
     private var isSnapping = false
     private var lastOffsetY: CGFloat = 0
     private var scrollDirection: CGFloat = 0 // 1 for down (collapsing), -1 for up (expanding)
-    private var lastServices: [Service] = []
-    private var lastAppShortcuts: AppShortcutBindings = .defaults
-    private var lastOpenSessions: [String: [Int: String]] = [:]
-    private var lastActiveEngineName: String?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -334,24 +356,10 @@ final class EmptyStateView: NSView {
         return from + (to - from) * p
     }
 
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateShortcuts(
-            services: lastServices,
-            appShortcuts: lastAppShortcuts,
-            openSessions: lastOpenSessions,
-            activeEngineName: lastActiveEngineName
-        )
-    }
-
     func updateShortcuts(services: [Service],
                          appShortcuts: AppShortcutBindings,
                          openSessions: [String: [Int: String]] = [:],
                          activeEngineName: String? = nil) {
-        self.lastServices = services
-        self.lastAppShortcuts = appShortcuts
-        self.lastOpenSessions = openSessions
-        self.lastActiveEngineName = activeEngineName
         
         if let name = activeEngineName {
             messageLabel.stringValue = "No \(name) sessions"
@@ -438,7 +446,7 @@ final class EmptyStateView: NSView {
         stack.alignment = .centerX
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 11, weight: .bold)
-        label.textColor = .secondaryLabelColor.withAlphaComponent(0.4)
+        label.textColor = EmptyStateColors.sectionTitle
         label.isEditable = false
         label.isSelectable = false
         label.drawsBackground = false
@@ -521,7 +529,7 @@ private final class EngineRowView: NSView {
                 .withSymbolConfiguration(symbolConfig) {
                 defaultImage.isTemplate = true
                 iconView.image = defaultImage
-                iconView.contentTintColor = .secondaryLabelColor.withAlphaComponent(0.6)
+                iconView.contentTintColor = EmptyStateColors.iconTint
             }
         }
         leftStack.addArrangedSubview(iconView)
@@ -529,10 +537,10 @@ private final class EngineRowView: NSView {
         let nameLabel = NSTextField(labelWithString: label)
         if hasSessions {
             nameLabel.font = .systemFont(ofSize: 14, weight: .semibold)
-            nameLabel.textColor = .labelColor.withAlphaComponent(0.95)
+            nameLabel.textColor = EmptyStateColors.engineNameActive
         } else {
             nameLabel.font = .systemFont(ofSize: 14, weight: .medium)
-            nameLabel.textColor = .labelColor.withAlphaComponent(0.55) // softer color for inactive engines
+            nameLabel.textColor = EmptyStateColors.engineNameInactive
         }
         nameLabel.lineBreakMode = .byTruncatingTail
         nameLabel.alignment = .natural
@@ -554,7 +562,7 @@ private final class EngineRowView: NSView {
         if let secondary = secondaryModifiers, secondary > 0 {
             let separator = NSTextField(labelWithString: "/")
             separator.font = .systemFont(ofSize: 12)
-            separator.textColor = .secondaryLabelColor.withAlphaComponent(0.3)
+            separator.textColor = EmptyStateColors.separatorSlash
             separator.isEditable = false
             separator.isSelectable = false
             separator.drawsBackground = false
@@ -594,7 +602,8 @@ private final class EngineRowView: NSView {
     
     private func updateHighlight() {
         if onClick == nil { return }
-        highlightView.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(isPressed ? 0.10 : 0.06).cgColor
+        let alpha: CGFloat = isPressed ? 0.10 : 0.06
+        highlightView.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(alpha).cgColor
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.12
             highlightView.animator().alphaValue = (isHovered || isPressed) ? 1 : 0
@@ -616,9 +625,12 @@ private final class EngineRowView: NSView {
         isPressed = false
     }
     
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateHighlight()
+    override func updateLayer() {
+        super.updateLayer()
+        // Re-resolve highlight color under the correct appearance context
+        if isHovered || isPressed {
+            updateHighlight()
+        }
     }
 }
 
@@ -638,7 +650,7 @@ private final class KeyPillView: NSView {
     private func setup() {
         wantsLayer = true
         layer?.cornerRadius = 6
-        updateColors()
+        layer?.borderWidth = 1
         
         let stack = NSStackView()
         stack.orientation = .horizontal
@@ -676,14 +688,10 @@ private final class KeyPillView: NSView {
         ])
     }
     
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateColors()
-    }
-    
-    private func updateColors() {
+    override func updateLayer() {
+        super.updateLayer()
+        // Resolve CGColors under the correct appearance context
         layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
-        layer?.borderWidth = 1
         layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
     }
 }
@@ -731,7 +739,7 @@ private final class SessionChildRowView: NSView {
         leftStack.translatesAutoresizingMaskIntoConstraints = false
         leftStack.widthAnchor.constraint(equalToConstant: columnWidth).isActive = true
         
-        let textColor = NSColor.secondaryLabelColor.withAlphaComponent(0.8)
+        let textColor = EmptyStateColors.sessionChildText
         let font = NSFont.systemFont(ofSize: 13, weight: .regular)
         
         // Indent spacer — pushes content inward from the engine name alignment line
@@ -808,7 +816,8 @@ private final class SessionChildRowView: NSView {
     }
     
     private func updateHighlight() {
-        highlightView.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(isPressed ? 0.08 : 0.04).cgColor
+        let alpha: CGFloat = isPressed ? 0.08 : 0.04
+        highlightView.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(alpha).cgColor
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.12
             highlightView.animator().alphaValue = (isHovered || isPressed) ? 1 : 0
@@ -828,8 +837,11 @@ private final class SessionChildRowView: NSView {
         isPressed = false
     }
     
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateHighlight()
+    override func updateLayer() {
+        super.updateLayer()
+        // Re-resolve highlight color under the correct appearance context
+        if isHovered || isPressed {
+            updateHighlight()
+        }
     }
 }
