@@ -4,13 +4,20 @@
 
 ### Added
 
+- **Engine Activation Preferences**: Added a new setting `autoCreateSessionOnEmptyEngineActivation` (default `true`) allowing users to choose whether switching to an engine with no open sessions immediately instantiates a new session or displays the clean empty state directory instead. Explicit user actions like session digit shortcuts (Cmd+1...9) bypass this check to force session creation.
+
 ### Changed
 
 - **Agent Guidelines**: Updated [AGENTS.md](file:///Users/sassanharadji/Projects/Personal/quiper/AGENTS.md) behavior rules to establish a clear expectation that zero compiler warnings are acceptable across all implementation and refactoring tasks.
+- **Default Engine Switch Behavior**: Flipped the default value of `automaticallySwitchEngineOnLastSessionClose` to `true` to match intuitive tab workflows where closing the last session of an engine automatically switches to another active engine.
+- **Tabular Session Directories**: Implemented a neat, three-column tabular layout for the nested session rows containing a right-aligned monospaced digit index column, a fixed dot column, and a natural, left-aligned title column. This prevents jagged offsets and aligns the separator dots vertically.
 
 ### Fixed
 
+- **Empty State Alignment & RTL Safety**: Added dynamic layout-direction-aware edge insets and `.natural` text alignments to both `EngineRowView` and `SessionChildRowView`, ensuring perfect natural alignment for both LTR and RTL directions. Introduced explicit, instant header centering calculations on engine shifts before any scroll occurs, avoiding off-center text alignment.
+- **Session Selector Stale State**: Resolved an issue where selecting an engine with no open sessions could show the last active session of that engine as active in the session segmented control. The session selector is now cleanly deselected (set to `-1`) whenever the empty state is active.
 - **Dynamic Theme Synchronization**: Resolved a synchronization failure where the [EmptyStateView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/EmptyStateView.swift)'s labels, icons, hover highlights, and shortcut key pills did not dynamically adapt to system appearance changes (light/dark mode shift) or manual theme overrides without an application restart. Refactored the static key pill layout into a reactive `KeyPillView` subclass, added `viewDidChangeEffectiveAppearance()` overrides to the subview hierarchy, and enabled automatic, dynamic reconstruction of the empty state layout on appearance transitions.
+- **Empty State Controls and Shortcuts Isolation**: Resolved a core architectural issue where computed getters like `activeWebView` and `currentWebView()` lazily instantiated and warmed up background webview sessions on any query (such as window focus restoration, Find bar activations, reload events, or zoom resets) while in the empty state. Refactored both properties into completely passive getters that query the `webViewManager` without side effects, preventing any accidental session warming. Additionally, updated `layoutSelectors()` and `showEmptyState()` to cleanly hide all top-bar navigation, reload, and action controls when no sessions are active, and added a shortcut interceptor to elegantly consume and suppress irrelevant key commands.
 
 ## [3.1.0] - 2026-05-17
 

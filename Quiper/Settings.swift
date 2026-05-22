@@ -311,7 +311,7 @@ struct WindowAppearanceSettings: Codable, Equatable {
             let material = try container.decodeIfPresent(WindowMaterial.self, forKey: .material) ?? .underWindowBackground
             let backgroundColor = try container.decodeIfPresent(CodableColor.self, forKey: .backgroundColor) ?? ThemeAppearanceSettings.defaultDark.backgroundColor
             
-            var legacySettings = ThemeAppearanceSettings(mode: mode, material: material, backgroundColor: backgroundColor, blurRadius: 40.0, outlineWidth: 1.0, outlineColor: ThemeAppearanceSettings.defaultDark.outlineColor)
+            let legacySettings = ThemeAppearanceSettings(mode: mode, material: material, backgroundColor: backgroundColor, blurRadius: 40.0, outlineWidth: 1.0, outlineColor: ThemeAppearanceSettings.defaultDark.outlineColor)
             self.dark = legacySettings
             self.light = .defaultLight
         }
@@ -523,12 +523,16 @@ struct PersistedSettings: Codable {
     var showHiddenBarOnModifiers: Bool?
     var windowAppearance: WindowAppearanceSettings?
     var colorScheme: AppColorScheme?
+    var automaticallySwitchEngineOnLastSessionClose: Bool?
+    var autoCreateSessionOnEmptyEngineActivation: Bool?
     var version: Int? = 1
 
     enum CodingKeys: String, CodingKey {
         case services, hotkey, customActions, updatePreferences, serviceZoomLevels, appShortcuts
         case sessionDigitsAlternateModifiers, dockVisibility, selectorDisplayMode, topBarVisibility
         case dragAreaPosition, showHiddenBarOnModifiers, windowAppearance, colorScheme, version
+        case automaticallySwitchEngineOnLastSessionClose
+        case autoCreateSessionOnEmptyEngineActivation
     }
 
     init(services: [Service],
@@ -545,6 +549,8 @@ struct PersistedSettings: Codable {
          showHiddenBarOnModifiers: Bool? = nil,
          windowAppearance: WindowAppearanceSettings? = nil,
          colorScheme: AppColorScheme? = nil,
+         automaticallySwitchEngineOnLastSessionClose: Bool? = nil,
+         autoCreateSessionOnEmptyEngineActivation: Bool? = nil,
          version: Int? = 1) {
         self.services = services
         self.hotkey = hotkey
@@ -560,6 +566,8 @@ struct PersistedSettings: Codable {
         self.showHiddenBarOnModifiers = showHiddenBarOnModifiers
         self.windowAppearance = windowAppearance
         self.colorScheme = colorScheme
+        self.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
+        self.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
         self.version = version
     }
 
@@ -579,6 +587,8 @@ struct PersistedSettings: Codable {
         showHiddenBarOnModifiers = try container.decodeIfPresent(Bool.self, forKey: .showHiddenBarOnModifiers)
         windowAppearance = try container.decodeIfPresent(WindowAppearanceSettings.self, forKey: .windowAppearance)
         colorScheme = try container.decodeIfPresent(AppColorScheme.self, forKey: .colorScheme)
+        automaticallySwitchEngineOnLastSessionClose = try container.decodeIfPresent(Bool.self, forKey: .automaticallySwitchEngineOnLastSessionClose)
+        autoCreateSessionOnEmptyEngineActivation = try container.decodeIfPresent(Bool.self, forKey: .autoCreateSessionOnEmptyEngineActivation)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }
 }
@@ -705,6 +715,8 @@ class Settings: ObservableObject {
             NotificationCenter.default.post(name: .colorSchemeChanged, object: nil)
         }
     }
+    @Published var automaticallySwitchEngineOnLastSessionClose: Bool = true
+    @Published var autoCreateSessionOnEmptyEngineActivation: Bool = true
     
     func reset() {
         services = []
@@ -719,6 +731,8 @@ class Settings: ObservableObject {
         showHiddenBarOnModifiers = true
         windowAppearance = .default
         colorScheme = .system
+        automaticallySwitchEngineOnLastSessionClose = true
+        autoCreateSessionOnEmptyEngineActivation = true
     }
 
     private let settingsFile: URL = {
@@ -1305,6 +1319,8 @@ class Settings: ObservableObject {
         if colorScheme != (persisted.colorScheme ?? .system) {
             colorScheme = persisted.colorScheme ?? .system
         }
+        automaticallySwitchEngineOnLastSessionClose = persisted.automaticallySwitchEngineOnLastSessionClose ?? true
+        autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation ?? true
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
@@ -1341,7 +1357,9 @@ class Settings: ObservableObject {
                                             dragAreaPosition: dragAreaPosition,
                                             showHiddenBarOnModifiers: showHiddenBarOnModifiers,
                                             windowAppearance: windowAppearance,
-                                            colorScheme: colorScheme)
+                                            colorScheme: colorScheme,
+                                            automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
+                                            autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
@@ -1362,7 +1380,9 @@ class Settings: ObservableObject {
             topBarVisibility: topBarVisibility,
             showHiddenBarOnModifiers: showHiddenBarOnModifiers,
             windowAppearance: windowAppearance,
-            colorScheme: colorScheme
+            colorScheme: colorScheme,
+            automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
+            autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation
         )
     }
 
@@ -1382,6 +1402,8 @@ class Settings: ObservableObject {
         showHiddenBarOnModifiers = persisted.showHiddenBarOnModifiers ?? true
         windowAppearance = persisted.windowAppearance ?? .default
         colorScheme = persisted.colorScheme ?? .system
+        automaticallySwitchEngineOnLastSessionClose = persisted.automaticallySwitchEngineOnLastSessionClose ?? true
+        autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation ?? true
         if let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         }

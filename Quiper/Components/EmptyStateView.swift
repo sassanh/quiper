@@ -9,6 +9,7 @@ final class EmptyStateView: NSView {
     override var isFlipped: Bool { true }
 
     var onEngineSelected: ((Int) -> Void)?
+    var onSessionSelected: ((Int, Int) -> Void)?
 
     private let headerContainer = FlippedView()
     private let iconView = NSImageView()
@@ -28,6 +29,8 @@ final class EmptyStateView: NSView {
     private var scrollDirection: CGFloat = 0 // 1 for down (collapsing), -1 for up (expanding)
     private var lastServices: [Service] = []
     private var lastAppShortcuts: AppShortcutBindings = .defaults
+    private var lastOpenSessions: [String: [Int: String]] = [:]
+    private var lastActiveEngineName: String?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -65,6 +68,7 @@ final class EmptyStateView: NSView {
             $0.isSelectable = false
             $0.drawsBackground = false
             $0.isBezeled = false
+            $0.alignment = .center
         }
         messageLabel.textColor = .labelColor
         hintLabel.textColor = .secondaryLabelColor
@@ -332,30 +336,83 @@ final class EmptyStateView: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        updateShortcuts(services: lastServices, appShortcuts: lastAppShortcuts)
+        updateShortcuts(
+            services: lastServices,
+            appShortcuts: lastAppShortcuts,
+            openSessions: lastOpenSessions,
+            activeEngineName: lastActiveEngineName
+        )
     }
 
-    func updateShortcuts(services: [Service], appShortcuts: AppShortcutBindings) {
+    func updateShortcuts(services: [Service],
+                         appShortcuts: AppShortcutBindings,
+                         openSessions: [String: [Int: String]] = [:],
+                         activeEngineName: String? = nil) {
         self.lastServices = services
         self.lastAppShortcuts = appShortcuts
+        self.lastOpenSessions = openSessions
+        self.lastActiveEngineName = activeEngineName
+        
+        if let name = activeEngineName {
+            messageLabel.stringValue = "No \(name) sessions"
+        } else {
+            messageLabel.stringValue = "No open sessions"
+        }
+        messageLabel.sizeToFit()
+        
+        // Immediately recalculate header layout and label centering for the new text length
+        let isWide = bounds.width > 750
+        if isWide {
+            layoutHeader(progress: 0.0, isWide: true)
+        } else {
+            onScroll()
+        }
+        
         detailsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
         let enginesSection = createSection(title: "ENGINES")
         let enginesGrid = NSStackView()
         enginesGrid.orientation = .vertical
         enginesGrid.spacing = 2
-        enginesGrid.alignment = .centerX
+        enginesGrid.alignment = .width
         
         for (i, service) in services.enumerated() where i < 10 {
+            let openSessionDict = openSessions[service.url] ?? [:]
+            let hasSessions = !openSessionDict.isEmpty
+            
             let digit = (i + 1) % 10
-            let row = EngineRowView(label: service.name, 
+            let labelText = hasSessions ? "\(service.name) (\(openSessionDict.count))" : service.name
+            let row = EngineRowView(label: labelText, 
                                   modifiers: appShortcuts.serviceDigitsPrimaryModifiers, 
                                   secondaryModifiers: appShortcuts.serviceDigitsSecondaryModifiers,
-                                  digitText: "\(digit)")
+                                  digitText: "\(digit)",
+                                  hasSessions: hasSessions,
+                                  sessionCount: openSessionDict.count)
             row.onClick = { [weak self] in
                 self?.onEngineSelected?(i)
             }
             enginesGrid.addArrangedSubview(row)
+            
+            if hasSessions {
+                let sessionsStack = NSStackView()
+                sessionsStack.orientation = .vertical
+                sessionsStack.spacing = 2
+                sessionsStack.alignment = .width
+                
+                let sortedSessionIndices = openSessionDict.keys.sorted()
+                for sIndex in sortedSessionIndices {
+                    let title = openSessionDict[sIndex] ?? "Session \(sIndex + 1)"
+                    let childRow = SessionChildRowView(
+                        sessionIndex: sIndex,
+                        title: title
+                    )
+                    childRow.onClick = { [weak self] in
+                        self?.onSessionSelected?(i, sIndex)
+                    }
+                    sessionsStack.addArrangedSubview(childRow)
+                }
+                enginesGrid.addArrangedSubview(sessionsStack)
+            }
         }
         enginesSection.addArrangedSubview(enginesGrid)
         detailsStack.addArrangedSubview(enginesSection)
@@ -364,7 +421,9 @@ final class EmptyStateView: NSView {
         let sessionRow = EngineRowView.createStaticRow(label: "Switch Session",
                                                    modifiers: appShortcuts.sessionDigitsModifiers,
                                                    secondaryModifiers: appShortcuts.sessionDigitsAlternateModifiers,
-                                                   digitText: "1...0")
+                                                   digitText: "1...0",
+                                                   hasSessions: false,
+                                                   sessionCount: 0)
         sessionsSection.addArrangedSubview(sessionRow)
         detailsStack.addArrangedSubview(sessionsSection)
         
@@ -405,20 +464,20 @@ private final class EngineRowView: NSView {
     private var isHovered = false { didSet { updateHighlight() } }
     private var isPressed = false { didSet { updateHighlight() } }
 
-    init(label: String, modifiers: UInt, secondaryModifiers: UInt?, digitText: String) {
+    init(label: String, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int) {
         super.init(frame: .zero)
-        setup(label: label, modifiers: modifiers, secondaryModifiers: secondaryModifiers, digitText: digitText)
+        setup(label: label, modifiers: modifiers, secondaryModifiers: secondaryModifiers, digitText: digitText, hasSessions: hasSessions, sessionCount: sessionCount)
     }
     
-    static func createStaticRow(label: String, modifiers: UInt, secondaryModifiers: UInt?, digitText: String) -> NSView {
-        let row = EngineRowView(label: label, modifiers: modifiers, secondaryModifiers: secondaryModifiers, digitText: digitText)
+    static func createStaticRow(label: String, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int) -> NSView {
+        let row = EngineRowView(label: label, modifiers: modifiers, secondaryModifiers: secondaryModifiers, digitText: digitText, hasSessions: hasSessions, sessionCount: sessionCount)
         row.onClick = nil 
         return row
     }
 
     required init?(coder: NSCoder) { fatalError() }
     
-    private func setup(label: String, modifiers: UInt, secondaryModifiers: UInt?, digitText: String) {
+    private func setup(label: String, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int) {
         wantsLayer = true
         layer?.cornerRadius = 10
         layer?.backgroundColor = NSColor(white: 0, alpha: 0.001).cgColor
@@ -437,18 +496,33 @@ private final class EngineRowView: NSView {
         
         let columnWidth: CGFloat = 160
         
+        // Left column stack: name label to align perfectly
+        let leftStack = NSStackView()
+        leftStack.orientation = .horizontal
+        leftStack.spacing = 8
+        leftStack.alignment = .centerY
+        leftStack.translatesAutoresizingMaskIntoConstraints = false
+        leftStack.widthAnchor.constraint(equalToConstant: columnWidth).isActive = true
+        
         let nameLabel = NSTextField(labelWithString: label)
-        nameLabel.font = .systemFont(ofSize: 14, weight: .medium)
-        nameLabel.textColor = .labelColor.withAlphaComponent(0.9)
+        if hasSessions {
+            nameLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+            nameLabel.textColor = .labelColor.withAlphaComponent(0.95)
+        } else {
+            nameLabel.font = .systemFont(ofSize: 14, weight: .medium)
+            nameLabel.textColor = .labelColor.withAlphaComponent(0.55) // softer color for inactive engines
+        }
         nameLabel.lineBreakMode = .byTruncatingTail
-        nameLabel.alignment = .right
+        nameLabel.alignment = .natural
         nameLabel.isEditable = false
         nameLabel.isSelectable = false
         nameLabel.drawsBackground = false
         nameLabel.isBezeled = false
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         nameLabel.widthAnchor.constraint(equalToConstant: columnWidth).isActive = true
-        contentStack.addArrangedSubview(nameLabel)
+        
+        leftStack.addArrangedSubview(nameLabel)
+        contentStack.addArrangedSubview(leftStack)
         
         let shortcutStack = NSStackView()
         shortcutStack.orientation = .horizontal
@@ -589,5 +663,151 @@ private final class KeyPillView: NSView {
         layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
         layer?.borderWidth = 1
         layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
+    }
+}
+
+private final class SessionChildRowView: NSView {
+    var onClick: (() -> Void)?
+    
+    private let highlightView = NSView()
+    private let contentStack = NSStackView()
+    private var isHovered = false { didSet { updateHighlight() } }
+    private var isPressed = false { didSet { updateHighlight() } }
+    
+    init(sessionIndex: Int, title: String) {
+        super.init(frame: .zero)
+        setup(sessionIndex: sessionIndex, title: title)
+    }
+    
+    required init?(coder: NSCoder) { fatalError() }
+    
+    private func setup(sessionIndex: Int, title: String) {
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.backgroundColor = NSColor(white: 0, alpha: 0.001).cgColor
+        
+        highlightView.wantsLayer = true
+        highlightView.layer?.cornerRadius = 8
+        highlightView.translatesAutoresizingMaskIntoConstraints = false
+        highlightView.alphaValue = 0
+        addSubview(highlightView)
+        
+        contentStack.orientation = .horizontal
+        contentStack.spacing = 24
+        contentStack.alignment = .centerY
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(contentStack)
+        
+        let columnWidth: CGFloat = 160
+        let indent: CGFloat = 16
+        
+        // Left column: contains the tabular index/dot/title layout
+        let leftStack = NSStackView()
+        leftStack.orientation = .horizontal
+        leftStack.spacing = 0
+        leftStack.alignment = .firstBaseline
+        leftStack.translatesAutoresizingMaskIntoConstraints = false
+        leftStack.widthAnchor.constraint(equalToConstant: columnWidth).isActive = true
+        
+        let textColor = NSColor.secondaryLabelColor.withAlphaComponent(0.8)
+        let font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        
+        // Indent spacer — pushes content inward from the engine name alignment line
+        let indentSpacer = NSView()
+        indentSpacer.translatesAutoresizingMaskIntoConstraints = false
+        indentSpacer.widthAnchor.constraint(equalToConstant: indent).isActive = true
+        leftStack.addArrangedSubview(indentSpacer)
+        
+        // Index number — right-aligned, fixed width so the dot always lands at the same x
+        let indexLabel = NSTextField(labelWithString: "\(sessionIndex + 1)")
+        indexLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        indexLabel.textColor = textColor
+        indexLabel.alignment = .right
+        indexLabel.isEditable = false
+        indexLabel.isSelectable = false
+        indexLabel.drawsBackground = false
+        indexLabel.isBezeled = false
+        indexLabel.translatesAutoresizingMaskIntoConstraints = false
+        indexLabel.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        indexLabel.setContentHuggingPriority(.required, for: .horizontal)
+        indexLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        leftStack.addArrangedSubview(indexLabel)
+        
+        // Dot separator — fixed position
+        let dotLabel = NSTextField(labelWithString: ".")
+        dotLabel.font = font
+        dotLabel.textColor = textColor
+        dotLabel.alignment = .center
+        dotLabel.isEditable = false
+        dotLabel.isSelectable = false
+        dotLabel.drawsBackground = false
+        dotLabel.isBezeled = false
+        dotLabel.translatesAutoresizingMaskIntoConstraints = false
+        dotLabel.setContentHuggingPriority(.required, for: .horizontal)
+        dotLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        leftStack.addArrangedSubview(dotLabel)
+        
+        // Title — left-aligned, fills remaining space, truncates tail
+        let titleLabel = NSTextField(labelWithString: " \(title)")
+        titleLabel.font = font
+        titleLabel.textColor = textColor
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.alignment = .natural
+        titleLabel.isEditable = false
+        titleLabel.isSelectable = false
+        titleLabel.drawsBackground = false
+        titleLabel.isBezeled = false
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        leftStack.addArrangedSubview(titleLabel)
+        
+        contentStack.addArrangedSubview(leftStack)
+        
+        // Empty right column placeholder to match EngineRowView layout exactly
+        let rightPlaceholder = NSView()
+        rightPlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        rightPlaceholder.widthAnchor.constraint(equalToConstant: columnWidth).isActive = true
+        contentStack.addArrangedSubview(rightPlaceholder)
+        
+        NSLayoutConstraint.activate([
+            highlightView.topAnchor.constraint(equalTo: topAnchor),
+            highlightView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            highlightView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            highlightView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            
+            contentStack.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            contentStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            contentStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            contentStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+        ])
+        
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self, userInfo: nil))
+    }
+    
+    private func updateHighlight() {
+        highlightView.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(isPressed ? 0.08 : 0.04).cgColor
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            highlightView.animator().alphaValue = (isHovered || isPressed) ? 1 : 0
+        }
+    }
+    
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+    
+    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseExited(with event: NSEvent) { isHovered = false }
+    override func mouseDown(with event: NSEvent) { isPressed = true }
+    override func mouseUp(with event: NSEvent) {
+        if isPressed && isHovered { onClick?() }
+        isPressed = false
+    }
+    
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateHighlight()
     }
 }

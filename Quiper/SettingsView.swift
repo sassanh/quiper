@@ -86,6 +86,25 @@ struct GeneralSettingsView: View {
                     }
                 }
                 
+                SettingsSection(title: "Behavior") {
+                    SettingsToggleRow(
+                        title: "Automatically switch engines",
+                        message: "When you close the last session of an engine, automatically switch to the last active session of another engine instead of staying on the current engine.",
+                        isOn: $settings.automaticallySwitchEngineOnLastSessionClose
+                    )
+                    .onChange(of: settings.automaticallySwitchEngineOnLastSessionClose) { _, _ in
+                        settings.saveSettings()
+                    }
+                    SettingsToggleRow(
+                        title: "Auto-create session on engine activation",
+                        message: "When you switch to an engine that has no open sessions, automatically create a new session. When disabled, the empty state is shown instead.",
+                        isOn: $settings.autoCreateSessionOnEmptyEngineActivation
+                    )
+                    .onChange(of: settings.autoCreateSessionOnEmptyEngineActivation) { _, _ in
+                        settings.saveSettings()
+                    }
+                }
+                
                 SettingsSection(title: "Notifications") {
                     SettingsRow(
                         title: "Notification permission",

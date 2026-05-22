@@ -90,6 +90,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     // However, sticking to Any for storage is safe.
 
     private var titleObservation: NSKeyValueObservation?
+    private var sessionTitleObservations: [String: NSKeyValueObservation] = [:]
     var services: [Service] = []
     var currentServiceName: String?
     var currentServiceURL: String?
@@ -142,10 +143,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     
 
     deinit {
-        let bw = blurWindow
-        let win = window
-        if let bw = bw {
-            DispatchQueue.main.async { [weak win] in
+        MainActor.assumeIsolated {
+            let bw = blurWindow
+            let win = window
+            if let bw = bw {
                 win?.removeChildWindow(bw)
                 bw.orderOut(nil)
                 bw.close()
@@ -195,6 +196,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         emptyStateView.onEngineSelected = { [weak self] index in
             self?.selectService(at: index)
         }
+        emptyStateView.onSessionSelected = { [weak self] svcIndex, sessionIndex in
+            guard let self = self, self.services.indices.contains(svcIndex) else { return }
+            let service = self.services[svcIndex]
+            self.activeIndicesByURL[service.url] = sessionIndex
+            self.selectService(at: svcIndex)
+        }
         emptyStateView.isHidden = true
         contentView.addSubview(emptyStateView)
         
@@ -231,11 +238,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     var activeWebView: WKWebView? {
+        guard let manager = webViewManager else { return nil }
         guard let service = currentService(),
               let index = activeIndicesByURL[service.url] else {
             return nil
         }
-        return getOrCreateWebview(for: service, sessionIndex: index)
+        return manager.getWebView(for: service, sessionIndex: index)
     }
     
     /// Wait for the next navigation to complete on the specified WebView.
@@ -420,12 +428,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
+    private var isEmptyStateActive: Bool {
+        return emptyStateView != nil && !emptyStateView.isHidden
+    }
+
     func currentWebView() -> WKWebView? {
+        guard let manager = webViewManager else { return nil }
         guard let service = currentService(),
               let index = activeIndicesByURL[service.url] else {
             return nil
         }
-        return getOrCreateWebview(for: service, sessionIndex: index)
+        return manager.getWebView(for: service, sessionIndex: index)
     }
 
     func show() {
@@ -630,6 +643,91 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if isControl && isShift && key == "q" {
             NSApp.terminate(nil)
             return true
+        }
+
+        // If empty state is active, block and ignore irrelevant in-app shortcuts
+        if isEmptyStateActive {
+            // 1. Allow service activation shortcuts (digits or global hotkeys) or session-selection shortcuts
+            if let service = services.first(where: { $0.activationShortcut == config }) {
+                selectService(withURL: service.url)
+                return true
+            }
+            if let digit = digitValue(for: keyCode) {
+                if (appShortcuts.sessionDigitsModifiers > 0 && modifiers.rawValue == appShortcuts.sessionDigitsModifiers) ||
+                    (appShortcuts.sessionDigitsAlternateModifiers.map { $0 > 0 && modifiers.rawValue == $0 } ?? false) {
+                    let index = digit == 0 ? 9 : digit - 1
+                    // Explicit user action — always create the session even if auto-create is off
+                    guard let service = currentService() else { return true }
+                    activeIndicesByURL[service.url] = index
+                    hideEmptyState()
+                    let webView = getOrCreateWebview(for: service, sessionIndex: index)
+                    webViewManager.hideAll()
+                    webViewManager.showSession(webView)
+                    if let zoom = Settings.shared.serviceZoomLevels[service.url] {
+                        webViewManager.applyZoom(zoom, for: service.url)
+                    }
+                    updateTitleLabel(from: webView)
+                    observeNavigationState(of: webView)
+                    updateSessionSelector()
+                    window?.makeFirstResponder(webView)
+                    focusInputInActiveWebview()
+                    return true
+                }
+
+                let targetIndex: Int? = {
+                    if digit == 0 {
+                        return services.count >= 10 ? 9 : nil
+                    }
+                    return (1...services.count).contains(digit) ? digit - 1 : nil
+                }()
+                if appShortcuts.serviceDigitsPrimaryModifiers > 0 && modifiers.rawValue == appShortcuts.serviceDigitsPrimaryModifiers {
+                    if let idx = targetIndex {
+                        selectService(at: idx)
+                        return true
+                    }
+                }
+                if let secondary = appShortcuts.serviceDigitsSecondaryModifiers,
+                   secondary > 0,
+                   modifiers.rawValue == secondary {
+                    if let idx = targetIndex {
+                        selectService(at: idx)
+                        return true
+                    }
+                }
+            }
+            
+            // 2. Allow stepping service (next/previous service)
+            if matches(config, appShortcuts.configuration(for: .nextService)) || matches(config, appShortcuts.alternateConfiguration(for: .nextService)) {
+                stepService(by: 1)
+                return true
+            }
+            if matches(config, appShortcuts.configuration(for: .previousService)) || matches(config, appShortcuts.alternateConfiguration(for: .previousService)) {
+                stepService(by: -1)
+                return true
+            }
+            
+            // 3. Allow standard app-level shortcuts (Cmd+M to toggle size, Cmd+H/Cmd+Q to hide, Cmd+, for Settings)
+            if isCommand {
+                switch key {
+                case "m":
+                    toggleWindowSize()
+                    return true
+                case "h", "q":
+                    hide()
+                    return true
+                case ",":
+                    NotificationCenter.default.post(name: .showSettings, object: nil)
+                    return true
+                default:
+                    break
+                }
+            }
+            
+            // 4. Consume/block all other in-app shortcuts (e.g. reload, zoom, find, sessions, inspector, custom actions)
+            if isCommand || isControl || isOption {
+                return true
+            }
+            return false
         }
 
         // Check App Bindings
@@ -1113,7 +1211,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func dragAreaPositionChanged() {
-        guard let contentView = window?.contentView else { return }
+        guard (window?.contentView) != nil else { return }
         windowMarginView?.setRevealed(false, edge: .none, animated: false)
         windowOutlineView?.setRevealed(false, edge: .none, animated: false)
         
@@ -1541,7 +1639,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             backgroundEffectView?.isHidden = false
             backgroundEffectView?.material = themeSettings.material.nsMaterial
             contentColorView?.isHidden = true
-  
+
         case .solidColor:
             backgroundEffectView?.isHidden = true
             contentColorView?.isHidden = true
@@ -1782,7 +1880,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         // Navigation button group (immediately after service selector)
         let navGroupWidth = navigationButtonGroup.idealWidth
-        let showNav = !navigationButtonGroup.isHidden && navGroupWidth > 0
+        let showNav = !isEmptyStateActive && !navigationButtonGroup.isHidden && navGroupWidth > 0
         
         let leftSideMaxX: CGFloat
         if showNav {
@@ -1796,6 +1894,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             leftSideMaxX = navigationButtonGroup.frame.maxX
         } else {
             leftSideMaxX = serviceSel.frame.maxX
+            navigationButtonGroup.isHidden = true
         }
         
         // Refresh/Stop button (immediately before session selector)
@@ -1809,6 +1908,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             width: rsButtonSize,
             height: rsButtonSize
         )
+        if isEmptyStateActive {
+            refreshStopButton.isHidden = true
+        } else {
+            refreshStopButton.isHidden = false
+        }
         let rightSideMinX = refreshStopButton.frame.minX
         
         // Calculate title area width
@@ -1827,7 +1931,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 width: titleWidth,
                 height: selectorHeight
             )
-            borderView.isHidden = shouldHideTitleArea || !borderView.isAnimating
+            borderView.isHidden = isEmptyStateActive || shouldHideTitleArea || !borderView.isAnimating
         }
         
         // Title label positioned inside the border with padding
@@ -1867,6 +1971,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         // If this was a new instantiation, refresh the selector display
         if !wasInstantiated {
+            setupSessionTitleObserver(for: service, sessionIndex: sessionIndex, webView: webView)
             refreshInstantiationState()
         }
         
@@ -1881,6 +1986,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Also refresh regular SegmentedControls
         serviceSelector?.needsDisplay = true
         sessionSelector?.needsDisplay = true
+        
+        // Refresh empty state directory if active
+        updateEmptyStateShortcuts()
     }
 
     private func currentService() -> Service? {
@@ -1903,6 +2011,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard let service = currentService(), webViewManager != nil else { return }
         
         let activeIndex = activeIndicesByURL[service.url] ?? 0
+        
+        // If the engine has no instantiated sessions and auto-create is disabled, show empty state
+        let hasAnySession = (0..<10).contains { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }
+        if !hasAnySession && !Settings.shared.autoCreateSessionOnEmptyEngineActivation {
+            webViewManager.hideAll()
+            showEmptyState()
+            return
+        }
         
         // Hide empty state and all existing webviews
         hideEmptyState()
@@ -2154,8 +2270,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         }
 
-        sessionSelector?.selectedSegment = segmentIdx
-        collapsibleSessionSelector?.selectedSegment = segmentIdx
+        // If empty state is active, deselect session segments — no session is actually shown
+        if isEmptyStateActive {
+            sessionSelector?.selectedSegment = -1
+            collapsibleSessionSelector?.selectedSegment = -1
+        } else {
+            sessionSelector?.selectedSegment = segmentIdx
+            collapsibleSessionSelector?.selectedSegment = segmentIdx
+        }
         sessionSelector?.needsDisplay = true
         collapsibleSessionSelector?.needsDisplay = true
     }
@@ -2201,7 +2323,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let currentServiceIndex = services.firstIndex(where: { $0.url == service.url }) ?? 0
 
         // Remove the current webview
-        webViewManager.removeWebView(for: service, sessionIndex: currentSession)
+        removeWebViewAndCleanObserver(for: service, sessionIndex: currentSession)
 
         let remainingSessionsCount = (0..<10).filter { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }.count
         if remainingSessionsCount == 0 {
@@ -2229,30 +2351,32 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return
         }
 
-        // 3 & 4: Search other services — left first, then right
-        let leftServices  = stride(from: currentServiceIndex - 1, through: 0, by: -1).map { services[$0] }
-        let rightServices = stride(from: currentServiceIndex + 1, to: services.count, by: 1).map { services[$0] }
+        if Settings.shared.automaticallySwitchEngineOnLastSessionClose {
+            // 3 & 4: Search other services — left first, then right
+            let leftServices  = stride(from: currentServiceIndex - 1, through: 0, by: -1).map { services[$0] }
+            let rightServices = stride(from: currentServiceIndex + 1, to: services.count, by: 1).map { services[$0] }
 
-        for svc in (leftServices + rightServices) {
-            // Prefer the previously active session for this service (user heuristic: return
-            // to where you left off). Only fall back to nearest if that session was closed.
-            let activeSession = activeIndicesByURL[svc.url] ?? 0
-            let targetSession: Int?
-            if webViewManager.getWebView(for: svc, sessionIndex: activeSession) != nil {
-                targetSession = activeSession
-            } else {
-                targetSession = nearestInstantiatedSession(in: svc)
-            }
-            if let session = targetSession {
-                let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
-                activeIndicesByURL[svc.url] = session
-                selectService(at: svcIndex)
-                refreshInstantiationState()
-                return
+            for svc in (leftServices + rightServices) {
+                // Prefer the previously active session for this service (user heuristic: return
+                // to where you left off). Only fall back to nearest if that session was closed.
+                let activeSession = activeIndicesByURL[svc.url] ?? 0
+                let targetSession: Int?
+                if webViewManager.getWebView(for: svc, sessionIndex: activeSession) != nil {
+                    targetSession = activeSession
+                } else {
+                    targetSession = nearestInstantiatedSession(in: svc)
+                }
+                if let session = targetSession {
+                    let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
+                    activeIndicesByURL[svc.url] = session
+                    selectService(at: svcIndex)
+                    refreshInstantiationState()
+                    return
+                }
             }
         }
 
-        // 5: Fallback — nothing else is instantiated; show empty state
+        // 5: Fallback — nothing else is instantiated or stay in current engine; show empty state
         showEmptyState()
         refreshInstantiationState()
     }
@@ -2268,7 +2392,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let currentSession = activeIndicesByURL[service.url] ?? 0
         
         // Remove the webview
-        webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
+        removeWebViewAndCleanObserver(for: service, sessionIndex: sessionIndex)
         
         let remainingSessionsCount = (0..<10).filter { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }.count
         if remainingSessionsCount == 0 {
@@ -2292,30 +2416,32 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 return
             }
             
-            // No other session in this service — try other services
-            let currentServiceIndex = services.firstIndex(where: { $0.url == service.url }) ?? 0
-            let leftServices  = stride(from: currentServiceIndex - 1, through: 0, by: -1).map { services[$0] }
-            let rightServices = stride(from: currentServiceIndex + 1, to: services.count, by: 1).map { services[$0] }
-            
-            for svc in (leftServices + rightServices) {
-                let activeSession = activeIndicesByURL[svc.url] ?? 0
-                if webViewManager.getWebView(for: svc, sessionIndex: activeSession) != nil {
-                    let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
-                    selectService(at: svcIndex)
-                    refreshInstantiationState()
-                    return
-                }
-                // Check any instantiated session in this service
-                if let anySession = (0..<10).first(where: { webViewManager.getWebView(for: svc, sessionIndex: $0) != nil }) {
-                    let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
-                    activeIndicesByURL[svc.url] = anySession
-                    selectService(at: svcIndex)
-                    refreshInstantiationState()
-                    return
+            if Settings.shared.automaticallySwitchEngineOnLastSessionClose {
+                // No other session in this service — try other services
+                let currentServiceIndex = services.firstIndex(where: { $0.url == service.url }) ?? 0
+                let leftServices  = stride(from: currentServiceIndex - 1, through: 0, by: -1).map { services[$0] }
+                let rightServices = stride(from: currentServiceIndex + 1, to: services.count, by: 1).map { services[$0] }
+                
+                for svc in (leftServices + rightServices) {
+                    let activeSession = activeIndicesByURL[svc.url] ?? 0
+                    if webViewManager.getWebView(for: svc, sessionIndex: activeSession) != nil {
+                        let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
+                        selectService(at: svcIndex)
+                        refreshInstantiationState()
+                        return
+                    }
+                    // Check any instantiated session in this service
+                    if let anySession = (0..<10).first(where: { webViewManager.getWebView(for: svc, sessionIndex: $0) != nil }) {
+                        let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
+                        activeIndicesByURL[svc.url] = anySession
+                        selectService(at: svcIndex)
+                        refreshInstantiationState()
+                        return
+                    }
                 }
             }
             
-            // Nothing else instantiated — show empty state
+            // Nothing else instantiated or staying in current engine — show empty state
             showEmptyState()
         }
         
@@ -2337,7 +2463,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if instantiatedSessions.count == 1, currentServiceURL == service.url {
             // Only one session, and this is the current service — close directly
             let sessionIndex = instantiatedSessions[0]
-            webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
+            removeWebViewAndCleanObserver(for: service, sessionIndex: sessionIndex)
             activeIndicesByURL[service.url] = 0
             
             // Navigate away to nearest service
@@ -2378,7 +2504,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         for sessionIndex in 0..<10 {
             if webViewManager.getWebView(for: service, sessionIndex: sessionIndex) != nil {
-                webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
+                removeWebViewAndCleanObserver(for: service, sessionIndex: sessionIndex)
             }
         }
         activeIndicesByURL[service.url] = 0
@@ -2426,16 +2552,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         titleLabel?.stringValue = ""
         
-        // Deselect all selectors — no segment should be highlighted
-        serviceSelector?.selectedSegment = -1
+        // Keep active engine highlighted, but deselect sessions
+        if let service = currentService(),
+           let idx = services.firstIndex(where: { $0.url == service.url }) {
+            serviceSelector?.selectedSegment = idx
+            collapsibleServiceSelector?.selectedSegment = idx
+        } else {
+            serviceSelector?.selectedSegment = -1
+            collapsibleServiceSelector?.selectedSegment = -1
+        }
         sessionSelector?.selectedSegment = -1
-        collapsibleServiceSelector?.selectedSegment = -1
         collapsibleSessionSelector?.selectedSegment = -1
         
         serviceSelector?.needsDisplay = true
         sessionSelector?.needsDisplay = true
-        
-        layoutSelectors()
         
         // Position and show
         if let contentView = window?.contentView {
@@ -2445,8 +2575,49 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             contentView.addSubview(emptyStateView, positioned: .above, relativeTo: nil)
         }
         
-        emptyStateView.updateShortcuts(services: services, appShortcuts: Settings.shared.appShortcutBindings)
+        updateEmptyStateShortcuts(force: true)
         emptyStateView.isHidden = false
+        
+        layoutSelectors()
+    }
+    
+    private func updateEmptyStateShortcuts(force: Bool = false) {
+        guard force || !emptyStateView.isHidden else { return }
+        var openSessions: [String: [Int: String]] = [:]
+        for service in services {
+            var activeSessions: [Int: String] = [:]
+            for idx in 0..<10 {
+                if webViewManager != nil, let webView = webViewManager.getWebView(for: service, sessionIndex: idx) {
+                    let title = webView.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    activeSessions[idx] = (title == nil || title!.isEmpty) ? "Session \(idx + 1)" : title!
+                }
+            }
+            openSessions[service.url] = activeSessions
+        }
+        
+        emptyStateView.updateShortcuts(
+            services: services,
+            appShortcuts: Settings.shared.appShortcutBindings,
+            openSessions: openSessions,
+            activeEngineName: currentService()?.name
+        )
+    }
+    
+    private func setupSessionTitleObserver(for service: Service, sessionIndex: Int, webView: WKWebView) {
+        let key = "\(service.url)_\(sessionIndex)"
+        guard sessionTitleObservations[key] == nil else { return }
+        
+        sessionTitleObservations[key] = webView.observe(\.title, options: [.new]) { [weak self] _, _ in
+            DispatchQueue.main.async {
+                self?.updateEmptyStateShortcuts()
+            }
+        }
+    }
+    
+    private func removeWebViewAndCleanObserver(for service: Service, sessionIndex: Int) {
+        webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
+        let key = "\(service.url)_\(sessionIndex)"
+        sessionTitleObservations[key] = nil
     }
     
     /// Hide the empty state view (called when a session becomes active).
