@@ -24,6 +24,7 @@
 
 ### Fixed
 
+- **Single Source of Truth for Session Instantiation**: Unified all session switching and creation routines into `switchSession(to:)` as a Single Source of Truth. Resolved a critical bug where clicking a session number in the segment selector during the empty state page was ignored due to redundant preference checks inside `updateActiveWebview()`. Clicking a session segment now correctly forces instantiation and cleanly transitions out of the empty state, matching keyboard shortcut behavior exactly and eliminating duplicated logic blocks in `handleCommandShortcut()`.
 - **Swift 6 Strict Concurrency Warning Compliance**: Refactored `ServiceDetailView` async tasks and `FaviconFetcher` to safely pass Sendable `Data` and copyable `UUID` keys across actor boundaries instead of non-Sendable `@Binding var service` references or AppKit `NSImage` objects. Fully isolated all graphics-context rendering blocks to `@MainActor`.
 - **Empty State Missing Variable Compilation**: Restored the accidentally deleted `labelText` definition inside the engine enumeration loop of `EmptyStateView.swift` to resolve compiler errors and restore correct engine and session count labels.
 - **Empty State Alignment & RTL Safety**: Added dynamic layout-direction-aware edge insets and `.natural` text alignments to both `EngineRowView` and `SessionChildRowView`, ensuring perfect natural alignment for both LTR and RTL directions. Introduced explicit, instant header centering calculations on engine shifts before any scroll occurs, avoiding off-center text alignment.

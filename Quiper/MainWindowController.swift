@@ -288,6 +288,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func switchSession(to index: Int) {
+        switchSession(to: index, forceCreate: true)
+    }
+
+    private func switchSession(to index: Int, forceCreate: Bool) {
         guard let service = currentService() else { return }
         let bounded = max(0, min(index, 9))
         activeIndicesByURL[service.url] = bounded
@@ -306,7 +310,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             NSAccessibility.post(element: sel, notification: .valueChanged)
         }
         
-        updateActiveWebview()
+        updateActiveWebview(focusWebView: true, forceCreate: forceCreate)
         layoutSelectors() // Re-layout after session change to update selector width
         
         showHeaderTemporarily()
@@ -656,21 +660,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 if (appShortcuts.sessionDigitsModifiers > 0 && modifiers.rawValue == appShortcuts.sessionDigitsModifiers) ||
                     (appShortcuts.sessionDigitsAlternateModifiers.map { $0 > 0 && modifiers.rawValue == $0 } ?? false) {
                     let index = digit == 0 ? 9 : digit - 1
-                    // Explicit user action — always create the session even if auto-create is off
-                    guard let service = currentService() else { return true }
-                    activeIndicesByURL[service.url] = index
-                    hideEmptyState()
-                    let webView = getOrCreateWebview(for: service, sessionIndex: index)
-                    webViewManager.hideAll()
-                    webViewManager.showSession(webView)
-                    if let zoom = Settings.shared.serviceZoomLevels[service.url] {
-                        webViewManager.applyZoom(zoom, for: service.url)
-                    }
-                    updateTitleLabel(from: webView)
-                    observeNavigationState(of: webView)
-                    updateSessionSelector()
-                    window?.makeFirstResponder(webView)
-                    focusInputInActiveWebview()
+                    switchSession(to: index)
                     return true
                 }
 
@@ -2012,14 +2002,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return services.first
     }
 
-    private func updateActiveWebview(focusWebView: Bool = true) {
+    private func updateActiveWebview(focusWebView: Bool = true, forceCreate: Bool = false) {
         guard let service = currentService(), webViewManager != nil else { return }
         
         let activeIndex = activeIndicesByURL[service.url] ?? 0
         
         // If the engine has no instantiated sessions and auto-create is disabled, show empty state
+        // Unless we are forcing creation (explicit user action like shortcut or selector click)
         let hasAnySession = (0..<10).contains { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }
-        if !hasAnySession && !Settings.shared.autoCreateSessionOnEmptyEngineActivation {
+        if !hasAnySession && !Settings.shared.autoCreateSessionOnEmptyEngineActivation && !forceCreate {
             webViewManager.hideAll()
             showEmptyState()
             return
