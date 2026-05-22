@@ -2,6 +2,16 @@ import Foundation
 import AppKit
 
 final class FaviconFetcher {
+    private static let session: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        return URLSession(configuration: configuration, delegate: FaviconFetcherSessionDelegate.shared, delegateQueue: nil)
+    }()
+
+    private static func isLocalHost(_ host: String) -> Bool {
+        let lower = host.lowercased()
+        return lower == "localhost" || lower == "127.0.0.1" || lower.hasSuffix(".local")
+    }
+
     /// Attempts to fetch a favicon for the given URL string.
     /// Tries HTML parsing -> /favicon.ico -> Google Favicon API fallback.
     /// Returns a base64 PNG string of a 32x32 scaled version of the image.
@@ -17,15 +27,17 @@ final class FaviconFetcher {
             }
         }
         
-        // 2. Try direct /favicon.ico fetch
-        if let directFaviconUrl = URL(string: "https://\(host)/favicon.ico") {
+        // 2. Try direct /favicon.ico fetch, preserving the original scheme and port
+        let portStr = url.port != nil ? ":\(url.port!)" : ""
+        let scheme = url.scheme ?? "https"
+        if let directFaviconUrl = URL(string: "\(scheme)://\(host)\(portStr)/favicon.ico") {
             if let base64 = await downloadAndResizeImage(from: directFaviconUrl) {
                 return base64
             }
         }
         
-        // 3. Fall back to Google's highly reliable Favicon API
-        if let googleApiUrl = URL(string: "https://www.google.com/s2/favicons?sz=64&domain=\(host)") {
+        // 3. Fall back to Google's highly reliable Favicon API (skip for local hosts)
+        if !isLocalHost(host), let googleApiUrl = URL(string: "https://www.google.com/s2/favicons?sz=64&domain=\(host)") {
             if let base64 = await downloadAndResizeImage(from: googleApiUrl) {
                 return base64
             }
@@ -34,13 +46,18 @@ final class FaviconFetcher {
         return nil
     }
     
-    /// Normalizes URL string by prepending https:// if scheme is missing
+    /// Normalizes URL string by prepending http:// or https:// if scheme is missing
     private static func normalizeURL(_ urlString: String) -> URL? {
         var normalized = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return nil }
         
         if !normalized.lowercased().hasPrefix("http://") && !normalized.lowercased().hasPrefix("https://") {
-            normalized = "https://" + normalized
+            let lower = normalized.lowercased()
+            if lower.hasPrefix("localhost") || lower.hasPrefix("127.0.0.1") {
+                normalized = "http://" + normalized
+            } else {
+                normalized = "https://" + normalized
+            }
         }
         
         return URL(string: normalized)
@@ -52,7 +69,7 @@ final class FaviconFetcher {
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 5.0
         
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await session.data(for: request),
               let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200,
               let html = String(data: data, encoding: .utf8) else {
@@ -120,7 +137,8 @@ final class FaviconFetcher {
             return URL(string: "https:" + href)
         } else if href.hasPrefix("/") {
             guard let scheme = url.scheme, let host = url.host else { return nil }
-            return URL(string: "\(scheme)://\(host)\(href)")
+            let portStr = url.port != nil ? ":\(url.port!)" : ""
+            return URL(string: "\(scheme)://\(host)\(portStr)\(href)")
         } else if href.lowercased().hasPrefix("http://") || href.lowercased().hasPrefix("https://") {
             return URL(string: href)
         } else {
@@ -135,7 +153,7 @@ final class FaviconFetcher {
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 5.0
         
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await session.data(for: request),
               let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
             return nil
@@ -168,5 +186,26 @@ final class FaviconFetcher {
         }
         
         return pngData.base64EncodedString()
+    }
+}
+
+final class FaviconFetcherSessionDelegate: NSObject, URLSessionDelegate {
+    static let shared = FaviconFetcherSessionDelegate()
+    
+    func urlSession(
+        _ session: URLSession,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+           let serverTrust = challenge.protectionSpace.serverTrust {
+            let host = challenge.protectionSpace.host.lowercased()
+            if host == "localhost" || host == "127.0.0.1" || host.hasSuffix(".local") {
+                // Allow self-signed or invalid certs on local connections
+                completionHandler(.useCredential, URLCredential(trust: serverTrust))
+                return
+            }
+        }
+        completionHandler(.performDefaultHandling, nil)
     }
 }

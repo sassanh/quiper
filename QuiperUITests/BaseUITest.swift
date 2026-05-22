@@ -86,21 +86,24 @@ class BaseUITest: XCTestCase {
     
     /// Switch to a specific Settings tab
     func switchToSettingsTab(_ tabName: String) {
-        // Try to find the tab button by label
+        let settingsWindow = app.windows["Quiper Settings"]
+        let target: XCUIElement = settingsWindow.exists ? settingsWindow : app!
+        
+        // Try to find the tab button by label inside target window/app
         // SwiftUI tabs often appear as buttons or radio buttons
-        let tabButton = app.buttons[tabName]
+        let tabButton = target.buttons[tabName]
         
         if tabButton.exists {
             tabButton.click()
         } else {
             // Try searching for any element with the tab name that is clickable
             // This handles cases where the tab might be a different element type
-            let anyTabElement = app.descendants(matching: .any).matching(identifier: tabName).firstMatch
+            let anyTabElement = target.descendants(matching: .any).matching(identifier: tabName).firstMatch
             if anyTabElement.exists {
                 anyTabElement.click()
             } else {
                 // Fallback: Try to find by label predicate
-                let labelMatch = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", tabName)).firstMatch
+                let labelMatch = target.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", tabName)).firstMatch
                 if labelMatch.exists {
                     labelMatch.click()
                 } else {

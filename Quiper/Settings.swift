@@ -1270,7 +1270,7 @@ class Settings: ObservableObject {
             body, div.app>div, div.bg-white:has(form #chat-input-container) {
               background-color: transparent !important;
             }
-            """
+            """,
         ),
         Service(
             name: "Google",
@@ -1289,6 +1289,16 @@ class Settings: ObservableObject {
               background-color: transparent !important;
             }
             """
+        ),
+        Service(
+            name: "llama.cpp",
+            url: "http://localhost:8080",
+            focus_selector: "textarea",
+        ),
+        Service(
+            name: "oMLX",
+            url: "http://localhost:8000",
+            focus_selector: "textarea",
         )
     ]
 
@@ -1300,6 +1310,22 @@ class Settings: ObservableObject {
     }
 
     func enrichMissingIconsIfNeeded() {
+        var localUpdated = false
+        for idx in 0..<services.count {
+            if services[idx].iconBase64 == nil && services[idx].iconManuallyUnset != true {
+                if let defaultMatch = defaultEngines.first(where: { $0.name.lowercased() == services[idx].name.lowercased() }),
+                   let defaultB64 = defaultMatch.iconBase64 {
+                    services[idx].iconBase64 = defaultB64
+                    localUpdated = true
+                }
+            }
+        }
+        
+        if localUpdated {
+            self.saveSettings()
+            NotificationCenter.default.post(name: .servicesIconsUpdated, object: nil)
+        }
+
         let enginesWithMissingIcons = services.filter { $0.iconBase64 == nil && $0.iconManuallyUnset != true && !$0.url.isEmpty }
         guard !enginesWithMissingIcons.isEmpty else { return }
         
