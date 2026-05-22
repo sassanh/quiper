@@ -383,6 +383,7 @@ final class EmptyStateView: NSView {
             let digit = (i + 1) % 10
             let labelText = hasSessions ? "\(service.name) (\(openSessionDict.count))" : service.name
             let row = EngineRowView(label: labelText, 
+                                  iconBase64: service.iconBase64,
                                   modifiers: appShortcuts.serviceDigitsPrimaryModifiers, 
                                   secondaryModifiers: appShortcuts.serviceDigitsSecondaryModifiers,
                                   digitText: "\(digit)",
@@ -464,20 +465,20 @@ private final class EngineRowView: NSView {
     private var isHovered = false { didSet { updateHighlight() } }
     private var isPressed = false { didSet { updateHighlight() } }
 
-    init(label: String, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int) {
+    init(label: String, iconBase64: String?, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int) {
         super.init(frame: .zero)
-        setup(label: label, modifiers: modifiers, secondaryModifiers: secondaryModifiers, digitText: digitText, hasSessions: hasSessions, sessionCount: sessionCount)
+        setup(label: label, iconBase64: iconBase64, modifiers: modifiers, secondaryModifiers: secondaryModifiers, digitText: digitText, hasSessions: hasSessions, sessionCount: sessionCount)
     }
     
     static func createStaticRow(label: String, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int) -> NSView {
-        let row = EngineRowView(label: label, modifiers: modifiers, secondaryModifiers: secondaryModifiers, digitText: digitText, hasSessions: hasSessions, sessionCount: sessionCount)
+        let row = EngineRowView(label: label, iconBase64: nil, modifiers: modifiers, secondaryModifiers: secondaryModifiers, digitText: digitText, hasSessions: hasSessions, sessionCount: sessionCount)
         row.onClick = nil 
         return row
     }
 
     required init?(coder: NSCoder) { fatalError() }
     
-    private func setup(label: String, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int) {
+    private func setup(label: String, iconBase64: String?, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int) {
         wantsLayer = true
         layer?.cornerRadius = 10
         layer?.backgroundColor = NSColor(white: 0, alpha: 0.001).cgColor
@@ -504,6 +505,27 @@ private final class EngineRowView: NSView {
         leftStack.translatesAutoresizingMaskIntoConstraints = false
         leftStack.widthAnchor.constraint(equalToConstant: columnWidth).isActive = true
         
+        // Dynamic Favicon / Globe Icon View
+        let iconView = NSImageView()
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        iconView.heightAnchor.constraint(equalToConstant: 18).isActive = true
+        
+        if let base64 = iconBase64,
+           let data = Data(base64Encoded: base64),
+           let nsImage = NSImage(data: data) {
+            iconView.image = nsImage
+        } else {
+            let symbolConfig = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+            if let defaultImage = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)?
+                .withSymbolConfiguration(symbolConfig) {
+                defaultImage.isTemplate = true
+                iconView.image = defaultImage
+                iconView.contentTintColor = .secondaryLabelColor.withAlphaComponent(0.6)
+            }
+        }
+        leftStack.addArrangedSubview(iconView)
+        
         let nameLabel = NSTextField(labelWithString: label)
         if hasSessions {
             nameLabel.font = .systemFont(ofSize: 14, weight: .semibold)
@@ -519,7 +541,7 @@ private final class EngineRowView: NSView {
         nameLabel.drawsBackground = false
         nameLabel.isBezeled = false
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
-        nameLabel.widthAnchor.constraint(equalToConstant: columnWidth).isActive = true
+        nameLabel.widthAnchor.constraint(equalToConstant: columnWidth - 26).isActive = true
         
         leftStack.addArrangedSubview(nameLabel)
         contentStack.addArrangedSubview(leftStack)

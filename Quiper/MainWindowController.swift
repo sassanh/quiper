@@ -1526,6 +1526,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleColorSchemeChanged), name: .colorSchemeChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettings), name: .settingsWindowDidOpen, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleCloseSettings), name: .settingsWindowDidClose, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleServicesIconsUpdated), name: .servicesIconsUpdated, object: nil)
         
         // Observe window width for Auto mode
         if let window = self.window {
@@ -1575,6 +1576,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     
     @objc private func handleColorSchemeChanged(_ notification: Notification) {
         applyColorScheme()
+    }
+    
+    @objc private func handleServicesIconsUpdated(_ notification: Notification) {
+        refreshServiceSegments()
     }
     
     @objc private func handleShowSettings(_ notification: Notification) {

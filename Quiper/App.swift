@@ -22,6 +22,7 @@ extension Notification.Name {
     static let windowDidHide = Notification.Name("QuiperWindowDidHide")
     static let settingsWindowDidOpen = Notification.Name("QuiperSettingsWindowDidOpen")
     static let settingsWindowDidClose = Notification.Name("QuiperSettingsWindowDidClose")
+    static let servicesIconsUpdated = Notification.Name("QuiperServicesIconsUpdated")
 }
 
 @objc protocol StandardEditActions {

@@ -557,11 +557,84 @@ struct ServiceDetailView: View {
 
     @EnvironmentObject var shortcutState: ShortcutRecordingState
     
+    @State private var isHoveringIcon = false
+    @State private var currentFetchTask: Task<Void, Never>? = nil
+    @FocusState private var isUrlFieldFocused: Bool
+
     var body: some View {
         VStack {
-            Form {
-                TextField("Name", text: $service.name)
-                TextField("URL", text: $service.url)
+            HStack(alignment: .center, spacing: 16) {
+                // Interactive Icon Picker Button Menu
+                Menu {
+                    Button("Choose File...") {
+                        chooseCustomIconFile()
+                    }
+                    Button("Fetch Automatically") {
+                        Task {
+                            await autoFetchIcon()
+                        }
+                    }
+                    if service.iconBase64 != nil {
+                        Button("Remove Icon", role: .destructive) {
+                            service.iconBase64 = nil
+                            service.iconManuallyUnset = true
+                            settings.saveSettings()
+                            NotificationCenter.default.post(name: .servicesIconsUpdated, object: nil)
+                        }
+                    }
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color(NSColor.controlBackgroundColor))
+                            .frame(width: 64, height: 64)
+                            .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 1)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(isHoveringIcon ? Color.accentColor : Color.secondary.opacity(0.2), lineWidth: 1.5)
+                            )
+                        
+                        if let iconBase64 = service.iconBase64,
+                           let data = Data(base64Encoded: iconBase64),
+                           let nsImage = NSImage(data: data) {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .interpolation(.high)
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 40, height: 40)
+                                .cornerRadius(6)
+                        } else {
+                            Image(systemName: "globe")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 28, height: 28)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        if isHoveringIcon {
+                            ZStack {
+                                Color.black.opacity(0.4)
+                                    .cornerRadius(12)
+                                Image(systemName: "pencil")
+                                    .foregroundColor(.white)
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
+                        }
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .buttonStyle(.plain)
+                .frame(width: 64, height: 64)
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isHoveringIcon = hovering
+                    }
+                }
+                
+                Form {
+                    TextField("Name", text: $service.name)
+                    TextField("URL", text: $service.url)
+                        .focused($isUrlFieldFocused)
+                }
             }
             .padding()
             
@@ -580,6 +653,87 @@ struct ServiceDetailView: View {
         }
         .onDisappear {
             shortcutState.cancel()
+        }
+        .onChange(of: service.url) { _, newUrl in
+            guard service.iconBase64 == nil && service.iconManuallyUnset != true else { return }
+            guard !newUrl.isEmpty else { return }
+            
+            let serviceID = service.id
+            currentFetchTask?.cancel()
+            currentFetchTask = Task {
+                do {
+                    try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second debounce
+                    if Task.isCancelled { return }
+                    
+                    guard newUrl.contains(".") else { return }
+                    
+                    if let base64 = await FaviconFetcher.fetchFavicon(for: newUrl) {
+                        if let idx = settings.services.firstIndex(where: { $0.id == serviceID }) {
+                            if settings.services[idx].url == newUrl && settings.services[idx].iconBase64 == nil && settings.services[idx].iconManuallyUnset != true {
+                                settings.services[idx].iconBase64 = base64
+                                settings.saveSettings()
+                                NotificationCenter.default.post(name: .servicesIconsUpdated, object: nil)
+                            }
+                        }
+                    }
+                } catch {
+                    // Task was cancelled
+                }
+            }
+        }
+        .onChange(of: isUrlFieldFocused) { _, isFocused in
+            if !isFocused {
+                guard service.iconBase64 == nil && service.iconManuallyUnset != true else { return }
+                guard !service.url.isEmpty && service.url.contains(".") else { return }
+                
+                let serviceID = service.id
+                let targetUrl = service.url
+                currentFetchTask?.cancel()
+                Task {
+                    if let base64 = await FaviconFetcher.fetchFavicon(for: targetUrl) {
+                        if let idx = settings.services.firstIndex(where: { $0.id == serviceID }) {
+                            if settings.services[idx].iconBase64 == nil && settings.services[idx].iconManuallyUnset != true {
+                                settings.services[idx].iconBase64 = base64
+                                settings.saveSettings()
+                                NotificationCenter.default.post(name: .servicesIconsUpdated, object: nil)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func chooseCustomIconFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.image, .png, .jpeg]
+        
+        if panel.runModal() == .OK, let url = panel.url {
+            if let data = try? Data(contentsOf: url),
+               let base64 = FaviconFetcher.resizeAndEncodePNG(data: data) {
+                service.iconBase64 = base64
+                service.iconManuallyUnset = false
+                settings.saveSettings()
+                NotificationCenter.default.post(name: .servicesIconsUpdated, object: nil)
+            }
+        }
+    }
+
+    @MainActor
+    private func autoFetchIcon() async {
+        let url = service.url
+        let serviceID = service.id
+        guard !url.isEmpty else { return }
+        if let base64 = await FaviconFetcher.fetchFavicon(for: url) {
+            if let idx = settings.services.firstIndex(where: { $0.id == serviceID }) {
+                settings.services[idx].iconBase64 = base64
+                settings.services[idx].iconManuallyUnset = false
+                settings.saveSettings()
+                NotificationCenter.default.post(name: .servicesIconsUpdated, object: nil)
+            }
         }
     }
 

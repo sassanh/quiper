@@ -4,6 +4,16 @@
 
 ### Added
 
+- **Engine Icon Management System**: Implemented a comprehensive engine icon management architecture, supporting dynamic Visual Identification for custom browser engines.
+- **High-Reliability FaviconFetcher**: Built an asynchronous, multi-tiered favicon resolution engine in [FaviconFetcher.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/FaviconFetcher.swift) that scrapes website HTML for custom icon links, checks direct `/favicon.ico` endpoints, and falls back to the Google Favicon API, auto-resizing images to 32x32 pixels and converting them to PNG-encoded base64 strings.
+- **Background Startup Enrichment**: Added automated backfilling of legacy engines' icons on application startup in [Settings.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Settings.swift), running non-intrusively in background tasks.
+- **SwiftUI Interactive Icon Selector**: Created a premium, hover-interactive icon picker in [ServiceDetailView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift) supporting:
+  - File picker for manual uploads (`.png`, `.jpeg`, `.image` formats).
+  - One-click automatic scraping trigger.
+  - Debounced (1s) auto-fetching while typing URLs.
+  - Focus-loss trigger for immediate URL resolution.
+  - Option to manually remove icons and unset them.
+- **Dynamic Empty State Favicons**: Enhanced [EngineRowView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/EmptyStateView.swift) to dynamically decode and render configured base64 icons at the leading edge of directory items, falling back gracefully to a system symbol (`globe`) when none is set.
 - **Engine Activation Preferences**: Added a new setting `autoCreateSessionOnEmptyEngineActivation` (default `true`) allowing users to choose whether switching to an engine with no open sessions immediately instantiates a new session or displays the clean empty state directory instead. Explicit user actions like session digit shortcuts (Cmd+1...9) bypass this check to force session creation.
 
 ### Changed
@@ -14,6 +24,8 @@
 
 ### Fixed
 
+- **Swift 6 Strict Concurrency Warning Compliance**: Refactored `ServiceDetailView` async tasks and `FaviconFetcher` to safely pass Sendable `Data` and copyable `UUID` keys across actor boundaries instead of non-Sendable `@Binding var service` references or AppKit `NSImage` objects. Fully isolated all graphics-context rendering blocks to `@MainActor`.
+- **Empty State Missing Variable Compilation**: Restored the accidentally deleted `labelText` definition inside the engine enumeration loop of `EmptyStateView.swift` to resolve compiler errors and restore correct engine and session count labels.
 - **Empty State Alignment & RTL Safety**: Added dynamic layout-direction-aware edge insets and `.natural` text alignments to both `EngineRowView` and `SessionChildRowView`, ensuring perfect natural alignment for both LTR and RTL directions. Introduced explicit, instant header centering calculations on engine shifts before any scroll occurs, avoiding off-center text alignment.
 - **Session Selector Stale State**: Resolved an issue where selecting an engine with no open sessions could show the last active session of that engine as active in the session segmented control. The session selector is now cleanly deselected (set to `-1`) whenever the empty state is active.
 - **Dynamic Theme Synchronization**: Resolved a synchronization failure where the [EmptyStateView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/EmptyStateView.swift)'s labels, icons, hover highlights, and shortcut key pills did not dynamically adapt to system appearance changes (light/dark mode shift) or manual theme overrides without an application restart. Refactored the static key pill layout into a reactive `KeyPillView` subclass, added `viewDidChangeEffectiveAppearance()` overrides to the subview hierarchy, and enabled automatic, dynamic reconstruction of the empty state layout on appearance transitions.

@@ -13,6 +13,8 @@ struct Service: Codable, Identifiable {
     var activationShortcut: HotkeyManager.Configuration?
     var customCSS: String?
     var friendDomains: [String] = []
+    var iconBase64: String?
+    var iconManuallyUnset: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -23,6 +25,8 @@ struct Service: Codable, Identifiable {
         case activationShortcut
         case friendDomains
         case customCSS
+        case iconBase64
+        case iconManuallyUnset
     }
 
     init(id: UUID = UUID(),
@@ -32,7 +36,9 @@ struct Service: Codable, Identifiable {
          actionScripts: [UUID: String] = [:],
          activationShortcut: HotkeyManager.Configuration? = nil,
          friendDomains: [String] = [],
-         customCSS: String? = nil) {
+         customCSS: String? = nil,
+         iconBase64: String? = nil,
+         iconManuallyUnset: Bool? = nil) {
         self.id = id
         self.name = name
         self.url = url
@@ -41,6 +47,8 @@ struct Service: Codable, Identifiable {
         self.activationShortcut = activationShortcut
         self.friendDomains = friendDomains
         self.customCSS = customCSS
+        self.iconBase64 = iconBase64
+        self.iconManuallyUnset = iconManuallyUnset
     }
 
     init(from decoder: Decoder) throws {
@@ -53,6 +61,8 @@ struct Service: Codable, Identifiable {
         activationShortcut = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .activationShortcut)
         friendDomains = try container.decodeIfPresent([String].self, forKey: .friendDomains) ?? []
         customCSS = try container.decodeIfPresent(String.self, forKey: .customCSS)
+        iconBase64 = try container.decodeIfPresent(String.self, forKey: .iconBase64)
+        iconManuallyUnset = try container.decodeIfPresent(Bool.self, forKey: .iconManuallyUnset)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -72,6 +82,12 @@ struct Service: Codable, Identifiable {
         }
         if let customCSS, !customCSS.isEmpty {
             try container.encode(customCSS, forKey: .customCSS)
+        }
+        if let iconBase64 {
+            try container.encode(iconBase64, forKey: .iconBase64)
+        }
+        if let iconManuallyUnset {
+            try container.encode(iconManuallyUnset, forKey: .iconManuallyUnset)
         }
     }
 }
@@ -1280,6 +1296,37 @@ class Settings: ObservableObject {
 
     init() {
         _ = loadSettings()
+        enrichMissingIconsIfNeeded()
+    }
+
+    func enrichMissingIconsIfNeeded() {
+        let enginesWithMissingIcons = services.filter { $0.iconBase64 == nil && $0.iconManuallyUnset != true && !$0.url.isEmpty }
+        guard !enginesWithMissingIcons.isEmpty else { return }
+        
+        Task(priority: .background) {
+            var fetchedIcons: [UUID: String] = [:]
+            for service in enginesWithMissingIcons {
+                if let base64 = await FaviconFetcher.fetchFavicon(for: service.url) {
+                    fetchedIcons[service.id] = base64
+                }
+            }
+            
+            if !fetchedIcons.isEmpty {
+                await MainActor.run {
+                    var updated = false
+                    for (id, base64) in fetchedIcons {
+                        if let idx = self.services.firstIndex(where: { $0.id == id }) {
+                            self.services[idx].iconBase64 = base64
+                            updated = true
+                        }
+                    }
+                    if updated {
+                        self.saveSettings()
+                        NotificationCenter.default.post(name: .servicesIconsUpdated, object: nil)
+                    }
+                }
+            }
+        }
     }
 
     func loadSettings() -> [Service] {
