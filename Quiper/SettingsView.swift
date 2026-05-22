@@ -363,7 +363,20 @@ struct ServicesSettingsView: View {
         List(selection: $selectedServiceID) {
             ForEach(settings.services) { service in
                 HStack {
-                    Image(systemName: "globe")
+                    if let base64 = service.iconBase64,
+                       let data = Data(base64Encoded: base64),
+                       let nsImage = NSImage(data: data) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 16, height: 16)
+                            .cornerRadius(3)
+                    } else {
+                        Image(systemName: "globe")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 16, height: 16)
+                    }
                     Text(service.name)
                 }
                 .tag(service.id)

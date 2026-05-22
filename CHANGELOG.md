@@ -16,6 +16,7 @@
 - **Dynamic Empty State Favicons**: Enhanced [EngineRowView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/EmptyStateView.swift) to dynamically decode and render configured base64 icons at the leading edge of directory items, falling back gracefully to a system symbol (`globe`) when none is set.
 - **Engine Activation Preferences**: Added a new setting `autoCreateSessionOnEmptyEngineActivation` (default `true`) allowing users to choose whether switching to an engine with no open sessions immediately instantiates a new session or displays the clean empty state directory instead. Explicit user actions like session digit shortcuts (Cmd+1...9) bypass this check to force session creation.
 - **Local AI Engines**: Integrated `llama.cpp` (running on `http://localhost:8080`) and `oMLX` (running on `http://localhost:8000`) into the default engines registry in [Settings.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Settings.swift).
+- **Settings Sidebar Favicons**: Replaced the hardcoded generic "globe" icon in the Settings sidebar list with each engine's dynamically-resolved base64 favicon in [SettingsView.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift), utilizing a graceful system fallback if no icon is set.
 
 ### Changed
 
