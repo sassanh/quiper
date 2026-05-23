@@ -17,6 +17,7 @@
 - **Engine Activation Preferences**: Added a new setting `autoCreateSessionOnEmptyEngineActivation` (default `true`) allowing users to choose whether switching to an engine with no open sessions immediately instantiates a new session or displays the clean empty state directory instead. Explicit user actions like session digit shortcuts (Cmd+1...9) bypass this check to force session creation.
 - **Local AI Engines**: Integrated `llama.cpp` (running on `http://localhost:8080`) and `oMLX` (running on `http://localhost:8000`) into the default engines registry in [Settings.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Settings.swift).
 - **Settings Sidebar Favicons**: Replaced the hardcoded generic "globe" icon in the Settings sidebar list with each engine's dynamically-resolved base64 favicon in [SettingsView.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift), utilizing a graceful system fallback if no icon is set.
+- **Automatic Template Favicon Fetching**: Implemented automatic favicon enrichment when adding a service in [SettingsView.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift)—either solo from a template or in bulk via `"Add All Templates"`. Individual template additions trigger immediate async fetches, while bulk additions cleanly batch and coalesce into a single unified fetch call at the end of the operation, avoiding concurrent duplicate task spawning.
 
 ### Changed
 

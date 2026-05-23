@@ -451,7 +451,7 @@ struct ServicesSettingsView: View {
         selectedServiceID = newService.id
     }
     
-    private func addService(from template: Service) {
+    private func addService(from template: Service, enrichIcons: Bool = true) {
         var service = template
         service.id = UUID()
         service.actionScripts = [:]
@@ -459,15 +459,23 @@ struct ServicesSettingsView: View {
         settings.services.append(service)
         selectedServiceID = service.id
         settings.saveSettings()
+        if enrichIcons {
+            settings.enrichMissingIconsIfNeeded()
+        }
     }
     
     private func addAllTemplates() {
         var knownNames = Set(settings.services.map { $0.name.lowercased() })
+        var addedAny = false
         for template in settings.defaultServiceTemplates {
             let key = template.name.lowercased()
             guard !knownNames.contains(key) else { continue }
-            addService(from: template)
+            addService(from: template, enrichIcons: false)
             knownNames.insert(key)
+            addedAny = true
+        }
+        if addedAny {
+            settings.enrichMissingIconsIfNeeded()
         }
     }
     
