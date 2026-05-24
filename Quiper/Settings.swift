@@ -1273,6 +1273,26 @@ class Settings: ObservableObject {
             """,
         ),
         Service(
+            name: "llama.cpp",
+            url: "http://localhost:8080",
+            focus_selector: "[data-slot='input-area'] textarea.text-md",
+            customCSS: """
+            body {
+              background-color: transparent !important;
+            }
+            """
+        ),
+        Service(
+            name: "oMLX",
+            url: "http://localhost:8000/admin/chat",
+            focus_selector: ".input-container textarea",
+            customCSS: """
+            html {
+              --bg-primary: transparent !important;
+            }
+            """
+        ),
+        Service(
             name: "Google",
             url: "https://www.google.com?referrer=https://github.io/sassanh/quiper",
             focus_selector: "textarea, input[type='search']",
@@ -1289,16 +1309,6 @@ class Settings: ObservableObject {
               background-color: transparent !important;
             }
             """
-        ),
-        Service(
-            name: "llama.cpp",
-            url: "http://localhost:8080",
-            focus_selector: "textarea",
-        ),
-        Service(
-            name: "oMLX",
-            url: "http://localhost:8000",
-            focus_selector: "textarea",
         )
     ]
 

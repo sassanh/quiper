@@ -10,6 +10,7 @@
 ### Changed
 
 - **Icon Picker Menu**: Refactor picker into a unified 64x64 plain Menu button.
+- **Local AI Templates**: Updated custom CSS transparency rules and input focus selectors for `oMLX` and `llama.cpp`.
 
 ### Fixed
 
