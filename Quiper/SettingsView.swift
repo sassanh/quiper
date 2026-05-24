@@ -617,6 +617,8 @@ struct ServiceDetailView: View {
                         if let iconBase64 = service.iconBase64,
                            let data = Data(base64Encoded: iconBase64),
                            let nsImage = NSImage(data: data) {
+                            // Explicitly set size to 40x40 points so native AppKit drawing is perfectly scaled!
+                            let _ = { nsImage.size = NSSize(width: 40, height: 40) }()
                             Image(nsImage: nsImage)
                                 .resizable()
                                 .interpolation(.high)
@@ -631,22 +633,26 @@ struct ServiceDetailView: View {
                                 .foregroundColor(.secondary)
                         }
                         
-                        if isHoveringIcon {
-                            ZStack {
-                                Color.black.opacity(0.4)
-                                    .cornerRadius(12)
-                                Image(systemName: "pencil")
-                                    .foregroundColor(.white)
-                                    .font(.system(size: 16, weight: .semibold))
+                        // Tiny, elegant disclosure indicator in the bottom-right corner
+                        VStack {
+                            Spacer()
+                            HStack {
+                                Spacer()
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundColor(.secondary.opacity(0.8))
+                                    .padding(5)
                             }
                         }
                     }
+                    .frame(width: 64, height: 64)
+                    .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
                 .buttonStyle(.plain)
+                .menuIndicator(.hidden) // Hides default centered chevron
                 .frame(width: 64, height: 64)
                 .onHover { hovering in
-                    withAnimation(.easeInOut(duration: 0.15)) {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
                         isHoveringIcon = hovering
                     }
                 }
@@ -661,7 +667,50 @@ struct ServiceDetailView: View {
             
             Divider()
             
-            advancedPane
+            // Layout below the divider handles floating hover preview seamlessly
+            ZStack(alignment: .topLeading) {
+                advancedPane
+                
+                if isHoveringIcon,
+                   let iconBase64 = service.iconBase64,
+                   let data = Data(base64Encoded: iconBase64),
+                   let nsImage = NSImage(data: data) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("High-Res Preview")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.secondary)
+                        
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color(NSColor.controlBackgroundColor))
+                                .frame(width: 160, height: 160)
+                                .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                            
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .interpolation(.high)
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 140, height: 140)
+                                .cornerRadius(8)
+                        }
+                    }
+                    .padding(12)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(16)
+                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                    )
+                    .padding(.leading, 24)
+                    .padding(.top, 16)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.92, anchor: .topLeading)),
+                        removal: .opacity.combined(with: .scale(scale: 0.95, anchor: .topLeading))
+                    ))
+                    .zIndex(100)
+                }
+            }
             
             Spacer()
         }
@@ -734,7 +783,7 @@ struct ServiceDetailView: View {
         
         if panel.runModal() == .OK, let url = panel.url {
             if let data = try? Data(contentsOf: url),
-               let base64 = FaviconFetcher.resizeAndEncodePNG(data: data) {
+               let base64 = FaviconFetcher.encodePNG(data: data) {
                 service.iconBase64 = base64
                 service.iconManuallyUnset = false
                 settings.saveSettings()

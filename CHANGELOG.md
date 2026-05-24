@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Dual-Logo Empty State**: Display active engine icon next to Quiper logo.
+- **Self-Healing Favicons**: Automatically scraper-upgrade blurry icons (<96px).
+
+### Changed
+
+- **Icon Picker Menu**: Refactor picker into a unified 64x64 plain Menu button.
+
+### Fixed
+
+- **Favicon Resolution**: Support SVG/base64 inline data URIs, force IPv4 for localhost, and fix Grok/squircle color template clipping.
+
 ## [3.2.0] - 2026-05-23
 
 ### Added

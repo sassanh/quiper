@@ -39,6 +39,8 @@ final class EmptyStateView: NSView {
 
     private let headerContainer = FlippedView()
     private let iconView = NSImageView()
+    private let activeEngineIconView = NSImageView()
+    private var activeEngineIcon: NSImage? = nil
     private let messageLabel = NSTextField(labelWithString: "No open sessions")
     private let hintLabel = NSTextField(labelWithString: "Use a shortcut or click an engine to start")
     
@@ -76,8 +78,15 @@ final class EmptyStateView: NSView {
         addSubview(headerContainer) // Above scrollview in z-order
         
         headerContainer.addSubview(iconView)
+        headerContainer.addSubview(activeEngineIconView)
         headerContainer.addSubview(messageLabel)
         headerContainer.addSubview(hintLabel)
+        
+        activeEngineIconView.imageScaling = .scaleProportionallyUpOrDown
+        activeEngineIconView.wantsLayer = true
+        activeEngineIconView.layer?.cornerRadius = 8
+        activeEngineIconView.layer?.masksToBounds = true
+        activeEngineIconView.isHidden = true
         
         if let logo = loadLogo() {
             logo.isTemplate = true
@@ -287,6 +296,8 @@ final class EmptyStateView: NSView {
     }
     
     private func layoutHeader(progress: CGFloat, isWide: Bool) {
+        let hasActiveIcon = activeEngineIcon != nil
+        
         if isWide {
             let logoS: CGFloat = 100
             messageLabel.font = .systemFont(ofSize: 32, weight: .bold)
@@ -299,7 +310,16 @@ final class EmptyStateView: NSView {
             var y = (bounds.height - totalH) / 2
             let headerW = headerContainer.bounds.width
             
-            iconView.frame = NSRect(x: (headerW - logoS) / 2, y: y, width: logoS, height: logoS)
+            if hasActiveIcon {
+                let spacing: CGFloat = 24
+                let totalLogoW = logoS + spacing + logoS
+                let startX = (headerW - totalLogoW) / 2
+                
+                iconView.frame = NSRect(x: startX, y: y, width: logoS, height: logoS)
+                activeEngineIconView.frame = NSRect(x: startX + logoS + spacing, y: y, width: logoS, height: logoS)
+            } else {
+                iconView.frame = NSRect(x: (headerW - logoS) / 2, y: y, width: logoS, height: logoS)
+            }
             y += logoS + 24
             
             messageLabel.frame = NSRect(x: (headerW - messageLabel.bounds.width) / 2, y: y, width: messageLabel.bounds.width, height: messageLabel.bounds.height)
@@ -324,7 +344,20 @@ final class EmptyStateView: NSView {
             let expTotalH = 100 + 24 + messageLabel.bounds.height + 8 + hintLabel.bounds.height
             let expStartY = (maxH - expTotalH) / 2
             
-            let expLogoX = (bounds.width - 100) / 2
+            let expLogoX: CGFloat
+            let expActiveLogoX: CGFloat
+            let spacing = lerp(from: 24, to: 10, p: progress)
+            
+            if hasActiveIcon {
+                let totalLogoW = CGFloat(100 * 2 + 24)
+                let startX = (bounds.width - totalLogoW) / 2
+                expLogoX = startX
+                expActiveLogoX = startX + 100 + 24
+            } else {
+                expLogoX = (bounds.width - 100) / 2
+                expActiveLogoX = expLogoX
+            }
+            
             let expLogoY = expStartY
             let expMsgX = (bounds.width - messageLabel.bounds.width) / 2
             let expMsgY = expLogoY + 100 + 24
@@ -332,8 +365,16 @@ final class EmptyStateView: NSView {
             let expHintY = expMsgY + messageLabel.bounds.height + 8
             
             let colLogoX: CGFloat = 24
+            let colActiveLogoX = colLogoX + 32 + spacing
             let colLogoY = (minH - 32) / 2
-            let colMsgX = colLogoX + 32 + 12
+            
+            let colMsgX: CGFloat
+            if hasActiveIcon {
+                colMsgX = colActiveLogoX + 32 + 12
+            } else {
+                colMsgX = colLogoX + 32 + 12
+            }
+            
             let colMsgY = (minH - messageLabel.bounds.height) / 2
             let colHintX = colMsgX
             let colHintY = colMsgY + messageLabel.bounds.height
@@ -341,6 +382,12 @@ final class EmptyStateView: NSView {
             iconView.frame = NSRect(x: lerp(from: expLogoX, to: colLogoX, p: progress),
                                     y: lerp(from: expLogoY, to: colLogoY, p: progress),
                                     width: logoS, height: logoS)
+            
+            if hasActiveIcon {
+                activeEngineIconView.frame = NSRect(x: lerp(from: expActiveLogoX, to: colActiveLogoX, p: progress),
+                                                    y: lerp(from: expLogoY, to: colLogoY, p: progress),
+                                                    width: logoS, height: logoS)
+            }
             
             messageLabel.frame = NSRect(x: lerp(from: expMsgX, to: colMsgX, p: progress),
                                         y: lerp(from: expMsgY, to: colMsgY, p: progress),
@@ -356,16 +403,115 @@ final class EmptyStateView: NSView {
         return from + (to - from) * p
     }
 
+    @MainActor
+    private static func isMonochromeAndTransparent(_ image: NSImage) -> Bool {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else {
+            return false
+        }
+        
+        let width = rep.pixelsWide
+        let height = rep.pixelsHigh
+        
+        let stepX = max(1, width / 64)
+        let stepY = max(1, height / 64)
+        
+        var totalSamples = 0
+        var opaqueSamples = 0
+        var hasTransparency = false
+        var isGrayscale = true
+        
+        for y in stride(from: 0, to: height, by: stepY) {
+            for x in stride(from: 0, to: width, by: stepX) {
+                let color = rep.colorAt(x: x, y: y) ?? .clear
+                let alpha = color.alphaComponent
+                totalSamples += 1
+                
+                if alpha < 0.95 {
+                    hasTransparency = true
+                } else {
+                    opaqueSamples += 1
+                }
+                
+                if alpha > 0.05 {
+                    let r = color.redComponent
+                    let g = color.greenComponent
+                    let b = color.blueComponent
+                    if abs(r - g) > 0.05 || abs(r - b) > 0.05 {
+                        isGrayscale = false
+                    }
+                }
+            }
+        }
+        
+        // If the image is mostly opaque (opaque pixels cover > 50% of the canvas),
+        // then it's a solid icon with just rounded/transparent corners (like Grok),
+        // not a template glyph. True template glyphs have mostly transparent backgrounds.
+        let opaqueRatio = Double(opaqueSamples) / Double(totalSamples)
+        let isMostlyOpaque = opaqueRatio > 0.50
+        
+        return hasTransparency && isGrayscale && !isMostlyOpaque
+    }
+
     func updateShortcuts(services: [Service],
                          appShortcuts: AppShortcutBindings,
                          openSessions: [String: [Int: String]] = [:],
-                         activeEngineName: String? = nil) {
+                         activeEngine: Service? = nil) {
         
-        if let name = activeEngineName {
-            messageLabel.stringValue = "No \(name) sessions"
+        if let engine = activeEngine {
+            messageLabel.stringValue = "No \(engine.name) sessions"
+            if let iconBase64 = engine.iconBase64,
+               let decodedData = Data(base64Encoded: iconBase64),
+               let iconImg = NSImage(data: decodedData) {
+                self.activeEngineIcon = iconImg
+                
+                // Self-healing: if the loaded icon is low-res (< 96x96 pixels), trigger a background refetch
+                var physicalWidth = iconImg.size.width
+                for rep in iconImg.representations {
+                    let w = CGFloat(rep.pixelsWide)
+                    if w > physicalWidth {
+                        physicalWidth = w
+                    }
+                }
+                
+                if physicalWidth < 96 {
+                    let serviceID = engine.id
+                    let serviceURL = engine.url
+                    Task(priority: .background) {
+                        if let newB64 = await FaviconFetcher.fetchFavicon(for: serviceURL) {
+                            await MainActor.run {
+                                if let idx = Settings.shared.services.firstIndex(where: { $0.id == serviceID }) {
+                                    Settings.shared.services[idx].iconBase64 = newB64
+                                    Settings.shared.saveSettings()
+                                    NotificationCenter.default.post(name: .servicesIconsUpdated, object: nil)
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if EmptyStateView.isMonochromeAndTransparent(iconImg) {
+                    iconImg.isTemplate = true
+                    self.activeEngineIconView.contentTintColor = .labelColor
+                } else {
+                    iconImg.isTemplate = false
+                    self.activeEngineIconView.contentTintColor = nil
+                }
+                
+                self.activeEngineIconView.image = iconImg
+                self.activeEngineIconView.isHidden = false
+            } else {
+                self.activeEngineIcon = nil
+                self.activeEngineIconView.image = nil
+                self.activeEngineIconView.isHidden = true
+            }
         } else {
             messageLabel.stringValue = "No open sessions"
+            self.activeEngineIcon = nil
+            self.activeEngineIconView.image = nil
+            self.activeEngineIconView.isHidden = true
         }
+        
         messageLabel.sizeToFit()
         
         // Immediately recalculate header layout and label centering for the new text length

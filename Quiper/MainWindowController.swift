@@ -2595,7 +2595,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             services: services,
             appShortcuts: Settings.shared.appShortcutBindings,
             openSessions: openSessions,
-            activeEngineName: currentService()?.name
+            activeEngine: currentService()
         )
     }
     
