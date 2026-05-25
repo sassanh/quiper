@@ -39,6 +39,16 @@ enum MenuFactory {
         let reloadItem = createMenuItem(title: "Reload", iconName: "arrow.clockwise", action: #selector(MainWindowController.reloadActiveWebView(_:)), keyEquivalent: "r")
         menu.addItem(reloadItem)
         
+        let forceReloadItem = createMenuItem(title: "Force Reload from Scratch", iconName: "arrow.clockwise", action: #selector(MainWindowController.reinstantiateActiveWebView(_:)), keyEquivalent: "r")
+        forceReloadItem.keyEquivalentModifierMask = [.command, .shift]
+        forceReloadItem.isAlternate = true
+        menu.addItem(forceReloadItem)
+        
+        let originReloadItem = createMenuItem(title: "Reload Page from Origin", iconName: "arrow.clockwise", action: #selector(MainWindowController.reloadActiveWebViewFromOrigin(_:)), keyEquivalent: "r")
+        originReloadItem.keyEquivalentModifierMask = [.command, .option]
+        originReloadItem.isAlternate = true
+        menu.addItem(originReloadItem)
+        
         let inspectorItem = createMenuItem(title: "Toggle Inspector", iconName: "ladybug", action: #selector(MainWindowController.performMenuToggleInspector(_:)), keyEquivalent: "i")
         inspectorItem.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(inspectorItem)

@@ -4,11 +4,15 @@
 
 ### Added
 
+- **Safari-style Force Reload and Origin Reload**: Added native alternate menu items and key equivalents:
+  - `Cmd+Shift+R` for "Force Reload from Scratch" which reinstantiates the browser tab (loading the initial URL from scratch).
+  - `Cmd+Opt+R` for "Reload Page from Origin" which bypasses the local cache on the current page using WebKit's native `reloadFromOrigin()`.
 - **Dual-Logo Empty State**: Display active engine icon next to Quiper logo.
 - **Self-Healing Favicons**: Automatically scraper-upgrade blurry icons (<96px).
 
 ### Changed
 
+- **Standard Page Reloading (`Cmd+R`)**: Updated the default `Cmd+R` behavior to refresh the current page using `webView.reload()` (which is exactly what the toolbar's Refresh button does), instead of instantiating/reloading the service from scratch.
 - **Icon Picker Menu**: Refactor picker into a unified 64x64 plain Menu button.
 - **Local AI Templates**: Updated custom CSS transparency rules and input focus selectors for `oMLX` and `llama.cpp`.
 

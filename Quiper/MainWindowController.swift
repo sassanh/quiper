@@ -792,8 +792,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             if key == "i" {
                 toggleInspector()
                 return true
+            } else if key == "r" {
+                // Allow Option+Command+R to fall through
+            } else {
+                return false
             }
-            return false
         }
 
         switch key {
@@ -813,7 +816,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             guard !isInspectorFocused() else {
                 return false
             }
-            reloadActiveWebView(nil)
+            if isShift {
+                reinstantiateActiveWebView(nil)
+            } else if isOption {
+                reloadActiveWebViewFromOrigin(nil)
+            } else {
+                reloadActiveWebView(nil)
+            }
             return true
         case "f":
             guard !isInspectorFocused() else {
@@ -2858,6 +2867,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc func reloadActiveWebView(_ sender: Any?) {
+        guard let webView = currentWebView() else { return }
+        webView.reload()
+    }
+
+    @objc func reloadActiveWebViewFromOrigin(_ sender: Any?) {
+        guard let webView = currentWebView() else { return }
+        webView.reloadFromOrigin()
+    }
+
+    @objc func reinstantiateActiveWebView(_ sender: Any?) {
         guard let service = currentService(),
               let webView = currentWebView(),
               let url = URL(string: service.url) else { return }
