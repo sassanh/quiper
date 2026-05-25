@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Unified Navigation Button Capsule**: Redesigned back/forward buttons so that when both are active, they seamlessly merge into a single premium rounded capsule divided by a clean vertical hairline separator, providing individual hover-segment highlights while staying perfectly clipped to the container's rounded corner geometries.
 - **Safari-style Force Reload and Origin Reload**: Added native alternate menu items and key equivalents:
   - `Cmd+Shift+R` for "Force Reload from Scratch" which reinstantiates the browser tab (loading the initial URL from scratch).
   - `Cmd+Opt+R` for "Reload Page from Origin" which bypasses the local cache on the current page using WebKit's native `reloadFromOrigin()`.

@@ -3159,7 +3159,7 @@ final class NavigationButtonGroup: NSView {
     private(set) var showForward = false
     
     private let buttonSize: CGFloat = 24
-    private let spacing: CGFloat = 2
+    private let spacing: CGFloat = 0
     
     private let backButton: HoverIconButton
     private let forwardButton: HoverIconButton
@@ -3201,7 +3201,16 @@ final class NavigationButtonGroup: NSView {
         backButton.isHidden = !showBack
         forwardButton.isHidden = !showForward
         
+        if showBack && showForward {
+            backButton.borderMode = .leftSegment
+            forwardButton.borderMode = .rightSegment
+        } else {
+            backButton.borderMode = .single
+            forwardButton.borderMode = .single
+        }
+        
         updateFrames()
+        needsDisplay = true
     }
     
     override func setFrameSize(_ newSize: NSSize) {
@@ -3225,6 +3234,28 @@ final class NavigationButtonGroup: NSView {
         if showBack && showForward { return buttonSize * 2 + spacing }
         if showBack || showForward { return buttonSize }
         return 0
+    }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        
+        if showBack && showForward {
+            let grayColor = NSColor.tertiaryLabelColor
+            grayColor.setStroke()
+            
+            // Draw a single unified border capsule around both buttons
+            let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
+            path.lineWidth = 1.0
+            path.stroke()
+            
+            // Draw the vertical separator in the middle
+            let separator = NSBezierPath()
+            let midX = bounds.width / 2
+            separator.move(to: NSPoint(x: midX, y: 0.5))
+            separator.line(to: NSPoint(x: midX, y: bounds.height - 0.5))
+            separator.lineWidth = 1.0
+            separator.stroke()
+        }
     }
     
     @objc private func backClicked() { onBack?() }
@@ -3304,6 +3335,16 @@ final class RefreshStopButton: HoverIconButton {
 
 class HoverIconButton: NSButton {
     
+    enum BorderMode {
+        case single
+        case leftSegment
+        case rightSegment
+    }
+    
+    var borderMode: BorderMode = .single {
+        didSet { needsDisplay = true }
+    }
+    
     private var trackingArea: NSTrackingArea?
     private var isHovered = false { didSet { needsDisplay = true } }
     private var isPressed = false { didSet { needsDisplay = true } }
@@ -3370,17 +3411,73 @@ class HoverIconButton: NSButton {
     override func draw(_ dirtyRect: NSRect) {
         let grayColor = NSColor.tertiaryLabelColor
         
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
+        let path: NSBezierPath
+        let shouldStroke: Bool
+        
+        switch borderMode {
+        case .single:
+            path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
+            shouldStroke = true
+        case .leftSegment:
+            let pathRect = NSRect(x: 0.5, y: 0.5, width: bounds.width - 0.5, height: bounds.height - 1.0)
+            path = NSBezierPath.roundedRect(pathRect, topLeft: 6, topRight: 0, bottomLeft: 6, bottomRight: 0)
+            shouldStroke = false
+        case .rightSegment:
+            let pathRect = NSRect(x: 0.0, y: 0.5, width: bounds.width - 0.5, height: bounds.height - 1.0)
+            path = NSBezierPath.roundedRect(pathRect, topLeft: 0, topRight: 6, bottomLeft: 0, bottomRight: 6)
+            shouldStroke = false
+        }
         
         if isHovered || isPressed {
             grayColor.setFill()
             path.fill()
         }
         
-        grayColor.setStroke()
-        path.lineWidth = 1.0
-        path.stroke()
+        if shouldStroke {
+            grayColor.setStroke()
+            path.lineWidth = 1.0
+            path.stroke()
+        }
         
         super.draw(dirtyRect)
+    }
+}
+
+private extension NSBezierPath {
+    static func roundedRect(_ rect: NSRect, topLeft: CGFloat, topRight: CGFloat, bottomLeft: CGFloat, bottomRight: CGFloat) -> NSBezierPath {
+        let path = NSBezierPath()
+        let minX = rect.minX
+        let maxX = rect.maxX
+        let minY = rect.minY
+        let maxY = rect.maxY
+        
+        path.move(to: NSPoint(x: minX + topLeft, y: maxY))
+        
+        // Top line and top-right corner
+        path.line(to: NSPoint(x: maxX - topRight, y: maxY))
+        if topRight > 0 {
+            path.appendArc(withCenter: NSPoint(x: maxX - topRight, y: maxY - topRight), radius: topRight, startAngle: 90, endAngle: 0, clockwise: true)
+        }
+        
+        // Right line and bottom-right corner
+        path.line(to: NSPoint(x: maxX, y: minY + bottomRight))
+        if bottomRight > 0 {
+            path.appendArc(withCenter: NSPoint(x: maxX - bottomRight, y: minY + bottomRight), radius: bottomRight, startAngle: 0, endAngle: 270, clockwise: true)
+        }
+        
+        // Bottom line and bottom-left corner
+        path.line(to: NSPoint(x: minX + bottomLeft, y: minY))
+        if bottomLeft > 0 {
+            path.appendArc(withCenter: NSPoint(x: minX + bottomLeft, y: minY + bottomLeft), radius: bottomLeft, startAngle: 270, endAngle: 180, clockwise: true)
+        }
+        
+        // Left line and top-left corner
+        path.line(to: NSPoint(x: minX, y: maxY - topLeft))
+        if topLeft > 0 {
+            path.appendArc(withCenter: NSPoint(x: minX + topLeft, y: maxY - topLeft), radius: topLeft, startAngle: 180, endAngle: 90, clockwise: true)
+        }
+        
+        path.close()
+        return path
     }
 }
