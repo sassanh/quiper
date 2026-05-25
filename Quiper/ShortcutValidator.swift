@@ -1,8 +1,8 @@
 import AppKit
 import Carbon
 
+@MainActor
 enum ShortcutValidator {
-    @MainActor
     static func allows(configuration: HotkeyManager.Configuration) -> Bool {
         let modifiers = NSEvent.ModifierFlags(rawValue: configuration.modifierFlags)
         let primary = modifiers.intersection([.command, .option, .control, .shift])
@@ -23,7 +23,6 @@ enum ShortcutValidator {
         return true
     }
 
-    @MainActor
     static func reservedActionName(modifiers rawModifiers: NSEvent.ModifierFlags, keyCode: UInt16, excludingActionId: UUID? = nil) -> String? {
         let modifiers = rawModifiers.intersection([.command, .option, .control, .shift])
         let config = HotkeyManager.Configuration(keyCode: UInt32(keyCode), modifierFlags: modifiers.rawValue)

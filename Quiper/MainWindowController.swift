@@ -151,8 +151,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 bw.orderOut(nil)
                 bw.close()
             }
+            removeObserver(self, forKeyPath: "window")
+            win?.removeObserver(self, forKeyPath: "effectiveAppearance")
+            NotificationCenter.default.removeObserver(self)
         }
-        NotificationCenter.default.removeObserver(self)
     }
 
 

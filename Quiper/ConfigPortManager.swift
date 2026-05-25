@@ -5,13 +5,13 @@ import UniformTypeIdentifiers
 /// Handles exporting and importing the full Quiper configuration as a single `.quiper` JSON file.
 /// The archive contains all settings (from `PersistedSettings`) plus every action script
 /// inlined from `ActionScriptStorage`, making it completely self-contained.
+@MainActor
 enum ConfigPortManager {
 
     private static let fileExtension = "quiper"
 
     // MARK: – Export
 
-    @MainActor
     static func exportConfig() throws -> Data {
         let settings = Settings.shared
         var ps = settings.makePersistedSettings()
@@ -55,7 +55,6 @@ enum ConfigPortManager {
 
     // MARK: – Import
 
-    @MainActor
     static func importConfig(from data: Data) throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601

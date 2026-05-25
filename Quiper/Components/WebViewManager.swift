@@ -2,12 +2,14 @@ import AppKit
 import WebKit
 import Combine
 
+@MainActor
 protocol WebViewManagerDelegate: AnyObject {
     func webViewDidUpdateTitle(_ title: String, for webView: WKWebView)
     func webViewDidUpdateLoading(_ isLoading: Bool, for webView: WKWebView)
     func webViewDidFinishNavigation(_ webView: WKWebView)
 }
 
+@MainActor
 final class WebViewManager: NSObject {
     weak var delegate: WebViewManagerDelegate?
     
@@ -183,7 +185,9 @@ final class WebViewManager: NSObject {
     func hideAll() {
         webviewsByURL.values.forEach { sessionMap in
             sessionMap.values.forEach { webView in
-                webView.superview?.isHidden = true
+                if let wrapper = webView.superview {
+                    wrapper.isHidden = true
+                }
             }
         }
     }
@@ -290,13 +294,15 @@ final class WebViewManager: NSObject {
     
     // MARK: - KVO
     
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+    nonisolated override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
         guard let webView = object as? WKWebView else { return }
         
-        if keyPath == "title" {
-            delegate?.webViewDidUpdateTitle(webView.title ?? "", for: webView)
-        } else if keyPath == "loading" {
-            delegate?.webViewDidUpdateLoading(webView.isLoading, for: webView)
+        MainActor.assumeIsolated {
+            if keyPath == "title" {
+                delegate?.webViewDidUpdateTitle(webView.title ?? "", for: webView)
+            } else if keyPath == "loading" {
+                delegate?.webViewDidUpdateLoading(webView.isLoading, for: webView)
+            }
         }
     }
     
@@ -311,6 +317,13 @@ final class WebViewManager: NSObject {
         webView.navigationDelegate = nil
 
         detachNotificationBridge(from: webView)
+
+        // Resume and clear any pending navigation continuation to prevent CheckedContinuation leaks
+        let token = ObjectIdentifier(webView)
+        if let continuation = navigationContinuations.removeValue(forKey: token) {
+            continuation.resume()
+        }
+        initialLoadAwaitingFocus.remove(token)
 
         // Clean user content controller to break configuration references
         webView.configuration.userContentController.removeAllUserScripts()
@@ -441,6 +454,7 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
                 webView.navigationDelegate = nil
                 webView.stopLoading()
                 webView.configuration.userContentController.removeAllUserScripts()
+                webView.removeFromSuperview()
             }
         }
         
@@ -464,6 +478,7 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
     }
 }
 
+@MainActor
 private final class PopupUIDelegate: NSObject, WKUIDelegate {
     static let shared = PopupUIDelegate()
     

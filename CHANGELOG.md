@@ -15,6 +15,7 @@
 ### Fixed
 
 - **Favicon Resolution**: Support SVG/base64 inline data URIs, force IPv4 for localhost, and fix Grok/squircle color template clipping.
+- **Concurrency & Memory Leak Fixes**: Isolated `WebViewManager`, `ConfigPortManager`, and `ShortcutValidator` to `@MainActor`, resolved KVO observer leaks in `MainWindowController.deinit`, and fixed `CheckedContinuation` leaks in `WebViewManager.tearDown`.
 
 ## [3.2.0] - 2026-05-23
 
