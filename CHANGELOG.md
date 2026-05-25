@@ -8,6 +8,10 @@
 - **Safari-style Force Reload and Origin Reload**: Added native alternate menu items and key equivalents:
   - `Cmd+Shift+R` for "Force Reload from Scratch" which reinstantiates the browser tab (loading the initial URL from scratch).
   - `Cmd+Opt+R` for "Reload Page from Origin" which bypasses the local cache on the current page using WebKit's native `reloadFromOrigin()`.
+- **Child-Window Integration for Dialogs**: Integrated `SettingsWindow` and `UpdatePromptWindow` directly into the `OverlayWindow` child-window hierarchy, making them natively hide and show together with the main application window.
+- **Unblocked Global Hotkeys**: Removed the hotkey-blocking checks when the settings window is active, allowing seamless toggling of the application visibility via global shortcuts.
+- **Automatic Focus Restoration**: Enhanced key window focus management so that whenever the application is unhidden, the settings or update dialog automatically re-acquires active keyboard focus.
+- **Double-Layered Modal Focus Defense**: Implemented `windowShouldBecomeKey` to return `false` when either settings or update prompt is active, ensuring the main window is barred from acquiring key focus. Updated `windowDidBecomeKey` focus redirection to close the child window loophole, preventing underlying web view keyboard interactions while dialogs are open.
 - **Dual-Logo Empty State**: Display active engine icon next to Quiper logo.
 - **Self-Healing Favicons**: Automatically scraper-upgrade blurry icons (<96px).
 

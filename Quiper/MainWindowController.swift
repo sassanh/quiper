@@ -2726,16 +2726,35 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateHeaderTrackingArea()
     }
 
-    func windowDidBecomeKey(_ notification: Notification) {
-        // If we have child windows (like login popups), don't redirect focus
-        if let childWindows = window?.childWindows, !childWindows.isEmpty {
-            return
+    func windowShouldBecomeKey(_ sender: NSWindow) -> Bool {
+        if AppDelegate.sharedSettingsWindow.isVisible {
+            return false
         }
+        if let updateWindow = UpdatePromptWindowController.shared.window, updateWindow.isVisible {
+            return false
+        }
+        return true
+    }
 
+    func windowDidBecomeKey(_ notification: Notification) {
         // If settings window is visible, redirect focus to it
         let settingsWindow = AppDelegate.sharedSettingsWindow
         if settingsWindow.isVisible {
             settingsWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        // If update window is visible, redirect focus to it
+        if let updateWindow = UpdatePromptWindowController.shared.window, updateWindow.isVisible {
+            updateWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        // If we have other child windows (like login popups), don't redirect focus
+        let otherChildWindows = window?.childWindows?.filter {
+            $0 != settingsWindow && $0 != UpdatePromptWindowController.shared.window
+        } ?? []
+        if !otherChildWindows.isEmpty {
             return
         }
         

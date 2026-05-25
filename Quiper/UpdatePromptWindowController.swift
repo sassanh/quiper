@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import MarkdownUI
 
-final class UpdatePromptWindowController: NSWindowController {
+final class UpdatePromptWindowController: NSWindowController, NSWindowDelegate {
     static let shared = UpdatePromptWindowController()
 
     private var hostingController: NSHostingController<UpdatePromptView>?
@@ -20,6 +20,7 @@ final class UpdatePromptWindowController: NSWindowController {
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.center()
         super.init(window: window)
+        window.delegate = self
     }
 
     required init?(coder: NSCoder) {
@@ -37,12 +38,28 @@ final class UpdatePromptWindowController: NSWindowController {
             window?.contentViewController = hosting
         }
         window?.title = "Software Update"
+
+        if let mainWindow = NSApp.windows.first(where: { $0 is OverlayWindow }) {
+            if window?.parent == nil, let window {
+                mainWindow.addChildWindow(window, ordered: .above)
+            }
+        }
+
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func dismissIfNeeded() {
+        if let parent = window?.parent, let window {
+            parent.removeChildWindow(window)
+        }
         window?.orderOut(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if let parent = window?.parent, let window {
+            parent.removeChildWindow(window)
+        }
     }
 }
 

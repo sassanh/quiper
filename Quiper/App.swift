@@ -121,6 +121,11 @@ final class AppController: NSObject, NSWindowDelegate {
         if visibility == .always || visibility == .whenVisible {
             NSApp.setActivationPolicy(.regular)
         }
+        if UpdatePromptWindowController.shared.window?.isVisible == true {
+            UpdatePromptWindowController.shared.window?.makeKeyAndOrderFront(nil)
+        } else if AppDelegate.sharedSettingsWindow.isVisible {
+            AppDelegate.sharedSettingsWindow.makeKeyAndOrderFront(nil)
+        }
         NotificationCenter.default.post(name: .appVisibilityChanged, object: true)
     }
 
@@ -128,9 +133,6 @@ final class AppController: NSObject, NSWindowDelegate {
         let visibility = Settings.shared.dockVisibility
         if visibility == .whenVisible {
             NSApp.setActivationPolicy(.accessory)
-        }
-        if AppDelegate.sharedSettingsWindow.isVisible == true {
-            dismissSettingsWindow()
         }
         activateLastKnownApplication()
         NotificationCenter.default.post(name: .appVisibilityChanged, object: false)
@@ -247,17 +249,23 @@ final class AppController: NSObject, NSWindowDelegate {
         
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.windowController.window?.makeKeyAndOrderFront(nil)
             
-            if let sheet = self.windowController.window?.attachedSheet {
-                sheet.makeKeyAndOrderFront(nil)
+            if UpdatePromptWindowController.shared.window?.isVisible == true {
+                UpdatePromptWindowController.shared.window?.makeKeyAndOrderFront(nil)
+            } else if AppDelegate.sharedSettingsWindow.isVisible {
+                AppDelegate.sharedSettingsWindow.makeKeyAndOrderFront(nil)
             } else {
-                // Make webview first responder so it receives keyboard events
-                if let webView = self.windowController.activeWebView {
-                    self.windowController.window?.makeFirstResponder(webView)
+                self.windowController.window?.makeKeyAndOrderFront(nil)
+                if let sheet = self.windowController.window?.attachedSheet {
+                    sheet.makeKeyAndOrderFront(nil)
+                } else {
+                    // Make webview first responder so it receives keyboard events
+                    if let webView = self.windowController.activeWebView {
+                        self.windowController.window?.makeFirstResponder(webView)
+                    }
+                    
+                    self.windowController.focusInputInActiveWebview()
                 }
-                
-                self.windowController.focusInputInActiveWebview()
             }
         }
         
@@ -363,9 +371,6 @@ final class AppController: NSObject, NSWindowDelegate {
     private func registerOverlayHotkey() {
         hotkeyManager.registerCurrentHotkey { [weak self] in
             guard let self else { return }
-            if AppDelegate.sharedSettingsWindow.isVisible && AppDelegate.sharedSettingsWindow.isKeyWindow {
-                return
-            }
             if self.windowController.window?.isVisible == true {
                 self.hideWindow(nil)
             } else {
@@ -397,9 +402,6 @@ final class AppController: NSObject, NSWindowDelegate {
             return
         }
         engineHotkeyManager.register(entries: entries) { [weak self] serviceID in
-            if AppDelegate.sharedSettingsWindow.isVisible && AppDelegate.sharedSettingsWindow.isKeyWindow {
-                return
-            }
             self?.activateService(for: serviceID)
         }
     }
