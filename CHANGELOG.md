@@ -26,6 +26,13 @@
 
 ### Changed
 
+- **CI/CD Delivery Format**: Migrated the release artifact packaging from `.zip` compression to a standard macOS DMG disk image (`.dmg`) using `hdiutil` in the delivery workflow, providing a native drag-to-install experience. Artifact attestations have been updated to sign the disk image.
+- **Documentation Refined (README Overhaul)**: 
+  - Completely rewrote the `README.md` opening hook and Highlights to focus aggressively on core user value propositions (Instant Overlay, Persistent Sessions, Biometric Sandboxing).
+  - Added a prominent **Verifiable Safety** section providing a copy-pasteable AI Audit Prompt, allowing users to verify the app is telemetry-free and cryptographically attested using their own trusted AI assistant.
+  - Added a strict **Local Protection Only** disclaimer to clarify that Biometric Storage encrypts *local* data on the Mac, but does not protect or encrypt server-side conversations sent to providers like OpenAI.
+  - Aggressively pruned boilerplate filler and useless technical explanations to keep the documentation sleek and impactful.
+
 - **Engine Settings Sidebar Reorganization & Secure Storage Migration ([SettingsView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift))**: 
   - Reorganized the advanced settings split-pane sidebar into clear, structured categories with **Storage & Security** positioned as the first category, followed by `Routing`, `Customization`, and `Custom Actions`. All items feature premium SF Symbol icons.
   - Set the default selection on entering engine settings to **Secure Storage** for a seamless, immediate look at security parameters.
@@ -165,7 +172,7 @@
 
 ### Added
 
-- **Build Provenance Attestation**: All release builds are now stamped with a GitHub artifact attestation — a cryptographically signed record linking the binary to the exact source commit and workflow run that produced it. Verify any release zip with `gh attestation verify Quiper.app.zip --repo sassanh/quiper`.
+- **Build Provenance Attestation**: All release builds are now stamped with a GitHub artifact attestation — a cryptographically signed record linking the binary to the exact source commit and workflow run that produced it. Verify any release disk image with `gh attestation verify Quiper.dmg --repo sassanh/quiper`.
 - **Reproducible CI Builds**: Release artifacts are produced exclusively by GitHub Actions. The README now documents this and explains how to verify the provenance of any downloaded build.
 
 - **Hierarchical Update Channels**: Refactored update settings into a single, intuitive channel selector (Stable, Beta, Nightly).

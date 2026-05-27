@@ -34,7 +34,15 @@ struct UpdateInstaller {
         guard let appBundle = findAppBundle(in: mount.mountPoint) else {
             throw UpdateError.missingAppBundle
         }
-        return try replaceCurrentApp(with: appBundle)
+        
+        let stagingDir = updatesDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: stagingDir) }
+        
+        let stagedAppURL = stagingDir.appendingPathComponent(appBundle.lastPathComponent)
+        try FileManager.default.copyItem(at: appBundle, to: stagedAppURL)
+        
+        return try replaceCurrentApp(with: stagedAppURL)
     }
 
     private func findAppBundle(in root: URL) -> URL? {
@@ -53,7 +61,7 @@ struct UpdateInstaller {
     }
 
     private func mountDMG() throws -> (mountPoint: URL, device: String) {
-        let data = try runProcess("/usr/bin/hdiutil", arguments: ["attach", archiveURL.path, "-nobrowse", "-plist"], captureOutput: true)
+        let data = try runProcess("/usr/bin/hdiutil", arguments: ["attach", archiveURL.path, "-nobrowse", "-noverify", "-noautoopen", "-plist"], captureOutput: true)
         guard let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
               let entities = plist["system-entities"] as? [[String: Any]] else {
             throw UpdateError.installationFailed("Unable to parse disk image metadata")
