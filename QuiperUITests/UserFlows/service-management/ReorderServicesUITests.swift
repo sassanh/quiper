@@ -160,8 +160,8 @@ final class ReorderServicesUITests: BaseUITest {
         // Target the top part of the target row (inside the row, not outside)
         // dy: 0.1 is 10% from the top edge. 0.0 is top edge.
         // Trying to keep it strictly *inside* the target row's "upper half" which usually triggers "insert above".
-        let startCoord = sourceRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let destCoord = targetRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+        let startCoord = sourceRow.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
+        let destCoord = targetRow.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.1))
         
         startCoord.press(forDuration: 0.8, thenDragTo: destCoord)
     }

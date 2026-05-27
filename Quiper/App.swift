@@ -536,6 +536,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController.install()
         
         AppDelegate.sharedSettingsWindow.appController = statusBarController.appController
+        
+        // Asynchronously scan and clean up orphaned persistent WebKit cache directories
+        WebKitCacheCleaner.cleanOrphanedStores()
     }
 
     @objc func showSettings(_ sender: Any?) {

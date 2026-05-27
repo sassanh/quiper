@@ -460,6 +460,7 @@ struct PersistedSettings: Codable {
     var colorScheme: AppColorScheme?
     var automaticallySwitchEngineOnLastSessionClose: Bool?
     var autoCreateSessionOnEmptyEngineActivation: Bool?
+    var shouldPurgeDanglingWebData: Bool?
     var version: Int? = 1
 
     enum CodingKeys: String, CodingKey {
@@ -468,6 +469,7 @@ struct PersistedSettings: Codable {
         case dragAreaPosition, showHiddenBarOnModifiers, windowAppearance, colorScheme, version
         case automaticallySwitchEngineOnLastSessionClose
         case autoCreateSessionOnEmptyEngineActivation
+        case shouldPurgeDanglingWebData
     }
 
     init(services: [Service],
@@ -486,6 +488,7 @@ struct PersistedSettings: Codable {
          colorScheme: AppColorScheme? = nil,
          automaticallySwitchEngineOnLastSessionClose: Bool? = nil,
          autoCreateSessionOnEmptyEngineActivation: Bool? = nil,
+         shouldPurgeDanglingWebData: Bool? = nil,
          version: Int? = 1) {
         self.services = services
         self.hotkey = hotkey
@@ -503,6 +506,7 @@ struct PersistedSettings: Codable {
         self.colorScheme = colorScheme
         self.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
         self.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
+        self.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
         self.version = version
     }
 
@@ -524,6 +528,7 @@ struct PersistedSettings: Codable {
         colorScheme = try container.decodeIfPresent(AppColorScheme.self, forKey: .colorScheme)
         automaticallySwitchEngineOnLastSessionClose = try container.decodeIfPresent(Bool.self, forKey: .automaticallySwitchEngineOnLastSessionClose)
         autoCreateSessionOnEmptyEngineActivation = try container.decodeIfPresent(Bool.self, forKey: .autoCreateSessionOnEmptyEngineActivation)
+        shouldPurgeDanglingWebData = try container.decodeIfPresent(Bool.self, forKey: .shouldPurgeDanglingWebData)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }
 }

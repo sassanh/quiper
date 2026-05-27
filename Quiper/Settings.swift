@@ -265,6 +265,7 @@ class Settings: ObservableObject {
     }
     @Published var automaticallySwitchEngineOnLastSessionClose: Bool = true
     @Published var autoCreateSessionOnEmptyEngineActivation: Bool = true
+    @Published var shouldPurgeDanglingWebData: Bool = true
     
     func reset() {
         services = []
@@ -281,6 +282,7 @@ class Settings: ObservableObject {
         colorScheme = .system
         automaticallySwitchEngineOnLastSessionClose = true
         autoCreateSessionOnEmptyEngineActivation = true
+        shouldPurgeDanglingWebData = true
     }
 
     private let settingsFile: URL = {
@@ -974,7 +976,8 @@ class Settings: ObservableObject {
                                             windowAppearance: windowAppearance,
                                             colorScheme: colorScheme,
                                             automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
-                                            autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation)
+                                            autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation,
+                                            shouldPurgeDanglingWebData: shouldPurgeDanglingWebData)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
@@ -997,7 +1000,8 @@ class Settings: ObservableObject {
             windowAppearance: windowAppearance,
             colorScheme: colorScheme,
             automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
-            autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation
+            autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation,
+            shouldPurgeDanglingWebData: shouldPurgeDanglingWebData
         )
     }
 
@@ -1019,6 +1023,7 @@ class Settings: ObservableObject {
         colorScheme = persisted.colorScheme ?? .system
         automaticallySwitchEngineOnLastSessionClose = persisted.automaticallySwitchEngineOnLastSessionClose ?? true
         autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation ?? true
+        shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData ?? true
         if let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         }

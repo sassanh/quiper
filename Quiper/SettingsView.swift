@@ -72,7 +72,7 @@ struct GeneralSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                SettingsSection(title: "Startup") {
+                 SettingsSection(title: "Startup") {
                     SettingsToggleRow(
                         title: "Launch at login",
                         message: "Install Quiper as a login item so it’s ready immediately after you sign in.",
@@ -84,6 +84,17 @@ struct GeneralSettingsView: View {
                         } else {
                             appController?.uninstallFromLogin(nil)
                         }
+                    }
+                    
+                    SettingsDivider()
+                    
+                    SettingsToggleRow(
+                        title: "Purge orphaned cache data",
+                        message: "Identify and automatically delete orphaned, persistent WebKit caches left behind by deleted engines at startup to preserve disk space.",
+                        isOn: $settings.shouldPurgeDanglingWebData
+                    )
+                    .onChange(of: settings.shouldPurgeDanglingWebData) { _, _ in
+                        settings.saveSettings()
                     }
                 }
                 
@@ -161,12 +172,12 @@ struct GeneralSettingsView: View {
                 }
 
                 SettingsSection(title: "Danger Zone", cardBackground: Color.red.opacity(0.05)) {
-                    SettingsRow(title: "Clear Web Data",
-                                message: "Delete cookies, caches, and storage so every site behaves like a fresh login.") {
+                    SettingsRow(title: "Clear All Web Data",
+                                message: "Delete cookies, caches, and storage for every engine so all sites behave like fresh logins.") {
                         Button(role: .destructive) {
                             showClearWebConfirmation = true
                         } label:{
-                            Text("Clear Web Data")
+                            Text("Clear All Web Data")
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
@@ -207,13 +218,13 @@ struct GeneralSettingsView: View {
             launchAtLogin = Launcher.isInstalledAtLogin()
             Task { await notificationDispatcher.refreshNotificationStatus() }
         }
-        .alert("Clear saved web data?", isPresented: $showClearWebConfirmation) {
-            Button("Clear", role: .destructive) {
+        .alert("Clear saved web data for all engines?", isPresented: $showClearWebConfirmation) {
+            Button("Clear All", role: .destructive) {
                 clearWebData()
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Removes cookies, caches, and storage for every service.")
+            Text("Removes cookies, caches, and storage for every service/engine.")
         }
         .alert("Erase all engines?", isPresented: $showEraseEnginesConfirmation) {
             Button("Erase", role: .destructive) {
@@ -390,7 +401,7 @@ struct ServicesSettingsView: View {
             .onMove(perform: moveServices)
         }
         .listStyle(SidebarListStyle())
-        .frame(minWidth: 220, maxWidth: 260)
+        .frame(minWidth: 140, idealWidth: 150, maxWidth: 160)
         .toolbar {
             ToolbarItemGroup {
                 Button(role: .destructive, action: deleteSelectedService) {
@@ -893,7 +904,7 @@ struct ServiceDetailView: View {
                     }
                 }
             }
-            .frame(minWidth: 200, idealWidth: 220, maxWidth: 260)
+            .frame(minWidth: 160, idealWidth: 165, maxWidth: 180)
             
             Divider()
             
