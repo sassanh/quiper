@@ -118,6 +118,7 @@ struct SettingsToggleRow: View {
     var body: some View {
         SettingsRow(title: title, message: message) {
             Toggle("", isOn: $isOn)
+                .toggleStyle(.switch)
                 .labelsHidden()
         }
     }
