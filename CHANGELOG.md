@@ -29,6 +29,7 @@
 - **Biometrics Concurrency Safety**: Wrapped `NotificationCenter` observers inside safe asynchronous `Task { @MainActor in ... }` blocks in [LockOverlayView.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/LockOverlayView.swift) to resolve strict Swift 6 concurrency warnings.
 - **WKUIDelegate Deduplication inside WebViewManager**: Cleaned up over 80 lines of identical alerts, prompts, confirmation panels, and file dialog implementations by forwarding the main view's delegate methods directly to the shared `PopupUIDelegate.shared` singleton.
 - **Redundant Log and Stale Code Cleanup**: Stripped unnecessary `NSLog` traces from the `showSession()` layout pipeline and purged stale comments and empty line gaps inside `WebViewManager.swift`.
+- **Settings Class and Model Decomposition**: Decoupled settings models and serialization definitions from the main `Settings` singleton orchestrator inside [Settings.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Settings.swift). Extracted 15+ sub-models, enums, structs, and custom coders—including `AutoLockPolicy`, `UpdatePreferences`, `WindowAppearanceSettings`, and `AppShortcutBindings`—into a clean, focused [SettingsModels.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsModels.swift) file.
 
 ### Fixed
 
