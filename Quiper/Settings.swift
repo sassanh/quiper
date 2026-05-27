@@ -131,7 +131,7 @@ class SettingsWindow: NSWindow {
     private init() {
         hostingController = NSHostingController(rootView: SettingsView(appController: nil, initialServiceURL: nil))
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 500),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -143,7 +143,7 @@ class SettingsWindow: NSWindow {
         isOpaque = true
         backgroundColor = .windowBackgroundColor
         title = "Settings"
-        minSize = NSSize(width: 720, height: 600)
+        minSize = NSSize(width: 720, height: 480)
         center()
 
         configureContentForGlass()
@@ -164,6 +164,30 @@ class SettingsWindow: NSWindow {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func close() {
+        if SecureDataMigrationManager.shared.isMigrationPending {
+            NSSound.beep()
+            return
+        }
+        super.close()
+    }
+
+    override func performClose(_ sender: Any?) {
+        if SecureDataMigrationManager.shared.isMigrationPending {
+            NSSound.beep()
+            return
+        }
+        super.performClose(sender)
+    }
+
+    override func orderOut(_ sender: Any?) {
+        if SecureDataMigrationManager.shared.isMigrationPending {
+            NSSound.beep()
+            return
+        }
+        super.orderOut(sender)
     }
 
     override func keyDown(with event: NSEvent) {

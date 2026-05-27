@@ -37,6 +37,7 @@ final class WebViewManager: NSObject {
     init(containerView: NSView) {
         self.containerView = containerView
         super.init()
+        NotificationCenter.default.addObserver(self, selector: #selector(webDataClearedNotification(_:)), name: .webDataCleared, object: nil)
     }
     
     func updateServices(_ newServices: [Service]) {
@@ -321,7 +322,8 @@ final class WebViewManager: NSObject {
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         
-        if isPersistent {
+        let isRunningTests = NSClassFromString("XCTestCase") != nil || ProcessInfo.processInfo.environment["XCInjectBundleInto"] != nil
+        if isPersistent && !isRunningTests {
             config.websiteDataStore = WKWebsiteDataStore(forIdentifier: service.id)
         } else {
             config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
@@ -955,5 +957,32 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
     @available(macOS 11.3, *)
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         activeDownloads.removeAll { ($0 as? WKDownload) === download }
+    }
+
+    @objc private func webDataClearedNotification(_ notification: Notification) {
+        guard let serviceID = notification.object as? UUID else { return }
+        handleWebDataCleared(for: serviceID)
+    }
+
+    private func handleWebDataCleared(for serviceID: UUID) {
+        NSLog("[WebViewManager] Handling web data cleared for service: %@", serviceID.uuidString)
+        
+        // 1. Find all active session indices for this service ID
+        guard let sessionMap = webviewsByID[serviceID] else { return }
+        let sessionIndices = Array(sessionMap.keys)
+        
+        // 2. Tear down the old webviews
+        sessionMap.values.forEach { tearDownWebView($0) }
+        webviewsByID[serviceID] = [:]
+        wrappersByID[serviceID] = [:]
+        
+        // 3. Recreate them cleanly
+        guard let service = services.first(where: { $0.id == serviceID }) else { return }
+        for index in sessionIndices {
+            _ = getOrCreateWebView(for: service, sessionIndex: index, dragArea: self.dragArea)
+        }
+        
+        // 4. Update the delegate so it sets up layout correctly
+        self.delegate?.engineDidUnlock(serviceID: serviceID)
     }
 }
