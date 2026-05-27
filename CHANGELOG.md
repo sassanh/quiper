@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [4.0.0] - 2026-05-27
 
 ### Added
 
@@ -27,13 +27,13 @@
 ### Changed
 
 - **CI/CD Delivery Format**: Migrated the release artifact packaging from `.zip` compression to a standard macOS DMG disk image (`.dmg`) using `hdiutil` in the delivery workflow, providing a native drag-to-install experience. Artifact attestations have been updated to sign the disk image.
-- **Documentation Refined (README Overhaul)**: 
+- **Documentation Refined (README Overhaul)**:
   - Completely rewrote the `README.md` opening hook and Highlights to focus aggressively on core user value propositions (Instant Overlay, Persistent Sessions, Biometric Sandboxing).
   - Added a prominent **Verifiable Safety** section providing a copy-pasteable AI Audit Prompt, allowing users to verify the app is telemetry-free and cryptographically attested using their own trusted AI assistant.
   - Added a strict **Local Protection Only** disclaimer to clarify that Biometric Storage encrypts *local* data on the Mac, but does not protect or encrypt server-side conversations sent to providers like OpenAI.
   - Aggressively pruned boilerplate filler and useless technical explanations to keep the documentation sleek and impactful.
 
-- **Engine Settings Sidebar Reorganization & Secure Storage Migration ([SettingsView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift))**: 
+- **Engine Settings Sidebar Reorganization & Secure Storage Migration ([SettingsView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift))**:
   - Reorganized the advanced settings split-pane sidebar into clear, structured categories with **Storage & Security** positioned as the first category, followed by `Routing`, `Customization`, and `Custom Actions`. All items feature premium SF Symbol icons.
   - Set the default selection on entering engine settings to **Secure Storage** for a seamless, immediate look at security parameters.
   - Migrated the monolithic **Security & Privacy** controls (APFS SparseBundle toggles, Auto-Lock Policies, and Inactivity Timeout minutes) out of the main detail body and into a dedicated first-class tab inside the sidebar list, significantly de-cluttering the engine configuration interface.
