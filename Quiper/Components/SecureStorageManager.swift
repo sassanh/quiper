@@ -100,8 +100,8 @@ final class SecureStorageManager {
             return String(data: data, encoding: .utf8) ?? ""
         } else if status == errSecItemNotFound {
             throw KeychainError.itemNotFound
-        } else if status == -128 { // errSecUserCanceled
-            throw KeychainError.authenticationFailed("Keychain access denied by user")
+        } else if status == -128 || status == errSecAuthFailed || status == -25293 { // errSecUserCanceled or errSecAuthFailed
+            throw KeychainError.authenticationFailed("Keychain access denied or authentication failed")
         } else {
             throw KeychainError.unknown(status)
         }

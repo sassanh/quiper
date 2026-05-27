@@ -268,7 +268,7 @@ final class WebViewManager: NSObject {
                         } catch {
                             NSLog("[LockOverlay] Error: %@", error.localizedDescription)
                             let errString = error.localizedDescription
-                            if errString.contains("Canceled") || errString.contains("cancel") {
+                            if errString.contains("Canceled") || errString.contains("cancel") || errString.contains("denied") || errString.contains("failed") {
                                 // User cancelled biometric prompt
                                 overlay.stopLoading()
                                 return
