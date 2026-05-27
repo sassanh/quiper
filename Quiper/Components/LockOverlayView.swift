@@ -205,11 +205,20 @@ final class LockOverlayView: NSView {
     private let errorDetailsLabel = NSTextField()
 
     private var loadingTimer: Timer?
+    private var windowObserver: NSObjectProtocol?
+    private var appObserver: NSObjectProtocol?
+    private var lastRefreshTime = Date.distantPast
 
     deinit {
-        NSLog("[LockOverlay] deinit - invalidating active contexts")
+        NSLog("[LockOverlay] deinit - invalidating active contexts and observers")
         laContext.invalidate()
         activeFallbackContext?.invalidate()
+        if let observer = windowObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = appObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -226,6 +235,7 @@ final class LockOverlayView: NSView {
         super.init(frame: frameRect)
         autoresizingMask = [.width, .height]
         setupUI(serviceName: serviceName)
+        registerFocusObservers()
     }
 
     required init?(coder: NSCoder) {
@@ -522,5 +532,62 @@ final class LockOverlayView: NSView {
                 }
             }
         }
+    }
+    
+    private func registerFocusObservers() {
+        // Observe window becoming key
+        windowObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self, let win = notification.object as? NSWindow, win == self.window else { return }
+            self.refreshBiometricsIfNeeded()
+        }
+        
+        // Observe app becoming active
+        appObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self, self.window != nil else { return }
+            self.refreshBiometricsIfNeeded()
+        }
+    }
+    
+    private func refreshBiometricsIfNeeded() {
+        // Debounce to prevent rapid double-refresh
+        let now = Date()
+        guard now.timeIntervalSince(lastRefreshTime) > 1.5 else { return }
+        
+        // Only refresh if biometrics have been initialized at least once,
+        // we have a window, we are not displaying an error, and no active fallback is running.
+        guard window != nil, isBiometricsInitialized, errorContainer.isHidden, activeFallbackContext == nil else { return }
+        
+        lastRefreshTime = now
+        
+        NSLog("[LockOverlay] App/Window gained focus - refreshing biometrics to prevent Touch ID inactivity")
+        
+        // Invalidate active context
+        self.laContext.invalidate()
+        self.laContext = LAContext()
+        self.isBiometricsInitialized = false
+        
+        if let console = self.consoleView {
+            self.isBiometricsInitialized = true
+            
+            // Remove any existing laView first to prevent duplication or layout issues
+            self.laView?.removeFromSuperview()
+            
+            // Pure, completely uncustomized LAAuthenticationView with the fresh context
+            let laView = LAAuthenticationView(context: self.laContext)
+            self.laView = laView
+            
+            // Embed the fingerprint beautifully into the dedicated console scan pad
+            console.embedBiometricView(laView)
+        }
+        
+        self.unlockClicked()
     }
 }

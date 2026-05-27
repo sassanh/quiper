@@ -52,10 +52,10 @@ struct AppearanceSettingsView: View {
                         }
                     }
                 }
-                SettingsSection(title: "Top Bar") {
+                SettingsSection(title: "Toolbar") {
                     SettingsRow(
-                        title: "Header Visibility",
-                        message: "Controls whether the top header is always visible or only shown when needed."
+                        title: "Toolbar Visibility",
+                        message: "Controls whether the toolbar is always visible or only shown when needed."
                     ) {
                         Picker("", selection: $settings.topBarVisibility) {
                             ForEach(TopBarVisibility.allCases) { visibility in
