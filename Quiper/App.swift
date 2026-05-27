@@ -455,6 +455,16 @@ final class AppController: NSObject, NSWindowDelegate {
         presentSettingsWindow()
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if sender == AppDelegate.sharedSettingsWindow {
+            if SecureDataMigrationManager.shared.isMigrationPending {
+                NSSound.beep()
+                return false
+            }
+        }
+        return true
+    }
+
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         if window == AppDelegate.sharedSettingsWindow {
@@ -525,12 +535,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         statusBarController.install()
         
-        
-        
         AppDelegate.sharedSettingsWindow.appController = statusBarController.appController
-        
-        
-        
     }
 
     @objc func showSettings(_ sender: Any?) {

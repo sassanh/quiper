@@ -4,6 +4,7 @@ import Foundation
 import Carbon
 import AppKit
 import UserNotifications
+import WebKit
 
 struct SettingsView: View {
     @State private var selectedTab = "Engines"
@@ -44,7 +45,7 @@ struct SettingsView: View {
                 }
                 .tag("Updates")
         }
-        .frame(minWidth: 720, minHeight: 600)
+        .frame(minWidth: 720, minHeight: 480)
         .onReceive(NotificationCenter.default.publisher(for: .startGlobalHotkeyCapture)) { _ in
             selectedTab = "Shortcuts"
         }
@@ -519,7 +520,10 @@ struct ServicesSettingsView: View {
         let idSet = Set(ids)
         let removedServices = settings.services.filter { idSet.contains($0.id) }
         settings.services.removeAll { idSet.contains($0.id) }
-        removedServices.forEach { ActionScriptStorage.deleteScripts(for: $0.id) }
+        removedServices.forEach { service in
+            ActionScriptStorage.deleteScripts(for: service.id)
+            WKWebsiteDataStore.remove(forIdentifier: service.id) { _ in }
+        }
         ensureSelectionExists()
         settings.saveSettings()
         appController?.reloadServices()
@@ -566,13 +570,15 @@ struct ServiceDetailView: View {
         case focus
         case friendDomains
         case css
+        case security
+        case webData
         case action(UUID)
     }
 
     @Binding var service: Service
     var appController: AppController?
     @Binding var selectedServiceID: Service.ID?
-    @State private var detailSelection: DetailSelection? = .focus
+    @State private var detailSelection: DetailSelection? = .security
     @ObservedObject private var settings = Settings.shared
     var requestDelete: (Service) -> Void
 
@@ -581,9 +587,15 @@ struct ServiceDetailView: View {
     @State private var isHoveringIcon = false
     @State private var currentFetchTask: Task<Void, Never>? = nil
     @FocusState private var isUrlFieldFocused: Bool
+    @State private var showResetConfirmation = false
+    @State private var showingDataMigrationAlert = false
+    @State private var targetNewValue = false
+    @State private var isMigratingData = false
+    @State private var migrationMessage = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        ZStack {
+            VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 20) {
                 // Interactive Icon Picker Button Menu
                 Menu {
@@ -678,122 +690,6 @@ struct ServiceDetailView: View {
             }
             .padding([.horizontal, .top])
             .padding(.bottom, 8)
-            
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "lock.shield")
-                        .foregroundColor(.accentColor)
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("Security & Privacy")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.primary)
-                }
-                
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Encrypt Engine Local Storage")
-                                .font(.body)
-                            Text("Hardware-boosted APFS SparseBundle protected by Keychain & Touch ID.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                        Toggle("", isOn: Binding(
-                            get: { service.isEncrypted },
-                            set: { newValue in
-                                service.isEncrypted = newValue
-                                if newValue {
-                                    Task {
-                                        if !SecureStorageManager.shared.hasKeyInKeychain(for: service.id) {
-                                            let randomKey = SecureStorageManager.shared.generateRandomKey()
-                                            _ = SecureStorageManager.shared.saveKeyToKeychain(randomKey, for: service.id)
-                                        }
-                                    }
-                                } else {
-                                    Task {
-                                        try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
-                                        EncryptedVolumeManager.shared.deleteVolume(for: service.id)
-                                        SecureStorageManager.shared.deleteKeyFromKeychain(for: service.id)
-                                    }
-                                }
-                                settings.saveSettings()
-                                appController?.reloadServices()
-                            }
-                        ))
-                        .toggleStyle(.switch)
-                    }
-                    
-                    if service.isEncrypted {
-                        Divider()
-                        
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Auto-Lock Policy")
-                                    .font(.body)
-                                Text("Decide when this engine's storage locks and detaches.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer()
-                            Picker("", selection: Binding(
-                                get: { service.autoLockPolicy },
-                                set: { newValue in
-                                    service.autoLockPolicy = newValue
-                                    settings.saveSettings()
-                                    appController?.reloadServices()
-                                }
-                            )) {
-                                ForEach(AutoLockPolicy.allCases) { policy in
-                                    Text(policy.rawValue).tag(policy)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(width: 160)
-                        }
-                        
-                        if service.autoLockPolicy == .afterInactivity {
-                            Divider()
-                            
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Inactivity Timeout")
-                                        .font(.body)
-                                    Text("Specify minutes of idle time before this engine locks.")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                Spacer()
-                                Stepper(value: Binding(
-                                    get: { service.autoLockInactivityTimeout },
-                                    set: { newValue in
-                                        service.autoLockInactivityTimeout = max(1, newValue)
-                                        settings.saveSettings()
-                                        appController?.reloadServices()
-                                    }
-                                ), in: 1...1440) {
-                                    Text("\(service.autoLockInactivityTimeout) min")
-                                        .font(.body.monospacedDigit())
-                                        .frame(minWidth: 60, alignment: .trailing)
-                                }
-                            }
-                        }
-                    }
-                }
-                .padding(14)
-                .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
-                .cornerRadius(10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
-                )
-            }
-            .padding()
-            
-            Divider()
             
             // Layout below the divider handles floating hover preview seamlessly
             ZStack(alignment: .topLeading) {
@@ -899,6 +795,36 @@ struct ServiceDetailView: View {
                     }
                 }
             }
+            }
+            
+            if isMigratingData {
+                ZStack {
+                    Color.black.opacity(0.15)
+                        .background(.ultraThinMaterial)
+                        .ignoresSafeArea()
+                    
+                    VStack(spacing: 20) {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .scaleEffect(1.2)
+                        
+                        Text(migrationMessage)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(24)
+                    .frame(width: 280)
+                    .background(Color(NSColor.windowBackgroundColor).opacity(0.85))
+                    .cornerRadius(16)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.25), radius: 20, x: 0, y: 10)
+                }
+                .transition(.opacity.animation(.easeInOut(duration: 0.15)))
+            }
         }
     }
 
@@ -939,13 +865,29 @@ struct ServiceDetailView: View {
     private var advancedPane: some View {
         HStack(spacing: 0) {
             List(selection: $detailSelection) {
-                Text("Focus Selector").tag(DetailSelection.focus)
-                Text("Friend Domains").tag(DetailSelection.friendDomains)
-                Text("Custom CSS").tag(DetailSelection.css)
+                Section("Storage & Security") {
+                    Label("Secure Storage", systemImage: "lock.shield.fill")
+                        .tag(DetailSelection.security)
+                    Label("Web Data", systemImage: "cylinder.split.1x2.fill")
+                        .tag(DetailSelection.webData)
+                }
+
+                Section("Routing") {
+                    Label("Focus Selector", systemImage: "eye.fill")
+                        .tag(DetailSelection.focus)
+                    Label("Friend Domains", systemImage: "link")
+                        .tag(DetailSelection.friendDomains)
+                }
+                
+                Section("Customization") {
+                    Label("Custom CSS", systemImage: "paintpalette.fill")
+                        .tag(DetailSelection.css)
+                }
+                
                 if !settings.customActions.isEmpty {
                     Section("Custom Actions") {
                         ForEach(settings.customActions) { action in
-                            Text(action.name.isEmpty ? "Action" : action.name)
+                            Label(action.name.isEmpty ? "Action" : action.name, systemImage: "play.circle.fill")
                                 .tag(DetailSelection.action(action.id))
                         }
                     }
@@ -955,13 +897,17 @@ struct ServiceDetailView: View {
             
             Divider()
             
-            switch detailSelection ?? .focus {
+            switch detailSelection ?? .security {
             case .focus:
                 focusSelectorForm
             case .friendDomains:
                 friendDomainsForm
             case .css:
                 customCSSForm
+            case .security:
+                securityForm
+            case .webData:
+                webDataForm
             case .action(let id):
                 if let action = settings.customActions.first(where: { $0.id == id }) {
                     ActionScriptEditor(action: action,
@@ -975,10 +921,21 @@ struct ServiceDetailView: View {
     }
     
     private var focusSelectorForm: some View {
-        VStack(alignment: .leading) {
-            Text("Focus Selector (CSS Selector)")
-                .font(.caption)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "eye.fill")
+                    .font(.title2)
+                    .foregroundColor(.accentColor)
+                Text("Focus Selector")
+                    .font(.title3)
+                    .fontWeight(.bold)
+            }
+            
+            Text("Specify a CSS selector (e.g. input[type='text']) to automatically target and focus a text input whenever this engine launches or gains activation.")
+                .font(.body)
                 .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            
             CodeTextEditor(text: $service.focus_selector)
                 .frame(minHeight: 140)
                 .background(Color(NSColor.textBackgroundColor))
@@ -987,49 +944,72 @@ struct ServiceDetailView: View {
                     RoundedRectangle(cornerRadius: 5)
                         .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
                 )
-                .padding(.top, 15)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     
     private var friendDomainsForm: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Friend Domains (regex)")
-                .font(.caption)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "link")
+                    .font(.title2)
+                    .foregroundColor(.accentColor)
+                Text("Friend Domains")
+                    .font(.title3)
+                    .fontWeight(.bold)
+            }
+            
+            Text("Define regular expression patterns to allow link clicks, popups, and OAuth login flows matching these domains to stay inside this engine instead of routing to external apps.")
+                .font(.body)
                 .foregroundColor(.secondary)
-            ForEach(Array(service.friendDomains.indices), id: \.self) { index in
-                HStack(spacing: 8) {
-                    TextField("e.g. ^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", text: $service.friendDomains[index])
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: .infinity)
-                    Button(role: .destructive) {
-                        service.friendDomains.remove(at: index)
-                        settings.saveSettings()
-                    } label: {
-                        Image(systemName: "trash")
+                .fixedSize(horizontal: false, vertical: true)
+            
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(service.friendDomains.indices), id: \.self) { index in
+                    HStack(spacing: 8) {
+                        TextField("e.g. ^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", text: $service.friendDomains[index])
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: .infinity)
+                        Button(role: .destructive) {
+                            service.friendDomains.remove(at: index)
+                            settings.saveSettings()
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Remove domain pattern")
                     }
-                    .buttonStyle(.borderless)
-                    .help("Remove domain pattern")
                 }
+                Button {
+                    service.friendDomains.append("")
+                } label: {
+                    Label("Add Friend Domain", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
             }
-            Button {
-                service.friendDomains.append("")
-            } label: {
-                Label("Add Friend Domain", systemImage: "plus")
-            }
-            .buttonStyle(.borderedProminent)
-            .padding(.top, 4)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var customCSSForm: some View {
-        VStack(alignment: .leading) {
-            Text("Custom CSS")
-                .font(.caption)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "paintpalette.fill")
+                    .font(.title2)
+                    .foregroundColor(.accentColor)
+                Text("Custom CSS Stylesheet")
+                    .font(.title3)
+                    .fontWeight(.bold)
+            }
+            
+            Text("Inject raw CSS layout rules directly into the target webpage DOM at launch to customize colors, fonts, or hide unwanted UI elements.")
+                .font(.body)
                 .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            
             CodeTextEditor(text: Binding(
                 get: { service.customCSS ?? "" },
                 set: { service.customCSS = $0.isEmpty ? nil : $0 }
@@ -1041,10 +1021,418 @@ struct ServiceDetailView: View {
                 RoundedRectangle(cornerRadius: 5)
                     .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
             )
-            .padding(.top, 15)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @MainActor @ViewBuilder
+    private var securityForm: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.title2)
+                    .foregroundColor(.accentColor)
+                Text("Secure Storage & Privacy")
+                    .font(.title3)
+                    .fontWeight(.bold)
+            }
+            
+            Text("Quiper isolates this engine's disk data inside a dedicated storage partition. You can protect it with military-grade encryption and auto-lock policies.")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            
+            // Experimental Warning Callout Card
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                    .font(.title3)
+                    .padding(.top, 2)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Experimental Security Feature")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text("SparseBundle local storage encryption is currently in beta. While engineered for maximum privacy and TouchID protection, unexpected OS detaches, key failures, or filesystem errors could lead to session disruption or data loss. We strongly recommend regular backups of your critical account credentials.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(12)
+            .background(Color.orange.opacity(0.08))
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+            )
+            
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Encrypt Engine Local Storage")
+                            .font(.body)
+                        Text("Hardware-boosted APFS SparseBundle protected by Keychain & Touch ID.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { service.isEncrypted },
+                        set: { newValue in
+                            targetNewValue = newValue
+                            showingDataMigrationAlert = true
+                        }
+                    ))
+                    .toggleStyle(.switch)
+                }
+                
+                if service.isEncrypted {
+                    Divider()
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Auto-Lock Policy")
+                                .font(.body)
+                            Text("Decide when this engine's storage locks and detaches.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Picker("", selection: Binding(
+                            get: { service.autoLockPolicy },
+                            set: { newValue in
+                                service.autoLockPolicy = newValue
+                                settings.saveSettings()
+                                appController?.reloadServices()
+                            }
+                        )) {
+                            ForEach(AutoLockPolicy.allCases) { policy in
+                                Text(policy.rawValue).tag(policy)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 160)
+                    }
+                    
+                    if service.autoLockPolicy == .afterInactivity {
+                        Divider()
+                        
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Inactivity Timeout")
+                                    .font(.body)
+                                Text("Specify minutes of idle time before this engine locks.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer()
+                            Stepper(value: Binding(
+                                get: { service.autoLockInactivityTimeout },
+                                set: { newValue in
+                                    service.autoLockInactivityTimeout = max(1, newValue)
+                                    settings.saveSettings()
+                                    appController?.reloadServices()
+                                }
+                            ), in: 1...1440) {
+                                Text("\(service.autoLockInactivityTimeout) min")
+                                    .font(.body.monospacedDigit())
+                                    .frame(minWidth: 60, alignment: .trailing)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+            .cornerRadius(10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+            )
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .alert("Preserve Existing Web Data?", isPresented: $showingDataMigrationAlert) {
+            Button("Yes, Transfer Data") {
+                performDataMigration(transferData: true)
+            }
+            .keyboardShortcut(.defaultAction)
+            Button("No, Start Fresh", role: .destructive) {
+                performDataMigration(transferData: false)
+            }
+            Button("Cancel", role: .cancel) {
+                // Do nothing
+            }
+        } message: {
+            Text(targetNewValue 
+                ? "Do you want to transfer your current login sessions, cookies, and local storage into the encrypted partition, or start with a clean slate?"
+                : "Do you want to extract your login sessions and web data out of the encrypted partition back to standard storage, or permanently discard all data?")
+        }
+    }
+
+    @MainActor
+    private func performDataMigration(transferData: Bool) {
+        let isSecuring = targetNewValue
+        let serviceID = service.id
+        
+        isMigratingData = true
+        SecureDataMigrationManager.shared.isMigrationPending = true
+        migrationMessage = isSecuring ? "Securing engine storage..." : "Unsecuring engine storage..."
+        
+        if isSecuring {
+            // 1. Generate key first so we can mount/create
+            let randomKey = SecureStorageManager.shared.generateRandomKey()
+            _ = SecureStorageManager.shared.saveKeyToKeychain(randomKey, for: serviceID)
+            
+            // 2. Backup if requested
+            let backupSuccess: Bool
+            if transferData {
+                migrationMessage = "Backing up session data..."
+                backupSuccess = SecureDataMigrationManager.shared.backupData(for: serviceID)
+            } else {
+                backupSuccess = true
+            }
+            
+            Task {
+                do {
+                    // 3. Create volume & mount
+                    migrationMessage = "Creating encrypted volume..."
+                    try await EncryptedVolumeManager.shared.createVolume(for: serviceID, passphrase: randomKey)
+                    
+                    migrationMessage = "Mounting encrypted partition..."
+                    try await EncryptedVolumeManager.shared.mountVolume(for: serviceID, passphrase: randomKey)
+                    
+                    // 4. Restore backup if requested and backup succeeded
+                    if transferData && backupSuccess {
+                        migrationMessage = "Transferring session data..."
+                        SecureDataMigrationManager.shared.restoreData(for: serviceID)
+                    } else {
+                        SecureDataMigrationManager.shared.discardBackup(for: serviceID)
+                    }
+                    
+                    // 5. Update settings properties
+                    service.isEncrypted = true
+                    settings.saveSettings()
+                    appController?.reloadServices()
+                    
+                    NSLog("[DataMigration] Engine \(serviceID) successfully secured (transferData: \(transferData))")
+                } catch {
+                    NSLog("[DataMigration] Securing failed with error: \(error.localizedDescription)")
+                }
+                
+                isMigratingData = false
+                SecureDataMigrationManager.shared.isMigrationPending = false
+            }
+        } else {
+            // Unsecuring:
+            Task {
+                var backupSuccess = true
+                if transferData {
+                    // Check if it's currently locked
+                    let isLocked = !EncryptedVolumeManager.shared.isUnlocked(for: serviceID)
+                    if isLocked {
+                        migrationMessage = "Authenticating to unlock partition..."
+                        do {
+                            // Retrieve key from Keychain (will trigger TouchID/Keychain prompt)
+                            let key = try await SecureStorageManager.shared.retrieveKeyFromKeychain(for: serviceID)
+                            
+                            migrationMessage = "Unlocking encrypted partition..."
+                            try await EncryptedVolumeManager.shared.mountVolume(for: serviceID, passphrase: key)
+                        } catch {
+                            // If user cancels or authentication fails, abort unsecuring!
+                            NSLog("[DataMigration] Aborted unsecuring because authentication failed: \(error.localizedDescription)")
+                            isMigratingData = false
+                            SecureDataMigrationManager.shared.isMigrationPending = false
+                            return
+                        }
+                    }
+                    
+                    migrationMessage = "Extracting session data..."
+                    backupSuccess = SecureDataMigrationManager.shared.backupData(for: serviceID)
+                }
+                
+                do {
+                    // 2. Unmount volume & delete physical bundle & keychain key
+                    migrationMessage = "Unmounting encrypted partition..."
+                    try? await EncryptedVolumeManager.shared.unmountVolume(for: serviceID)
+                    
+                    migrationMessage = "Deleting encrypted volume..."
+                    EncryptedVolumeManager.shared.deleteVolume(for: serviceID)
+                    SecureStorageManager.shared.deleteKeyFromKeychain(for: serviceID)
+                    
+                    // 3. Restore backup back to standard directory
+                    if transferData && backupSuccess {
+                        migrationMessage = "Restoring session data..."
+                        SecureDataMigrationManager.shared.restoreData(for: serviceID)
+                    } else {
+                        SecureDataMigrationManager.shared.discardBackup(for: serviceID)
+                    }
+                    
+                    // 4. Update settings properties
+                    service.isEncrypted = false
+                    settings.saveSettings()
+                    appController?.reloadServices()
+                    
+                    NSLog("[DataMigration] Engine \(serviceID) successfully unsecured (transferData: \(transferData))")
+                } catch {
+                    NSLog("[DataMigration] Unsecuring failed: \(error.localizedDescription)")
+                }
+                
+                isMigratingData = false
+                SecureDataMigrationManager.shared.isMigrationPending = false
+            }
+        }
+    }
+
+    @MainActor
+    private var webDataPath: String {
+        EncryptedVolumeManager.shared.getMountPointURL(for: service.id).path
+    }
+
+    @MainActor
+    private var isWebDataLocked: Bool {
+        service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+    }
+
+    @MainActor @ViewBuilder
+    private var webDataForm: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "folder.badge.gearshape")
+                    .font(.title2)
+                    .foregroundColor(.accentColor)
+                Text("Web Data Management")
+                    .font(.title3)
+                    .fontWeight(.bold)
+            }
+            
+            Text("Quiper runs each engine inside a fully isolated sandboxed database. All cookies, local storage, databases, and caches are separated from other engines.")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            
+            if isWebDataLocked {
+                VStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 40))
+                        .foregroundColor(.secondary)
+                        .padding(.top, 8)
+                    
+                    Text("Engine Storage is Locked")
+                        .font(.headline)
+                    
+                    Text("This engine's storage is encrypted and locked. Please unlock the engine from the main overlay window in order to manage or reset its web data.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                .cornerRadius(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+                )
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Database Storage Path")
+                        .font(.headline)
+                    
+                    HStack {
+                        Text(webDataPath)
+                            .font(.system(.body, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(NSColor.textBackgroundColor))
+                            .cornerRadius(6)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                            )
+                        
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(webDataPath, forType: .string)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Copy full path to clipboard")
+                    }
+                    
+                    HStack(spacing: 12) {
+                        Button {
+                            let url = URL(fileURLWithPath: webDataPath)
+                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
+                        } label: {
+                            Label("Show in Finder", systemImage: "folder")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        
+                        Button(role: .destructive) {
+                            showResetConfirmation = true
+                        } label: {
+                            Label("Reset Web Data...", systemImage: "trash")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(14)
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                .cornerRadius(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+                )
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .alert("Reset all web data?", isPresented: $showResetConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Reset", role: .destructive) {
+                resetWebData()
+            }
+        } message: {
+            Text("This will permanently clear all cookies, local storage, databases, and cache for '\(service.name)'. You will be logged out of all sites within this engine.")
+        }
+    }
+
+    @MainActor
+    private func resetWebData() {
+        let serviceID = service.id
+        let store = WKWebsiteDataStore(forIdentifier: serviceID)
+        let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+        
+        store.removeData(ofTypes: dataTypes, modifiedSince: Date.distantPast) {
+            Task { @MainActor in
+                let mountPoint = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID)
+                let fileManager = FileManager.default
+                
+                // Clear the directory contents
+                if let contents = try? fileManager.contentsOfDirectory(at: mountPoint, includingPropertiesForKeys: nil) {
+                    for item in contents {
+                        try? fileManager.removeItem(at: item)
+                    }
+                }
+                
+                // Dispatch notification to reload live WebViews
+                NotificationCenter.default.post(name: .webDataCleared, object: serviceID)
+            }
+        }
     }
 
     private var emptySelectionView: some View {
