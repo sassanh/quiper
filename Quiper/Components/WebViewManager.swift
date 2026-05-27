@@ -444,17 +444,14 @@ final class WebViewManager: NSObject {
         wrapper.isHidden = false
         
         if let container = containerView {
-            NSLog("[WebViewManager] showSession adding wrapper to container. Current subviews count: \(container.subviews.count)")
             if let dragArea = self.dragArea {
                 container.addSubview(wrapper, positioned: .below, relativeTo: dragArea)
             } else {
                 container.addSubview(wrapper)
             }
-            NSLog("[WebViewManager] showSession wrapper added. frame: \(wrapper.frame), subviews: \(wrapper.subviews)")
         }
         
         updateLayout()
-        NSLog("[WebViewManager] showSession completed. wrapper frame after layout: \(wrapper.frame)")
     }
     
     func serviceURL(for webView: WKWebView) -> URL? {
@@ -672,7 +669,7 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
 }
 
 @MainActor
-private final class PopupUIDelegate: NSObject, WKUIDelegate {
+fileprivate final class PopupUIDelegate: NSObject, WKUIDelegate {
     static let shared = PopupUIDelegate()
     
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
@@ -816,91 +813,34 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
 
     @MainActor
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void) {
-        let openPanel = NSOpenPanel()
-        openPanel.canChooseFiles = true
-        openPanel.canChooseDirectories = false
-        openPanel.allowsMultipleSelection = parameters.allowsMultipleSelection
-        
-        if #available(macOS 10.13.4, *) {
-            if parameters.allowsDirectories {
-                openPanel.canChooseDirectories = true
-            }
-        }
-
-        guard let window = webView.window else {
-            completionHandler(nil)
-            return
-        }
-
-        openPanel.beginSheetModal(for: window) { response in
-            if response == .OK {
-                completionHandler(openPanel.urls)
-            } else {
-                completionHandler(nil)
-            }
-        }
+        PopupUIDelegate.shared.webView(webView, runOpenPanelWith: parameters, initiatedByFrame: frame, completionHandler: completionHandler)
     }
 
     @MainActor
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor () -> Void) {
-        let alert = NSAlert()
-        alert.messageText = message
-        alert.addButton(withTitle: "OK")
-        if let window = webView.window {
-            alert.beginSheetModal(for: window) { _ in completionHandler() }
-        } else {
-            alert.runModal()
-            completionHandler()
-        }
+        PopupUIDelegate.shared.webView(webView, runJavaScriptAlertPanelWithMessage: message, initiatedByFrame: frame, completionHandler: completionHandler)
     }
 
     @MainActor
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor (Bool) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = message
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Cancel")
-        if let window = webView.window {
-            alert.beginSheetModal(for: window) { response in
-                completionHandler(response == .alertFirstButtonReturn)
-            }
-        } else {
-            completionHandler(alert.runModal() == .alertFirstButtonReturn)
-        }
+        PopupUIDelegate.shared.webView(webView, runJavaScriptConfirmPanelWithMessage: message, initiatedByFrame: frame, completionHandler: completionHandler)
     }
 
     @MainActor
     func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor (String?) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = prompt
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Cancel")
-        
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-        input.stringValue = defaultText ?? ""
-        alert.accessoryView = input
-        
-        if let window = webView.window {
-            alert.beginSheetModal(for: window) { response in
-                completionHandler(response == .alertFirstButtonReturn ? input.stringValue : nil)
-            }
-        } else {
-            completionHandler(alert.runModal() == .alertFirstButtonReturn ? input.stringValue : nil)
-        }
+        PopupUIDelegate.shared.webView(webView, runJavaScriptTextInputPanelWithPrompt: prompt, defaultText: defaultText, initiatedByFrame: frame, completionHandler: completionHandler)
     }
 
     @available(macOS 12.0, *)
     @MainActor
     func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void) {
-        decisionHandler(.grant)
+        PopupUIDelegate.shared.webView(webView, requestMediaCapturePermissionFor: origin, initiatedByFrame: frame, type: type, decisionHandler: decisionHandler)
     }
 
     @MainActor
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         if #available(macOS 11.3, *) {
             if navigationAction.shouldPerformDownload {
-                
-                
                 decisionHandler(.download)
                 return
             }
@@ -990,8 +930,6 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         
         if initialLoadAwaitingFocus.contains(token) {
             initialLoadAwaitingFocus.remove(token)
-            // Signal delegate again or handle internally?
-            // The Original MWC calls focusInputInActiveWebview with delay
             delegate?.webViewDidFinishNavigation(webView) 
         }
     }

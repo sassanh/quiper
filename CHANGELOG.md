@@ -27,6 +27,8 @@
 - **Biometric Pad Scale Transform**: Integrated a CoreAnimation layer transform inside `embedBiometricView` to visually scale the native `LAAuthenticationView` perfectly to a 36x36 scanner target while completely removing explicit width/height constraints to resolve Auto Layout warnings.
 - **Settings Window Dimension Integrity**: Enlarged `SettingsWindow` to `800x600` and added a robust `minSize` constraint of `720x600` to completely eliminate UI clipping and truncation across all tab views.
 - **Biometrics Concurrency Safety**: Wrapped `NotificationCenter` observers inside safe asynchronous `Task { @MainActor in ... }` blocks in [LockOverlayView.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/LockOverlayView.swift) to resolve strict Swift 6 concurrency warnings.
+- **WKUIDelegate Deduplication inside WebViewManager**: Cleaned up over 80 lines of identical alerts, prompts, confirmation panels, and file dialog implementations by forwarding the main view's delegate methods directly to the shared `PopupUIDelegate.shared` singleton.
+- **Redundant Log and Stale Code Cleanup**: Stripped unnecessary `NSLog` traces from the `showSession()` layout pipeline and purged stale comments and empty line gaps inside `WebViewManager.swift`.
 
 ### Fixed
 
