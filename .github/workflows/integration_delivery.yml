@@ -76,18 +76,22 @@ jobs:
           echo "APP_VERSION=${VERSION_BASE}-${SUFFIX}-nonproduction" >>"$GITHUB_ENV"
       - name: Build Swift App
         run: ./build-app.sh
-      - name: Compress App
-        run: ditto -c -k --sequesterRsrc --keepParent Quiper.app Quiper.app.zip
+      - name: Create DMG Disk Image
+        run: |
+          mkdir -p build/dmgstaging
+          cp -R Quiper.app build/dmgstaging/
+          ln -s /Applications build/dmgstaging/Applications
+          hdiutil create -volname "Quiper" -srcfolder build/dmgstaging -ov -format UDZO Quiper.dmg
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: Quiper.app.zip
+          subject-path: Quiper.dmg
 
       - name: Upload App
         uses: actions/upload-artifact@v7
         with:
           name: app
-          path: Quiper.app.zip
+          path: Quiper.dmg
           if-no-files-found: error
 
   nightly-release:
