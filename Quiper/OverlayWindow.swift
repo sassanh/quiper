@@ -31,3 +31,10 @@ public class OverlayWindow: NSWindow {
         return "Quiper Overlay"
     }
 }
+
+public class WindowContentView: NSView {
+    public override func hitTest(_ point: NSPoint) -> NSView? {
+        guard self.bounds.contains(point) else { return nil }
+        return super.hitTest(point) ?? self
+    }
+}

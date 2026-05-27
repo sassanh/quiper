@@ -1021,19 +1021,32 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
         }
         
-        backgroundEffectView?.frame = cRect
-        // NSVisualEffectView is flipped by default, so it needs the flipped corners
-        backgroundEffectView?.layer?.maskedCorners = flippedMaskedCorners
-        
-        contentColorView?.frame = cRect
-        // contentColorView is a standard NSView, so it needs the unflipped corners
-        contentColorView?.layer?.maskedCorners = contentMaskedCorners
+        if isHiddenMode {
+            backgroundEffectView?.frame = cRect
+            // NSVisualEffectView is flipped by default, so it needs the flipped corners
+            backgroundEffectView?.layer?.maskedCorners = flippedMaskedCorners
+            
+            contentColorView?.frame = cRect
+            // contentColorView is a standard NSView, so it needs the unflipped corners
+            contentColorView?.layer?.maskedCorners = contentMaskedCorners
+        } else {
+            let fullRect = NSRect(x: newMargin,
+                                  y: newMargin,
+                                  width: containerView.bounds.width - 2 * newMargin,
+                                  height: containerView.bounds.height - 2 * newMargin)
+            
+            backgroundEffectView?.frame = fullRect
+            backgroundEffectView?.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+            
+            contentColorView?.frame = fullRect
+            contentColorView?.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        }
         
         emptyStateView?.frame = cRect
         emptyStateView?.layer?.maskedCorners = contentMaskedCorners
         emptyStateView?.layer?.masksToBounds = true
         
-        webViewManager.updateLayout(contentRect: cRect, animated: false)
+        webViewManager.setContentFrame(cRect, animated: false)
         dragArea?.frame = dRect
         dragArea?.autoresizingMask = []
         
@@ -1115,10 +1128,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let frame = window.contentRect(forFrameRect: window.frame)
         
         // CONTAINER VIEW
+        // CONTAINER VIEW
         // This view will be the main content view. It can hold a solid background color (layer)
         // or be transparent to let the visual effect view show through.
-        let containerView = NSView(frame: frame)
+        let containerView = WindowContentView(frame: frame)
         containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = NSColor(white: 0, alpha: 0.01).cgColor
         containerView.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
         containerView.layer?.masksToBounds = true
         containerView.autoresizingMask = [.width, .height]
@@ -1139,7 +1154,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         effect.material = .underWindowBackground
         effect.state = .active
         effect.blendingMode = .behindWindow
-        effect.autoresizingMask = []
+        effect.autoresizingMask = [.width, .height]
         effect.wantsLayer = true
         effect.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
         effect.layer?.masksToBounds = true
@@ -1173,10 +1188,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // windowOutlineView handles the thin outline, placed in front of everything
         contentView.addSubview(windowOutlineView, positioned: .above, relativeTo: nil)
 
+        // Apply static layout before first visibility update to calculate and cache margins/offsets
+        updateWindowMarginAndLayout()
         updateActiveWebview()
         updateHeaderTrackingArea()
-        // Apply static layout before first visibility update
-        updateWindowMarginAndLayout()
         layoutSelectors()
         updateHeaderVisibility(animated: false)
     }
@@ -1708,18 +1723,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         bw.contentView?.layer?.masksToBounds = true
         
         let isHiddenMode = Settings.shared.topBarVisibility == .hidden
-        let isBottom = Settings.shared.dragAreaPosition == .bottom
         
         if isHiddenMode {
             bw.contentView?.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         } else {
-            if isBottom {
-                // Bar at bottom, round top corners. Standard view, so maxY is top.
-                bw.contentView?.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-            } else {
-                // Bar at top, round bottom corners. Standard view, so minY is bottom.
-                bw.contentView?.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-            }
+            // Visible mode: round all four corners to match the unified fullRect backdrop frame
+            bw.contentView?.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         }
     }
     /// Sets the window's background blur radius using CoreGraphics Services private API

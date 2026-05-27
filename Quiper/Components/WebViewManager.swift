@@ -367,17 +367,22 @@ final class WebViewManager: NSObject {
     }
     
 
-    func updateLayout(dragArea: NSView? = nil, contentRect: NSRect? = nil, animated: Bool = false) {
-        if let dragArea = dragArea {
-            self.dragArea = dragArea
-        }
+    /// Sets the unified inner content frame (cached for future session switches) and resizes all wrapper views.
+    func setContentFrame(_ rect: NSRect, animated: Bool = false) {
+        currentContentFrame = rect
+        updateLayout(animated: animated)
+    }
+    
+    /// Updates the layout of all webview wrapper frames.
+    /// Uses the cached `currentContentFrame` if set, otherwise falls back to a calculated container-bounds frame.
+    func updateLayout(animated: Bool = false) {
         guard let container = containerView else { return }
         
         let frame: NSRect
-        if let contentRect = contentRect {
-            currentContentFrame = contentRect
-            frame = contentRect
+        if let savedFrame = currentContentFrame {
+            frame = savedFrame
         } else {
+            assertionFailure("[WebViewManager] updateLayout called before setContentFrame was initialized.")
             let isHeaderHidden = Settings.shared.topBarVisibility == .hidden
             let dragHeight = isHeaderHidden ? 0 : (self.dragArea?.bounds.height ?? 0)
             let availableHeight = container.bounds.height - dragHeight
