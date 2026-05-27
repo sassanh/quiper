@@ -542,7 +542,9 @@ final class LockOverlayView: NSView {
             queue: .main
         ) { [weak self] notification in
             guard let self = self, let win = notification.object as? NSWindow, win == self.window else { return }
-            self.refreshBiometricsIfNeeded()
+            Task { @MainActor in
+                self.refreshBiometricsIfNeeded()
+            }
         }
         
         // Observe app becoming active
@@ -552,7 +554,9 @@ final class LockOverlayView: NSView {
             queue: .main
         ) { [weak self] _ in
             guard let self = self, self.window != nil else { return }
-            self.refreshBiometricsIfNeeded()
+            Task { @MainActor in
+                self.refreshBiometricsIfNeeded()
+            }
         }
     }
     

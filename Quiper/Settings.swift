@@ -650,7 +650,7 @@ class SettingsWindow: NSWindow {
     private init() {
         hostingController = NSHostingController(rootView: SettingsView(appController: nil, initialServiceURL: nil))
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 420),
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -662,6 +662,7 @@ class SettingsWindow: NSWindow {
         isOpaque = true
         backgroundColor = .windowBackgroundColor
         title = "Settings"
+        minSize = NSSize(width: 720, height: 600)
         center()
 
         configureContentForGlass()

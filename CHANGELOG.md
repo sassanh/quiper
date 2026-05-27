@@ -14,8 +14,19 @@
 
 ### Changed
 
+- **MainWindowController Architectural Decomposition**: Refactored the 3,800+ line god class `MainWindowController` into highly focused, single-responsibility domain extensions:
+  - `MainWindowController+InputHandling.swift` for command shortcuts, modifier flags, and keyboard routing.
+  - `MainWindowController+Appearance.swift` for continuous vibrancy, blur window coordination, and color schemes.
+  - `MainWindowController+Selectors.swift` for segmented controllers and collapsible popups.
+  - `MainWindowController+SessionManagement.swift` for session step increments, empty states, and tab lifecycles.
+  - `MainWindowController+WebViewObservers.swift` for title, loading, and navigation observation.
+  - `MainWindowController+HeaderVisibility.swift` for hover tracking and margins.
+  - `MainWindowController+Actions.swift` for custom scripts, menu selections, and lock timers.
+- **Inline Class Extraction**: Extracted five monolithic helper structures and types out of `MainWindowController` into dedicated files: [HoverIconButton.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/HoverIconButton.swift), [HoverTextField.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/HoverTextField.swift), [RefreshStopButton.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/RefreshStopButton.swift), [NavigationButtonGroup.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/NavigationButtonGroup.swift), and [Zoom.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Zoom.swift).
 - **Non-Blocking Safe App Termination**: Refactored `applicationShouldTerminate` to return `.terminateLater`, performing unmounting asynchronously in background tasks to prevent main-thread AppKit locks.
 - **Biometric Pad Scale Transform**: Integrated a CoreAnimation layer transform inside `embedBiometricView` to visually scale the native `LAAuthenticationView` perfectly to a 36x36 scanner target while completely removing explicit width/height constraints to resolve Auto Layout warnings.
+- **Settings Window Dimension Integrity**: Enlarged `SettingsWindow` to `800x600` and added a robust `minSize` constraint of `720x600` to completely eliminate UI clipping and truncation across all tab views.
+- **Biometrics Concurrency Safety**: Wrapped `NotificationCenter` observers inside safe asynchronous `Task { @MainActor in ... }` blocks in [LockOverlayView.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/LockOverlayView.swift) to resolve strict Swift 6 concurrency warnings.
 
 ### Fixed
 
