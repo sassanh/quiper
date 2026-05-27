@@ -303,29 +303,48 @@ final class EmptyStateView: NSView {
             messageLabel.font = .systemFont(ofSize: 32, weight: .bold)
             hintLabel.font = .systemFont(ofSize: 16, weight: .regular)
             
-            messageLabel.sizeToFit()
-            hintLabel.sizeToFit()
+            messageLabel.cell?.wraps = true
+            messageLabel.cell?.isScrollable = false
+            messageLabel.alignment = .center
             
-            let totalH = logoS + 24 + messageLabel.bounds.height + 8 + hintLabel.bounds.height
-            var y = (bounds.height - totalH) / 2
+            hintLabel.cell?.wraps = true
+            hintLabel.cell?.isScrollable = false
+            hintLabel.alignment = .center
+            
             let headerW = headerContainer.bounds.width
+            let leftMargin: CGFloat = 36 // premium comfortable margin to left edge
+            let maxTextW = max(100, headerW - leftMargin * 2)
+            
+            let msgSize = messageLabel.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: maxTextW, height: .greatestFiniteMagnitude)) ?? .zero
+            let msgW = min(maxTextW, msgSize.width)
+            let msgH = msgSize.height
+            
+            let hintSize = hintLabel.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: maxTextW, height: .greatestFiniteMagnitude)) ?? .zero
+            let hintW = min(maxTextW, hintSize.width)
+            let hintH = hintSize.height
+            
+            let totalH = logoS + 24 + msgH + 8 + hintH
+            var y = (bounds.height - totalH) / 2
             
             if hasActiveIcon {
                 let spacing: CGFloat = 24
                 let totalLogoW = logoS + spacing + logoS
-                let startX = (headerW - totalLogoW) / 2
+                let startX = max(leftMargin, (headerW - totalLogoW) / 2)
                 
                 iconView.frame = NSRect(x: startX, y: y, width: logoS, height: logoS)
                 activeEngineIconView.frame = NSRect(x: startX + logoS + spacing, y: y, width: logoS, height: logoS)
             } else {
-                iconView.frame = NSRect(x: (headerW - logoS) / 2, y: y, width: logoS, height: logoS)
+                let startX = max(leftMargin, (headerW - logoS) / 2)
+                iconView.frame = NSRect(x: startX, y: y, width: logoS, height: logoS)
             }
             y += logoS + 24
             
-            messageLabel.frame = NSRect(x: (headerW - messageLabel.bounds.width) / 2, y: y, width: messageLabel.bounds.width, height: messageLabel.bounds.height)
-            y += messageLabel.bounds.height + 8
+            let msgX = max(leftMargin, (headerW - msgW) / 2)
+            messageLabel.frame = NSRect(x: msgX, y: y, width: msgW, height: msgH)
+            y += msgH + 8
             
-            hintLabel.frame = NSRect(x: (headerW - hintLabel.bounds.width) / 2, y: y, width: hintLabel.bounds.width, height: hintLabel.bounds.height)
+            let hintX = max(leftMargin, (headerW - hintW) / 2)
+            hintLabel.frame = NSRect(x: hintX, y: y, width: hintW, height: hintH)
             hintLabel.alphaValue = 1.0
         } else {
             let maxH: CGFloat = 260
@@ -531,7 +550,8 @@ final class EmptyStateView: NSView {
         enginesGrid.alignment = .width
         
         for (i, service) in services.enumerated() where i < 10 {
-            let openSessionDict = openSessions[service.url] ?? [:]
+            let isLocked = service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+            let openSessionDict = isLocked ? [:] : (openSessions[service.url] ?? [:])
             let hasSessions = !openSessionDict.isEmpty
             
             let digit = (i + 1) % 10
@@ -542,7 +562,9 @@ final class EmptyStateView: NSView {
                                   secondaryModifiers: appShortcuts.serviceDigitsSecondaryModifiers,
                                   digitText: "\(digit)",
                                   hasSessions: hasSessions,
-                                  sessionCount: openSessionDict.count)
+                                  sessionCount: openSessionDict.count,
+                                  isEncrypted: service.isEncrypted,
+                                  isLocked: isLocked)
             row.onClick = { [weak self] in
                 self?.onEngineSelected?(i)
             }
@@ -619,20 +641,20 @@ private final class EngineRowView: NSView {
     private var isHovered = false { didSet { updateHighlight() } }
     private var isPressed = false { didSet { updateHighlight() } }
 
-    init(label: String, iconBase64: String?, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int) {
+    init(label: String, iconBase64: String?, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int, isEncrypted: Bool = false, isLocked: Bool = false) {
         super.init(frame: .zero)
-        setup(label: label, iconBase64: iconBase64, modifiers: modifiers, secondaryModifiers: secondaryModifiers, digitText: digitText, hasSessions: hasSessions, sessionCount: sessionCount)
+        setup(label: label, iconBase64: iconBase64, modifiers: modifiers, secondaryModifiers: secondaryModifiers, digitText: digitText, hasSessions: hasSessions, sessionCount: sessionCount, isEncrypted: isEncrypted, isLocked: isLocked)
     }
     
     static func createStaticRow(label: String, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int) -> NSView {
-        let row = EngineRowView(label: label, iconBase64: nil, modifiers: modifiers, secondaryModifiers: secondaryModifiers, digitText: digitText, hasSessions: hasSessions, sessionCount: sessionCount)
+        let row = EngineRowView(label: label, iconBase64: nil, modifiers: modifiers, secondaryModifiers: secondaryModifiers, digitText: digitText, hasSessions: hasSessions, sessionCount: sessionCount, isEncrypted: false, isLocked: false)
         row.onClick = nil 
         return row
     }
 
     required init?(coder: NSCoder) { fatalError() }
     
-    private func setup(label: String, iconBase64: String?, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int) {
+    private func setup(label: String, iconBase64: String?, modifiers: UInt, secondaryModifiers: UInt?, digitText: String, hasSessions: Bool, sessionCount: Int, isEncrypted: Bool, isLocked: Bool) {
         wantsLayer = true
         layer?.cornerRadius = 10
         layer?.backgroundColor = NSColor(white: 0, alpha: 0.001).cgColor
@@ -651,7 +673,7 @@ private final class EngineRowView: NSView {
         
         let columnWidth: CGFloat = 160
         
-        // Left column stack: name label to align perfectly
+        // Left column stack: lock icon, favicon, and name label to align perfectly
         let leftStack = NSStackView()
         leftStack.orientation = .horizontal
         leftStack.spacing = 8
@@ -659,7 +681,28 @@ private final class EngineRowView: NSView {
         leftStack.translatesAutoresizingMaskIntoConstraints = false
         leftStack.widthAnchor.constraint(equalToConstant: columnWidth).isActive = true
         
-        // Dynamic Favicon / Globe Icon View
+        // 1. Lock column: a small NSImageView (18x18)
+        // Always added to keep the horizontal spacing and vertical alignment perfect!
+        let lockIconView = NSImageView()
+        lockIconView.translatesAutoresizingMaskIntoConstraints = false
+        lockIconView.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        lockIconView.heightAnchor.constraint(equalToConstant: 18).isActive = true
+        
+        if isEncrypted {
+            let lockConfig = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+            let symbolName = isLocked ? "lock.fill" : "lock.open.fill"
+            if let lockImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+                .withSymbolConfiguration(lockConfig) {
+                lockImage.isTemplate = true
+                lockIconView.image = lockImage
+                lockIconView.contentTintColor = EmptyStateColors.iconTint
+            }
+        } else {
+            lockIconView.image = nil
+        }
+        leftStack.addArrangedSubview(lockIconView)
+        
+        // 2. Favicon column (18x18)
         let iconView = NSImageView()
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.widthAnchor.constraint(equalToConstant: 18).isActive = true
@@ -695,7 +738,9 @@ private final class EngineRowView: NSView {
         nameLabel.drawsBackground = false
         nameLabel.isBezeled = false
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
-        nameLabel.widthAnchor.constraint(equalToConstant: columnWidth - 26).isActive = true
+        
+        let labelWidth = columnWidth - 52
+        nameLabel.widthAnchor.constraint(equalToConstant: labelWidth).isActive = true
         
         leftStack.addArrangedSubview(nameLabel)
         contentStack.addArrangedSubview(leftStack)

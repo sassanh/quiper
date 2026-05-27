@@ -72,7 +72,12 @@ enum MenuFactory {
         let menu = NSMenu(title: "Window")
         menu.autoenablesItems = true
         
-        let hideItem = createMenuItem(title: "Hide", iconName: "eye.slash", action: #selector(AppController.closeSettingsOrHide(_:)), keyEquivalent: "w")
+        let closeItem = createMenuItem(title: "Close Session", iconName: "xmark.circle", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        menu.addItem(closeItem)
+        
+        menu.addItem(.separator())
+        
+        let hideItem = createMenuItem(title: "Hide Quiper", iconName: "eye.slash", action: #selector(AppController.closeSettingsOrHide(_:)), keyEquivalent: "h")
         menu.addItem(hideItem)
         
         return menu

@@ -44,7 +44,7 @@ struct SettingsView: View {
                 }
                 .tag("Updates")
         }
-        .frame(minWidth: 720, minHeight: 400)
+        .frame(minWidth: 720, minHeight: 600)
         .onReceive(NotificationCenter.default.publisher(for: .startGlobalHotkeyCapture)) { _ in
             selectedTab = "Shortcuts"
         }
@@ -583,8 +583,8 @@ struct ServiceDetailView: View {
     @FocusState private var isUrlFieldFocused: Bool
 
     var body: some View {
-        VStack {
-            HStack(alignment: .center, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 20) {
                 // Interactive Icon Picker Button Menu
                 Menu {
                     Button("Choose File...") {
@@ -617,7 +617,6 @@ struct ServiceDetailView: View {
                         if let iconBase64 = service.iconBase64,
                            let data = Data(base64Encoded: iconBase64),
                            let nsImage = NSImage(data: data) {
-                            // Explicitly set size to 40x40 points so native AppKit drawing is perfectly scaled!
                             let _ = { nsImage.size = NSSize(width: 40, height: 40) }()
                             Image(nsImage: nsImage)
                                 .resizable()
@@ -633,7 +632,6 @@ struct ServiceDetailView: View {
                                 .foregroundColor(.secondary)
                         }
                         
-                        // Tiny, elegant disclosure indicator in the bottom-right corner
                         VStack {
                             Spacer()
                             HStack {
@@ -649,7 +647,7 @@ struct ServiceDetailView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .menuIndicator(.hidden) // Hides default centered chevron
+                .menuIndicator(.hidden)
                 .frame(width: 64, height: 64)
                 .onHover { hovering in
                     withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
@@ -657,11 +655,141 @@ struct ServiceDetailView: View {
                     }
                 }
                 
-                Form {
-                    TextField("Name", text: $service.name)
-                    TextField("URL", text: $service.url)
-                        .focused($isUrlFieldFocused)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        Text("Name:")
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                            .frame(width: 50, alignment: .trailing)
+                        TextField("Name", text: $service.name)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    
+                    HStack(spacing: 8) {
+                        Text("URL:")
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                            .frame(width: 50, alignment: .trailing)
+                        TextField("URL", text: $service.url)
+                            .focused($isUrlFieldFocused)
+                            .textFieldStyle(.roundedBorder)
+                    }
                 }
+            }
+            .padding([.horizontal, .top])
+            .padding(.bottom, 8)
+            
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.shield")
+                        .foregroundColor(.accentColor)
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Security & Privacy")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                }
+                
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Encrypt Engine Local Storage")
+                                .font(.body)
+                            Text("Hardware-boosted APFS SparseBundle protected by Keychain & Touch ID.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { service.isEncrypted },
+                            set: { newValue in
+                                service.isEncrypted = newValue
+                                if newValue {
+                                    Task {
+                                        if !SecureStorageManager.shared.hasKeyInKeychain(for: service.id) {
+                                            let randomKey = SecureStorageManager.shared.generateRandomKey()
+                                            _ = SecureStorageManager.shared.saveKeyToKeychain(randomKey, for: service.id)
+                                        }
+                                    }
+                                } else {
+                                    Task {
+                                        try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
+                                        EncryptedVolumeManager.shared.deleteVolume(for: service.id)
+                                        SecureStorageManager.shared.deleteKeyFromKeychain(for: service.id)
+                                    }
+                                }
+                                settings.saveSettings()
+                                appController?.reloadServices()
+                            }
+                        ))
+                        .toggleStyle(.switch)
+                    }
+                    
+                    if service.isEncrypted {
+                        Divider()
+                        
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Auto-Lock Policy")
+                                    .font(.body)
+                                Text("Decide when this engine's storage locks and detaches.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer()
+                            Picker("", selection: Binding(
+                                get: { service.autoLockPolicy },
+                                set: { newValue in
+                                    service.autoLockPolicy = newValue
+                                    settings.saveSettings()
+                                    appController?.reloadServices()
+                                }
+                            )) {
+                                ForEach(AutoLockPolicy.allCases) { policy in
+                                    Text(policy.rawValue).tag(policy)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 160)
+                        }
+                        
+                        if service.autoLockPolicy == .afterInactivity {
+                            Divider()
+                            
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Inactivity Timeout")
+                                        .font(.body)
+                                    Text("Specify minutes of idle time before this engine locks.")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                Spacer()
+                                Stepper(value: Binding(
+                                    get: { service.autoLockInactivityTimeout },
+                                    set: { newValue in
+                                        service.autoLockInactivityTimeout = max(1, newValue)
+                                        settings.saveSettings()
+                                        appController?.reloadServices()
+                                    }
+                                ), in: 1...1440) {
+                                    Text("\(service.autoLockInactivityTimeout) min")
+                                        .font(.body.monospacedDigit())
+                                        .frame(minWidth: 60, alignment: .trailing)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(14)
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                .cornerRadius(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+                )
             }
             .padding()
             

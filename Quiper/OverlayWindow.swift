@@ -9,6 +9,14 @@ public class OverlayWindow: NSWindow {
         return true
     }
     
+    public override func performClose(_ sender: Any?) {
+        if let controller = windowController as? MainWindowController {
+            controller.performClose(sender)
+        } else {
+            super.performClose(sender)
+        }
+    }
+    
     // MARK: - Accessibility
     
     public override func isAccessibilityElement() -> Bool {

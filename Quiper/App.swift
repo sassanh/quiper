@@ -34,6 +34,7 @@ extension Notification.Name {
 final class AppController: NSObject, NSWindowDelegate {
     
     private let windowController: MainWindowControlling
+    var window: MainWindowControlling { return windowController }
     let hotkeyManager: HotkeyManaging
     let engineHotkeyManager: EngineHotkeyManaging
         private let notificationDispatcher: NotificationDispatching
@@ -510,6 +511,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     static var sharedSettingsWindow = SettingsWindow.shared
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        // Clean up any stale mounts from previous crashed sessions
+        unmountAllEncryptedVolumes()
         
         NSApp.setActivationPolicy(.accessory)
         
@@ -562,7 +565,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         appMenu.addItem(.separator())
         
-        let hideAppItem = NSMenuItem(title: "Hide Quiper", action: #selector(AppController.closeSettingsOrHide(_:)), keyEquivalent: "w")
+        let hideAppItem = NSMenuItem(title: "Hide Quiper", action: #selector(AppController.closeSettingsOrHide(_:)), keyEquivalent: "h")
         appMenu.addItem(hideAppItem)
         
         let hideOthersItem = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
@@ -623,6 +626,107 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         statusBarController.appController.showWindow(nil)
         return true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // 1. Immediately lock all encrypted engines in state
+        for service in Settings.shared.services {
+            if service.isEncrypted {
+                EncryptedVolumeManager.shared.markLocked(service.id)
+            }
+        }
+        
+        // 2. Show the beautiful full-screen overlay in the main window
+        statusBarController?.appController.window.showQuitOverlay()
+        
+        // 3. Perform unmounting asynchronously in background to keep UI fully responsive
+        Task {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    self?.unmountAllEncryptedVolumes()
+                    continuation.resume()
+                }
+            }
+            
+            // 4. Proceed to exit cleanly
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        
+        return .terminateLater
+    }
+    
+    private func hasMountedEncryptedVolumes() -> Bool {
+        let fileManager = FileManager.default
+        let libraryURL = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
+        let webKitBase = libraryURL
+            .appendingPathComponent("WebKit")
+            .appendingPathComponent(bundleID)
+            .appendingPathComponent("WebsiteDataStore")
+        
+        guard let contents = try? fileManager.contentsOfDirectory(at: webKitBase, includingPropertiesForKeys: nil) else {
+            return false
+        }
+        
+        for storeURL in contents {
+            var statInfo = stat()
+            if lstat(storeURL.path, &statInfo) == 0 {
+                let isDir = (statInfo.st_mode & mode_t(S_IFMT)) == mode_t(S_IFDIR)
+                if isDir {
+                    if let values = try? storeURL.resourceValues(forKeys: [.isVolumeKey]),
+                       let isVol = values.isVolume,
+                       isVol {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Fallback synchronous unmount to be completely safe
+        unmountAllEncryptedVolumes()
+    }
+    
+    nonisolated private func unmountAllEncryptedVolumes() {
+        let fileManager = FileManager.default
+        let libraryURL = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
+        let webKitBase = libraryURL
+            .appendingPathComponent("WebKit")
+            .appendingPathComponent(bundleID)
+            .appendingPathComponent("WebsiteDataStore")
+        
+        if let contents = try? fileManager.contentsOfDirectory(at: webKitBase, includingPropertiesForKeys: nil) {
+            for storeURL in contents {
+                var statInfo = stat()
+                if lstat(storeURL.path, &statInfo) == 0 {
+                    let isDir = (statInfo.st_mode & mode_t(S_IFMT)) == mode_t(S_IFDIR)
+                    if isDir {
+                        var isVolume = false
+                        if let values = try? storeURL.resourceValues(forKeys: [.isVolumeKey]),
+                           let isVol = values.isVolume {
+                            isVolume = isVol
+                        }
+                        
+                        if isVolume {
+                            let process = Process()
+                            process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+                            process.arguments = [
+                                "detach",
+                                "-force",
+                                storeURL.path
+                            ]
+                            try? process.run()
+                            process.waitUntilExit()
+                            
+                            try? fileManager.removeItem(at: storeURL)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

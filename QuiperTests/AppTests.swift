@@ -53,6 +53,11 @@ class MockMainWindowController: MainWindowControlling {
     var selectServiceAtIndex: Int?
     var selectServiceWithURLCalled = false
     var switchSessionCalled = false
+    var showQuitOverlayCalled = false
+    
+    func showQuitOverlay() {
+        showQuitOverlayCalled = true
+    }
 
     func show() {
         showCalled = true

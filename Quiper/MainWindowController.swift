@@ -80,6 +80,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var loadingBorderView: LoadingBorderView!
     private var isLoadingObservation: NSKeyValueObservation?
     private var sessionActionsButton: NSButton!
+    private var manualLockButton: NSButton!
     private var serviceListObservation: NSKeyValueObservation?
     
     // Retain active downloads to prevent -999 cancellation error
@@ -105,6 +106,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     
     // For test support: track navigation completions
     private var backgroundEffectView: NSVisualEffectView?
+    
+    private var lastActivityTime = Date()
+    private var inactivityTimer: Timer?
+    private var activityMonitor: Any?
 
     override var acceptsFirstResponder: Bool { true }
     
@@ -154,6 +159,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             removeObserver(self, forKeyPath: "window")
             win?.removeObserver(self, forKeyPath: "effectiveAppearance")
             NotificationCenter.default.removeObserver(self)
+            
+            if let monitor = activityMonitor {
+                NSEvent.removeMonitor(monitor)
+            }
+            inactivityTimer?.invalidate()
         }
     }
 
@@ -214,6 +224,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             activeIndicesByURL[service.url] = 0
         }
         setupUI()
+        setupInactivityMonitoring()
         self.window?.delegate = self
         addObserver(self, forKeyPath: "window", options: [.new], context: nil)
     }
@@ -269,6 +280,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func selectService(at index: Int, focusWebView: Bool = true) {
         guard services.indices.contains(index) else { return }
+        
+        // Handle Switch Away logic for previous service auto-lock policies
+        if let previousService = currentService() {
+            if services[index].url != previousService.url {
+                handleSwitchAway(from: previousService)
+            }
+        }
+        
         currentServiceName = services[index].name
         currentServiceURL = services[index].url
         
@@ -295,6 +314,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func switchSession(to index: Int, forceCreate: Bool) {
         guard let service = currentService() else { return }
+        
+        // Disable session switching completely for locked engines
+        if service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
+            NSLog("[MainWindowController] Session switching disabled for locked engine: %@", service.name)
+            return
+        }
+        
         let bounded = max(0, min(index, 9))
         activeIndicesByURL[service.url] = bounded
         
@@ -1516,6 +1542,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         drag.addSubview(actionsBtn)
         sessionActionsButton = actionsBtn
 
+        // Manual Lock Button (next to refresh button, visible only when relevant and unlocked)
+        let lockImage = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Lock Engine")!.withSymbolConfiguration(iconConfig)!
+        let lockBtn = HoverIconButton(image: lockImage, target: self, action: #selector(manualLockTapped(_:)))
+        drag.addSubview(lockBtn)
+        manualLockButton = lockBtn
+
         layoutSelectors()
         NotificationCenter.default.addObserver(self, selector: #selector(handleDockVisibilityChanged), name: .dockVisibilityChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleSelectorDisplayModeChanged), name: .selectorDisplayModeChanged, object: nil)
@@ -1750,11 +1782,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             useCompact = windowWidth < requiredWidth
         }
 
-        serviceSelector?.isHidden = useCompact
-        collapsibleServiceSelector?.isHidden = !useCompact
-
-        sessionSelector?.isHidden = useCompact
-        collapsibleSessionSelector?.isHidden = !useCompact
+         serviceSelector?.isHidden = useCompact
+         collapsibleServiceSelector?.isHidden = !useCompact
+ 
+         let isEngineLocked: Bool = {
+             guard let service = currentService() else { return false }
+             return service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+         }()
+ 
+         if isEngineLocked {
+             sessionSelector?.isHidden = true
+             collapsibleSessionSelector?.isHidden = true
+         } else {
+             sessionSelector?.isHidden = useCompact
+             collapsibleSessionSelector?.isHidden = !useCompact
+         }
 
         // Sync selections
         syncSelectorSelections()
@@ -1764,12 +1806,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         serviceSelector?.selectedSegment = serviceIdx
         collapsibleServiceSelector?.selectedSegment = serviceIdx
         
-        let sessionIdx = segmentIndex(forSession: activeIndicesByURL[currentServiceURL ?? ""] ?? 0)
-        sessionSelector?.selectedSegment = sessionIdx
-        collapsibleSessionSelector?.selectedSegment = sessionIdx
+        if isEmptyStateActive {
+            sessionSelector?.selectedSegment = -1
+            collapsibleSessionSelector?.selectedSegment = -1
+        } else {
+            let sessionIdx = segmentIndex(forSession: activeIndicesByURL[currentServiceURL ?? ""] ?? 0)
+            sessionSelector?.selectedSegment = sessionIdx
+            collapsibleSessionSelector?.selectedSegment = sessionIdx
+        }
     }
 
     private func layoutSelectors() {
+        updateSelectorsMode()
+        
         guard let drag = dragArea,
               let title = titleLabel,
               let actionsBtn = sessionActionsButton else { return }
@@ -1787,8 +1836,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let activeServiceSel = (serviceSelector?.isHidden == false) ? serviceSelector : (collapsibleServiceSelector?.isHidden == false ? collapsibleServiceSelector : nil)
         let activeSessionSel = (sessionSelector?.isHidden == false) ? sessionSelector : (collapsibleSessionSelector?.isHidden == false ? collapsibleSessionSelector : nil)
         
-        guard let serviceSel = activeServiceSel,
-              let sessionSel = activeSessionSel else { return }
+        guard let serviceSel = activeServiceSel else { return }
 
         let isHiddenMode = Settings.shared.topBarVisibility == .hidden
 
@@ -1846,10 +1894,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         // Session width
         let sessionWidth: CGFloat
-        if let coll = sessionSel as? CollapsibleSelector {
-            sessionWidth = coll.currentWidth
+        if let sessionSel = activeSessionSel {
+            if let coll = sessionSel as? CollapsibleSelector {
+                sessionWidth = coll.currentWidth
+            } else {
+                sessionWidth = sessionSel.fittingSize.width
+            }
         } else {
-            sessionWidth = sessionSel.fittingSize.width
+            sessionWidth = 0
         }
 
         // Service width
@@ -1863,7 +1915,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         // Size service selector first
         let maxServiceWidth = max(minimumServiceWidth,
-                                  rightReferenceX - gap - sessionWidth - gap)
+                                  rightReferenceX - gap - sessionWidth - (sessionWidth > 0 ? gap : 0))
         let actualServiceWidth = min(serviceWidth, maxServiceWidth)
 
         serviceSel.frame = NSRect(
@@ -1874,13 +1926,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
 
         // Session selector positioned at the right
-        let sessionX = rightReferenceX - sessionWidth
-        sessionSel.frame = NSRect(
-            x: sessionX,
-            y: selectorY,
-            width: sessionWidth,
-            height: selectorHeight
-        )
+        if let sessionSel = activeSessionSel {
+            let sessionX = rightReferenceX - sessionWidth
+            sessionSel.frame = NSRect(
+                x: sessionX,
+                y: selectorY,
+                width: sessionWidth,
+                height: selectorHeight
+            )
+        }
 
         let titleAreaMargin: CGFloat = 2
         
@@ -1904,9 +1958,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         
         // Refresh/Stop button (immediately before session selector)
-        // Match the sizing style of other toolbar buttons like actionsBtn (24x24)
         let rsButtonSize: CGFloat = 24
-        let rsX = sessionSel.frame.minX - gap - rsButtonSize
+        let rsX: CGFloat
+        if let sessionSel = activeSessionSel {
+            rsX = sessionSel.frame.minX - gap - rsButtonSize
+        } else {
+            rsX = rightReferenceX - rsButtonSize
+        }
         
         refreshStopButton.frame = NSRect(
             x: rsX,
@@ -1914,12 +1972,37 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             width: rsButtonSize,
             height: rsButtonSize
         )
-        if isEmptyStateActive {
+        
+        let isEngineLocked = {
+            guard let service = currentService() else { return false }
+            return service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+        }()
+        
+        if isEmptyStateActive || isEngineLocked {
             refreshStopButton.isHidden = true
         } else {
             refreshStopButton.isHidden = false
         }
-        let rightSideMinX = refreshStopButton.frame.minX
+        
+        let shouldShowManualLock = {
+            guard let service = currentService() else { return false }
+            return !isEmptyStateActive && service.isEncrypted && EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+        }()
+        
+        if shouldShowManualLock {
+            manualLockButton.isHidden = false
+            let lockX = rsX - gap - rsButtonSize
+            manualLockButton.frame = NSRect(
+                x: lockX,
+                y: buttonY,
+                width: rsButtonSize,
+                height: rsButtonSize
+            )
+        } else {
+            manualLockButton.isHidden = true
+        }
+        
+        let rightSideMinX = shouldShowManualLock ? manualLockButton.frame.minX : (refreshStopButton.isHidden ? rsX : refreshStopButton.frame.minX)
         
         // Calculate title area width
         let titleAreaX = leftSideMaxX + gap + titleAreaMargin
@@ -2211,12 +2294,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func refreshServiceSegments() {
         serviceSelector?.segmentCount = services.count
-        for (index, service) in services.enumerated() {
-            serviceSelector?.setLabel(service.name, forSegment: index)
-            serviceSelector?.setToolTip(service.name, forSegment: index)
+        let items = services.map { $0.name }
+        
+        for (index, item) in items.enumerated() {
+            serviceSelector?.setLabel(item, forSegment: index)
+            serviceSelector?.setToolTip(services[index].name, forSegment: index)
         }
 
-        collapsibleServiceSelector?.setItems(services.map { $0.name })
+        collapsibleServiceSelector?.setItems(items)
         
         if let idx = services.firstIndex(where: { $0.url == currentServiceURL }) {
             collapsibleServiceSelector?.selectedSegment = idx
@@ -2315,6 +2400,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                            0
         let next = (currentIndex + delta + services.count) % services.count
         selectService(at: next)
+    }
+
+    @objc func performClose(_ sender: Any?) {
+        closeCurrentTab()
     }
 
     /// Cmd+W: uninstantiate the current tab and navigate to the closest previously-used
@@ -2701,6 +2790,29 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         menu.popUp(positioning: nil, at: origin, in: sender)
     }
 
+    @objc private func manualLockTapped(_ sender: NSButton) {
+        guard let service = currentService(), service.isEncrypted else { return }
+        
+        NSLog("[MainWindowController] Manual lock requested for service: %@", service.name)
+        webViewManager.tearDownAllWebViews(for: service)
+        
+        // Hide session selectors immediately
+        updateSessionSelector()
+        
+        Task {
+            do {
+                try await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
+                await MainActor.run {
+                    updateActiveWebview(focusWebView: true, forceCreate: true)
+                    updateSessionSelector()
+                    layoutSelectors()
+                }
+            } catch {
+                NSLog("[MainWindowController] Manual lock unmount failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
     @objc private func refreshStopTapped(_ sender: NSButton) {
         guard let webView = currentWebView() else { return }
         if webView.isLoading {
@@ -2924,6 +3036,48 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func serviceURL(for webView: WKWebView) -> URL? {
         return webViewManager.serviceURL(for: webView)
     }
+    
+    private func handleSwitchAway(from service: Service) {
+        guard service.isEncrypted && service.autoLockPolicy == .onSwitchAway else { return }
+        
+        webViewManager.tearDownAllWebViews(for: service)
+        Task {
+            try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
+        }
+    }
+    
+    private func setupInactivityMonitoring() {
+        activityMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown, .mouseMoved]) { [weak self] event in
+            self?.lastActivityTime = Date()
+            return event
+        }
+        
+        inactivityTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            Task { @MainActor in
+                self.checkInactivityLock()
+            }
+        }
+    }
+    
+    private func checkInactivityLock() {
+        let now = Date()
+        
+        for service in services where service.isEncrypted && service.autoLockPolicy == .afterInactivity {
+            if EncryptedVolumeManager.shared.isMounted(for: service.id) {
+                let timeout: TimeInterval = TimeInterval(service.autoLockInactivityTimeout * 60)
+                if now.timeIntervalSince(lastActivityTime) >= timeout {
+                    webViewManager.tearDownAllWebViews(for: service)
+                    Task {
+                        try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
+                        if self.currentService()?.id == service.id {
+                            self.updateActiveWebview(focusWebView: false)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // MARK: - CollapsibleSelectorDelegate
@@ -3078,6 +3232,12 @@ extension MainWindowController: WebViewManagerDelegate {
         }
         
         DispatchQueue.main.async(execute: runFocus)
+    }
+    
+    func engineDidUnlock(serviceID: UUID) {
+        NSLog("[MainWindowController] Engine unlocked successfully: %@", serviceID.uuidString)
+        updateSessionSelector()
+        layoutSelectors()
     }
 }
 
@@ -3500,3 +3660,17 @@ private extension NSBezierPath {
         return path
     }
 }
+
+extension MainWindowController {
+    func showQuitOverlay() {
+        guard let contentView = window?.contentView else { return }
+        
+        let overlay = QuitOverlayView(frame: contentView.bounds)
+        contentView.addSubview(overlay, positioned: .above, relativeTo: nil)
+        
+        window?.standardWindowButton(.closeButton)?.isEnabled = false
+        window?.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+        window?.standardWindowButton(.zoomButton)?.isEnabled = false
+    }
+}
+

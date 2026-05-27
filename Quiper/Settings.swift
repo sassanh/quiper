@@ -4,6 +4,14 @@ import AppKit
 import SwiftUI
 import Carbon
 
+enum AutoLockPolicy: String, Codable, CaseIterable, Identifiable {
+    case onAppQuit = "On App Quit"
+    case onSwitchAway = "On Switch Away"
+    case afterInactivity = "After Inactivity"
+    
+    var id: String { rawValue }
+}
+
 struct Service: Codable, Identifiable {
     var id = UUID()
     var name: String
@@ -15,6 +23,9 @@ struct Service: Codable, Identifiable {
     var friendDomains: [String] = []
     var iconBase64: String?
     var iconManuallyUnset: Bool?
+    var isEncrypted: Bool = false
+    var autoLockPolicy: AutoLockPolicy = .onAppQuit
+    var autoLockInactivityTimeout: Int = 5
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -27,6 +38,9 @@ struct Service: Codable, Identifiable {
         case customCSS
         case iconBase64
         case iconManuallyUnset
+        case isEncrypted
+        case autoLockPolicy
+        case autoLockInactivityTimeout
     }
 
     init(id: UUID = UUID(),
@@ -38,7 +52,10 @@ struct Service: Codable, Identifiable {
          friendDomains: [String] = [],
          customCSS: String? = nil,
          iconBase64: String? = nil,
-         iconManuallyUnset: Bool? = nil) {
+         iconManuallyUnset: Bool? = nil,
+         isEncrypted: Bool = false,
+         autoLockPolicy: AutoLockPolicy = .onAppQuit,
+         autoLockInactivityTimeout: Int = 5) {
         self.id = id
         self.name = name
         self.url = url
@@ -49,6 +66,9 @@ struct Service: Codable, Identifiable {
         self.customCSS = customCSS
         self.iconBase64 = iconBase64
         self.iconManuallyUnset = iconManuallyUnset
+        self.isEncrypted = isEncrypted
+        self.autoLockPolicy = autoLockPolicy
+        self.autoLockInactivityTimeout = autoLockInactivityTimeout
     }
 
     init(from decoder: Decoder) throws {
@@ -63,6 +83,9 @@ struct Service: Codable, Identifiable {
         customCSS = try container.decodeIfPresent(String.self, forKey: .customCSS)
         iconBase64 = try container.decodeIfPresent(String.self, forKey: .iconBase64)
         iconManuallyUnset = try container.decodeIfPresent(Bool.self, forKey: .iconManuallyUnset)
+        isEncrypted = try container.decodeIfPresent(Bool.self, forKey: .isEncrypted) ?? false
+        autoLockPolicy = try container.decodeIfPresent(AutoLockPolicy.self, forKey: .autoLockPolicy) ?? .onAppQuit
+        autoLockInactivityTimeout = try container.decodeIfPresent(Int.self, forKey: .autoLockInactivityTimeout) ?? 5
     }
 
     func encode(to encoder: Encoder) throws {
@@ -89,6 +112,9 @@ struct Service: Codable, Identifiable {
         if let iconManuallyUnset {
             try container.encode(iconManuallyUnset, forKey: .iconManuallyUnset)
         }
+        try container.encode(isEncrypted, forKey: .isEncrypted)
+        try container.encode(autoLockPolicy, forKey: .autoLockPolicy)
+        try container.encode(autoLockInactivityTimeout, forKey: .autoLockInactivityTimeout)
     }
 }
 
@@ -765,7 +791,7 @@ class Settings: ObservableObject {
         } else {
             // Production uses Application Support
             baseDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-                .appendingPathComponent("Quiper")
+                .appendingPathComponent(Constants.APP_FOLDER_NAME)
         }
         
         try? FileManager.default.createDirectory(at: baseDir, withIntermediateDirectories: true, attributes: nil)

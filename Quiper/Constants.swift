@@ -3,6 +3,14 @@ import Foundation
 struct Constants {
     static let APP_NAME = "Quiper"
     static let DEFAULT_SERVICE = "Grok"
+    
+    static let APP_FOLDER_NAME: String = {
+        #if DEBUG
+        return "QuiperDev"
+        #else
+        return "Quiper"
+        #endif
+    }()
 
     static let LOGO_PATH = "logo/logo.png"
     static let WINDOW_FRAME_AUTOSAVE_NAME = "QuiperWindowFrame"

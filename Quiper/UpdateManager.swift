@@ -69,7 +69,7 @@ final class UpdateManager: NSObject, ObservableObject {
 
     private override init() {
         let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDir = supportDir.appendingPathComponent("Quiper", isDirectory: true)
+        let appDir = supportDir.appendingPathComponent(Constants.APP_FOLDER_NAME, isDirectory: true)
         let updatesDir = appDir.appendingPathComponent("Updates", isDirectory: true)
         try? FileManager.default.createDirectory(at: updatesDir, withIntermediateDirectories: true)
         self.updatesDirectory = updatesDir

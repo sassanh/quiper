@@ -7,6 +7,7 @@ protocol WebViewManagerDelegate: AnyObject {
     func webViewDidUpdateTitle(_ title: String, for webView: WKWebView)
     func webViewDidUpdateLoading(_ isLoading: Bool, for webView: WKWebView)
     func webViewDidFinishNavigation(_ webView: WKWebView)
+    func engineDidUnlock(serviceID: UUID)
 }
 
 @MainActor
@@ -14,7 +15,9 @@ final class WebViewManager: NSObject {
     weak var delegate: WebViewManagerDelegate?
     
     // Storage
-    private var webviewsByURL: [String: [Int: WKWebView]] = [:]
+    private var webviewsByID: [UUID: [Int: WKWebView]] = [:]
+    private var wrappersByID: [UUID: [Int: NSView]] = [:]
+    private var urlsByWebView: [ObjectIdentifier: String] = [:]
     private var activeDownloads: [Any] = []
     
     // State needed for logic
@@ -37,19 +40,34 @@ final class WebViewManager: NSObject {
     }
     
     func updateServices(_ newServices: [Service]) {
-        let incomingURLs = Set(newServices.map { $0.url })
-        let existingURLs = Set(webviewsByURL.keys)
+        let incomingIDs = Set(newServices.map { $0.id })
+        let existingIDs = Set(webviewsByID.keys)
         
-        let removedURLs = existingURLs.subtracting(incomingURLs)
-        for url in removedURLs {
-            if let removedWebviews = webviewsByURL[url] {
+        let removedIDs = existingIDs.subtracting(incomingIDs)
+        for id in removedIDs {
+            if let removedWebviews = webviewsByID[id] {
                 removedWebviews.values.forEach { tearDownWebView($0) }
             }
-            webviewsByURL.removeValue(forKey: url)
+            webviewsByID.removeValue(forKey: id)
+            wrappersByID.removeValue(forKey: id)
         }
         
-        for service in newServices where webviewsByURL[service.url] == nil {
-            webviewsByURL[service.url] = [:]
+        // Also check if any existing service has changed its encryption status!
+        for newService in newServices {
+            if let existingWebviews = webviewsByID[newService.id] {
+                if let oldService = self.services.first(where: { $0.id == newService.id }),
+                   oldService.isEncrypted != newService.isEncrypted {
+                    NSLog("[WebViewManager] Encryption status changed for service %@. Tearing down existing webviews.", newService.name)
+                    existingWebviews.values.forEach { tearDownWebView($0) }
+                    webviewsByID[newService.id] = [:]
+                    wrappersByID[newService.id] = [:]
+                }
+            }
+        }
+        
+        for service in newServices where webviewsByID[service.id] == nil {
+            webviewsByID[service.id] = [:]
+            wrappersByID[service.id] = [:]
         }
         
         self.services = newServices
@@ -57,8 +75,8 @@ final class WebViewManager: NSObject {
     
     func updateZoomLevels(_ levels: [String: CGFloat]) {
         self.zoomLevels = levels
-        for (url, level) in levels {
-            if let sessionMap = webviewsByURL[url] {
+        for service in services {
+            if let level = levels[service.url], let sessionMap = webviewsByID[service.id] {
                 sessionMap.values.forEach { $0.pageZoom = level }
             }
         }
@@ -66,19 +84,22 @@ final class WebViewManager: NSObject {
     
     func applyZoom(_ level: CGFloat, for serviceURL: String) {
         zoomLevels[serviceURL] = level
-        if let sessionMap = webviewsByURL[serviceURL] {
-            sessionMap.values.forEach { $0.pageZoom = level }
+        for service in services where service.url == serviceURL {
+            if let sessionMap = webviewsByID[service.id] {
+                sessionMap.values.forEach { $0.pageZoom = level }
+            }
         }
     }
     
     func getWebView(for service: Service, sessionIndex: Int) -> WKWebView? {
-        webviewsByURL[service.url]?[sessionIndex]
+        webviewsByID[service.id]?[sessionIndex]
     }
     
     func removeWebView(for service: Service, sessionIndex: Int) {
-        guard let webView = webviewsByURL[service.url]?[sessionIndex] else { return }
+        guard let webView = webviewsByID[service.id]?[sessionIndex] else { return }
         tearDownWebView(webView)
-        webviewsByURL[service.url]?.removeValue(forKey: sessionIndex)
+        webviewsByID[service.id]?.removeValue(forKey: sessionIndex)
+        wrappersByID[service.id]?.removeValue(forKey: sessionIndex)
     }
     
     func getOrCreateWebView(for service: Service, sessionIndex: Int, dragArea: NSView?) -> WKWebView {
@@ -86,7 +107,7 @@ final class WebViewManager: NSObject {
             self.dragArea = dragArea
         }
         
-        if let existing = webviewsByURL[service.url]?[sessionIndex] {
+        if let existing = webviewsByID[service.id]?[sessionIndex] {
             return existing
         }
         
@@ -120,11 +141,191 @@ final class WebViewManager: NSObject {
         wrapperView.layer?.masksToBounds = true
         wrapperView.isHidden = true
         
+        let isUnlocked = !service.isEncrypted || EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+        
+        // WebView inside Wrapper (ephemeral/non-persistent if locked, persistent if unlocked)
+        let webview = createWebViewInstance(for: service, sessionIndex: sessionIndex, bounds: wrapperView.bounds, isPersistent: isUnlocked)
+        wrapperView.addSubview(webview)
+
+        // Add Wrapper to Container
+        if let dragArea = self.dragArea {
+            contentView.addSubview(wrapperView, positioned: .below, relativeTo: dragArea)
+        } else {
+            contentView.addSubview(wrapperView)
+        }
+        
+        if webviewsByID[service.id] == nil {
+            webviewsByID[service.id] = [:]
+        }
+        webviewsByID[service.id]?[sessionIndex] = webview
+        
+        if wrappersByID[service.id] == nil {
+            wrappersByID[service.id] = [:]
+        }
+        wrappersByID[service.id]?[sessionIndex] = wrapperView
+        
+        urlsByWebView[ObjectIdentifier(webview)] = service.url
+        
+        let token = ObjectIdentifier(webview)
+        initialLoadAwaitingFocus.insert(token)
+        
+        // Clean up any existing LockOverlayView from previous states
+        for subview in wrapperView.subviews {
+            if subview is LockOverlayView {
+                subview.removeFromSuperview()
+            }
+        }
+        
+        // Load initial URL with encryption check
+        if service.isEncrypted {
+            if EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
+                if let url = URL(string: service.url) {
+                    if url.isFileURL {
+                        webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+                    } else {
+                        webview.load(URLRequest(url: url))
+                    }
+                }
+            } else {
+                // Show LockOverlayView on top of wrapper
+                let serviceId = service.id
+                let serviceUrl = service.url
+                
+                var lockOverlayRef: LockOverlayView? = nil
+                let lockOverlay = LockOverlayView(frame: wrapperView.bounds, serviceName: service.name) { [weak self, weak webview, weak wrapperView] context in
+                    NSLog("[LockOverlay] onUnlock closure entered")
+                    guard let self = self else {
+                        NSLog("[LockOverlay] self (WebViewManager) is nil, aborting")
+                        return
+                    }
+                    guard let webview = webview else {
+                        NSLog("[LockOverlay] webview is nil, aborting")
+                        return
+                    }
+                    guard let wrapperView = wrapperView else {
+                        NSLog("[LockOverlay] wrapperView is nil, aborting")
+                        return
+                    }
+                    
+                    guard let overlay = lockOverlayRef else { return }
+                    
+                    overlay.startLoading()
+                    
+                    NSLog("[LockOverlay] All references valid, starting Task")
+                    Task {
+                        do {
+                            overlay.updateStatus("Authenticating...")
+                            NSLog("[LockOverlay] Retrieving key from Keychain for service %@", serviceId.uuidString)
+                            let key = try await SecureStorageManager.shared.retrieveKeyFromKeychain(for: serviceId, context: context)
+                            NSLog("[LockOverlay] Key retrieved successfully")
+                            
+                            overlay.updateStatus("Mounting encrypted volume...")
+                            if !EncryptedVolumeManager.shared.bundleExists(for: serviceId) {
+                                NSLog("[LockOverlay] Creating new volume")
+                                try await EncryptedVolumeManager.shared.createVolume(for: serviceId, passphrase: key)
+                            }
+                            NSLog("[LockOverlay] Mounting volume")
+                            try await EncryptedVolumeManager.shared.mountVolume(for: serviceId, passphrase: key)
+                            
+                            // Remove non-persistent webview and clean observers
+                            webview.removeObserver(self, forKeyPath: "title")
+                            webview.removeObserver(self, forKeyPath: "loading")
+                            let oldToken = ObjectIdentifier(webview)
+                            self.initialLoadAwaitingFocus.remove(oldToken)
+                            self.urlsByWebView.removeValue(forKey: oldToken)
+                            webview.configuration.userContentController.removeAllUserScripts()
+                            webview.removeFromSuperview()
+                            
+                            // Remove lock overlay
+                            for subview in wrapperView.subviews {
+                                if subview is LockOverlayView {
+                                    subview.removeFromSuperview()
+                                }
+                            }
+                            
+                            // Create the real persistent webview
+                            let realWebView = self.createWebViewInstance(for: service, sessionIndex: sessionIndex, bounds: wrapperView.bounds, isPersistent: true)
+                            wrapperView.addSubview(realWebView)
+                            
+                            // Update maps
+                            self.webviewsByID[service.id]?[sessionIndex] = realWebView
+                            self.urlsByWebView[ObjectIdentifier(realWebView)] = service.url
+                            
+                            // Load real URL
+                            if let url = URL(string: serviceUrl) {
+                                NSLog("[LockOverlay] Loading URL: %@", serviceUrl)
+                                if url.isFileURL {
+                                    realWebView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+                                } else {
+                                    realWebView.load(URLRequest(url: url))
+                                }
+                            }
+                            
+                            overlay.stopLoading()
+                            
+                            NSLog("[LockOverlay] Unlock complete")
+                            self.delegate?.engineDidUnlock(serviceID: serviceId)
+                        } catch {
+                            NSLog("[LockOverlay] Error: %@", error.localizedDescription)
+                            let errString = error.localizedDescription
+                            if errString.contains("Canceled") || errString.contains("cancel") {
+                                // User cancelled biometric prompt
+                                overlay.stopLoading()
+                                return
+                            }
+                            
+                            overlay.showError(error.localizedDescription)
+                        }
+                    }
+                }
+                lockOverlayRef = lockOverlay
+                wrapperView.addSubview(lockOverlay)
+            }
+        } else {
+            // Unencrypted path: clear any leftover symlinks
+            let fileManager = FileManager.default
+            if let libraryURL = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first {
+                let targetLinkURL = libraryURL
+                    .appendingPathComponent("WebKit")
+                    .appendingPathComponent("WebsiteData")
+                    .appendingPathComponent("Custom")
+                    .appendingPathComponent(service.id.uuidString)
+                
+                if fileManager.fileExists(atPath: targetLinkURL.path) {
+                    var isDir: ObjCBool = false
+                    if fileManager.fileExists(atPath: targetLinkURL.path, isDirectory: &isDir) {
+                        let attrs = try? fileManager.attributesOfItem(atPath: targetLinkURL.path)
+                        if attrs?[.type] as? FileAttributeType == .typeSymbolicLink {
+                            try? fileManager.removeItem(at: targetLinkURL)
+                        }
+                    }
+                }
+            }
+            
+            if let url = URL(string: service.url) {
+                if url.isFileURL {
+                    webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+                } else {
+                    webview.load(URLRequest(url: url))
+                }
+            }
+        }
+        
+        return webview
+    }
+    
+    private func createWebViewInstance(for service: Service, sessionIndex: Int, bounds: NSRect, isPersistent: Bool) -> WKWebView {
         let userContentController = WKUserContentController()
         let config = WKWebViewConfiguration()
         config.userContentController = userContentController
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        
+        if isPersistent {
+            config.websiteDataStore = WKWebsiteDataStore(forIdentifier: service.id)
+        } else {
+            config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
+        }
 
         if let customCSS = service.customCSS, !customCSS.isEmpty {
             let cssScript = """
@@ -137,45 +338,17 @@ final class WebViewManager: NSObject {
             userContentController.addUserScript(userScript)
         }
 
-        // WebView inside Wrapper
-        let webview = WKWebView(frame: wrapperView.bounds, configuration: config)
+        let webview = WKWebView(frame: bounds, configuration: config)
         webview.setValue(false, forKey: "drawsBackground")
         webview.autoresizingMask = [.width, .height]
         webview.uiDelegate = self
         webview.navigationDelegate = self
         webview.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-        // webview.isHidden = true // No need, wrapper is hidden
         webview.pageZoom = zoomLevels[service.url] ?? 1.0
         
         attachNotificationBridge(to: webview, service: service, sessionIndex: sessionIndex)
-
-        // Add WebView to Wrapper
-        wrapperView.addSubview(webview)
-
-        // Add Wrapper to Container
-        if let dragArea = self.dragArea {
-            contentView.addSubview(wrapperView, positioned: .below, relativeTo: dragArea)
-        } else {
-            contentView.addSubview(wrapperView)
-        }
         
-        if webviewsByURL[service.url] == nil {
-            webviewsByURL[service.url] = [:]
-        }
-        webviewsByURL[service.url]?[sessionIndex] = webview
-        
-        // Load initial URL
-        if let url = URL(string: service.url) {
-            if url.isFileURL {
-                webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-            } else {
-                webview.load(URLRequest(url: url))
-            }
-            let token = ObjectIdentifier(webview)
-            initialLoadAwaitingFocus.insert(token)
-        }
-        
-        // Observers
+        // Add observers
         webview.addObserver(self, forKeyPath: "title", options: .new, context: nil)
         webview.addObserver(self, forKeyPath: "loading", options: .new, context: nil)
         
@@ -183,10 +356,11 @@ final class WebViewManager: NSObject {
     }
     
     func hideAll() {
-        webviewsByURL.values.forEach { sessionMap in
+        webviewsByID.values.forEach { sessionMap in
             sessionMap.values.forEach { webView in
                 if let wrapper = webView.superview {
                     wrapper.isHidden = true
+                    wrapper.removeFromSuperview()
                 }
             }
         }
@@ -225,7 +399,7 @@ final class WebViewManager: NSObject {
             }
         }
         
-        for sessionMap in webviewsByURL.values {
+        for sessionMap in webviewsByID.values {
             for webView in sessionMap.values {
                 if let wrapper = webView.superview {
                     // Ensure no autoresizing conflicts with manual layout
@@ -257,24 +431,30 @@ final class WebViewManager: NSObject {
     }
     
     func showSession(_ webView: WKWebView) {
-        guard let wrapper = webView.superview else { return }
+        guard let wrapper = webView.superview else {
+            NSLog("[WebViewManager] showSession failed: webView has no superview!")
+            return
+        }
         
         wrapper.isHidden = false
         
         if let container = containerView {
+            NSLog("[WebViewManager] showSession adding wrapper to container. Current subviews count: \(container.subviews.count)")
             if let dragArea = self.dragArea {
                 container.addSubview(wrapper, positioned: .below, relativeTo: dragArea)
             } else {
                 container.addSubview(wrapper)
             }
+            NSLog("[WebViewManager] showSession wrapper added. frame: \(wrapper.frame), subviews: \(wrapper.subviews)")
         }
+        
+        updateLayout()
+        NSLog("[WebViewManager] showSession completed. wrapper frame after layout: \(wrapper.frame)")
     }
     
     func serviceURL(for webView: WKWebView) -> URL? {
-        for (urlString, webViews) in webviewsByURL {
-            if webViews.values.contains(webView) {
-                return URL(string: urlString)
-            }
+        if let urlString = urlsByWebView[ObjectIdentifier(webView)] {
+            return URL(string: urlString)
         }
         return nil
     }
@@ -311,26 +491,27 @@ final class WebViewManager: NSObject {
     private func tearDownWebView(_ webView: WKWebView) {
         // Stop any in-progress loading to signal WebKit to release the content process
         webView.stopLoading()
-
+ 
         // Nil delegates to prevent callbacks during/after deallocation
         webView.uiDelegate = nil
         webView.navigationDelegate = nil
-
+ 
         detachNotificationBridge(from: webView)
-
+ 
         // Resume and clear any pending navigation continuation to prevent CheckedContinuation leaks
         let token = ObjectIdentifier(webView)
         if let continuation = navigationContinuations.removeValue(forKey: token) {
             continuation.resume()
         }
         initialLoadAwaitingFocus.remove(token)
-
+        urlsByWebView.removeValue(forKey: token)
+ 
         // Clean user content controller to break configuration references
         webView.configuration.userContentController.removeAllUserScripts()
-
+ 
         webView.removeObserver(self, forKeyPath: "title")
         webView.removeObserver(self, forKeyPath: "loading")
-
+ 
         // Remove the wrapper view (parent) from the view hierarchy, then the webview
         let wrapper = webView.superview
         webView.removeFromSuperview()
@@ -381,6 +562,13 @@ final class WebViewManager: NSObject {
             }
         }
         return false
+    }
+    
+    func tearDownAllWebViews(for service: Service) {
+        guard let sessionMap = webviewsByID[service.id] else { return }
+        for sessionIndex in Array(sessionMap.keys) {
+            removeWebView(for: service, sessionIndex: sessionIndex)
+        }
     }
 }
 

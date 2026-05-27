@@ -12,7 +12,7 @@ enum ActionScriptStorage {
             appDir = tempDir.appendingPathComponent("QuiperTests-\(ProcessInfo.processInfo.processIdentifier)")
         } else {
             let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            appDir = supportDir.appendingPathComponent("Quiper", isDirectory: true)
+            appDir = supportDir.appendingPathComponent(Constants.APP_FOLDER_NAME, isDirectory: true)
         }
         
         let scriptsDir = appDir.appendingPathComponent("ActionScripts", isDirectory: true)
@@ -71,7 +71,7 @@ enum ActionScriptStorage {
 
     static func deleteAllScripts() {
         let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDir = supportDir.appendingPathComponent("Quiper", isDirectory: true)
+        let appDir = supportDir.appendingPathComponent(Constants.APP_FOLDER_NAME, isDirectory: true)
         let scriptsDir = appDir.appendingPathComponent("ActionScripts", isDirectory: true)
         try? FileManager.default.removeItem(at: scriptsDir)
     }

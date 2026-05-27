@@ -1,5 +1,29 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Encrypted Storage Architecture ([SecureStorageManager](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/SecureStorageManager.swift) & [EncryptedVolumeManager](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/EncryptedVolumeManager.swift))**: Built a robust, highly secure volume manager that manages creating, mounting, and locking per-engine 256-bit AES encrypted Sparsebundles inside isolated directory structures.
+- **Secure Biometric Keychain Integration**: Integrates directly with the macOS secure enclave Keychain to store and retrieve volume passwords, wrapped tightly behind LocalAuthentication policies requiring TouchID or system password authentication.
+- **Biometrics Lock Shield ([LockOverlayView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/LockOverlayView.swift))**: Designed a premium, interactive glassmorphic overlay for locked engines that shields web content, featuring:
+  - Custom geometric scanner tick rendering and pulse/glow animations that adapt dynamically to TouchID states.
+  - Native password entry fallback with custom animated field shaking on validation failures.
+- **Interactive Full-Window Quit Overlay ([QuitOverlayView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/QuitOverlayView.swift))**: Implemented a glassy, visual-effect-based overlay covering both the web view and top bar during shutdown, blocking all mouse/keyboard inputs via overridden hit-testing and event tracking.
+- **Delayed Persistent Webview Architecture**: Added in-memory, non-persistent webview loading for locked encrypted engines. Real persistent WebViews are only instantiated and swapped in after successful biometric validation and volume mounting.
+
+### Changed
+
+- **Non-Blocking Safe App Termination**: Refactored `applicationShouldTerminate` to return `.terminateLater`, performing unmounting asynchronously in background tasks to prevent main-thread AppKit locks.
+- **Biometric Pad Scale Transform**: Integrated a CoreAnimation layer transform inside `embedBiometricView` to visually scale the native `LAAuthenticationView` perfectly to a 36x36 scanner target while completely removing explicit width/height constraints to resolve Auto Layout warnings.
+
+### Fixed
+
+- **Standardized Window Menu and Cmd+W Close Tab Navigation**: Resolved a critical HIG collision where `Cmd+W` (historically bound to "Hide Quiper" in the application and window menus) intercepted standard closing behavior. Standardized `Cmd+H` for app hiding, added a standard "Close Session" menu item mapped to `Cmd+W`, and routed it natively down the responder chain using custom overrides in [OverlayWindow](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/OverlayWindow.swift) and [MainWindowController](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/MainWindowController.swift).
+- **Session Selector Segment Selection Reset on Empty Engine**: Fixed a UI regression where closing the last session and showing the empty state page left segment "1" visually highlighted as selected due to `syncSelectorSelections()` overriding the deselected state back to index 0.
+- **Persistent Profile & Session Protection**: Resolved a critical SQLite data race/corruption issue where WebKit created session conflict files inside unmounted folders, causing regular user logouts on rerun.
+- **Swift 6 Strict Concurrency Conformity**: Isolated unmounting tasks to a `nonisolated` private function in [App.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/App.swift), ensuring compliance with Swift 6 actor-isolation rules.
+
 ## [3.3.0] - 2026-05-25
 
 ### Added
