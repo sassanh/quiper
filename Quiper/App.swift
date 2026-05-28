@@ -649,7 +649,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController?.appController.window.showQuitOverlay()
         
         // 3. Perform unmounting asynchronously in background to keep UI fully responsive
-        Task {
+        Task { @MainActor in
             await withCheckedContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                     self?.unmountAllEncryptedVolumes()
