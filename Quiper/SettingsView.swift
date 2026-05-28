@@ -1269,32 +1269,28 @@ struct ServiceDetailView: View {
                     backupSuccess = SecureDataMigrationManager.shared.backupData(for: serviceID)
                 }
                 
-                do {
-                    // 2. Unmount volume & delete physical bundle & keychain key
-                    migrationMessage = "Unmounting encrypted partition..."
-                    try? await EncryptedVolumeManager.shared.unmountVolume(for: serviceID)
-                    
-                    migrationMessage = "Deleting encrypted volume..."
-                    EncryptedVolumeManager.shared.deleteVolume(for: serviceID)
-                    SecureStorageManager.shared.deleteKeyFromKeychain(for: serviceID)
-                    
-                    // 3. Restore backup back to standard directory
-                    if transferData && backupSuccess {
-                        migrationMessage = "Restoring session data..."
-                        SecureDataMigrationManager.shared.restoreData(for: serviceID)
-                    } else {
-                        SecureDataMigrationManager.shared.discardBackup(for: serviceID)
-                    }
-                    
-                    // 4. Update settings properties
-                    service.isEncrypted = false
-                    settings.saveSettings()
-                    appController?.reloadServices()
-                    
-                    NSLog("[DataMigration] Engine \(serviceID) successfully unsecured (transferData: \(transferData))")
-                } catch {
-                    NSLog("[DataMigration] Unsecuring failed: \(error.localizedDescription)")
+                // 2. Unmount volume & delete physical bundle & keychain key
+                migrationMessage = "Unmounting encrypted partition..."
+                try? await EncryptedVolumeManager.shared.unmountVolume(for: serviceID)
+                
+                migrationMessage = "Deleting encrypted volume..."
+                EncryptedVolumeManager.shared.deleteVolume(for: serviceID)
+                SecureStorageManager.shared.deleteKeyFromKeychain(for: serviceID)
+                
+                // 3. Restore backup back to standard directory
+                if transferData && backupSuccess {
+                    migrationMessage = "Restoring session data..."
+                    SecureDataMigrationManager.shared.restoreData(for: serviceID)
+                } else {
+                    SecureDataMigrationManager.shared.discardBackup(for: serviceID)
                 }
+                
+                // 4. Update settings properties
+                service.isEncrypted = false
+                settings.saveSettings()
+                appController?.reloadServices()
+                
+                NSLog("[DataMigration] Engine \(serviceID) successfully unsecured (transferData: \(transferData))")
                 
                 isMigratingData = false
                 SecureDataMigrationManager.shared.isMigrationPending = false
