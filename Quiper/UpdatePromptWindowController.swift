@@ -86,17 +86,36 @@ private struct UpdatePromptView: View {
         .accessibilityIdentifier("UpdatePromptMainView")
     }
 
+    private var versionString: String {
+        if release.version.lowercased() == "beta", let build = release.buildNumber {
+            return "beta (Build \(build))"
+        }
+        return release.version
+    }
+
+    private var appIcon: some View {
+        Group {
+            if let nsImage = NSImage(named: "AppIcon") {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Image(systemName: "shippingbox")
+                    .font(.system(size: 64))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(width: 72, height: 72)
+    }
+
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
-            Image(systemName: "shippingbox")
-                .font(.system(size: 64))
-                .foregroundColor(.secondary)
-                .frame(width: 72, height: 72)
+            appIcon
             VStack(alignment: .leading, spacing: 8) {
                 Text("A new version of \(Constants.APP_NAME) is available")
                     .font(.title3)
                     .bold()
-                Text("Version \(release.version) (released \(release.publishDate.formatted(date: .abbreviated, time: .shortened))) is available.")
+                Text("Version \(versionString) (released \(release.publishDate.formatted(date: .abbreviated, time: .shortened))) is available.")
                     .foregroundColor(.secondary)
             }
             Spacer()

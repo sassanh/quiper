@@ -27,13 +27,13 @@
 ### Changed
 
 - **CI/CD Delivery Format**: Migrated the release artifact packaging from `.zip` compression to a standard macOS DMG disk image (`.dmg`) using `hdiutil` in the delivery workflow, providing a native drag-to-install experience. Artifact attestations have been updated to sign the disk image.
-- **Documentation Refined (README Overhaul)**: 
+- **Documentation Refined (README Overhaul)**:
   - Completely rewrote the `README.md` opening hook and Highlights to focus aggressively on core user value propositions (Instant Overlay, Persistent Sessions, Biometric Sandboxing).
   - Added a prominent **Verifiable Safety** section providing a copy-pasteable AI Audit Prompt, allowing users to verify the app is telemetry-free and cryptographically attested using their own trusted AI assistant.
   - Added a strict **Local Protection Only** disclaimer to clarify that Biometric Storage encrypts *local* data on the Mac, but does not protect or encrypt server-side conversations sent to providers like OpenAI.
   - Aggressively pruned boilerplate filler and useless technical explanations to keep the documentation sleek and impactful.
 
-- **Engine Settings Sidebar Reorganization & Secure Storage Migration ([SettingsView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift))**: 
+- **Engine Settings Sidebar Reorganization & Secure Storage Migration ([SettingsView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift))**:
   - Reorganized the advanced settings split-pane sidebar into clear, structured categories with **Storage & Security** positioned as the first category, followed by `Routing`, `Customization`, and `Custom Actions`. All items feature premium SF Symbol icons.
   - Set the default selection on entering engine settings to **Secure Storage** for a seamless, immediate look at security parameters.
   - Migrated the monolithic **Security & Privacy** controls (APFS SparseBundle toggles, Auto-Lock Policies, and Inactivity Timeout minutes) out of the main detail body and into a dedicated first-class tab inside the sidebar list, significantly de-cluttering the engine configuration interface.
@@ -69,6 +69,7 @@
 - **Persistent Profile & Session Protection**: Resolved a critical SQLite data race/corruption issue where WebKit created session conflict files inside unmounted folders, causing regular user logouts on rerun.
 - **Swift 6 Strict Concurrency Conformity**: Isolated unmounting tasks to a `nonisolated` private function in [App.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/App.swift), ensuring compliance with Swift 6 actor-isolation rules.
 - **Keychain errSecAuthFailed Graceful Recovery**: Resolved an issue where biometric or Keychain authentication cancellations/denials produced a cryptic `Keychain error: -25293` dialog. Gracefully mapped `errSecAuthFailed` (-25293) and `errSecUserCanceled` (-128) inside [SecureStorageManager.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/SecureStorageManager.swift) to a human-readable authorization failed state, and enhanced the cancel detection pipeline inside [WebViewManager.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/WebViewManager.swift) to silently clear the loading overlay without displaying annoying warning banners.
+- **Software Update Dialog Polish**: Replaced the generic box icon with the Quiper app logo, hid raw build comments from release notes, and appended build numbers to the beta version text.
 
 ## [3.3.0] - 2026-05-25
 
