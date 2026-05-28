@@ -372,7 +372,7 @@ extension MainWindowController {
     }
     
     private func matches(_ lhs: HotkeyManager.Configuration, _ rhs: HotkeyManager.Configuration?) -> Bool {
-        guard let rhs = rhs else { return false }
+        guard let rhs = rhs, !rhs.isDisabled else { return false }
         return lhs.keyCode == rhs.keyCode && lhs.modifierFlags == rhs.modifierFlags
     }
 }

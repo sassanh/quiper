@@ -296,7 +296,9 @@ final class UpdateManager: NSObject, ObservableObject {
         alert.addButton(withTitle: "Later")
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
-            relaunchApplication()
+            DispatchQueue.main.async {
+                self.relaunchApplication()
+            }
         }
     }
 
@@ -327,7 +329,9 @@ final class UpdateManager: NSObject, ObservableObject {
 
     @MainActor
     func relaunchApplicationFromPrompt() {
-        relaunchApplication()
+        DispatchQueue.main.async {
+            self.relaunchApplication()
+        }
     }
 
     var statusDescription: String {
