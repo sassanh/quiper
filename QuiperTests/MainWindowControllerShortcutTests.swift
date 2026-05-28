@@ -70,6 +70,31 @@ final class MainWindowControllerShortcutTests: XCTestCase {
         XCTAssertEqual(controller.activeServiceURL, "https://beta.test")
     }
 
+    func testClearedShortcutDoesNotCaptureTyping() {
+        let controller = makeController()
+        
+        // Simulate clearing the Next Session shortcut (keyCode 0, modifierFlags 0)
+        Settings.shared.appShortcutBindings.nextSession = HotkeyManager.Configuration(keyCode: 0, modifierFlags: 0)
+        
+        // Simulate typing the 'a' key (keyCode 0, no modifiers)
+        let aEvent = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "a",
+            charactersIgnoringModifiers: "a",
+            isARepeat: false,
+            keyCode: UInt16(kVK_ANSI_A)
+        )!
+        
+        let handled = controller.handleCommandShortcut(event: aEvent)
+        
+        XCTAssertFalse(handled, "Typing 'a' should not be captured when a shortcut is cleared")
+    }
+
     // MARK: - Helpers
 
     private func makeController() -> MainWindowController {

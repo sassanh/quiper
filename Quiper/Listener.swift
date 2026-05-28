@@ -275,6 +275,7 @@ final class EngineHotkeyManager {
 
     private func register(entry: Entry) {
         assertMainThread()
+        if entry.configuration.isDisabled { return }
         let identifier = nextIdentifier
         nextIdentifier &+= 1
 

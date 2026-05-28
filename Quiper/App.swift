@@ -648,16 +648,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 2. Show the beautiful full-screen overlay in the main window
         statusBarController?.appController.window.showQuitOverlay()
         
-        // 3. Perform unmounting asynchronously in background to keep UI fully responsive
-        Task {
-            await withCheckedContinuation { continuation in
-                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                    self?.unmountAllEncryptedVolumes()
-                    continuation.resume()
-                }
-            }
-            
-            // 4. Proceed to exit cleanly
+        // 3. Perform unmounting on a background thread, then reply from there.
+        // Must use GCD here, not Swift Task — NSApp.terminate() blocks the main thread
+        // in a nested run loop that does not drain the Swift concurrency queue, so
+        // Task { @MainActor in } and DispatchQueue.main.async both deadlock here.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.unmountAllEncryptedVolumes()
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         
