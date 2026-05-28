@@ -205,20 +205,20 @@ final class LockOverlayView: NSView {
     private let errorDetailsLabel = NSTextField()
 
     private var loadingTimer: Timer?
-    private var windowObserver: NSObjectProtocol?
-    private var appObserver: NSObjectProtocol?
+    private var windowBecomeObserver: NSObjectProtocol?
+    private var windowResignObserver: NSObjectProtocol?
+    private var appActiveObserver: NSObjectProtocol?
+    private var appResignObserver: NSObjectProtocol?
     private var lastRefreshTime = Date.distantPast
 
     deinit {
         NSLog("[LockOverlay] deinit - invalidating active contexts and observers")
         laContext.invalidate()
         activeFallbackContext?.invalidate()
-        if let observer = windowObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        if let observer = appObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
+        if let obs = windowBecomeObserver { NotificationCenter.default.removeObserver(obs) }
+        if let obs = windowResignObserver { NotificationCenter.default.removeObserver(obs) }
+        if let obs = appActiveObserver { NotificationCenter.default.removeObserver(obs) }
+        if let obs = appResignObserver { NotificationCenter.default.removeObserver(obs) }
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -441,8 +441,9 @@ final class LockOverlayView: NSView {
                 self.activeFallbackContext = nil
                 onUnlock?(fallbackContext)
                 DispatchQueue.main.async {
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                    if NSApp.isActive {
+                        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                    }
                 }
             } catch {
                 self.activeFallbackContext = nil
@@ -451,15 +452,17 @@ final class LockOverlayView: NSView {
                 if errString.contains("Canceled") || errString.contains("cancel") || errString.contains("-128") || errString.contains("denied") {
                     stopLoading()
                     DispatchQueue.main.async {
-                        NSApp.activate(ignoringOtherApps: true)
-                        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                        if NSApp.isActive {
+                            NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                        }
                     }
                     return
                 }
                 showError(error.localizedDescription)
                 DispatchQueue.main.async {
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                    if NSApp.isActive {
+                        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                    }
                 }
             }
         }
@@ -477,8 +480,9 @@ final class LockOverlayView: NSView {
                 )
                 onUnlock?(laContext)
                 DispatchQueue.main.async {
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                    if NSApp.isActive {
+                        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                    }
                 }
             } catch {
                 NSLog(
@@ -487,15 +491,17 @@ final class LockOverlayView: NSView {
                 if errString.contains("Canceled") || errString.contains("cancel") || errString.contains("-128") || errString.contains("denied") {
                     stopLoading()
                     DispatchQueue.main.async {
-                        NSApp.activate(ignoringOtherApps: true)
-                        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                        if NSApp.isActive {
+                            NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                        }
                     }
                     return
                 }
                 showError(error.localizedDescription)
                 DispatchQueue.main.async {
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                    if NSApp.isActive {
+                        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                    }
                 }
             }
         }
@@ -509,7 +515,13 @@ final class LockOverlayView: NSView {
             self.isBiometricsInitialized = false
             
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-                guard let self = self, self.window != nil else { return }
+                guard let self = self, let win = self.window else { return }
+                
+                // Only auto-acquire biometric focus if our window is actually key, application is active, and view is visible
+                guard win.isKeyWindow, NSApp.isActive, !self.isHiddenOrHasHiddenAncestor else {
+                    NSLog("[LockOverlay] viewDidMoveToWindow - window is not key, app inactive, or view hidden; postponing biometrics")
+                    return
+                }
                 
                 if !self.isBiometricsInitialized, let console = self.consoleView {
                     self.isBiometricsInitialized = true
@@ -531,12 +543,24 @@ final class LockOverlayView: NSView {
                     self.unlockClicked()
                 }
             }
+        } else {
+            releaseBiometrics()
         }
+    }
+    
+    override func viewDidHide() {
+        super.viewDidHide()
+        releaseBiometrics()
+    }
+    
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        refreshBiometricsIfNeeded()
     }
     
     private func registerFocusObservers() {
         // Observe window becoming key
-        windowObserver = NotificationCenter.default.addObserver(
+        windowBecomeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeKeyNotification,
             object: nil,
             queue: .main
@@ -546,9 +570,21 @@ final class LockOverlayView: NSView {
                 self.refreshBiometricsIfNeeded()
             }
         }
+
+        // Observe window resigning key
+        windowResignObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self, let win = notification.object as? NSWindow, win == self.window else { return }
+            Task { @MainActor in
+                self.releaseBiometrics()
+            }
+        }
         
         // Observe app becoming active
-        appObserver = NotificationCenter.default.addObserver(
+        appActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
@@ -558,37 +594,57 @@ final class LockOverlayView: NSView {
                 self.refreshBiometricsIfNeeded()
             }
         }
+
+        // Observe app resigning active
+        appResignObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self, self.window != nil else { return }
+            Task { @MainActor in
+                self.releaseBiometrics()
+            }
+        }
+    }
+    
+    private func releaseBiometrics() {
+        NSLog("[LockOverlay] Releasing biometrics to free system Touch ID focus")
+        self.laContext.invalidate()
+        self.laView?.removeFromSuperview()
+        self.laView = nil
+        self.isBiometricsInitialized = false
     }
     
     private func refreshBiometricsIfNeeded() {
-        // Debounce to prevent rapid double-refresh
-        let now = Date()
-        guard now.timeIntervalSince(lastRefreshTime) > 1.5 else { return }
+        // Only refresh if we have a window, we are not displaying an error, and no active fallback is running.
+        guard let win = window, errorContainer.isHidden, activeFallbackContext == nil else { return }
         
-        // Only refresh if biometrics have been initialized at least once,
-        // we have a window, we are not displaying an error, and no active fallback is running.
-        guard window != nil, isBiometricsInitialized, errorContainer.isHidden, activeFallbackContext == nil else { return }
+        // Also only refresh if we are currently active, key, and visible on screen
+        guard win.isKeyWindow, NSApp.isActive, !isHiddenOrHasHiddenAncestor else {
+            // Immediately release biometrics to free Touch ID focus if we are hidden or inactive
+            releaseBiometrics()
+            return
+        }
+        
+        // Debounce if we are already initialized
+        let now = Date()
+        if isBiometricsInitialized {
+            guard now.timeIntervalSince(lastRefreshTime) > 1.5 else { return }
+        }
         
         lastRefreshTime = now
         
-        NSLog("[LockOverlay] App/Window gained focus - refreshing biometrics to prevent Touch ID inactivity")
+        NSLog("[LockOverlay] App/Window gained focus/visibility - initializing/refreshing biometrics")
         
-        // Invalidate active context
         self.laContext.invalidate()
         self.laContext = LAContext()
-        self.isBiometricsInitialized = false
+        self.isBiometricsInitialized = true
         
         if let console = self.consoleView {
-            self.isBiometricsInitialized = true
-            
-            // Remove any existing laView first to prevent duplication or layout issues
             self.laView?.removeFromSuperview()
-            
-            // Pure, completely uncustomized LAAuthenticationView with the fresh context
             let laView = LAAuthenticationView(context: self.laContext)
             self.laView = laView
-            
-            // Embed the fingerprint beautifully into the dedicated console scan pad
             console.embedBiometricView(laView)
         }
         
