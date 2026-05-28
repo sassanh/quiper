@@ -414,16 +414,18 @@ final class UpdateManager: NSObject, ObservableObject {
         let requiresBrowser = preferredAsset == nil
         
         var buildNumber: Int? = nil
+        var cleanNotes = payload.body
         if let body = payload.body, let range = body.range(of: "<!-- BuildNumber: (\\d+) -->", options: .regularExpression) {
             let extracted = String(body[range])
             if let numberStr = extracted.components(separatedBy: CharacterSet.decimalDigits.inverted).filter({ !$0.isEmpty }).first {
                 buildNumber = Int(numberStr)
             }
+            cleanNotes = body.replacingCharacters(in: range, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
         }
         
         return ReleaseInfo(version: version,
                            publishDate: publishDate,
-                           notes: payload.body,
+                           notes: cleanNotes,
                            buildNumber: buildNumber,
                            downloadURL: downloadURL,
                            pageURL: payload.htmlUrl,
