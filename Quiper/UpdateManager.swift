@@ -387,7 +387,7 @@ final class UpdateManager: NSObject, ObservableObject {
                 
             case .beta:
                 // Beta includes Stable + Pre-releases, but excludes automated nightlies
-                releases = releases.filter { $0.tagName != "nightly" }
+                releases = releases.filter { !$0.tagName.hasPrefix("nightly") }
                 
             case .nightly:
                 // Nightly includes everything (Stable + Beta + Nightly)
