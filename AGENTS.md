@@ -30,7 +30,7 @@
 
 - Follow the Conventional Commits-style prefixes: `feat:`, `fix:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:`, `build:`, `ci:`, `chore:`, `revert:` (see recent history).
 - Keep subject lines imperative, lowercase, and concise: `feat(ui): add session actions menu`.
-- Use a bulleted list (`- Details...`) in the body for multiple changes, starting each bullet with a capital letter.
+- Use a bulleted list (`- Details...`) in the body for multiple changes, starting each bullet with a capital letter. **CRITICAL: Do NOT use multiple `-m` flags for bullet points (e.g. `git commit -m "sub" -m "- 1" -m "- 2"`), as this inserts a blank line between every single bullet. Instead, pass the body as a single multiline string or use a temporary file to keep bullet points adjacent.**
 - PRs should summarize behavior change, list manual tests, and note platform (macOS version, Intel/Apple Silicon). Add screenshots or short screen recordings for UI-facing edits and mention if settings schema changes.
 
 ## Configuration & Security Notes
