@@ -4,6 +4,14 @@
 
 ### Added
 
+- **Premium External Code Editor with Finder & Clipboard Integration ([SettingsView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift))**: Completely replaced the basic, raw textboxes for Action Scripts, Custom CSS, and Focus Selectors inside Settings with a highly premium, read-only syntax-highlighted code container (`HighlightedCodeContainer`).
+  - **Edit**: Launches the default text editor of your choice (VS Code, Zed, Sublime Text, Cursor, etc.), generating the file dynamically on disk.
+  - **Reveal**: Directly launches Finder and highlights the specific config file on disk.
+  - **Copy Path**: Copies the absolute file path to the macOS clipboard.
+  - **Top-Left Pinning**: Enforced strict top-leading alignment using a `GeometryReader` container, ensuring short scripts are cleanly pinned to the top-left rather than being centered.
+- **Dynamic Regex Syntax Highlighter ([SyntaxHighlighter](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SyntaxHighlighter.swift))**: Engineered a lightweight, zero-dependency tokenization engine inside pure Swift that uses a Monokai-inspired dark palette. Includes custom parsing rules for both JavaScript (control statements, keywords, type references, functions, variables, strings, comments) and CSS (selectors, properties, units, value keywords, comments, punctation).
+- **Storage and Syntax Highlighting Unit Tests ([SyntaxHighlighterTests](file:///Users/sassanharadji/Projects/Personal/quiper/QuiperTests/SyntaxHighlighterTests.swift))**: Added robust testing suites validating JavaScript/CSS parsing layers and temporary directory isolation.
+
 - **WebKit Legacy Data Onboarding ([OnboardingWizard](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Components/OnboardingWizard.swift))**: Added a premium, glassmorphic welcome onboarding wizard shown on first run of Quiper 4.0.0. Enables users to selectively migrate legacy shared cookies, databases, and localStorage from pre-4.0 environments into isolated, per-engine workspace directories.
 - **Biometric Enclave SparseBundle Provisioning**: Integrates automated Keychain creation and 256-bit AES APFS SparseBundle initialization within the onboarding sequence, allowing users to secure sensitive engines with TouchID directly from launch.
 - **Engine Web Data Settings Management ([SettingsView](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift))**: Added a premium, isolated Web Data management sidebar choice for each engine. It features database storage paths, copy-to-clipboard, "Show in Finder" action, and locked security cards for encrypted storage engines.

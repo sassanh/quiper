@@ -266,7 +266,11 @@ struct GeneralSettingsView: View {
     private func eraseAllEngines() {
         let ids = settings.services.map { $0.id }
         settings.services.removeAll()
-        ids.forEach { ActionScriptStorage.deleteScripts(for: $0) }
+        ids.forEach { id in
+            ActionScriptStorage.deleteScripts(for: id)
+            CustomCSSStorage.deleteCSS(for: id)
+            FocusSelectorStorage.deleteSelector(for: id)
+        }
         settings.saveSettings()
         appController?.reloadServices()
     }
@@ -533,6 +537,8 @@ struct ServicesSettingsView: View {
         settings.services.removeAll { idSet.contains($0.id) }
         removedServices.forEach { service in
             ActionScriptStorage.deleteScripts(for: service.id)
+            CustomCSSStorage.deleteCSS(for: service.id)
+            FocusSelectorStorage.deleteSelector(for: service.id)
             WKWebsiteDataStore.remove(forIdentifier: service.id) { _ in }
         }
         ensureSelectionExists()
@@ -922,8 +928,22 @@ struct ServiceDetailView: View {
             case .action(let id):
                 if let action = settings.customActions.first(where: { $0.id == id }) {
                     ActionScriptEditor(action: action,
-                                       script: scriptBinding(for: id),
-                                       openExternally: { openScriptInEditor(actionID: id) })
+                                       code: Binding(
+                                           get: { loadScript(actionID: id) },
+                                           set: { newValue in
+                                               if let idx = settings.services.firstIndex(where: { $0.id == service.id }) {
+                                                   settings.services[idx].actionScripts[id] = newValue
+                                               }
+                                               service.actionScripts[id] = newValue
+                                               
+                                               ActionScriptStorage.saveScript(newValue, serviceID: service.id, actionID: id)
+                                               settings.saveSettings()
+                                               appController?.reloadServices()
+                                           }
+                                       ),
+                                       openInEditor: { openScriptInEditor(actionID: id) },
+                                       revealInFinder: { revealScriptInFinder(actionID: id) },
+                                       copyFilePath: { copyScriptFilePath(actionID: id) })
                 } else {
                     emptySelectionView
                 }
@@ -942,23 +962,29 @@ struct ServiceDetailView: View {
                     .fontWeight(.bold)
             }
             
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Specify a CSS selector (e.g. input[type='text']) to automatically target and focus a text input whenever this engine launches or gains activation.")
-                        .font(.body)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    
-                    CodeTextEditor(text: $service.focus_selector)
-                        .frame(minHeight: 140)
-                        .background(Color(NSColor.textBackgroundColor))
-                        .cornerRadius(5)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
-                        )
-                }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Specify a CSS selector (e.g. input[type='text']) to automatically target and focus a text input whenever this engine launches or gains activation.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                HighlightedCodeContainer(
+                    code: Binding(
+                        get: { loadFocusSelector() },
+                        set: { newValue in
+                            service.focus_selector = newValue
+                            FocusSelectorStorage.saveSelector(newValue, serviceID: service.id)
+                            settings.saveSettings()
+                            appController?.reloadServices()
+                        }
+                    ),
+                    language: "css",
+                    fileName: "focus.txt",
+                    openInEditor: { openFocusSelectorInEditor() },
+                    revealInFinder: { revealFocusSelectorInFinder() },
+                    copyFilePath: { copyFocusSelectorFilePath() }
+                )
+                .frame(maxHeight: .infinity)
             }
         }
         .padding()
@@ -1027,26 +1053,29 @@ struct ServiceDetailView: View {
                     .fontWeight(.bold)
             }
             
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Inject raw CSS layout rules directly into the target webpage DOM at launch to customize colors, fonts, or hide unwanted UI elements.")
-                        .font(.body)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    
-                    CodeTextEditor(text: Binding(
-                        get: { service.customCSS ?? "" },
-                        set: { service.customCSS = $0.isEmpty ? nil : $0 }
-                    ))
-                    .frame(minHeight: 140)
-                    .background(Color(NSColor.textBackgroundColor))
-                    .cornerRadius(5)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 5)
-                            .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
-                    )
-                }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Inject raw CSS layout rules directly into the target webpage DOM at launch to customize colors, fonts, or hide unwanted UI elements.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                HighlightedCodeContainer(
+                    code: Binding(
+                        get: { loadCSS() },
+                        set: { newValue in
+                            service.customCSS = newValue
+                            CustomCSSStorage.saveCSS(newValue, serviceID: service.id)
+                            settings.saveSettings()
+                            appController?.reloadServices()
+                        }
+                    ),
+                    language: "css",
+                    fileName: "custom.css",
+                    openInEditor: { openCSSInEditor() },
+                    revealInFinder: { revealCSSInFinder() },
+                    copyFilePath: { copyCSSFilePath() }
+                )
+                .frame(maxHeight: .infinity)
             }
         }
         .padding()
@@ -1489,26 +1518,57 @@ struct ServiceDetailView: View {
         )
     }
     
-    private func scriptBinding(for actionID: UUID) -> Binding<String> {
-        Binding(
-            get: { loadScript(actionID: actionID) },
-            set: { newValue in
-                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.isEmpty {
-                    service.actionScripts.removeValue(forKey: actionID)
-                    ActionScriptStorage.deleteScript(serviceID: service.id, actionID: actionID)
-                } else {
-                    service.actionScripts[actionID] = newValue
-                    ActionScriptStorage.saveScript(newValue, serviceID: service.id, actionID: actionID)
-                }
-                Settings.shared.saveSettings()
-            }
-        )
-    }
-    
     private func openScriptInEditor(actionID: UUID) {
         let contents = loadScript(actionID: actionID)
         ActionScriptStorage.openInDefaultEditor(serviceID: service.id, actionID: actionID, contents: contents)
+    }
+
+    private func revealScriptInFinder(actionID: UUID) {
+        let contents = loadScript(actionID: actionID)
+        ActionScriptStorage.revealInFinder(serviceID: service.id, actionID: actionID, contents: contents)
+    }
+
+    private func copyScriptFilePath(actionID: UUID) {
+        let contents = loadScript(actionID: actionID)
+        ActionScriptStorage.copyPath(serviceID: service.id, actionID: actionID, contents: contents)
+    }
+
+    private func loadCSS() -> String {
+        CustomCSSStorage.loadCSS(serviceID: service.id, fallback: service.customCSS ?? "")
+    }
+
+    private func openCSSInEditor() {
+        let contents = loadCSS()
+        CustomCSSStorage.openInDefaultEditor(serviceID: service.id, contents: contents)
+    }
+
+    private func revealCSSInFinder() {
+        let contents = loadCSS()
+        CustomCSSStorage.revealInFinder(serviceID: service.id, contents: contents)
+    }
+
+    private func copyCSSFilePath() {
+        let contents = loadCSS()
+        CustomCSSStorage.copyPath(serviceID: service.id, contents: contents)
+    }
+
+    private func loadFocusSelector() -> String {
+        FocusSelectorStorage.loadSelector(serviceID: service.id, fallback: service.focus_selector)
+    }
+
+    private func openFocusSelectorInEditor() {
+        let contents = loadFocusSelector()
+        FocusSelectorStorage.openInDefaultEditor(serviceID: service.id, contents: contents)
+    }
+
+    private func revealFocusSelectorInFinder() {
+        let contents = loadFocusSelector()
+        FocusSelectorStorage.revealInFinder(serviceID: service.id, contents: contents)
+    }
+
+    private func copyFocusSelectorFilePath() {
+        let contents = loadFocusSelector()
+        FocusSelectorStorage.copyPath(serviceID: service.id, contents: contents)
     }
 
 }
@@ -1521,90 +1581,36 @@ private struct PendingServiceDeletion: Identifiable {
 
 private struct ActionScriptEditor: View {
     var action: CustomAction
-    @Binding var script: String
-    var openExternally: () -> Void
+    @Binding var code: String
+    var openInEditor: () -> Void
+    var revealInFinder: () -> Void
+    var copyFilePath: () -> Void
     
     var body: some View {
-        Form {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("JavaScript for \(action.name.isEmpty ? "Action" : action.name)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                CodeTextEditor(text: $script)
-                    .frame(minHeight: 140)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.secondary.opacity(0.4), lineWidth: 1)
-                    )
-                    .autocorrectionDisabled(true) // Disable autocorrect
-                Text("Leave blank to log the default 'Action not implemented' message.")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-                Button("Open in Text Editor", action: openExternally)
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 4)
-            }
-            .padding(.vertical)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("JavaScript for \(action.name.isEmpty ? "Action" : action.name)")
+                .font(.body)
+                .foregroundColor(.secondary)
+            
+            HighlightedCodeContainer(
+                code: $code,
+                language: "javascript",
+                fileName: "\(action.name.isEmpty ? "action" : action.name).js",
+                openInEditor: openInEditor,
+                revealInFinder: revealInFinder,
+                copyFilePath: copyFilePath
+            )
+            .frame(maxHeight: .infinity)
+            
+            Text("Leave blank to log the default 'Action not implemented' message.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
         }
         .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
-#if os(macOS)
-private struct CodeTextEditor: NSViewRepresentable {
-    @Binding var text: String
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.borderType = .noBorder
-        scrollView.drawsBackground = false
-
-        let textView = NSTextView()
-        textView.isRichText = false
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticTextReplacementEnabled = false
-        textView.isAutomaticSpellingCorrectionEnabled = false
-        textView.isAutomaticLinkDetectionEnabled = false
-        textView.isAutomaticDataDetectionEnabled = false
-        textView.usesFindBar = true
-        textView.font = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-        textView.textContainerInset = NSSize(width: 4, height: 6)
-        textView.delegate = context.coordinator
-
-        scrollView.documentView = textView
-        return scrollView
-    }
-
-    func updateNSView(_ nsView: NSScrollView, context: Context) {
-        guard let textView = nsView.documentView as? NSTextView else { return }
-        if textView.string != text {
-            textView.string = text
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
-
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: CodeTextEditor
-        init(parent: CodeTextEditor) { self.parent = parent }
-        func textDidChange(_ notification: Notification) {
-            guard let tv = notification.object as? NSTextView else { return }
-            parent.text = tv.string
-        }
-    }
-}
-#else
-private struct CodeTextEditor: View {
-    @Binding var text: String
-    var body: some View {
-        TextEditor(text: $text)
-            .font(.system(.body, design: .monospaced))
-    }
-}
-#endif
 
 
 

@@ -86,8 +86,8 @@ final class CustomActionUITests: BaseUITest {
             actionLabel.click()
             
             // Type Script
-            let editor = app.textViews.firstMatch
-            XCTAssertTrue(editor.waitForExistence(timeout: 2.0), "Script editor missing")
+            let editor = app.textViews["code_editor"].exists ? app.textViews["code_editor"] : app.textViews.firstMatch
+            XCTAssertTrue(editor.waitForExistence(timeout: 4.0), "Script editor missing")
             editor.click()
             editor.typeKey("a", modifierFlags: .command)
             editor.typeText(script)

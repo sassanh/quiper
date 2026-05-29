@@ -263,7 +263,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func focusInputInActiveWebview() {
         guard let service = currentService() else { return }
-        let selector = service.focus_selector
+        let selector = FocusSelectorStorage.loadSelector(serviceID: service.id, fallback: service.focus_selector)
         guard !selector.isEmpty else { return }
         currentWebView()?.evaluateJavaScript("setTimeout(() => document.querySelector(\"\(selector)\")?.focus(), 0);", completionHandler: nil)
     }

@@ -1080,6 +1080,8 @@ class Settings: ObservableObject {
         serviceZoomLevels.removeAll()
         try? FileManager.default.removeItem(at: settingsFile)
         ActionScriptStorage.deleteAllScripts()
+        CustomCSSStorage.deleteAllCSS()
+        FocusSelectorStorage.deleteAllSelectors()
     }
 
     private func readPersistedSettings() -> (PersistedSettings, Bool) {
