@@ -18,7 +18,8 @@ struct Service: Codable, Identifiable {
     var iconBase64: String?
     var iconManuallyUnset: Bool?
     var isEncrypted: Bool = false
-    var autoLockPolicy: AutoLockPolicy = .onAppQuit
+    var lockOnSwitchAway: Bool = true
+    var lockAfterInactivity: Bool = false
     var autoLockInactivityTimeout: Int = 5
 
     enum CodingKeys: String, CodingKey {
@@ -33,8 +34,10 @@ struct Service: Codable, Identifiable {
         case iconBase64
         case iconManuallyUnset
         case isEncrypted
-        case autoLockPolicy
+        case lockOnSwitchAway
+        case lockAfterInactivity
         case autoLockInactivityTimeout
+        case autoLockPolicy // Keep for decoding legacy settings
     }
 
     init(id: UUID = UUID(),
@@ -48,7 +51,8 @@ struct Service: Codable, Identifiable {
          iconBase64: String? = nil,
          iconManuallyUnset: Bool? = nil,
          isEncrypted: Bool = false,
-         autoLockPolicy: AutoLockPolicy = .onAppQuit,
+         lockOnSwitchAway: Bool = true,
+         lockAfterInactivity: Bool = false,
          autoLockInactivityTimeout: Int = 5) {
         self.id = id
         self.name = name
@@ -61,7 +65,8 @@ struct Service: Codable, Identifiable {
         self.iconBase64 = iconBase64
         self.iconManuallyUnset = iconManuallyUnset
         self.isEncrypted = isEncrypted
-        self.autoLockPolicy = autoLockPolicy
+        self.lockOnSwitchAway = lockOnSwitchAway
+        self.lockAfterInactivity = lockAfterInactivity
         self.autoLockInactivityTimeout = autoLockInactivityTimeout
     }
 
@@ -78,7 +83,21 @@ struct Service: Codable, Identifiable {
         iconBase64 = try container.decodeIfPresent(String.self, forKey: .iconBase64)
         iconManuallyUnset = try container.decodeIfPresent(Bool.self, forKey: .iconManuallyUnset)
         isEncrypted = try container.decodeIfPresent(Bool.self, forKey: .isEncrypted) ?? false
-        autoLockPolicy = try container.decodeIfPresent(AutoLockPolicy.self, forKey: .autoLockPolicy) ?? .onAppQuit
+        
+        let switchAway = try container.decodeIfPresent(Bool.self, forKey: .lockOnSwitchAway)
+        let inactivity = try container.decodeIfPresent(Bool.self, forKey: .lockAfterInactivity)
+        
+        if let switchAway = switchAway, let inactivity = inactivity {
+            self.lockOnSwitchAway = switchAway
+            self.lockAfterInactivity = inactivity
+        } else if let legacyPolicy = try container.decodeIfPresent(AutoLockPolicy.self, forKey: .autoLockPolicy) {
+            self.lockOnSwitchAway = (legacyPolicy == .onSwitchAway)
+            self.lockAfterInactivity = (legacyPolicy == .afterInactivity)
+        } else {
+            self.lockOnSwitchAway = true
+            self.lockAfterInactivity = false
+        }
+        
         autoLockInactivityTimeout = try container.decodeIfPresent(Int.self, forKey: .autoLockInactivityTimeout) ?? 5
     }
 
@@ -107,7 +126,8 @@ struct Service: Codable, Identifiable {
             try container.encode(iconManuallyUnset, forKey: .iconManuallyUnset)
         }
         try container.encode(isEncrypted, forKey: .isEncrypted)
-        try container.encode(autoLockPolicy, forKey: .autoLockPolicy)
+        try container.encode(lockOnSwitchAway, forKey: .lockOnSwitchAway)
+        try container.encode(lockAfterInactivity, forKey: .lockAfterInactivity)
         try container.encode(autoLockInactivityTimeout, forKey: .autoLockInactivityTimeout)
     }
 }
