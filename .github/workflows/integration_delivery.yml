@@ -73,7 +73,12 @@ jobs:
         run: |
           VERSION_BASE=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
           SUFFIX=$(if [ "${{ github.event_name }}" == "schedule" ]; then echo "nightly"; else echo "beta"; fi)
-          echo "APP_VERSION=${VERSION_BASE}-${SUFFIX}-nonproduction" >>"$GITHUB_ENV"
+          # Clean version base to prevent duplicate suffixes (e.g. beta-beta or nightly-nightly)
+          CLEAN_BASE=$(echo "$VERSION_BASE" | sed "s/-$SUFFIX//g; s/$SUFFIX//g")
+          if [ -z "$CLEAN_BASE" ]; then
+            CLEAN_BASE="0.0.0"
+          fi
+          echo "APP_VERSION=${CLEAN_BASE}-${SUFFIX}-nonproduction" >>"$GITHUB_ENV"
       - name: Build Swift App
         run: ./build-app.sh
       - name: Create DMG Disk Image
@@ -102,22 +107,24 @@ jobs:
       - build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # fetch tags for accurate describe
       - uses: actions/download-artifact@v8
         with:
           name: app
           path: artifacts
-      - name: Delete previous nightly release
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Generate unique tag
+        id: tag
         run: |
-          gh release delete nightly --yes --cleanup-tag || true
+          VERSION_BASE=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          CLEAN_BASE=$(echo "$VERSION_BASE" | sed "s/-nightly//g; s/-beta//g; s/nightly//g; s/beta//g")
+          echo "tag=nightly-${CLEAN_BASE}-${{ github.run_number }}" >>"$GITHUB_OUTPUT"
       - name: Create Nightly Pre-release
         uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
-          tag_name: nightly
-          name: Quiper Nightly Build
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Quiper Nightly Build ${{ steps.tag.outputs.tag }}
           body: |
             **Automated nightly build** from the latest `main` branch.
 
@@ -137,22 +144,24 @@ jobs:
       - build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # fetch tags for accurate describe
       - uses: actions/download-artifact@v8
         with:
           name: app
           path: artifacts
-      - name: Delete previous beta release
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Generate unique tag
+        id: tag
         run: |
-          gh release delete beta --yes --cleanup-tag || true
+          VERSION_BASE=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          CLEAN_BASE=$(echo "$VERSION_BASE" | sed "s/-nightly//g; s/-beta//g; s/nightly//g; s/beta//g")
+          echo "tag=beta-${CLEAN_BASE}-${{ github.run_number }}" >>"$GITHUB_OUTPUT"
       - name: Create Beta Pre-release
         uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
-          tag_name: beta
-          name: Quiper Beta Build
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Quiper Beta Build ${{ steps.tag.outputs.tag }}
           body: |
             **Manual beta build** for feature testing.
 
