@@ -527,6 +527,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         NSApp.setActivationPolicy(.accessory)
         
+        if OnboardingWizard.needsOnboarding {
+            OnboardingWizard.show { [weak self] in
+                self?.completeLaunch()
+            }
+        } else {
+            completeLaunch()
+        }
+    }
+    
+    private func completeLaunch() {
         statusBarController = StatusBarController()
         
         NotificationDispatcher.shared.configure(delegate: statusBarController.appController)
@@ -542,7 +552,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showSettings(_ sender: Any?) {
-        statusBarController.appController.showSettings(sender)
+        statusBarController?.appController.showSettings(sender)
     }
     
     private func createMainMenu() {
