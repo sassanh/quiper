@@ -26,6 +26,8 @@
 
 ### Changed
 
+- **Complete Environment Isolation for Settings and WebKit Data ([project.pbxproj](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper.xcodeproj/project.pbxproj), [Constants.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Constants.swift))**: Unified both application settings and WebKit caches to resolve dynamically under the app's bundle identifier (`app.sassanh.quiper.Quiper` / `app.sassanh.quiper.QuiperDev`). This isolates cookies, logins, and configurations between the Xcode debug run and the production `/Applications` version completely, eliminating namespace collisions and session interference.
+- **Automatic Settings Directory Migration on Launch ([Main.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/Main.swift))**: Implemented a zero-configuration migration routine on startup that automatically moves older Application Support data (`Quiper` / `QuiperDev`) to the new bundle identifier-based folders seamlessly without losing settings, logins, or scripts.
 - **CI/CD Delivery Format**: Migrated the release artifact packaging from `.zip` compression to a standard macOS DMG disk image (`.dmg`) using `hdiutil` in the delivery workflow, providing a native drag-to-install experience. Artifact attestations have been updated to sign the disk image.
 - **Documentation Refined (README Overhaul)**:
   - Completely rewrote the `README.md` opening hook and Highlights to focus aggressively on core user value propositions (Instant Overlay, Persistent Sessions, Biometric Sandboxing).

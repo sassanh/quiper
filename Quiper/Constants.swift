@@ -5,11 +5,7 @@ struct Constants {
     static let DEFAULT_SERVICE = "Grok"
     
     static let APP_FOLDER_NAME: String = {
-        #if DEBUG
-        return "QuiperDev"
-        #else
-        return "Quiper"
-        #endif
+        return Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
     }()
 
     static let LOGO_PATH = "logo/logo.png"
