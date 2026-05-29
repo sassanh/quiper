@@ -942,19 +942,24 @@ struct ServiceDetailView: View {
                     .fontWeight(.bold)
             }
             
-            Text("Specify a CSS selector (e.g. input[type='text']) to automatically target and focus a text input whenever this engine launches or gains activation.")
-                .font(.body)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            CodeTextEditor(text: $service.focus_selector)
-                .frame(minHeight: 140)
-                .background(Color(NSColor.textBackgroundColor))
-                .cornerRadius(5)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
-                )
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Specify a CSS selector (e.g. input[type='text']) to automatically target and focus a text input whenever this engine launches or gains activation.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    CodeTextEditor(text: $service.focus_selector)
+                        .frame(minHeight: 140)
+                        .background(Color(NSColor.textBackgroundColor))
+                        .cornerRadius(5)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+                        )
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -971,39 +976,45 @@ struct ServiceDetailView: View {
                     .fontWeight(.bold)
             }
             
-            Text("Define regular expression patterns to allow link clicks, popups, and OAuth login flows matching these domains to stay inside this engine instead of routing to external apps.")
-                .font(.body)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(service.friendDomains.indices), id: \.self) { index in
-                    HStack(spacing: 8) {
-                        TextField("e.g. ^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", text: $service.friendDomains[index])
-                            .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: .infinity)
-                        Button(role: .destructive) {
-                            service.friendDomains.remove(at: index)
-                            settings.saveSettings()
-                        } label: {
-                            Image(systemName: "trash")
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Define regular expression patterns to allow link clicks, popups, and OAuth login flows matching these domains to stay inside this engine instead of routing to external apps.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(Array(service.friendDomains.indices), id: \.self) { index in
+                            HStack(spacing: 8) {
+                                TextField("e.g. ^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", text: $service.friendDomains[index])
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(maxWidth: .infinity)
+                                Button(role: .destructive) {
+                                    service.friendDomains.remove(at: index)
+                                    settings.saveSettings()
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Remove domain pattern")
+                            }
                         }
-                        .buttonStyle(.borderless)
-                        .help("Remove domain pattern")
+                        Button {
+                            service.friendDomains.append("")
+                        } label: {
+                            Label("Add Friend Domain", systemImage: "plus")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.top, 4)
                     }
                 }
-                Button {
-                    service.friendDomains.append("")
-                } label: {
-                    Label("Add Friend Domain", systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
-                .padding(.top, 4)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
+
 
     private var customCSSForm: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1016,27 +1027,32 @@ struct ServiceDetailView: View {
                     .fontWeight(.bold)
             }
             
-            Text("Inject raw CSS layout rules directly into the target webpage DOM at launch to customize colors, fonts, or hide unwanted UI elements.")
-                .font(.body)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            CodeTextEditor(text: Binding(
-                get: { service.customCSS ?? "" },
-                set: { service.customCSS = $0.isEmpty ? nil : $0 }
-            ))
-            .frame(minHeight: 140)
-            .background(Color(NSColor.textBackgroundColor))
-            .cornerRadius(5)
-            .overlay(
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
-            )
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Inject raw CSS layout rules directly into the target webpage DOM at launch to customize colors, fonts, or hide unwanted UI elements.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    CodeTextEditor(text: Binding(
+                        get: { service.customCSS ?? "" },
+                        set: { service.customCSS = $0.isEmpty ? nil : $0 }
+                    ))
+                    .frame(minHeight: 140)
+                    .background(Color(NSColor.textBackgroundColor))
+                    .cornerRadius(5)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5)
+                            .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-
+    
     @MainActor @ViewBuilder
     private var securityForm: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1049,124 +1065,134 @@ struct ServiceDetailView: View {
                     .fontWeight(.bold)
             }
             
-            Text("Quiper isolates this engine's disk data inside a dedicated storage partition. You can protect it with military-grade encryption and auto-lock policies.")
-                .font(.body)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            // Experimental Warning Callout Card
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.orange)
-                    .font(.title3)
-                    .padding(.top, 2)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Experimental Security Feature")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                    
-                    Text("SparseBundle local storage encryption is currently in beta. While engineered for maximum privacy and TouchID protection, unexpected OS detaches, key failures, or filesystem errors could lead to session disruption or data loss. We strongly recommend regular backups of your critical account credentials.")
-                        .font(.caption)
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Each engine runs in an isolated, sandboxed disk partition.")
+                        .font(.body)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(12)
-            .background(Color.orange.opacity(0.08))
-            .cornerRadius(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.orange.opacity(0.2), lineWidth: 1)
-            )
-            
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Encrypt Engine Local Storage")
-                            .font(.body)
-                        Text("Hardware-boosted APFS SparseBundle protected by Keychain & Touch ID.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { service.isEncrypted },
-                        set: { newValue in
-                            targetNewValue = newValue
-                            showingDataMigrationAlert = true
-                        }
-                    ))
-                    .toggleStyle(.switch)
-                }
-                
-                if service.isEncrypted {
-                    Divider()
                     
-                    HStack {
+                    // High-density Warning Callout Card
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                            .font(.body)
+                            .padding(.top, 1)
+                        
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Auto-Lock Policy")
-                                .font(.body)
-                            Text("Decide when this engine's storage locks and detaches.")
+                            Text("Beta Feature Warning")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+                            
+                            Text("Local encryption is in beta. OS detaches or keychain issues may cause session disruption or data loss. Please keep secure backups.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        Spacer()
-                        Picker("", selection: Binding(
-                            get: { service.autoLockPolicy },
-                            set: { newValue in
-                                service.autoLockPolicy = newValue
-                                settings.saveSettings()
-                                appController?.reloadServices()
-                            }
-                        )) {
-                            ForEach(AutoLockPolicy.allCases) { policy in
-                                Text(policy.rawValue).tag(policy)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(width: 160)
                     }
+                    .padding(10)
+                    .background(Color.orange.opacity(0.08))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                    )
                     
-                    if service.autoLockPolicy == .afterInactivity {
-                        Divider()
-                        
+                    VStack(alignment: .leading, spacing: 14) {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Inactivity Timeout")
+                                Text("Encrypt Local Storage")
                                     .font(.body)
-                                Text("Specify minutes of idle time before this engine locks.")
+                                Text("Hardware-boosted APFS SparseBundle bound to Keychain & Touch ID.")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer()
-                            Stepper(value: Binding(
-                                get: { service.autoLockInactivityTimeout },
+                            Toggle("", isOn: Binding(
+                                get: { service.isEncrypted },
                                 set: { newValue in
-                                    service.autoLockInactivityTimeout = max(1, newValue)
-                                    settings.saveSettings()
-                                    appController?.reloadServices()
+                                    targetNewValue = newValue
+                                    showingDataMigrationAlert = true
                                 }
-                            ), in: 1...1440) {
-                                Text("\(service.autoLockInactivityTimeout) min")
-                                    .font(.body.monospacedDigit())
-                                    .frame(minWidth: 60, alignment: .trailing)
+                            ))
+                            .toggleStyle(.switch)
+                        }
+                        
+                        if service.isEncrypted {
+                            Divider()
+                            
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Auto-Lock Policy")
+                                    .font(.body)
+                                    .fontWeight(.medium)
+                                    .padding(.bottom, 2)
+                                
+                                HStack {
+                                    Toggle("Lock immediately on switch away", isOn: Binding(
+                                        get: { service.lockOnSwitchAway },
+                                        set: { newValue in
+                                            service.lockOnSwitchAway = newValue
+                                            settings.saveSettings()
+                                            appController?.reloadServices()
+                                        }
+                                    ))
+                                    .toggleStyle(.checkbox)
+                                }
+                                
+                                HStack {
+                                    Toggle("Lock after a period of inactivity", isOn: Binding(
+                                        get: { service.lockAfterInactivity },
+                                        set: { newValue in
+                                            service.lockAfterInactivity = newValue
+                                            settings.saveSettings()
+                                            appController?.reloadServices()
+                                        }
+                                    ))
+                                    .toggleStyle(.checkbox)
+                                }
+                            }
+                            
+                            if service.lockAfterInactivity {
+                                Divider()
+                                
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Inactivity Timeout")
+                                            .font(.body)
+                                        Text("Specify minutes of idle time before this engine locks.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                    Spacer()
+                                    Stepper(value: Binding(
+                                        get: { service.autoLockInactivityTimeout },
+                                        set: { newValue in
+                                            service.autoLockInactivityTimeout = max(1, newValue)
+                                            settings.saveSettings()
+                                            appController?.reloadServices()
+                                        }
+                                    ), in: 1...1440) {
+                                        Text("\(service.autoLockInactivityTimeout) min")
+                                            .font(.body.monospacedDigit())
+                                            .frame(minWidth: 60, alignment: .trailing)
+                                    }
+                                }
                             }
                         }
                     }
+                    .padding(14)
+                    .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+                    )
                 }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .padding(14)
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
-            .cornerRadius(10)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
-            )
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1307,7 +1333,7 @@ struct ServiceDetailView: View {
     private var isWebDataLocked: Bool {
         service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
     }
-
+    
     @MainActor @ViewBuilder
     private var webDataForm: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1320,90 +1346,95 @@ struct ServiceDetailView: View {
                     .fontWeight(.bold)
             }
             
-            Text("Quiper runs each engine inside a fully isolated sandboxed database. All cookies, local storage, databases, and caches are separated from other engines.")
-                .font(.body)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            if isWebDataLocked {
-                VStack(alignment: .center, spacing: 12) {
-                    Image(systemName: "lock.shield.fill")
-                        .font(.system(size: 40))
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Quiper runs each engine inside a fully isolated sandboxed database. All cookies, local storage, databases, and caches are separated from other engines.")
+                        .font(.body)
                         .foregroundColor(.secondary)
-                        .padding(.top, 8)
+                        .fixedSize(horizontal: false, vertical: true)
                     
-                    Text("Engine Storage is Locked")
-                        .font(.headline)
-                    
-                    Text("This engine's storage is encrypted and locked. Please unlock the engine from the main overlay window in order to manage or reset its web data.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-                .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
-                .cornerRadius(10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
-                )
-            } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Database Storage Path")
-                        .font(.headline)
-                    
-                    HStack {
-                        Text(webDataPath)
-                            .font(.system(.body, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(NSColor.textBackgroundColor))
-                            .cornerRadius(6)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                            )
-                        
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(webDataPath, forType: .string)
-                        } label: {
-                            Image(systemName: "doc.on.doc")
+                    if isWebDataLocked {
+                        VStack(alignment: .center, spacing: 12) {
+                            Image(systemName: "lock.shield.fill")
+                                .font(.system(size: 40))
+                                .foregroundColor(.secondary)
+                                .padding(.top, 8)
+                            
+                            Text("Engine Storage is Locked")
+                                .font(.headline)
+                            
+                            Text("This engine's storage is encrypted and locked. Please unlock the engine from the main overlay window in order to manage or reset its web data.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 24)
                         }
-                        .buttonStyle(.bordered)
-                        .help("Copy full path to clipboard")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                        .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+                        )
+                    } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Database Storage Path")
+                                .font(.headline)
+                            
+                            HStack {
+                                Text(webDataPath)
+                                    .font(.system(.body, design: .monospaced))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(Color(NSColor.textBackgroundColor))
+                                    .cornerRadius(6)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                                    )
+                                
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(webDataPath, forType: .string)
+                                } label: {
+                                    Image(systemName: "doc.on.doc")
+                                }
+                                .buttonStyle(.bordered)
+                                .help("Copy full path to clipboard")
+                            }
+                            
+                            HStack(spacing: 12) {
+                                Button {
+                                    let url = URL(fileURLWithPath: webDataPath)
+                                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
+                                } label: {
+                                    Label("Show in Finder", systemImage: "folder")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                
+                                Button(role: .destructive) {
+                                    showResetConfirmation = true
+                                } label: {
+                                    Label("Reset Web Data...", systemImage: "trash")
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                            .padding(.top, 4)
+                        }
+                        .padding(14)
+                        .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+                        )
                     }
-                    
-                    HStack(spacing: 12) {
-                        Button {
-                            let url = URL(fileURLWithPath: webDataPath)
-                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
-                        } label: {
-                            Label("Show in Finder", systemImage: "folder")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        
-                        Button(role: .destructive) {
-                            showResetConfirmation = true
-                        } label: {
-                            Label("Reset Web Data...", systemImage: "trash")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    .padding(.top, 4)
                 }
-                .padding(14)
-                .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
-                .cornerRadius(10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
-                )
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
         .padding()

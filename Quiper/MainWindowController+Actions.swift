@@ -145,7 +145,7 @@ extension MainWindowController {
     }
     
     func handleSwitchAway(from service: Service) {
-        guard service.isEncrypted && service.autoLockPolicy == .onSwitchAway else { return }
+        guard service.isEncrypted && service.lockOnSwitchAway else { return }
         
         webViewManager.tearDownAllWebViews(for: service)
         Task {
@@ -170,7 +170,7 @@ extension MainWindowController {
     func checkInactivityLock() {
         let now = Date()
         
-        for service in services where service.isEncrypted && service.autoLockPolicy == .afterInactivity {
+        for service in services where service.isEncrypted && service.lockAfterInactivity {
             if EncryptedVolumeManager.shared.isMounted(for: service.id) {
                 let timeout: TimeInterval = TimeInterval(service.autoLockInactivityTimeout * 60)
                 if now.timeIntervalSince(lastActivityTime) >= timeout {
