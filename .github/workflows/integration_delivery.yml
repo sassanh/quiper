@@ -87,16 +87,16 @@ jobs:
           cp -R Quiper.app build/dmgstaging/
           ln -s /Applications build/dmgstaging/Applications
           hdiutil create -volname "Quiper" -srcfolder build/dmgstaging -ov -format UDZO Quiper.dmg
-      - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-path: Quiper.dmg
-
+      - name: Create ZIP Archive
+        run: |
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent Quiper.app Quiper.app.zip
       - name: Upload App
         uses: actions/upload-artifact@v7
         with:
           name: app
-          path: Quiper.dmg
+          path: |
+            Quiper.dmg
+            Quiper.app.zip
           if-no-files-found: error
 
   nightly-release:
@@ -108,7 +108,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # fetch tags for accurate describe
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           name: app
@@ -119,22 +119,29 @@ jobs:
           VERSION_BASE=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           CLEAN_BASE=$(echo "$VERSION_BASE" | sed "s/-nightly//g; s/-beta//g; s/nightly//g; s/beta//g")
           echo "tag=nightly-${CLEAN_BASE}-${{ github.run_number }}" >>"$GITHUB_OUTPUT"
+      - name: Create release notes
+        env:
+          STARTED_AT: ${{ github.run_started_at }}
+          SHA: ${{ github.sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          cat <<EOF >release_notes.md
+          **Automated nightly build** from the latest \`main\` branch.
+
+          Built on: $STARTED_AT
+          Commit: $SHA
+
+          ⚠️ This is a pre-release build for testing purposes only.
+          <!-- BuildNumber: $RUN_NUMBER -->
+          EOF
       - name: Create Nightly Pre-release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: artifacts/*
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Quiper Nightly Build ${{ steps.tag.outputs.tag }}
-          body: |
-            **Automated nightly build** from the latest `main` branch.
-
-            Built on: ${{ github.run_started_at }}
-            Commit: ${{ github.sha }}
-
-            ⚠️ This is a pre-release build for testing purposes only.
-            <!-- BuildNumber: ${{ github.run_number }} -->
-          prerelease: true
-          draft: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ steps.tag.outputs.tag }} artifacts/* \
+            --title "Quiper Nightly Build (${{ steps.tag.outputs.tag }})" \
+            --notes-file release_notes.md \
+            --prerelease
 
   beta-release:
     if: github.event_name == 'workflow_dispatch'
@@ -145,7 +152,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # fetch tags for accurate describe
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           name: app
@@ -156,22 +163,29 @@ jobs:
           VERSION_BASE=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           CLEAN_BASE=$(echo "$VERSION_BASE" | sed "s/-nightly//g; s/-beta//g; s/nightly//g; s/beta//g")
           echo "tag=beta-${CLEAN_BASE}-${{ github.run_number }}" >>"$GITHUB_OUTPUT"
+      - name: Create release notes
+        env:
+          STARTED_AT: ${{ github.run_started_at }}
+          SHA: ${{ github.sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          cat << EOF > release_notes.md
+          **Manual beta build** for feature testing.
+
+          Built on: $STARTED_AT
+          Commit: $SHA
+
+          ⚠️ This is a pre-release build for testing purposes only.
+          <!-- BuildNumber: $RUN_NUMBER -->
+          EOF
       - name: Create Beta Pre-release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: artifacts/*
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Quiper Beta Build ${{ steps.tag.outputs.tag }}
-          body: |
-            **Manual beta build** for feature testing.
-
-            Built on: ${{ github.run_started_at }}
-            Commit: ${{ github.sha }}
-
-            ⚠️ This is a pre-release build for testing purposes only.
-            <!-- BuildNumber: ${{ github.run_number }} -->
-          prerelease: true
-          draft: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ steps.tag.outputs.tag }} artifacts/* \
+            --title "Quiper Beta Build (${{ steps.tag.outputs.tag }})" \
+            --notes-file release_notes.md \
+            --prerelease
 
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
@@ -181,6 +195,8 @@ jobs:
       - build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           name: app
@@ -195,14 +211,35 @@ jobs:
         with:
           version: ${{ steps.release_version.outputs.value }}
           path: ./CHANGELOG.md
-      - name: Publish Release
-        uses: softprops/action-gh-release@v3
+      - name: Create release notes
+        env:
+          CHANGES: ${{ steps.changelog_reader.outputs.changes }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          echo "$CHANGES" > release_notes.md
+          echo "" >> release_notes.md
+          cat << 'EOF' >> release_notes.md
+
+          ### 🛡️ Verify Build Authenticity
+
+          This release is cryptographically attested using **GitHub Artifact Attestations**. You can independently verify the signature to ensure the downloaded `Quiper.dmg` was built securely on GitHub Actions and hasn't been modified:
+
+          ```bash
+          gh attestation verify Quiper.dmg --repo sassanh/quiper
+          ```
+          EOF
+          echo "" >> release_notes.md
+          echo "<!-- BuildNumber: $RUN_NUMBER -->" >> release_notes.md
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v4
         with:
-          files: artifacts/*
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
-          body: |
-            ${{ steps.changelog_reader.outputs.changes }}
-            <!-- BuildNumber: ${{ github.run_number }} -->
-          draft: false
-          prerelease: false
+          subject-path: |
+            artifacts/Quiper.dmg
+            artifacts/Quiper.app.zip
+      - name: Publish Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ github.ref_name }} artifacts/* \
+            --title "Release ${{ github.ref_name }}" \
+            --notes-file release_notes.md
