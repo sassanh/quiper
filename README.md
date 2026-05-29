@@ -150,7 +150,7 @@ Quiper supports per-theme window customization:
 - **Services** – Drag services directly in the header segmented control or open Settings → Engines to add/delete/reorder entries. Each service includes a CSS selector used to focus the correct input field when the session becomes visible.
 - **Custom CSS** – Inject custom CSS per-engine for transparent backgrounds or style overrides.
 - **Custom Actions** – Define JavaScript snippets triggered by global or app-specific shortcuts to automate tasks (e.g., clicking 'New Chat' or scraping content).
-- **Manual edits** – All preferences live at `~/Library/Application Support/Quiper/settings.json`. Edit while Quiper is closed.
+- **Manual edits** – All preferences live at `~/Library/Application Support/app.sassanh.quiper.Quiper/settings.json`. Edit while Quiper is closed.
 
 <details>
 <summary><strong>Expanded Selectors</strong></summary>
@@ -179,7 +179,7 @@ To achieve instant context switching, each service configured in `settings.json`
 
 ### Biometric Secure Sandboxing
 Quiper provides premium local sandboxing for highly sensitive engines:
-- **Encrypted Volumes:** When secure storage is enabled for an engine, a 256-bit AES encrypted APFS `sparsebundle` is created at `~/Library/Application Support/Quiper/EncryptedStores/<ServiceID>.sparsebundle`.
+- **Encrypted Volumes:** When secure storage is enabled for an engine, a 256-bit AES encrypted APFS `sparsebundle` is created at `~/Library/Application Support/app.sassanh.quiper.Quiper/EncryptedStores/<ServiceID>.sparsebundle`.
 - **TouchID Integration:** A cryptographically random volume passphrase is securely generated and stored inside the macOS Secure Enclave Keychain, protected by LocalAuthentication policies requiring TouchID or your system password.
 - **Biometrics Lock Shield:** Locked engines are visually shielded by a hardware-accelerated glassmorphic overlay. The real, persistent WebViews are only loaded and swapped into memory *after* successful authentication and volume mounting.
 
@@ -199,8 +199,8 @@ Long-running AI generations shouldn't force you to stare at a loading screen. `W
 
 | Item | Path | Notes |
 | --- | --- | --- |
-| Settings | `~/Library/Application Support/Quiper/settings.json` | JSON object; edit while Quiper is closed. |
-| Encrypted Volumes | `~/Library/Application Support/Quiper/EncryptedStores/` | AES-256 encrypted APFS sparsebundles for secure engines. |
+| Settings | `~/Library/Application Support/app.sassanh.quiper.Quiper/settings.json` | JSON object; edit while Quiper is closed. |
+| Encrypted Volumes | `~/Library/Application Support/app.sassanh.quiper.Quiper/EncryptedStores/` | AES-256 encrypted APFS sparsebundles for secure engines. |
 | LaunchAgent | `~/Library/LaunchAgents/com.<username>.quiper.plist` | Created/removed via Install at Login. |
 | Downloads | `~/Downloads/` | Files initiated inside Quiper are saved here. |
 
