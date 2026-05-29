@@ -329,11 +329,12 @@ final class WebViewManager: NSObject {
             config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
         }
 
-        if let customCSS = service.customCSS, !customCSS.isEmpty {
+        let cssToInject = CustomCSSStorage.loadCSS(serviceID: service.id, fallback: service.customCSS ?? "")
+        if !cssToInject.isEmpty {
             let cssScript = """
             const style = document.createElement('style');
             style.textContent = `/* Custom CSS */
-            \(customCSS)`;
+            \(cssToInject)`;
             document.head.appendChild(style);
             """
             let userScript = WKUserScript(source: cssScript, injectionTime: .atDocumentEnd, forMainFrameOnly: false)

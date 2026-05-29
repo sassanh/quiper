@@ -26,8 +26,28 @@ enum ActionScriptStorage {
         return dir
     }
 
-    private static func scriptURL(serviceID: UUID, actionID: UUID) -> URL {
+    static func scriptURL(serviceID: UUID, actionID: UUID) -> URL {
         serviceDirectory(for: serviceID).appendingPathComponent("\(actionID.uuidString).js", isDirectory: false)
+    }
+
+    static func revealInFinder(serviceID: UUID, actionID: UUID, contents: String) {
+        let url = scriptURL(serviceID: serviceID, actionID: actionID)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            let data = Data(contents.utf8)
+            try? data.write(to: url, options: .atomic)
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    static func copyPath(serviceID: UUID, actionID: UUID, contents: String) {
+        let url = scriptURL(serviceID: serviceID, actionID: actionID)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            let data = Data(contents.utf8)
+            try? data.write(to: url, options: .atomic)
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(url.path, forType: .string)
     }
 
     static func loadScript(serviceID: UUID, actionID: UUID, fallback: String) -> String {
