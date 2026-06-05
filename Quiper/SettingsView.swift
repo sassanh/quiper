@@ -72,6 +72,16 @@ struct GeneralSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                SettingsSection(title: "Documentation") {
+                    SettingsRow(
+                        title: "User Guide & Reference",
+                        message: "Learn about engines, Touch ID encryption, custom actions, CSS overrides, and all keyboard shortcuts."
+                    ) {
+                        Link("Open Documentation", destination: URL(string: "https://sassanh.github.io/quiper/")!)
+                            .buttonStyle(.bordered)
+                    }
+                }
+
                  SettingsSection(title: "Startup") {
                     SettingsToggleRow(
                         title: "Launch at login",

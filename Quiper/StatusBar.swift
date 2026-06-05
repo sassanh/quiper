@@ -205,6 +205,7 @@ struct StatusMenuBuilder {
         menu.addItem(showHideItem)
         menu.addItem(.separator())
         addItem("Settings", #selector(AppController.showSettings(_:)), ",", [.command], controller)
+        addItem("Documentation", #selector(AppController.openDocumentation(_:)), "?", [], controller)
         addItem("Show Inspector", #selector(AppController.toggleInspector(_:)), "i", [.command, .option], controller)
         addItem("Set New Hotkey", #selector(AppController.setHotkey(_:)), "", [], controller)
         

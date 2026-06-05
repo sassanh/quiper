@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Comprehensive Documentation Site**: Migrated extensive setup guides, engine management instructions, and troubleshooting tables from the README into a dedicated VitePress documentation site hosted on GitHub Pages.
+- **In-App Documentation Shortcuts ([App.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/App.swift), [StatusBar.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/StatusBar.swift), [SettingsView.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift))**: Added native "Documentation" link shortcuts inside the main `Help` menu, the session selector's "..." dropdown menu, the macOS Status Bar menu, and the General Settings pane.
+
+### Changed
+
+- **Streamlined Landing Page**: Completely rewrote the `README.md` to serve as a focused, compelling landing page highlighting core features, visual galleries, and security audits, while delegating deep-dive technical configuration guides to the official documentation site.
+- **Custom CSS and Appearance Separation**: Cleaned up the documentation architecture by relocating Custom CSS injection guides out of the general "Appearance" page and correctly associating them with the "Managing Engines" guide where they are configured.
+
 ### Fixed
 
 - **Space-switching global hotkey behavior ([App.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/App.swift))**: Fixed an issue where switching to another desktop Space and hitting the global shortcut would close the window on the original Space rather than bringing it to the active Space. The shortcut now checks `isOnActiveSpace` to ensure the window is correctly shown on the active Space on the first press.

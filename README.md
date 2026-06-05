@@ -9,6 +9,8 @@ Quiper unifies all your AI chat services into a single, instant-access macOS ove
 [![GitHub release](https://img.shields.io/github/v/release/sassanh/quiper.svg)](https://github.com/sassanh/quiper/releases)
 [![codecov](https://codecov.io/gh/sassanh/quiper/branch/main/graph/badge.svg)](https://codecov.io/gh/sassanh/quiper)
 
+### 📖 [Read the Official Documentation ➔](https://sassanh.github.io/quiper/)
+
 ## Highlights
 
 - **Instant Global Overlay (`⌥ Space`)** – Acts like Spotlight for AI. Drop a floating window over any app, ask a question, and hide it without breaking your workflow.
@@ -52,14 +54,6 @@ Quiper unifies all your AI chat services into a single, instant-access macOS ove
 3. Because this project isn't signed or notarized with a paid Apple Developer ID, Gatekeeper will block the first launch. Open **Settings → Privacy & Security** and click **Open Anyway** next to Quiper.
 4. Relaunch `Quiper.app`, click **Open** on the follow-up dialog, and macOS will remember that exception for this bundle path.
 5. Approve the notification prompt if you plan to use browser banners.
-
-<details>
-<summary><strong>Update Settings</strong></summary>
-
-Configuring automatic checks and downloads:
-
-![Update Settings](.github/assets/settings_updates.webp)
-</details>
 
 <details>
 <summary>🛡️ <strong>Verifiable Safety & Supply Chain Attestation</strong></summary>
@@ -108,99 +102,10 @@ Create a distributable bundle:
 open Quiper.app
 ```
 
-## Daily Workflow
+---
 
-The default global hotkey `⌥ Space` summons the overlay. When active, navigate instantly:
-
-| Action | Shortcut |
-| --- | --- |
-| Switch session 1–10 | `⌘ 1` … `⌘ 0` |
-| Switch service 1–9 | `⌘ ⌃ 1` … `⌘ ⌃ 9` (or `⌘ ⌥` + digit) |
-| Open Settings | `⌘ ,` |
-| Toggle Web Inspector | `⌘ ⌥ I` |
-| Hide overlay | `⌘ H` |
-| Find in page | `⌘ F` |
-| Zoom in/out | `⌘ +` / `⌘ -` |
-
-Dismissing the window automatically reactivates your previously focused app so you can immediately resume typing.
-
-<details>
-<summary><strong>Shortcut Configuration</strong></summary>
-
-Customize global and in-app shortcuts:
-
-![Shortcuts Settings](.github/assets/settings_shortcuts.webp)
-</details>
-
-## Appearance & Customization
-
-- **Color Scheme & Blur**: Force Light or Dark mode, follow System preference, and customize window vibrancies or blur materials.
-- **Custom CSS** – Inject custom CSS per-engine for transparent backgrounds or style overrides.
-- **Custom Actions** – Define JavaScript snippets triggered by global or app-specific shortcuts to automate tasks (e.g., clicking 'New Chat' or scraping content).
-- **Manual edits** – All preferences live at `~/Library/Application Support/app.sassanh.quiper.Quiper/settings.json`. Edit while Quiper is closed.
-
-<details>
-<summary><strong>Appearance Customization</strong></summary>
-
-![Appearance Settings](.github/assets/settings_appearance.webp)
-</details>
-
-<details>
-<summary><strong>Expanded Selectors</strong></summary>
-
-Show full service details and conversation context:
-
-![Expanded Selectors](.github/assets/feature_selectors.webp)
-</details>
-
-<details>
-<summary><strong>Service Configuration</strong></summary>
-
-Manage engines and custom actions:
-
-![Engine Settings](.github/assets/settings_engines.webp)
-
-Define hotkeys for specific services:
-
-![Service Hotkeys](.github/assets/settings_shortcuts_hotkeys.webp)
-</details>
-
-## Reset & Data Paths
-
-| Item | Path | Notes |
-| --- | --- | --- |
-| Settings | `~/Library/Application Support/app.sassanh.quiper.Quiper/settings.json` | JSON object; edit while Quiper is closed. |
-| Encrypted Volumes | `~/Library/Application Support/app.sassanh.quiper.Quiper/EncryptedStores/` | AES-256 encrypted APFS sparsebundles for secure engines. |
-| LaunchAgent | `~/Library/LaunchAgents/com.<username>.quiper.plist` | Created/removed via Install at Login. |
-| Downloads | `~/Downloads/` | Files initiated inside Quiper are saved here. |
-
-Hit **Clear All Web Data** in the status menu to wipe cookies/cache without touching the JSON. For a full reset, quit Quiper and delete the settings file.
-
-<details>
-<summary><strong>General & Danger Zone</strong></summary>
-
-Reset options and general configuration:
-
-![General Settings](.github/assets/settings_general.webp)
-</details>
-
-## Troubleshooting & Release Channels
-
-### Troubleshooting
-
-- **Global hotkey fails** – Capture a new one so Quiper overwrites the `hotkey` entry in `settings.json`.
-- **Notifications never appear** – Use the status menu to open macOS notification settings and ensure alerts are allowed.
-- **Web view stuck or stale** – Use **Clear All Web Data** or reload the service.
-- **Build errors** – Ensure Xcode 16+ CLT are installed (`xcode-select --install`).
-
-### Release Channels
-
-Quiper provides two pre-production channels for testing (opt-in via **Settings → Updates**):
-
-- **Nightly**: Automatically generated every day at midnight (UTC) from the latest code in the `main` branch. These builds are experimental and intended for developers or those who want the absolute latest features.
-- **Beta**: Manually triggered pre-releases used to validate specific features before they are merged into a stable version.
-
-Both pre-production channels use the GitHub Actions Run Number as an internal build identifier, letting the app reliably detect updates even if the major version string remains the same.
+### 📖 [Read the Official Documentation ➔](https://sassanh.github.io/quiper/)
+For full details on keyboard shortcuts, managing engines, customizing CSS, setting up Custom Actions, and troubleshooting, please refer to our comprehensive documentation.
 
 ## License
 

@@ -109,6 +109,14 @@ enum MenuFactory {
         }
     }
     
+    static func createHelpMenu() -> NSMenu {
+        let menu = NSMenu(title: "Help")
+        menu.autoenablesItems = true
+        let helpItem = createMenuItem(title: "Quiper Help", iconName: "questionmark.circle", action: #selector(AppController.openDocumentation(_:)), keyEquivalent: "?")
+        menu.addItem(helpItem)
+        return menu
+    }
+
     static func createSettingsItem() -> NSMenuItem {
         let item = createMenuItem(title: "Settings...", iconName: "gearshape", action: #selector(AppController.showSettings(_:)), keyEquivalent: ",")
         return item

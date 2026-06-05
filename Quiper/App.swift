@@ -156,6 +156,11 @@ final class AppController: NSObject, NSWindowDelegate {
         presentSettingsWindow()
     }
 
+    @objc func openDocumentation(_ sender: Any?) {
+        guard let url = URL(string: "https://sassanh.github.io/quiper/") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     @objc func toggleInspector(_ sender: Any?) {
         windowController.toggleInspector()
     }
@@ -556,6 +561,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController?.appController.showSettings(sender)
     }
     
+    @objc func openDocumentation(_ sender: Any?) {
+        statusBarController?.appController.openDocumentation(sender)
+    }
+    
     private func createMainMenu() {
         let mainMenu = NSMenu(title: "Main Menu")
         NSApp.mainMenu = mainMenu
@@ -629,14 +638,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Help Menu
         let helpMenuItem = NSMenuItem()
         mainMenu.addItem(helpMenuItem)
-        let helpMenu = NSMenu(title: "Help")
+        let helpMenu = MenuFactory.createHelpMenu()
         helpMenuItem.submenu = helpMenu
 
         // Setting NSApp.helpMenu enables the system search field in the menu
         NSApp.helpMenu = helpMenu
-        
-        let helpItem = MenuFactory.createMenuItem(title: "Quiper Help", iconName: "questionmark.circle", action: #selector(NSApplication.showHelp(_:)), keyEquivalent: "?")
-        helpMenu.addItem(helpItem)
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
