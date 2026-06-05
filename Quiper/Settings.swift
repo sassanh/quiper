@@ -844,6 +844,10 @@ class Settings: ObservableObject {
             html {
               --bg-primary: transparent !important;
             }
+
+            .right-sidebar-width, .sidebar-width {
+              background-color: var(--bg-secondary);
+            }
             """
         ),
         Service(

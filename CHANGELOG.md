@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Space-switching global hotkey behavior ([App.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/App.swift))**: Fixed an issue where switching to another desktop Space and hitting the global shortcut would close the window on the original Space rather than bringing it to the active Space. The shortcut now checks `isOnActiveSpace` to ensure the window is correctly shown on the active Space on the first press.
+
 ## [4.0.0] - 2026-05-29
 
 ### Added

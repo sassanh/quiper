@@ -287,7 +287,8 @@ final class AppController: NSObject, NSWindowDelegate {
     }
     
     var isWindowVisible: Bool {
-        windowController.window?.isVisible == true
+        guard let window = windowController.window else { return false }
+        return window.isVisible && window.isOnActiveSpace
     }
     
     private func captureFrontmostNonQuiperApplication() {
@@ -373,7 +374,7 @@ final class AppController: NSObject, NSWindowDelegate {
     private func registerOverlayHotkey() {
         hotkeyManager.registerCurrentHotkey { [weak self] in
             guard let self else { return }
-            if self.windowController.window?.isVisible == true {
+            if self.isWindowVisible {
                 self.hideWindow(nil)
             } else {
                 self.showWindow(nil)
