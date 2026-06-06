@@ -114,6 +114,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var isHeaderForcedVisibleForAction = false
     var isUpdatingHeaderVisibility = false
     var selectorCursorMonitor: Timer?
+    var lastCommandPressedTime: TimeInterval = 0
+    var lastCommandReleasedTime: TimeInterval = 0
+    var modifierHUDView: ModifierHUDView?
     var onboardingHUD: GhostOnboardingHUDView?
 
     private var isCompactMode = false
@@ -367,6 +370,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window?.orderOut(nil)
         findBarViewController?.hide()
         setShortcutsEnabled(false)
+        hideModifierHUD()
         NotificationCenter.default.post(name: .windowDidHide, object: nil)
     }
 
@@ -990,6 +994,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             collapsibleSessionSelector?.collapse()
         }
         GhostOnboardingManager.shared.windowDidResignKey()
+        hideModifierHUD()
     }
 }
 

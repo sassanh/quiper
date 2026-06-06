@@ -37,6 +37,71 @@ struct KeyBindingsSettingsView: View {
                     )
                 }
 
+                Section("Control Center HUD") {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Double tap Command")
+                                .fontWeight(.semibold)
+                            Text("Open the Control Center HUD by quickly double-tapping the Command key.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        
+                        HStack(spacing: 6) {
+                            Text("⌘")
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: 5).fill(.quaternary))
+                            Text("Double Tap")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        Spacer().frame(width: 12)
+                        
+                        Toggle("", isOn: $settings.enableHUDDoubleTapCmd)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
+                    .padding(.vertical, 4)
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Command + Escape")
+                                .fontWeight(.semibold)
+                            Text("Open the Control Center HUD by pressing Command and Escape.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        
+                        HStack(spacing: 6) {
+                            Text("⌘")
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: 5).fill(.quaternary))
+                            Text("+")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("⎋")
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: 5).fill(.quaternary))
+                        }
+                        
+                        Spacer().frame(width: 12)
+                        
+                        Toggle("", isOn: $settings.enableHUDCmdEscape)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
+                    .padding(.vertical, 4)
+                }
+
                 Section("App Shortcuts") {
                     ForEach(AppShortcutBindings.Key.allCases) { key in
                         let primary = settings.appShortcutBindings.configuration(for: key)

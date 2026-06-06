@@ -462,6 +462,8 @@ struct PersistedSettings: Codable {
     var autoCreateSessionOnEmptyEngineActivation: Bool?
     var shouldPurgeDanglingWebData: Bool?
     var hasCompletedGhostOnboarding: Bool?
+    var enableHUDDoubleTapCmd: Bool?
+    var enableHUDCmdEscape: Bool?
     var version: Int? = 1
 
     enum CodingKeys: String, CodingKey {
@@ -472,6 +474,8 @@ struct PersistedSettings: Codable {
         case autoCreateSessionOnEmptyEngineActivation
         case shouldPurgeDanglingWebData
         case hasCompletedGhostOnboarding
+        case enableHUDDoubleTapCmd
+        case enableHUDCmdEscape
     }
 
     init(services: [Service],
@@ -492,6 +496,8 @@ struct PersistedSettings: Codable {
          autoCreateSessionOnEmptyEngineActivation: Bool? = nil,
          shouldPurgeDanglingWebData: Bool? = nil,
          hasCompletedGhostOnboarding: Bool? = nil,
+         enableHUDDoubleTapCmd: Bool? = nil,
+         enableHUDCmdEscape: Bool? = nil,
          version: Int? = 1) {
         self.services = services
         self.hotkey = hotkey
@@ -511,6 +517,8 @@ struct PersistedSettings: Codable {
         self.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
         self.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
         self.hasCompletedGhostOnboarding = hasCompletedGhostOnboarding
+        self.enableHUDDoubleTapCmd = enableHUDDoubleTapCmd
+        self.enableHUDCmdEscape = enableHUDCmdEscape
         self.version = version
     }
 
@@ -534,6 +542,8 @@ struct PersistedSettings: Codable {
         autoCreateSessionOnEmptyEngineActivation = try container.decodeIfPresent(Bool.self, forKey: .autoCreateSessionOnEmptyEngineActivation)
         shouldPurgeDanglingWebData = try container.decodeIfPresent(Bool.self, forKey: .shouldPurgeDanglingWebData)
         hasCompletedGhostOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedGhostOnboarding)
+        enableHUDDoubleTapCmd = try container.decodeIfPresent(Bool.self, forKey: .enableHUDDoubleTapCmd)
+        enableHUDCmdEscape = try container.decodeIfPresent(Bool.self, forKey: .enableHUDCmdEscape)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }
 }

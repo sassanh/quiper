@@ -154,7 +154,7 @@ final class GhostOnboardingManager {
                 wc.showOnboardingHUD(
                     step: 3,
                     title: "Settings & Options",
-                    text: "Press `⌘,` to access Settings.\n\nEnjoy using Quiper!",
+                    text: "Press `⌘,` to access Settings.\n\nDouble-tap `⌘` or press `⌘⎋` to toggle the Control Center.\n\nEnjoy using Quiper!",
                     target: target
                 )
                 // Auto dismiss step 3 after 10 seconds if not clicked

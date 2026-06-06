@@ -141,6 +141,11 @@ extension MainWindowController {
         toggleInspector()
     }
 
+    @objc func performMenuToggleControlCenter(_ sender: Any?) {
+        guard Settings.shared.enableHUDCmdEscape else { return }
+        toggleModifierHUD()
+    }
+
     @objc func performCustomActionFromMenu(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? CustomAction else { return }
         performCustomAction(action)

@@ -96,6 +96,16 @@ final class WebViewManager: NSObject {
         webviewsByID[service.id]?[sessionIndex]
     }
     
+    func getOpenSessions(for service: Service) -> [(sessionIndex: Int, title: String)] {
+        guard let sessionMap = webviewsByID[service.id] else { return [] }
+        return sessionMap.map { (idx, webView) in
+            let title = webView.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let displayTitle = (title == nil || title!.isEmpty) ? "Session \(idx + 1)" : title!
+            return (sessionIndex: idx, title: displayTitle)
+        }
+        .sorted { $0.sessionIndex < $1.sessionIndex }
+    }
+    
     func removeWebView(for service: Service, sessionIndex: Int) {
         guard let webView = webviewsByID[service.id]?[sessionIndex] else { return }
         tearDownWebView(webView)

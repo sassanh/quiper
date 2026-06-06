@@ -19,6 +19,35 @@ extension MainWindowController {
                             return nil
                         }
                         
+                        // Invalidate Command modifier tap-timings upon keyboard activity
+                        self.lastCommandPressedTime = 0
+                        self.lastCommandReleasedTime = 0
+                        
+                        // Command + Escape hotkey
+                        let cmdOnly = event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command
+                        NSLog("[QuiperDebug] Local Monitor KeyDown: keyCode=\(event.keyCode), modifiersRaw=\(event.modifierFlags.rawValue), cmdOnly=\(cmdOnly)")
+                        if event.keyCode == kVK_Escape && cmdOnly {
+                            if Settings.shared.enableHUDCmdEscape {
+                                NSLog("[QuiperDebug] Local Monitor triggered Cmd+Escape! Toggling HUD.")
+                                self.toggleModifierHUD()
+                                return nil // Swallow the key
+                            }
+                        }
+                        
+                        if event.keyCode == kVK_Escape || event.keyCode == kVK_Return || event.keyCode == kVK_Space {
+                            if self.modifierHUDView != nil {
+                                self.hideModifierHUD()
+                                if event.keyCode == kVK_Escape {
+                                    return nil // Swallow escape so it doesn't hide the main window
+                                }
+                            }
+                        }
+                        if self.modifierHUDView != nil {
+                            let hasModifier = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.option) || event.modifierFlags.contains(.control)
+                            if hasModifier {
+                                self.hideModifierHUD()
+                            }
+                        }
                         if self.handleCommandShortcut(event: event) == true {
                             return nil
                         }
@@ -63,6 +92,44 @@ extension MainWindowController {
         }
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let now = event.timestamp
+        
+        // Double-tap on Command detection
+        let isCmdKey = event.keyCode == 55 || event.keyCode == 54 // Left command = 55, Right command = 54
+        if isCmdKey {
+            let containsCmd = modifiers.contains(.command)
+            if containsCmd {
+                // Command pressed down
+                if modifiers == .command { // Only command is down, no other modifier
+                    let diff = now - lastCommandReleasedTime
+                    if diff < 0.3 && Settings.shared.enableHUDDoubleTapCmd {
+                        toggleModifierHUD()
+                    }
+                    lastCommandPressedTime = now
+                } else {
+                    lastCommandPressedTime = 0
+                    lastCommandReleasedTime = 0
+                }
+            } else {
+                // Command released
+                if modifiers.isEmpty { // No modifiers left down
+                    let pressDiff = now - lastCommandPressedTime
+                    if pressDiff < 0.3 {
+                        lastCommandReleasedTime = now
+                    } else {
+                        lastCommandReleasedTime = 0
+                    }
+                } else {
+                    lastCommandPressedTime = 0
+                    lastCommandReleasedTime = 0
+                }
+            }
+        } else {
+            // Some other modifier key was changed, invalidate command tap
+            lastCommandPressedTime = 0
+            lastCommandReleasedTime = 0
+        }
+
         let appShortcuts = Settings.shared.appShortcutBindings
         
         var shouldExpandSession = false
@@ -111,6 +178,34 @@ extension MainWindowController {
         if isModifiersForHeaderDown != shouldShowHeader {
             isModifiersForHeaderDown = shouldShowHeader
             updateHeaderVisibility()
+        }
+    }
+    
+    private func showModifierHUD() {
+        guard let contentView = window?.contentView else { return }
+        NSLog("[QuiperDebug] showModifierHUD called, current HUD is \(modifierHUDView == nil ? "nil" : "not nil")")
+        if modifierHUDView == nil {
+            modifierHUDView = ModifierHUDView(frame: contentView.bounds, windowController: self)
+        }
+        if let hud = modifierHUDView, hud.superview == nil {
+            hud.show(in: contentView)
+        }
+    }
+    
+    func hideModifierHUD() {
+        NSLog("[QuiperDebug] hideModifierHUD called")
+        if let hud = modifierHUDView, hud.superview != nil {
+            hud.hide()
+            modifierHUDView = nil
+        }
+    }
+    
+    func toggleModifierHUD() {
+        NSLog("[QuiperDebug] toggleModifierHUD called, HUD is \(modifierHUDView == nil ? "nil" : "not nil"), superview is \(modifierHUDView?.superview == nil ? "nil" : "not nil")")
+        if modifierHUDView != nil && modifierHUDView?.superview != nil {
+            hideModifierHUD()
+        } else {
+            showModifierHUD()
         }
     }
     

@@ -291,6 +291,16 @@ class Settings: ObservableObject {
             saveSettings()
         }
     }
+    @Published var enableHUDDoubleTapCmd: Bool = true {
+        didSet {
+            saveSettings()
+        }
+    }
+    @Published var enableHUDCmdEscape: Bool = true {
+        didSet {
+            saveSettings()
+        }
+    }
     
     func reset() {
         services = []
@@ -309,6 +319,8 @@ class Settings: ObservableObject {
         autoCreateSessionOnEmptyEngineActivation = true
         shouldPurgeDanglingWebData = true
         hasCompletedGhostOnboarding = false
+        enableHUDDoubleTapCmd = true
+        enableHUDCmdEscape = true
     }
 
     private let settingsFile: URL = {
@@ -970,6 +982,8 @@ class Settings: ObservableObject {
         autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation ?? true
         shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData ?? true
         hasCompletedGhostOnboarding = persisted.hasCompletedGhostOnboarding ?? false
+        enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
+        enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
@@ -1010,7 +1024,9 @@ class Settings: ObservableObject {
                                             automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
                                             autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation,
                                             shouldPurgeDanglingWebData: shouldPurgeDanglingWebData,
-                                            hasCompletedGhostOnboarding: hasCompletedGhostOnboarding)
+                                            hasCompletedGhostOnboarding: hasCompletedGhostOnboarding,
+                                            enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
+                                            enableHUDCmdEscape: enableHUDCmdEscape)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
@@ -1035,7 +1051,9 @@ class Settings: ObservableObject {
             automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
             autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation,
             shouldPurgeDanglingWebData: shouldPurgeDanglingWebData,
-            hasCompletedGhostOnboarding: hasCompletedGhostOnboarding
+            hasCompletedGhostOnboarding: hasCompletedGhostOnboarding,
+            enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
+            enableHUDCmdEscape: enableHUDCmdEscape
         )
     }
 
@@ -1059,6 +1077,8 @@ class Settings: ObservableObject {
         autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation ?? true
         shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData ?? true
         hasCompletedGhostOnboarding = persisted.hasCompletedGhostOnboarding ?? false
+        enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
+        enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         if let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         }

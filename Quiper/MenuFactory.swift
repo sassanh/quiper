@@ -80,6 +80,10 @@ enum MenuFactory {
         let hideItem = createMenuItem(title: "Hide Quiper", iconName: "eye.slash", action: #selector(AppController.closeSettingsOrHide(_:)), keyEquivalent: "h")
         menu.addItem(hideItem)
         
+        let toggleHUDItem = createMenuItem(title: "Toggle Control Center", iconName: "command", action: #selector(MainWindowController.performMenuToggleControlCenter(_:)), keyEquivalent: "\u{001B}")
+        toggleHUDItem.keyEquivalentModifierMask = [.command]
+        menu.addItem(toggleHUDItem)
+        
         return menu
     }
     
