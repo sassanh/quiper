@@ -9,12 +9,21 @@ extension MainWindowController {
         if enabled {
             if keyDownEventMonitor == nil {
                 keyDownEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+                    guard let self = self else { return event }
                     if event.type == .keyDown {
-                        if self?.handleCommandShortcut(event: event) == true {
+                        if GhostOnboardingManager.shared.isActive {
+                            if event.keyCode == kVK_Return || event.keyCode == kVK_Space {
+                                GhostOnboardingManager.shared.advanceStep()
+                            }
+                            // Swallow ALL keys during onboarding — no shortcuts, no typing
+                            return nil
+                        }
+                        
+                        if self.handleCommandShortcut(event: event) == true {
                             return nil
                         }
                     } else if event.type == .flagsChanged {
-                        self?.handleFlagsChanged(event: event)
+                        self.handleFlagsChanged(event: event)
                     }
                     return event
                 }
@@ -48,6 +57,10 @@ extension MainWindowController {
 
     func handleFlagsChanged(event: NSEvent) {
         if !(skipModalCheck || !hasModalWindow) { return }
+        
+        if GhostOnboardingManager.shared.isActive {
+            return
+        }
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let appShortcuts = Settings.shared.appShortcutBindings

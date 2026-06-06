@@ -114,6 +114,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var isHeaderForcedVisibleForAction = false
     var isUpdatingHeaderVisibility = false
     var selectorCursorMonitor: Timer?
+    var onboardingHUD: GhostOnboardingHUDView?
 
     private var isCompactMode = false
     private var previousWindowFrame: NSRect?
@@ -262,6 +263,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func focusInputInActiveWebview() {
+        guard !GhostOnboardingManager.shared.isActive else { return }
         guard let service = currentService() else { return }
         let selector = FocusSelectorStorage.loadSelector(serviceID: service.id, fallback: service.focus_selector)
         guard !selector.isEmpty else { return }
@@ -347,7 +349,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         if let sheet = window?.attachedSheet {
             sheet.makeKeyAndOrderFront(nil)
-        } else {
+        } else if !GhostOnboardingManager.shared.isActive {
             if let webView = currentWebView() {
                 window?.makeFirstResponder(webView)
             }
@@ -961,7 +963,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
 
         let otherChildWindows = window?.childWindows?.filter {
-            $0 != settingsWindow && $0 != UpdatePromptWindowController.shared.window
+            $0 != settingsWindow &&
+            $0 != UpdatePromptWindowController.shared.window &&
+            $0 != blurWindow &&
+            $0 != findBarViewController?.panel
         } ?? []
         if !otherChildWindows.isEmpty {
             return
@@ -971,6 +976,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window?.makeFirstResponder(webView)
         }
         focusInputInActiveWebview()
+        
+        GhostOnboardingManager.shared.start(in: self)
     }
     
     func windowDidResignKey(_ notification: Notification) {
@@ -978,12 +985,42 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
            window?.childWindows?.contains(keyWindow) == true {
             return
         }
-        collapsibleServiceSelector?.collapse()
-        collapsibleSessionSelector?.collapse()
+        if !GhostOnboardingManager.shared.isActive {
+            collapsibleServiceSelector?.collapse()
+            collapsibleSessionSelector?.collapse()
+        }
+        GhostOnboardingManager.shared.windowDidResignKey()
     }
 }
 
 extension MainWindowController {
+    func showOnboardingHUD(step: Int, title: String, text: String, target: NSView?) {
+        guard let contentView = window?.contentView else { return }
+        
+        if onboardingHUD == nil {
+            let hud = GhostOnboardingHUDView()
+            hud.frame = contentView.bounds
+            hud.autoresizingMask = [.width, .height]
+            contentView.addSubview(hud, positioned: .above, relativeTo: nil)
+            onboardingHUD = hud
+            
+            hud.onNextHandler = {
+                GhostOnboardingManager.shared.advanceStep()
+            }
+        }
+        
+        onboardingHUD?.update(step: step, title: title, text: text, target: target)
+        
+        if let hud = onboardingHUD {
+            window?.makeFirstResponder(hud)
+        }
+    }
+    
+    func hideOnboardingHUD() {
+        onboardingHUD?.removeFromSuperview()
+        onboardingHUD = nil
+    }
+
     func showQuitOverlay() {
         guard let contentView = window?.contentView else { return }
         

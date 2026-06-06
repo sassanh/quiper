@@ -6,7 +6,7 @@ enum Launcher {
             let plistURL = try agentPlistURL()
             let payload: [String: Any] = [
                 "Label": agentLabel(),
-                "ProgramArguments": [try executablePath()],
+                "ProgramArguments": [try executablePath(), "--autostart"],
                 "RunAtLoad": true
             ]
             let data = try PropertyListSerialization.data(fromPropertyList: payload, format: .xml, options: 0)

@@ -286,6 +286,11 @@ class Settings: ObservableObject {
     @Published var automaticallySwitchEngineOnLastSessionClose: Bool = true
     @Published var autoCreateSessionOnEmptyEngineActivation: Bool = true
     @Published var shouldPurgeDanglingWebData: Bool = true
+    @Published var hasCompletedGhostOnboarding: Bool = false {
+        didSet {
+            saveSettings()
+        }
+    }
     
     func reset() {
         services = []
@@ -303,6 +308,7 @@ class Settings: ObservableObject {
         automaticallySwitchEngineOnLastSessionClose = true
         autoCreateSessionOnEmptyEngineActivation = true
         shouldPurgeDanglingWebData = true
+        hasCompletedGhostOnboarding = false
     }
 
     private let settingsFile: URL = {
@@ -962,6 +968,8 @@ class Settings: ObservableObject {
         }
         automaticallySwitchEngineOnLastSessionClose = persisted.automaticallySwitchEngineOnLastSessionClose ?? true
         autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation ?? true
+        shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData ?? true
+        hasCompletedGhostOnboarding = persisted.hasCompletedGhostOnboarding ?? false
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
@@ -1001,7 +1009,8 @@ class Settings: ObservableObject {
                                             colorScheme: colorScheme,
                                             automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
                                             autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation,
-                                            shouldPurgeDanglingWebData: shouldPurgeDanglingWebData)
+                                            shouldPurgeDanglingWebData: shouldPurgeDanglingWebData,
+                                            hasCompletedGhostOnboarding: hasCompletedGhostOnboarding)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
@@ -1025,7 +1034,8 @@ class Settings: ObservableObject {
             colorScheme: colorScheme,
             automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
             autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation,
-            shouldPurgeDanglingWebData: shouldPurgeDanglingWebData
+            shouldPurgeDanglingWebData: shouldPurgeDanglingWebData,
+            hasCompletedGhostOnboarding: hasCompletedGhostOnboarding
         )
     }
 
@@ -1048,6 +1058,7 @@ class Settings: ObservableObject {
         automaticallySwitchEngineOnLastSessionClose = persisted.automaticallySwitchEngineOnLastSessionClose ?? true
         autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation ?? true
         shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData ?? true
+        hasCompletedGhostOnboarding = persisted.hasCompletedGhostOnboarding ?? false
         if let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         }

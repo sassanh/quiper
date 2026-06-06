@@ -1,34 +1,27 @@
 import AppKit
 
-// MARK: - Segmented Cell
-
-class SegmentedCell: NSSegmentedCell {
-    /// Frames captured during the most recent draw pass, keyed by segment index.
-    /// Used by SegmentedControl.draw(_:) to apply overlays at exact positions.
-    var capturedFrames: [Int: NSRect] = [:]
-
-    override func drawSegment(_ segment: Int, inFrame frame: NSRect, with view: NSView) {
-        capturedFrames[segment] = frame
-        super.drawSegment(segment, inFrame: frame, with: view)
-    }
-}
-
 // MARK: - Segmented Control
 
 /// A segmented control that supports custom tooltips, click handling for non-activating panels, and optional drag-reordering.
 class SegmentedControl: NSSegmentedControl {
     override class var cellClass: AnyClass? {
-        get { SegmentedCell.self }
+        get { NSSegmentedCell.self }
         set { }
     }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        if self.cell == nil {
+            self.cell = NSSegmentedCell()
+        }
         wantsLayer = true
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
+        if self.cell == nil {
+            self.cell = NSSegmentedCell()
+        }
         wantsLayer = true
     }
     
@@ -84,17 +77,15 @@ class SegmentedControl: NSSegmentedControl {
             NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).setClip()
         }
 
-        super.draw(dirtyRect) // capturedFrames updated by drawSegment during this call
+        super.draw(dirtyRect)
 
         let segFont = font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize(for: controlSize))
         for i in 0..<segmentCount {
             let isSelected = (i == selectedSegment)
             guard let originalLabel = label(forSegment: i), !originalLabel.isEmpty else { continue }
 
-            let captured = (cell as? SegmentedCell)?.capturedFrames[i]
-            let segX = captured?.minX ?? (bounds.width / CGFloat(segmentCount) * CGFloat(i))
-            let segW = captured?.width ?? (bounds.width / CGFloat(segmentCount))
-            let segFrame = backingAlignedRect(NSRect(x: segX, y: bounds.minY, width: segW, height: bounds.height), options: .alignAllEdgesNearest)
+            let rawFrame = rect(forSegment: i)
+            let segFrame = backingAlignedRect(rawFrame, options: .alignAllEdgesNearest)
 
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: segFont,
@@ -307,20 +298,33 @@ class SegmentedControl: NSSegmentedControl {
     private func rect(forSegment segment: Int) -> NSRect {
         guard segment >= 0 && segment < segmentCount else { return .zero }
         
-        // Use actually captured frames if available (accurate for variable widths)
-        if let captured = (cell as? SegmentedCell)?.capturedFrames[segment] {
-            return captured
+        if let cell = cell as? NSSegmentedCell {
+            let selector = Selector(("rectForSegment:inFrame:"))
+            if cell.responds(to: selector),
+               let imp = cell.method(for: selector) {
+                typealias RectForSegment = @convention(c) (AnyObject, Selector, Int, NSRect) -> NSRect
+                let fn = unsafeBitCast(imp, to: RectForSegment.self)
+                return fn(cell, selector, segment, bounds)
+            }
         }
         
         // Fallback: Use programmed width if set, otherwise equal distribution
-        var xOffset: CGFloat = 0
-        for i in 0..<segment {
-            let w = width(forSegment: i)
-            xOffset += (w > 0 ? w : bounds.width / CGFloat(segmentCount))
+        let count = segmentCount
+        var totalWidth: CGFloat = 0
+        for i in 0..<count {
+            totalWidth += width(forSegment: i)
         }
-        let w = width(forSegment: segment)
-        let segW = w > 0 ? w : bounds.width / CGFloat(segmentCount)
-        return NSRect(x: xOffset, y: 0, width: segW, height: bounds.height)
+        
+        let availableWidth = bounds.width
+        let padding = count > 0 ? (availableWidth - totalWidth) / CGFloat(count) : 0
+        
+        var currentX: CGFloat = 0
+        for i in 0..<segment {
+            currentX += width(forSegment: i) + padding
+        }
+        
+        let segW = width(forSegment: segment) + padding
+        return NSRect(x: currentX, y: 0, width: segW, height: bounds.height)
     }
 }
 

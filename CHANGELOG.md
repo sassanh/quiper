@@ -4,6 +4,9 @@
 
 ### Added
 
+- **Interactive Onboarding Tips**: Introduced a premium, step-by-step onboarding guide (`GhostOnboardingManager`) with glassy physical keycap tooltips (`GhostOnboardingHUDView`) to help new users learn service/session selectors, shortcuts, and triggers on first launch.
+- **Auto-start Detection**: Configured the LaunchAgent startup wrapper to pass a `--autostart` flag so the app remains hidden in the status bar at boot, showing the window only on explicit user launches.
+
 - **Comprehensive Documentation Site**: Migrated extensive setup guides, engine management instructions, and troubleshooting tables from the README into a dedicated VitePress documentation site hosted on GitHub Pages.
 - **In-App Documentation Shortcuts ([App.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/App.swift), [StatusBar.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/StatusBar.swift), [SettingsView.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/SettingsView.swift))**: Added native "Documentation" link shortcuts inside the main `Help` menu, the session selector's "..." dropdown menu, the macOS Status Bar menu, and the General Settings pane.
 

@@ -42,6 +42,7 @@ extension MainWindowController {
         layoutSelectors()
         
         showHeaderTemporarily()
+        GhostOnboardingManager.shared.serviceDidSwitch()
     }
 
     func switchSession(to index: Int) {
@@ -76,6 +77,7 @@ extension MainWindowController {
         layoutSelectors()
         
         showHeaderTemporarily()
+        GhostOnboardingManager.shared.sessionDidSwitch()
     }
 
     func reloadServices() {
@@ -178,7 +180,7 @@ extension MainWindowController {
         
         observeNavigationState(of: activeWebview)
         
-        if focusWebView {
+        if focusWebView, !GhostOnboardingManager.shared.isActive {
             window?.makeFirstResponder(activeWebview)
             focusInputInActiveWebview()
         }

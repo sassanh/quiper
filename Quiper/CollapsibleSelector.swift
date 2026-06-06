@@ -324,7 +324,11 @@ class CollapsibleSelector: NSView {
         control.segmentStyle = .texturedSquare // Removes default rounded bezel/background
         control.trackingMode = .selectOne
         control.segmentCount = items.count
-        control.selectedSegment = _selectedSegment
+        if _selectedSegment >= 0 && _selectedSegment < items.count {
+            control.selectedSegment = _selectedSegment
+        } else {
+            control.selectedSegment = -1
+        }
         if #available(macOS 10.12.2, *) {
             control.selectedSegmentBezelColor = .controlAccentColor
         }
@@ -352,7 +356,9 @@ class CollapsibleSelector: NSView {
         }
         control.alwaysShowTooltips = alwaysShowTooltips
         
-        control.sizeToFit()
+        if items.count > 0 {
+            control.sizeToFit()
+        }
         
         // 3. Layout & Positioning
         let controlWidth = control.frame.width

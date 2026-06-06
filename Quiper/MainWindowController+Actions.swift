@@ -6,6 +6,7 @@ extension MainWindowController {
     // MARK: - Actions & Menus
     
     @objc func sessionActionsButtonTapped(_ sender: NSButton) {
+        GhostOnboardingManager.shared.advanceFromMenuClick()
         let menu = buildSessionActionsMenu()
         guard !menu.items.isEmpty else { return }
         let origin = NSPoint(x: 0, y: sender.bounds.height + 4)
@@ -266,6 +267,10 @@ extension MainWindowController: CollapsibleSelectorDelegate {
     }
     
     private func checkSelectorSafeZones() {
+        if GhostOnboardingManager.shared.isActive {
+            return
+        }
+        
         let mouse = NSEvent.mouseLocation
         let selectors = [collapsibleSessionSelector, collapsibleServiceSelector].compactMap { $0 }
         var anyExpanded = false
@@ -313,6 +318,9 @@ extension MainWindowController: WebViewManagerDelegate {
         if webView.title?.isEmpty ?? true {
              updateTitleLabel(withFallback: "-")
         }
+        
+        // During onboarding, do NOT restore focus to the webview — the HUD must stay first responder
+        guard !GhostOnboardingManager.shared.isActive else { return }
         
         window?.makeFirstResponder(webView)
         

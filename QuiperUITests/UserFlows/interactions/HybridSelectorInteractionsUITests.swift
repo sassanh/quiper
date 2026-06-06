@@ -9,11 +9,7 @@ final class HybridSelectorInteractionsUITests: BaseUITest {
     }
 
     func testComprehensiveSelectorInteractions() throws {
-        if let statusItem = app.statusItems.firstMatch as XCUIElement? {
-            statusItem.click()
-            let showMenuItem = app.menuItems["Show Quiper"]
-            if showMenuItem.waitForExistence(timeout: 2.0) { showMenuItem.click() }
-        }
+        ensureWindowVisible()
         
         let window = app.windows["Quiper Overlay"]
         if !window.waitForExistence(timeout: 5) {
@@ -63,13 +59,22 @@ final class HybridSelectorInteractionsUITests: BaseUITest {
             let sel = sessionSelector
             // Buttons are "1", "2", ...
             let btn = sel.radioButtons["\(expected)"].exists ? sel.radioButtons["\(expected)"] : sel.buttons["\(expected)"]
-            
+
             XCTAssertTrue(btn.exists, "Session \(expected) button not found in \(sel.debugDescription)")
-            
-            // Wait for selected state (value=1 or selected=true)
-            let selected = NSPredicate(format: "value == 1 OR selected == true")
-            expectation(for: selected, evaluatedWith: btn, handler: nil)
-            waitForExpectations(timeout: 2.0, handler: nil)
+
+            // Poll for selected state using value == 1 (integer attribute for NSSegmentedControl radio children).
+            // XCTNSPredicateExpectation triggers rapid full-AX snapshots that can time out while
+            // the web view is still loading/focusing. Polling is cheaper and more resilient.
+            let deadline = Date(timeIntervalSinceNow: 5.0)
+            var isSelected = false
+            while Date() < deadline {
+                if (btn.value as? Int) == 1 || btn.isSelected {
+                    isSelected = true
+                    break
+                }
+                wait(0.2)
+            }
+            XCTAssertTrue(isSelected, "Session \(expected) button was not selected within 5s")
         }
         
         // ============================================================

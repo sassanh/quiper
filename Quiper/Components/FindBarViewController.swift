@@ -19,6 +19,7 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     
     // Child window that hosts the find bar above the WKWebView
     private var findBarPanel: NSPanel?
+    var panel: NSPanel? { findBarPanel }
     private weak var parentWindow: NSWindow?
     
     // State

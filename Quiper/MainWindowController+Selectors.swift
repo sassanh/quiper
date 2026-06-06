@@ -10,28 +10,32 @@ extension MainWindowController {
         let windowWidth = window?.frame.width ?? 0
 
         let useCompact: Bool
-        switch mode {
-        case .expanded: useCompact = false
-        case .compact: useCompact = true
-        case .auto:
-            let inset: CGFloat = 4
-            let isHiddenMode = Settings.shared.topBarVisibility == .hidden
-            let gap: CGFloat = isHiddenMode ? 8 : 4
-            let buttonSize: CGFloat = 24
-            let minimumServiceWidth: CGFloat = 150
-            let titleAreaMargin: CGFloat = 2
-            let minTitleWidth: CGFloat = 120
+        if GhostOnboardingManager.shared.isActive {
+            useCompact = true
+        } else {
+            switch mode {
+            case .expanded: useCompact = false
+            case .compact: useCompact = true
+            case .auto:
+                let inset: CGFloat = 4
+                let isHiddenMode = Settings.shared.topBarVisibility == .hidden
+                let gap: CGFloat = isHiddenMode ? 8 : 4
+                let buttonSize: CGFloat = 24
+                let minimumServiceWidth: CGFloat = 150
+                let titleAreaMargin: CGFloat = 2
+                let minTitleWidth: CGFloat = 120
 
-            let showActionsButton = Settings.shared.dockVisibility == .never
-            let rightOffset = showActionsButton ? (inset + buttonSize + gap) : inset
+                let showActionsButton = Settings.shared.dockVisibility == .never
+                let rightOffset = showActionsButton ? (inset + buttonSize + gap) : inset
 
-            let staticServiceWidth = max(minimumServiceWidth, estimatedWidthForServiceSegments())
-            let staticSessionWidth = sessionSelector?.fittingSize.width ?? 0
+                let staticServiceWidth = max(minimumServiceWidth, estimatedWidthForServiceSegments())
+                let staticSessionWidth = sessionSelector?.fittingSize.width ?? 0
 
-            let rsButtonSpace: CGFloat = 20 + gap
-            let requiredWidth = minTitleWidth + rsButtonSpace + rightOffset + inset + staticSessionWidth + staticServiceWidth + (2 * gap) + (2 * titleAreaMargin)
+                let rsButtonSpace: CGFloat = 20 + gap
+                let requiredWidth = minTitleWidth + rsButtonSpace + rightOffset + inset + staticSessionWidth + staticServiceWidth + (2 * gap) + (2 * titleAreaMargin)
 
-            useCompact = windowWidth < requiredWidth
+                useCompact = windowWidth < requiredWidth
+            }
         }
 
         serviceSelector?.isHidden = useCompact

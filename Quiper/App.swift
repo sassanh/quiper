@@ -265,7 +265,7 @@ final class AppController: NSObject, NSWindowDelegate {
                 self.windowController.window?.makeKeyAndOrderFront(nil)
                 if let sheet = self.windowController.window?.attachedSheet {
                     sheet.makeKeyAndOrderFront(nil)
-                } else {
+                } else if !GhostOnboardingManager.shared.isActive {
                     // Make webview first responder so it receives keyboard events
                     if let webView = self.windowController.activeWebView {
                         self.windowController.window?.makeFirstResponder(webView)
@@ -555,6 +555,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Asynchronously scan and clean up orphaned persistent WebKit cache directories
         WebKitCacheCleaner.cleanOrphanedStores()
+        
+        // Show the window if the user launched the app intentionally (double-click, Spotlight, etc.)
+        // but stay hidden if launched automatically by a LaunchAgent at system boot (parent is launchd, pid 1)
+        if !isAutoLaunch {
+            statusBarController.appController.showWindow(nil)
+        }
+    }
+    
+    private var isAutoLaunch: Bool {
+        return CommandLine.arguments.contains("--autostart")
     }
 
     @objc func showSettings(_ sender: Any?) {

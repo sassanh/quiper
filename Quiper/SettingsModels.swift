@@ -461,6 +461,7 @@ struct PersistedSettings: Codable {
     var automaticallySwitchEngineOnLastSessionClose: Bool?
     var autoCreateSessionOnEmptyEngineActivation: Bool?
     var shouldPurgeDanglingWebData: Bool?
+    var hasCompletedGhostOnboarding: Bool?
     var version: Int? = 1
 
     enum CodingKeys: String, CodingKey {
@@ -470,6 +471,7 @@ struct PersistedSettings: Codable {
         case automaticallySwitchEngineOnLastSessionClose
         case autoCreateSessionOnEmptyEngineActivation
         case shouldPurgeDanglingWebData
+        case hasCompletedGhostOnboarding
     }
 
     init(services: [Service],
@@ -489,6 +491,7 @@ struct PersistedSettings: Codable {
          automaticallySwitchEngineOnLastSessionClose: Bool? = nil,
          autoCreateSessionOnEmptyEngineActivation: Bool? = nil,
          shouldPurgeDanglingWebData: Bool? = nil,
+         hasCompletedGhostOnboarding: Bool? = nil,
          version: Int? = 1) {
         self.services = services
         self.hotkey = hotkey
@@ -507,6 +510,7 @@ struct PersistedSettings: Codable {
         self.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
         self.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
         self.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
+        self.hasCompletedGhostOnboarding = hasCompletedGhostOnboarding
         self.version = version
     }
 
@@ -529,6 +533,7 @@ struct PersistedSettings: Codable {
         automaticallySwitchEngineOnLastSessionClose = try container.decodeIfPresent(Bool.self, forKey: .automaticallySwitchEngineOnLastSessionClose)
         autoCreateSessionOnEmptyEngineActivation = try container.decodeIfPresent(Bool.self, forKey: .autoCreateSessionOnEmptyEngineActivation)
         shouldPurgeDanglingWebData = try container.decodeIfPresent(Bool.self, forKey: .shouldPurgeDanglingWebData)
+        hasCompletedGhostOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedGhostOnboarding)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }
 }

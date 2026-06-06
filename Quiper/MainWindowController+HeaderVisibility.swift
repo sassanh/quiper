@@ -33,7 +33,8 @@ extension MainWindowController {
         let shouldShowHeaderIfHidden = isHeaderHovered ||
                                        isModifiersForHeaderDown ||
                                        isHeaderForcedVisibleForAction ||
-                                       isAnySelectorExpanded
+                                       isAnySelectorExpanded ||
+                                       GhostOnboardingManager.shared.isActive
 
         let temporaryRevealAllowed = skipModalCheck || !hasModalWindow
         let finalVisible = !isHiddenMode || (shouldShowHeaderIfHidden && temporaryRevealAllowed)
