@@ -228,4 +228,34 @@ struct AppearanceSettingsTests {
         #expect(settings.topBarVisibility == .visible)
         #expect(settings.showHiddenBarOnModifiers == true)
     }
+
+    @Test func settings_ShowOnAllSpacesDefault() {
+        let settings = Settings.shared
+        let original = settings.showOnAllSpaces
+        settings.reset()
+        #expect(settings.showOnAllSpaces == false)
+        settings.showOnAllSpaces = original
+    }
+
+    @Test func settings_ResetIncludesShowOnAllSpaces() {
+        let settings = Settings.shared
+        settings.showOnAllSpaces = true
+        settings.reset()
+        #expect(settings.showOnAllSpaces == false)
+    }
+
+    @Test func settings_ShowOnAllSpacesPersistence() throws {
+        let settings = Settings.shared
+        let original = settings.showOnAllSpaces
+
+        settings.showOnAllSpaces = true
+        let persisted = settings.makePersistedSettings()
+        #expect(persisted.showOnAllSpaces == true)
+
+        let data = try JSONEncoder().encode(persisted)
+        let decoded = try JSONDecoder().decode(PersistedSettings.self, from: data)
+        #expect(decoded.showOnAllSpaces == true)
+
+        settings.showOnAllSpaces = original
+    }
 }

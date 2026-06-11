@@ -114,4 +114,12 @@ extension MainWindowController {
              }
         }
     }
+    
+    @objc func handleShowOnAllSpacesChanged(_ notification: Notification) {
+        guard let window = self.window else { return }
+        let behavior: NSWindow.CollectionBehavior = Settings.shared.showOnAllSpaces
+            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            : [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
+        window.collectionBehavior = behavior
+    }
 }

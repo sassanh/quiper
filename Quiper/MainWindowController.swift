@@ -592,7 +592,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func configureWindow(for window: NSWindow) {
         window.level = .floating
-        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
+        let behavior: NSWindow.CollectionBehavior = Settings.shared.showOnAllSpaces
+            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            : [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
+        window.collectionBehavior = behavior
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
         
@@ -887,6 +890,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationStatusChanged), name: NSApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationStatusChanged), name: NSApplication.didResignActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleColorSchemeChanged), name: .colorSchemeChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleShowOnAllSpacesChanged), name: .showOnAllSpacesChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettings), name: .settingsWindowDidOpen, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleCloseSettings), name: .settingsWindowDidClose, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleServicesIconsUpdated), name: .servicesIconsUpdated, object: nil)

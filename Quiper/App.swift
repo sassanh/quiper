@@ -18,6 +18,7 @@ extension Notification.Name {
     static let dragAreaPositionChanged = Notification.Name("QuiperDragAreaPositionChanged")
     static let windowAppearanceChanged = Notification.Name("QuiperWindowAppearanceChanged")
     static let colorSchemeChanged = Notification.Name("QuiperColorSchemeChanged")
+    static let showOnAllSpacesChanged = Notification.Name("QuiperShowOnAllSpacesChanged")
     static let windowDidShow = Notification.Name("QuiperWindowDidShow")
     static let windowDidHide = Notification.Name("QuiperWindowDidHide")
     static let settingsWindowDidOpen = Notification.Name("QuiperSettingsWindowDidOpen")
