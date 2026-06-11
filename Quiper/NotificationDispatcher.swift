@@ -84,8 +84,8 @@ final class NotificationDispatcher: NSObject, UNUserNotificationCenterDelegate, 
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
-        let serviceURL = userInfo[NotificationMetadata.serviceURLKey] as? String
-        let sessionIndex = userInfo[NotificationMetadata.sessionIndexKey] as? Int
+        let serviceURL = (userInfo[NotificationMetadata.serviceURLKey] ?? userInfo[NotificationMetadata.legacyServiceURLKey]) as? String
+        let sessionIndex = (userInfo[NotificationMetadata.sessionIndexKey] ?? userInfo[NotificationMetadata.legacySessionIndexKey]) as? Int
         Task { @MainActor [weak self, serviceURL, sessionIndex] in
             guard let self else { return }
             self.delegate?.notificationDispatcher(self,
