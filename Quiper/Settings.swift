@@ -158,7 +158,9 @@ class SettingsWindow: NSWindow {
         )
         isReleasedWhenClosed = false
         level = .floating
-        collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
+        collectionBehavior = Settings.shared.showOnAllSpaces
+            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            : [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
         setFrameAutosaveName("SettingsWindow")
         isOpaque = true
         backgroundColor = .windowBackgroundColor
@@ -176,10 +178,22 @@ class SettingsWindow: NSWindow {
             name: .colorSchemeChanged,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleShowOnAllSpacesChanged),
+            name: .showOnAllSpacesChanged,
+            object: nil
+        )
     }
 
     @objc private func handleColorSchemeChanged() {
         appearance = Settings.shared.colorScheme.nsAppearance
+    }
+
+    @objc private func handleShowOnAllSpacesChanged() {
+        collectionBehavior = Settings.shared.showOnAllSpaces
+            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            : [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
     }
 
     required init?(coder: NSCoder) {
@@ -283,6 +297,12 @@ class Settings: ObservableObject {
             NotificationCenter.default.post(name: .colorSchemeChanged, object: nil)
         }
     }
+    @Published var showOnAllSpaces: Bool = false {
+        didSet {
+            NotificationCenter.default.post(name: .showOnAllSpacesChanged, object: nil)
+            saveSettings()
+        }
+    }
     @Published var automaticallySwitchEngineOnLastSessionClose: Bool = true
     @Published var autoCreateSessionOnEmptyEngineActivation: Bool = true
     @Published var shouldPurgeDanglingWebData: Bool = true
@@ -321,6 +341,7 @@ class Settings: ObservableObject {
         hasCompletedGhostOnboarding = false
         enableHUDDoubleTapCmd = true
         enableHUDCmdEscape = true
+        showOnAllSpaces = false
     }
 
     private let settingsFile: URL = {
@@ -984,6 +1005,7 @@ class Settings: ObservableObject {
         hasCompletedGhostOnboarding = persisted.hasCompletedGhostOnboarding ?? false
         enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
+        showOnAllSpaces = persisted.showOnAllSpaces ?? false
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
@@ -1026,7 +1048,8 @@ class Settings: ObservableObject {
                                             shouldPurgeDanglingWebData: shouldPurgeDanglingWebData,
                                             hasCompletedGhostOnboarding: hasCompletedGhostOnboarding,
                                             enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
-                                            enableHUDCmdEscape: enableHUDCmdEscape)
+                                            enableHUDCmdEscape: enableHUDCmdEscape,
+                                            showOnAllSpaces: showOnAllSpaces)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
@@ -1053,7 +1076,8 @@ class Settings: ObservableObject {
             shouldPurgeDanglingWebData: shouldPurgeDanglingWebData,
             hasCompletedGhostOnboarding: hasCompletedGhostOnboarding,
             enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
-            enableHUDCmdEscape: enableHUDCmdEscape
+            enableHUDCmdEscape: enableHUDCmdEscape,
+            showOnAllSpaces: showOnAllSpaces
         )
     }
 
@@ -1079,6 +1103,7 @@ class Settings: ObservableObject {
         hasCompletedGhostOnboarding = persisted.hasCompletedGhostOnboarding ?? false
         enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
+        showOnAllSpaces = persisted.showOnAllSpaces ?? false
         if let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         }

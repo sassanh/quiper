@@ -45,7 +45,9 @@ extension MainWindowController {
             bw.backgroundColor = .clear
             bw.hasShadow = false
             bw.ignoresMouseEvents = true
-            bw.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
+            bw.collectionBehavior = Settings.shared.showOnAllSpaces
+                ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+                : [.transient, .ignoresCycle, .fullScreenAuxiliary]
             win.addChildWindow(bw, ordered: .below)
             blurWindow = bw
         }
@@ -114,4 +116,29 @@ extension MainWindowController {
              }
         }
     }
+    
+    @objc func handleShowOnAllSpacesChanged(_ notification: Notification) {
+        guard let window = self.window else { return }
+        let behavior: NSWindow.CollectionBehavior = Settings.shared.showOnAllSpaces
+            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            : [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
+        window.collectionBehavior = behavior
+        
+        if let bw = blurWindow {
+            bw.collectionBehavior = Settings.shared.showOnAllSpaces
+                ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+                : [.transient, .ignoresCycle, .fullScreenAuxiliary]
+            window.removeChildWindow(bw)
+            window.addChildWindow(bw, ordered: .below)
+        }
+        
+        if let findBarPanel = findBarViewController?.panel {
+            findBarPanel.collectionBehavior = Settings.shared.showOnAllSpaces
+                ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+                : [.transient, .ignoresCycle, .fullScreenAuxiliary]
+            window.removeChildWindow(findBarPanel)
+            window.addChildWindow(findBarPanel, ordered: .above)
+        }
+    }
 }
+

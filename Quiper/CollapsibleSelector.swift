@@ -372,6 +372,9 @@ class CollapsibleSelector: NSView {
         panel.level = .popUpMenu
         panel.hasShadow = true
         panel.worksWhenModal = true
+        panel.collectionBehavior = Settings.shared.showOnAllSpaces
+            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+            : [.transient, .ignoresCycle, .fullScreenAuxiliary]
         
         if #available(macOS 10.14, *) {
             panel.appearance = Settings.shared.colorScheme.nsAppearance ?? NSApp.effectiveAppearance

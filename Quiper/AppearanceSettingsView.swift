@@ -154,6 +154,14 @@ struct AppearanceSettingsView: View {
     @ViewBuilder
     private func dualThemeWindowSection() -> some View {
         SettingsSection(title: "Window") {
+            SettingsToggleRow(
+                title: "Show on all spaces",
+                message: "Keep the Quiper window visible when switching Spaces.",
+                isOn: $settings.showOnAllSpaces
+            )
+            
+            SettingsDivider()
+            
             // Background Style row with Light and Dark pickers
             DualThemeRow(
                 title: "Background Style",

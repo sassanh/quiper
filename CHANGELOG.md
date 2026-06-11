@@ -9,6 +9,7 @@
 
 - **Comprehensive Documentation Site**: Migrated extensive setup guides, engine management instructions, and troubleshooting tables from the README into a dedicated VitePress documentation site hosted on GitHub Pages.
 - **In-App Documentation Shortcuts ([App.swift](Quiper/App.swift), [StatusBar.swift](Quiper/StatusBar.swift), [SettingsView.swift](Quiper/SettingsView.swift))**: Added native "Documentation" link shortcuts inside the main `Help` menu, the session selector's "..." dropdown menu, the macOS Status Bar menu, and the General Settings pane.
+- **Window on All Spaces Toggle ([AppearanceSettingsView.swift](Quiper/AppearanceSettingsView.swift), [MainWindowController.swift](Quiper/MainWindowController.swift), [App.swift](Quiper/App.swift))**: Added a new setting under Appearance -> Window allowing the user to configure the Quiper main window to stay visible across all macOS desktop spaces.
 
 ### Changed
 

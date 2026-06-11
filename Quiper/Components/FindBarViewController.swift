@@ -83,7 +83,9 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.level = parentWindow.level
-        panel.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
+        panel.collectionBehavior = Settings.shared.showOnAllSpaces
+            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+            : [.transient, .ignoresCycle, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
         panel.isFloatingPanel = true

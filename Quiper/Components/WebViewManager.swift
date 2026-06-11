@@ -601,7 +601,9 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
         super.init(contentRect: contentRect, styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         
         self.level = .floating
-        self.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        self.collectionBehavior = Settings.shared.showOnAllSpaces
+            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            : [.moveToActiveSpace, .fullScreenAuxiliary]
         self.isReleasedWhenClosed = false // Critical: Prevent double-release when used with addChildWindow
         self.delegate = self
         

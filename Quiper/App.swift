@@ -18,6 +18,7 @@ extension Notification.Name {
     static let dragAreaPositionChanged = Notification.Name("QuiperDragAreaPositionChanged")
     static let windowAppearanceChanged = Notification.Name("QuiperWindowAppearanceChanged")
     static let colorSchemeChanged = Notification.Name("QuiperColorSchemeChanged")
+    static let showOnAllSpacesChanged = Notification.Name("QuiperShowOnAllSpacesChanged")
     static let windowDidShow = Notification.Name("QuiperWindowDidShow")
     static let windowDidHide = Notification.Name("QuiperWindowDidHide")
     static let settingsWindowDidOpen = Notification.Name("QuiperSettingsWindowDidOpen")
@@ -40,6 +41,7 @@ final class AppController: NSObject, NSWindowDelegate {
     let engineHotkeyManager: EngineHotkeyManaging
         private let notificationDispatcher: NotificationDispatching
         private var lastNonQuiperApplication: NSRunningApplication?
+        private var lastActiveTime: Date?
         private let testDataStore: WKWebsiteDataStore
         private var screenshotPromptController: ScreenshotPromptController?
         
@@ -59,9 +61,15 @@ final class AppController: NSObject, NSWindowDelegate {
         super.init()
         
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettingsNotification), name: .showSettings, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationDidBecomeActive(_:)), name: NSApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationDidResignActive(_:)), name: NSApplication.didResignActiveNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self,
                                                           selector: #selector(handleApplicationDidActivate(_:)),
                                                           name: NSWorkspace.didActivateApplicationNotification,
+                                                          object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self,
+                                                          selector: #selector(handleActiveSpaceDidChange(_:)),
+                                                          name: NSWorkspace.activeSpaceDidChangeNotification,
                                                           object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDockVisibilityChanged), name: .dockVisibilityChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidShow), name: .windowDidShow, object: nil)
@@ -301,7 +309,24 @@ final class AppController: NSObject, NSWindowDelegate {
     
     private func activateLastKnownApplication() {
         guard let app = lastNonQuiperApplication, !app.isTerminated else { return }
-        app.activate(options: [.activateAllWindows])
+        
+        if hasWindowOnActiveSpace(pid: app.processIdentifier) {
+            app.activate(options: [.activateAllWindows])
+        }
+    }
+    
+    private func hasWindowOnActiveSpace(pid: pid_t) -> Bool {
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+        for windowInfo in windowList {
+            if let windowPID = windowInfo[kCGWindowOwnerPID as String] as? pid_t {
+                if windowPID == pid {
+                    return true
+                }
+            }
+        }
+        return false
     }
     
     @objc private func handleApplicationDidActivate(_ notification: Notification) {
@@ -310,6 +335,24 @@ final class AppController: NSObject, NSWindowDelegate {
             return
         }
         lastNonQuiperApplication = app
+    }
+    
+    @objc private func handleApplicationDidBecomeActive(_ notification: Notification) {
+        lastActiveTime = nil
+    }
+
+    @objc private func handleApplicationDidResignActive(_ notification: Notification) {
+        lastActiveTime = Date()
+    }
+
+    @objc private func handleActiveSpaceDidChange(_ notification: Notification) {
+        guard Settings.shared.showOnAllSpaces else { return }
+        
+        let wasActive = NSApp.isActive || (lastActiveTime.map { Date().timeIntervalSince($0) < 1.5 } ?? false)
+        if wasActive {
+            NSApp.activate(ignoringOtherApps: true)
+            focusMainWindowIfVisible()
+        }
     }
     
     
