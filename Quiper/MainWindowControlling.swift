@@ -11,6 +11,7 @@ protocol MainWindowControlling: AnyObject {
     var activeServiceURL: String? { get }
     var activeWebView: WKWebView? { get }
     func focusInputInActiveWebview()
+    func focusInputInActiveWebviewWithFallback()
     func reloadServices()
     func setShortcutsEnabled(_ enabled: Bool)
     func performCustomAction(_ action: CustomAction)

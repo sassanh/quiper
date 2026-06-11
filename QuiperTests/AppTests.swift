@@ -38,6 +38,7 @@ class MockEngineHotkeyManager: EngineHotkeyManaging {
     }
 }
 
+@MainActor
 class MockMainWindowController: MainWindowControlling {
     var showCalled = false
     var hideCalled = false
@@ -47,6 +48,7 @@ class MockMainWindowController: MainWindowControlling {
     var activeServiceURL: String? = "https://example.com"
     var activeWebView: WKWebView? = nil
     var focusInputInActiveWebviewCalled = false
+    var focusInputInActiveWebviewWithFallbackCalled = false
     var reloadServicesCalled = false
     var setShortcutsEnabledCalled = false
     var performCustomActionCalled = false
@@ -73,6 +75,10 @@ class MockMainWindowController: MainWindowControlling {
     
     func focusInputInActiveWebview() {
         focusInputInActiveWebviewCalled = true
+    }
+
+    func focusInputInActiveWebviewWithFallback() {
+        focusInputInActiveWebviewWithFallbackCalled = true
     }
 
     func reloadServices() {

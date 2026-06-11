@@ -270,7 +270,75 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard let service = currentService() else { return }
         let selector = FocusSelectorStorage.loadSelector(serviceID: service.id, fallback: service.focus_selector)
         guard !selector.isEmpty else { return }
-        currentWebView()?.evaluateJavaScript("setTimeout(() => document.querySelector(\"\(selector)\")?.focus(), 0);", completionHandler: nil)
+        guard let webView = currentWebView() else { return }
+        let escaped = escapeForJavaScript(selector)
+        webView.evaluateJavaScript(
+            "setTimeout(() => document.querySelector(\"\(escaped)\")?.focus(), 0);",
+            completionHandler: nil
+        )
+    }
+
+    func focusInputInActiveWebviewWithFallback() {
+        guard !GhostOnboardingManager.shared.isActive else { return }
+        
+        let runFocus: @MainActor @Sendable () -> Void = { [weak self] in
+            guard let self = self else { return }
+            if let webView = self.currentWebView() {
+                self.window?.makeFirstResponder(webView)
+            }
+            self.focusInputInActiveWebview()
+        }
+        
+        // Warm up WebKit's internal focus chain. When the window comes back from
+        // orderOut, the web content process doesn't consider itself "activated"
+        // and silently ignores JavaScript .focus() calls until it receives
+        // focus via the native responder chain.
+        if let webView = currentWebView() {
+            warmUpWebViewFocus(webView)
+        }
+        
+        // 1st pass: immediate (on next runloop turn)
+        DispatchQueue.main.async(execute: runFocus)
+    }
+
+    /// Re-establishes WebKit's internal focus chain after the window was hidden.
+    /// When the window comes back from `orderOut`, the WKWebView's internal
+    /// content view loses first-responder status, causing JavaScript `.focus()`
+    /// calls to be silently ignored by some pages (notably Gemini).
+    ///
+    /// Instead of synthesizing mouse events (which would create real click
+    /// events on whatever web element is at the target coordinate), this walks
+    /// the WKWebView's subview hierarchy to find the deepest first-responder-
+    /// eligible view (WebKit's internal content view) and makes it the first
+    /// responder directly — safely, with no web-level side effects.
+    private func warmUpWebViewFocus(_ webView: WKWebView) {
+        guard let win = window else { return }
+
+        // Temporarily resign first responder so that re-assigning it triggers
+        // WebKit's internal becomeFirstResponder path even if the webview
+        // was already nominally first responder.
+        win.makeFirstResponder(nil)
+
+        // Walk the subview tree to find the deepest view that can become
+        // first responder — this is WKWebView's private content view that
+        // bridges to the web rendering process.
+        if let contentView = deepestFirstResponder(in: webView) {
+            win.makeFirstResponder(contentView)
+        } else {
+            // Fallback: just re-focus the webview itself
+            win.makeFirstResponder(webView)
+        }
+    }
+
+    private func deepestFirstResponder(in view: NSView) -> NSView? {
+        for subview in view.subviews.reversed() {
+            if let found = deepestFirstResponder(in: subview) {
+                return found
+            }
+        }
+        // Skip the WKWebView itself — we want its internal content view
+        if view is WKWebView { return nil }
+        return view.acceptsFirstResponder ? view : nil
     }
 
     func performCustomAction(_ action: CustomAction) {
@@ -353,10 +421,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if let sheet = window?.attachedSheet {
             sheet.makeKeyAndOrderFront(nil)
         } else if !GhostOnboardingManager.shared.isActive {
-            if let webView = currentWebView() {
-                window?.makeFirstResponder(webView)
-            }
-            focusInputInActiveWebview()
+            focusInputInActiveWebviewWithFallback()
         }
         
         setShortcutsEnabled(true)
@@ -976,10 +1041,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         
-        if let webView = currentWebView() {
-            window?.makeFirstResponder(webView)
-        }
-        focusInputInActiveWebview()
+        focusInputInActiveWebviewWithFallback()
         
         GhostOnboardingManager.shared.start(in: self)
     }

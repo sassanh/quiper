@@ -266,12 +266,7 @@ final class AppController: NSObject, NSWindowDelegate {
                 if let sheet = self.windowController.window?.attachedSheet {
                     sheet.makeKeyAndOrderFront(nil)
                 } else if !GhostOnboardingManager.shared.isActive {
-                    // Make webview first responder so it receives keyboard events
-                    if let webView = self.windowController.activeWebView {
-                        self.windowController.window?.makeFirstResponder(webView)
-                    }
-                    
-                    self.windowController.focusInputInActiveWebview()
+                    self.windowController.focusInputInActiveWebviewWithFallback()
                 }
             }
         }
