@@ -71,7 +71,7 @@ jobs:
       - name: Set release app version
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
-          VERSION_BASE=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+          VERSION_BASE=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
           SUFFIX=$(if [ "${{ github.event_name }}" == "schedule" ]; then echo "nightly"; else echo "beta"; fi)
           # Clean version base to prevent duplicate suffixes (e.g. beta-beta or nightly-nightly)
           CLEAN_BASE=$(echo "$VERSION_BASE" | sed "s/-$SUFFIX//g; s/$SUFFIX//g")
@@ -116,7 +116,7 @@ jobs:
       - name: Generate unique tag
         id: tag
         run: |
-          VERSION_BASE=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          VERSION_BASE=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "v0.0.0")
           CLEAN_BASE=$(echo "$VERSION_BASE" | sed "s/-nightly//g; s/-beta//g; s/nightly//g; s/beta//g")
           echo "tag=nightly-${CLEAN_BASE}-${{ github.run_number }}" >>"$GITHUB_OUTPUT"
       - name: Create release notes
@@ -160,7 +160,7 @@ jobs:
       - name: Generate unique tag
         id: tag
         run: |
-          VERSION_BASE=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          VERSION_BASE=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "v0.0.0")
           CLEAN_BASE=$(echo "$VERSION_BASE" | sed "s/-nightly//g; s/-beta//g; s/nightly//g; s/beta//g")
           echo "tag=beta-${CLEAN_BASE}-${{ github.run_number }}" >>"$GITHUB_OUTPUT"
       - name: Create release notes

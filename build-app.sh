@@ -14,8 +14,8 @@ detect_version() {
         return
     fi
 
-    if git describe --tags --abbrev=0 >/dev/null 2>&1; then
-        git describe --tags --abbrev=0 | sed 's/^v//'
+    if git describe --tags --match "v*" --abbrev=0 >/dev/null 2>&1; then
+        git describe --tags --match "v*" --abbrev=0 | sed 's/^v//'
         return
     fi
 

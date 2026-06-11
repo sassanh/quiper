@@ -18,6 +18,7 @@
 ### Fixed
 
 - **Space-switching global hotkey behavior ([App.swift](file:///Users/sassanharadji/Projects/Personal/quiper/Quiper/App.swift))**: Fixed an issue where switching to another desktop Space and hitting the global shortcut would close the window on the original Space rather than bringing it to the active Space. The shortcut now checks `isOnActiveSpace` to ensure the window is correctly shown on the active Space on the first press.
+- **Nightly and Beta Tag Loop Resolution ([integration_delivery.yml](file:///Users/sassanharadji/Projects/Personal/quiper/.github/workflows/integration_delivery.yml), [build-app.sh](file:///Users/sassanharadji/Projects/Personal/quiper/build-app.sh))**: Fixed an issue where nightly and beta builds would pull previous nightly release tags as their version base, resulting in a feedback loop that prepended hyphens and appended run numbers (e.g., `nightly-----v4.0.0-660-666-667-668-669`). Restructured the `git describe` command to target only release tags starting with `v*`.
 
 ## [4.0.0] - 2026-05-29
 
