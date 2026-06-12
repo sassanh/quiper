@@ -117,19 +117,68 @@ final class AppController: NSObject, NSWindowDelegate {
     
     @objc func showWindow(_ sender: Any?) {
         captureFrontmostNonQuiperApplication()
+        if isActiveSpaceFullscreen() {
+            NSApp.setActivationPolicy(.accessory)
+        }
         windowController.show()
     }
-
-
 
     @objc func hideWindow(_ sender: Any?) {
         windowController.hide()
     }
 
+    private func isActiveSpaceFullscreen() -> Bool {
+        guard let mainScreen = NSScreen.main else { return false }
+        
+        let screenFrame = mainScreen.frame
+        let options = CGWindowListOption(arrayLiteral: .excludeDesktopElements, .optionOnScreenOnly)
+        guard let windowListInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+        
+        for info in windowListInfo {
+            let ownerName = info[kCGWindowOwnerName as String] as? String ?? ""
+            let layer = info[kCGWindowLayer as String] as? Int ?? -1
+            let ownerPID = info[kCGWindowOwnerPID as String] as? Int ?? -1
+            
+            // Ignore windows owned by Quiper itself
+            if ownerPID == NSRunningApplication.current.processIdentifier {
+                continue
+            }
+            
+            // Ignore system UI elements
+            if ownerName == "Dock" || ownerName == "Window Server" || ownerName == "Control Center" {
+                continue
+            }
+            
+            guard layer < 20 else { continue }
+            
+            var bounds = CGRect.zero
+            if let boundsDict = info[kCGWindowBounds as String] as? [String: Any] {
+                bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) ?? .zero
+            }
+            
+            let widthDiff = abs(bounds.width - screenFrame.width)
+            let isXAligned = abs(bounds.minX - screenFrame.minX) < 10
+            let yDiff = bounds.minY - screenFrame.minY
+            let heightDiff = screenFrame.height - bounds.height
+            
+            // Allow a tolerance (up to 120 points) for notch area at the top of the screen
+            if isXAligned && widthDiff < 10 && yDiff >= 0 && yDiff <= 120 && heightDiff >= 0 && heightDiff <= 120 {
+                return true
+            }
+        }
+        
+        return false
+    }
+
+
     @objc private func handleWindowDidShow(_ notification: Notification) {
         let visibility = Settings.shared.dockVisibility
         if visibility == .always || visibility == .whenVisible {
-            NSApp.setActivationPolicy(.regular)
+            if !isActiveSpaceFullscreen() {
+                NSApp.setActivationPolicy(.regular)
+            }
         }
         if UpdatePromptWindowController.shared.window?.isVisible == true {
             UpdatePromptWindowController.shared.window?.makeKeyAndOrderFront(nil)
@@ -141,11 +190,21 @@ final class AppController: NSObject, NSWindowDelegate {
 
     @objc private func handleWindowDidHide(_ notification: Notification) {
         let visibility = Settings.shared.dockVisibility
-        if visibility == .whenVisible {
-            NSApp.setActivationPolicy(.accessory)
-        }
         activateLastKnownApplication()
-        NotificationCenter.default.post(name: .appVisibilityChanged, object: false)
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self = self else { return }
+            if visibility == .always {
+                if !self.isActiveSpaceFullscreen() {
+                    NSApp.setActivationPolicy(.regular)
+                } else {
+                    NSApp.setActivationPolicy(.accessory)
+                }
+            } else if visibility == .whenVisible {
+                NSApp.setActivationPolicy(.accessory)
+            }
+            NotificationCenter.default.post(name: .appVisibilityChanged, object: false)
+        }
     }
     
     @objc func closeSettingsOrHide(_ sender: Any?) {
@@ -346,6 +405,15 @@ final class AppController: NSObject, NSWindowDelegate {
     }
 
     @objc private func handleActiveSpaceDidChange(_ notification: Notification) {
+        let visibility = Settings.shared.dockVisibility
+        if visibility == .always {
+            if !isActiveSpaceFullscreen() {
+                NSApp.setActivationPolicy(.regular)
+            } else {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
+        
         guard Settings.shared.showOnAllSpaces else { return }
         
         let wasActive = NSApp.isActive || (lastActiveTime.map { Date().timeIntervalSince($0) < 1.5 } ?? false)
@@ -719,7 +787,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Task { @MainActor in } and DispatchQueue.main.async both deadlock here.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.unmountAllEncryptedVolumes()
-            NSApp.reply(toApplicationShouldTerminate: true)
+            DispatchQueue.main.async {
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
         }
         
         return .terminateLater

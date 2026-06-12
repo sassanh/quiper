@@ -415,7 +415,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func show() {
-        window?.makeKeyAndOrderFront(nil)
+        if let window = window {
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            
+            if let bw = blurWindow {
+                bw.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+            }
+            if let findBarPanel = findBarViewController?.panel {
+                findBarPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+            }
+            
+            window.makeKeyAndOrderFront(nil)
+        }
         NSApp.activate(ignoringOtherApps: true)
         
         if let sheet = window?.attachedSheet {
@@ -425,6 +436,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         
         setShortcutsEnabled(true)
+        updateCollectionBehaviorForVisibilityState()
         NotificationCenter.default.post(name: .windowDidShow, object: nil)
     }
 
@@ -433,6 +445,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window?.endSheet(sheet, returnCode: .cancel)
         }
         window?.orderOut(nil)
+        
+        updateCollectionBehaviorForVisibilityState()
+        
         findBarViewController?.hide()
         setShortcutsEnabled(false)
         hideModifierHUD()
@@ -592,10 +607,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func configureWindow(for window: NSWindow) {
         window.level = .floating
-        let behavior: NSWindow.CollectionBehavior = Settings.shared.showOnAllSpaces
-            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            : [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
-        window.collectionBehavior = behavior
+        updateCollectionBehaviorForVisibilityState()
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
         
