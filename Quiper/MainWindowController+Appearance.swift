@@ -45,11 +45,9 @@ extension MainWindowController {
             bw.backgroundColor = .clear
             bw.hasShadow = false
             bw.ignoresMouseEvents = true
-            bw.collectionBehavior = Settings.shared.showOnAllSpaces
-                ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-                : [.transient, .ignoresCycle, .fullScreenAuxiliary]
             win.addChildWindow(bw, ordered: .below)
             blurWindow = bw
+            updateCollectionBehaviorForVisibilityState()
         }
         
         guard let bw = blurWindow else { return }
@@ -117,15 +115,18 @@ extension MainWindowController {
         }
     }
     
-    @objc func handleShowOnAllSpacesChanged(_ notification: Notification) {
+    func updateCollectionBehaviorForVisibilityState() {
         guard let window = self.window else { return }
-        let behavior: NSWindow.CollectionBehavior = Settings.shared.showOnAllSpaces
+        
+        let isVisible = window.isVisible
+        let behavior: NSWindow.CollectionBehavior = (Settings.shared.showOnAllSpaces || !isVisible)
             ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             : [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
+        
         window.collectionBehavior = behavior
         
         if let bw = blurWindow {
-            bw.collectionBehavior = Settings.shared.showOnAllSpaces
+            bw.collectionBehavior = (Settings.shared.showOnAllSpaces || !isVisible)
                 ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
                 : [.transient, .ignoresCycle, .fullScreenAuxiliary]
             window.removeChildWindow(bw)
@@ -133,12 +134,18 @@ extension MainWindowController {
         }
         
         if let findBarPanel = findBarViewController?.panel {
-            findBarPanel.collectionBehavior = Settings.shared.showOnAllSpaces
+            findBarPanel.collectionBehavior = (Settings.shared.showOnAllSpaces || !isVisible)
                 ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
                 : [.transient, .ignoresCycle, .fullScreenAuxiliary]
-            window.removeChildWindow(findBarPanel)
-            window.addChildWindow(findBarPanel, ordered: .above)
+            if findBarPanel.isVisible {
+                window.removeChildWindow(findBarPanel)
+                window.addChildWindow(findBarPanel, ordered: .above)
+            }
         }
+    }
+    
+    @objc func handleShowOnAllSpacesChanged(_ notification: Notification) {
+        updateCollectionBehaviorForVisibilityState()
     }
 }
 
