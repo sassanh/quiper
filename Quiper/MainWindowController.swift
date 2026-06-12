@@ -415,7 +415,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func show() {
-        window?.makeKeyAndOrderFront(nil)
+        if let window = window {
+            // Standard show attempt
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            window.makeKeyAndOrderFront(nil)
+            
+            // If WindowServer's space cache is broken, the window will be trapped on another space.
+            // We surgically deploy the teleport sequence only when the standard show fails.
+            if !window.isOnActiveSpace {
+                window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
+                window.makeKeyAndOrderFront(nil)
+                
+                // Wait 100ms for WindowServer to physically execute the space jump 
+                // before flipping the flag back, otherwise it cancels the jump mid-flight.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+                }
+            }
+        }
         NSApp.activate(ignoringOtherApps: true)
         
         if let sheet = window?.attachedSheet {
@@ -425,6 +442,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         
         setShortcutsEnabled(true)
+        updateCollectionBehaviorForVisibilityState()
         NotificationCenter.default.post(name: .windowDidShow, object: nil)
     }
 
@@ -433,6 +451,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window?.endSheet(sheet, returnCode: .cancel)
         }
         window?.orderOut(nil)
+        
+        updateCollectionBehaviorForVisibilityState()
+        
         findBarViewController?.hide()
         setShortcutsEnabled(false)
         hideModifierHUD()
@@ -592,10 +613,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func configureWindow(for window: NSWindow) {
         window.level = .floating
-        let behavior: NSWindow.CollectionBehavior = Settings.shared.showOnAllSpaces
-            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            : [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
-        window.collectionBehavior = behavior
+        updateCollectionBehaviorForVisibilityState()
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
         
