@@ -18,6 +18,7 @@
 - Types and protocols in UpperCamelCase; properties, functions, locals in lowerCamelCase; constants prefer `let`.
 - Favor `struct` and `enum` for value semantics; mark classes `final` unless subclassed.
 - Keep UI work on the main thread; isolate side effects in helpers (e.g., notification dispatch, hotkey capture).
+- Follow the [Settings Styling Standards](file:///Users/sassanharadji/Projects/Personal/quiper/docs/settings-styling.md) when adding or modifying rows, sections, and controls in the Settings window.
 - If you introduce formatting, use `swift-format` defaults; avoid reflowing unchanged code.
 
 ## Testing Guidelines

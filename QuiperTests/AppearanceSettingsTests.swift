@@ -258,4 +258,36 @@ struct AppearanceSettingsTests {
 
         settings.showOnAllSpaces = original
     }
+
+    @Test func settingsColorStyle_Codable() throws {
+        for style in SettingsColorStyle.allCases {
+            let data = try JSONEncoder().encode(style)
+            let decoded = try JSONDecoder().decode(SettingsColorStyle.self, from: data)
+            #expect(decoded == style)
+        }
+    }
+
+    @Test func settings_SettingsColorStylePersistence() throws {
+        let settings = Settings.shared
+        let original = settings.settingsColorStyle
+
+        settings.settingsColorStyle = .classic
+        let persisted = settings.makePersistedSettings()
+        #expect(persisted.settingsColorStyle == .classic)
+
+        let data = try JSONEncoder().encode(persisted)
+        let decoded = try JSONDecoder().decode(PersistedSettings.self, from: data)
+        #expect(decoded.settingsColorStyle == .classic)
+
+        settings.settingsColorStyle = original
+    }
+
+    @Test func settings_ResetIncludesSettingsColorStyle() {
+        let settings = Settings.shared
+        let original = settings.settingsColorStyle
+        settings.settingsColorStyle = .classic
+        settings.reset()
+        #expect(settings.settingsColorStyle == .colorful)
+        settings.settingsColorStyle = original
+    }
 }

@@ -15,7 +15,7 @@ final class TemplateManagementUITests: BaseUITest {
         switchToSettingsTab("General")
         
         // Erase Engines
-        let eraseEnginesBtn = app.buttons["Erase All Engines"]
+        let eraseEnginesBtn = app.buttons["Erase Engines"]
         eraseEnginesBtn.tap()
         eraseEnginesBtn.click()
         
@@ -29,7 +29,7 @@ final class TemplateManagementUITests: BaseUITest {
         XCTAssertTrue(engineAlert.waitForNonExistence(timeout: 3.0))
         
         // Erase Actions
-        let eraseActionsBtn = app.buttons["Erase All Actions"]
+        let eraseActionsBtn = app.buttons["Erase Actions"]
         eraseActionsBtn.tap()
         eraseActionsBtn.click()
         
