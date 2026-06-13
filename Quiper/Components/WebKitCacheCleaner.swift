@@ -52,17 +52,15 @@ final class WebKitCacheCleaner {
             for url in contents {
                 let folderName = url.lastPathComponent
                 
-                // 1. Strict UUID checking - completely ignores system folders (.default, safe browsing, etc.)
-                guard let storeUUID = UUID(uuidString: folderName) else {
-                    continue
-                }
-                
-                // 2. Active preservation - preserves active engine caches (both locked and unlocked)
-                if activeIDs.contains(storeUUID) {
+                // 1 & 2: Check if this directory is an orphaned UUID data store
+                guard isOrphanedStore(folderName: folderName, activeIDs: activeIDs) else {
                     continue
                 }
                 
                 // 3. Purge orphaned directory natively via WebKit
+                // The storeUUID is safely extracted since isOrphanedStore passed
+                let storeUUID = UUID(uuidString: folderName)!
+                
                 DispatchQueue.main.async {
                     NSLog("[WebKitCacheCleaner] Purging orphaned cache data store: \(storeUUID)")
                     WKWebsiteDataStore.remove(forIdentifier: storeUUID) { error in
@@ -80,5 +78,20 @@ final class WebKitCacheCleaner {
                 }
             }
         }
+    }
+    
+    /// Pure function for testing whether a specific folder represents an orphaned data store.
+    internal static func isOrphanedStore(folderName: String, activeIDs: Set<UUID>) -> Bool {
+        // 1. Strict UUID checking - completely ignores system folders (.default, safe browsing, etc.)
+        guard let storeUUID = UUID(uuidString: folderName) else {
+            return false
+        }
+        
+        // 2. Active preservation - preserves active engine caches
+        if activeIDs.contains(storeUUID) {
+            return false
+        }
+        
+        return true
     }
 }
