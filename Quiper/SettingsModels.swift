@@ -133,6 +133,13 @@ enum AppColorScheme: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum SettingsColorStyle: String, Codable, CaseIterable, Identifiable {
+    case colorful = "Colorful"
+    case classic = "Classic"
+    
+    var id: String { rawValue }
+}
+
 enum WindowBackgroundMode: String, Codable, CaseIterable, Identifiable {
     case macOSEffects = "macOS Effects"
     case solidColor = "Solid Color"
@@ -465,6 +472,7 @@ struct PersistedSettings: Codable {
     var enableHUDDoubleTapCmd: Bool?
     var enableHUDCmdEscape: Bool?
     var showOnAllSpaces: Bool?
+    var settingsColorStyle: SettingsColorStyle?
     var version: Int? = 1
 
     enum CodingKeys: String, CodingKey {
@@ -478,6 +486,7 @@ struct PersistedSettings: Codable {
         case enableHUDDoubleTapCmd
         case enableHUDCmdEscape
         case showOnAllSpaces
+        case settingsColorStyle
     }
 
     init(services: [Service],
@@ -501,6 +510,7 @@ struct PersistedSettings: Codable {
          enableHUDDoubleTapCmd: Bool? = nil,
          enableHUDCmdEscape: Bool? = nil,
          showOnAllSpaces: Bool? = nil,
+         settingsColorStyle: SettingsColorStyle? = nil,
          version: Int? = 1) {
         self.services = services
         self.hotkey = hotkey
@@ -523,6 +533,7 @@ struct PersistedSettings: Codable {
         self.enableHUDDoubleTapCmd = enableHUDDoubleTapCmd
         self.enableHUDCmdEscape = enableHUDCmdEscape
         self.showOnAllSpaces = showOnAllSpaces
+        self.settingsColorStyle = settingsColorStyle
         self.version = version
     }
 
@@ -549,6 +560,7 @@ struct PersistedSettings: Codable {
         enableHUDDoubleTapCmd = try container.decodeIfPresent(Bool.self, forKey: .enableHUDDoubleTapCmd)
         enableHUDCmdEscape = try container.decodeIfPresent(Bool.self, forKey: .enableHUDCmdEscape)
         showOnAllSpaces = try container.decodeIfPresent(Bool.self, forKey: .showOnAllSpaces)
+        settingsColorStyle = try container.decodeIfPresent(SettingsColorStyle.self, forKey: .settingsColorStyle)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }
 }
