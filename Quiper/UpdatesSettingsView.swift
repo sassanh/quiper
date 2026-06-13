@@ -8,54 +8,65 @@ struct UpdatesSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                SettingsSection(title: "Version") {
+                SettingsSection(title: "Version", icon: "info.circle.fill", iconColor: .blue) {
                     SettingsRow(
-                        title: "Current version",
-                        message: updater.statusDescription
+                        title: "Current Version",
+                        message: updater.statusDescription,
+                        icon: "info.circle",
+                        iconColor: .blue
                     ) {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(versionDescription)
-                                .font(.system(.body, design: .monospaced))
-                        }
+                        Text(versionDescription)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(width: 260, alignment: .trailing)
                     }
                     
                     SettingsDivider()
                     
                     SettingsRow(
-                        title: "Manual check",
-                        message: "Immediately trigger an update check from GitHub releases."
+                        title: "Manual Check",
+                        message: "Immediately trigger an update check from GitHub releases.",
+                        icon: "arrow.clockwise.circle",
+                        iconColor: .blue
                     ) {
                         Button(action: { updater.checkForUpdates(userInitiated: true) }) {
                             Text(updater.isChecking ? "Checking…" : "Check for Updates")
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(settings.settingsColorStyle == .classic ? nil : .blue)
                         .disabled(updater.isChecking)
+                        .frame(width: 260, alignment: .trailing)
                     }
                 }
                 
-                SettingsSection(title: "Automatic Updates") {
-                    SettingsToggleRow(
-                        title: "Automatically check for updates",
-                        message: "Poll in the background and notify you when a new build ships.",
-                        isOn: autoCheckBinding
-                    )
-                    
-                    SettingsDivider()
-                    
-                    SettingsToggleRow(
-                        title: "Automatically download updates",
-                        message: "Fetch new builds as soon as they're found so installs are instant.",
-                        isOn: autoDownloadBinding
-                    )
-                    .disabled(!settings.updatePreferences.automaticallyChecksForUpdates)
+                SettingsSection(title: "Automatic Updates", icon: "arrow.down.circle.fill", iconColor: .green) {
+                    SettingsRow(
+                        title: "Automatic Updates",
+                        message: "Poll in the background and fetch new builds automatically.",
+                        icon: "arrow.triangle.2.circlepath",
+                        iconColor: .green
+                    ) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle("Automatically check for updates", isOn: autoCheckBinding)
+                            Toggle("Automatically download updates", isOn: autoDownloadBinding)
+                                .disabled(!settings.updatePreferences.automaticallyChecksForUpdates)
+                        }
+                        .toggleStyle(.coloredCheckbox(Color.green.settingsResolved))
+                        .frame(width: 260, alignment: .leading)
+                    }
                     
                     SettingsDivider()
                     
                     SettingsRow(
-                        title: "Update channel",
-                        message: settings.updatePreferences.channel.description
+                        title: "Update Channel",
+                        message: settings.updatePreferences.channel.description,
+                        icon: "point.3.connected.trianglepath.dotted",
+                        iconColor: .green
                     ) {
-                        InclusiveChannelPicker(selection: updateChannelBinding)
+                        HStack {
+                            Spacer()
+                            InclusiveChannelPicker(selection: updateChannelBinding, accentColor: .green)
+                        }
+                        .frame(width: 260)
                     }
                 }
             }
@@ -101,9 +112,12 @@ struct UpdatesSettingsView: View {
 
 struct InclusiveChannelPicker: View {
     @Binding var selection: UpdateChannel
+    var accentColor: Color = .green
+    @ObservedObject private var settings = Settings.shared
     private let channels = UpdateChannel.allCases
     
     var body: some View {
+        let resolvedColor = settings.settingsColorStyle == .classic ? Color.secondary : accentColor
         ZStack(alignment: .leading) {
             // Background track
             Capsule()
@@ -118,7 +132,7 @@ struct InclusiveChannelPicker: View {
                 let highlightWidth = (selectedIndex + 1) * segmentWidth
                 
                 Capsule()
-                    .fill(Color.accentColor)
+                    .fill(resolvedColor)
                     .frame(width: highlightWidth, height: 24)
                     .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selection)
             }

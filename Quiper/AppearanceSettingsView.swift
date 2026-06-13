@@ -20,18 +20,14 @@ struct AppearanceSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                SettingsSection(title: "Dock") {
+                SettingsSection(title: "Dock", icon: "dock.rectangle", iconColor: .teal) {
                     SettingsRow(
                         title: "Dock Icon Visibility",
-                        message: "Controls when the app appears in the Dock. Note: Native menus are only available when the Dock icon is visible."
+                        message: "Controls when the app appears in the Dock. Note: Native menus are only available when the Dock icon is visible.",
+                        icon: "eye.fill",
+                        iconColor: .teal
                     ) {
-                        Picker("", selection: $settings.dockVisibility) {
-                            ForEach(DockVisibility.allCases) { visibility in
-                                Text(visibility.rawValue).tag(visibility)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 300)
+                        DockVisibilityPicker(selection: $settings.dockVisibility)
                     }
                     .onChange(of: settings.dockVisibility) { _, newValue in
                         settings.saveSettings()
@@ -52,18 +48,14 @@ struct AppearanceSettingsView: View {
                         }
                     }
                 }
-                SettingsSection(title: "Toolbar") {
+                SettingsSection(title: "Toolbar", icon: "menubar.rectangle", iconColor: .blue) {
                     SettingsRow(
                         title: "Toolbar Visibility",
-                        message: "Controls whether the toolbar is always visible or only shown when needed."
+                        message: "Controls whether the toolbar is always visible or only shown when needed.",
+                        icon: "menubar.rectangle",
+                        iconColor: .blue
                     ) {
-                        Picker("", selection: $settings.topBarVisibility) {
-                            ForEach(TopBarVisibility.allCases) { visibility in
-                                Text(visibility.rawValue).tag(visibility)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 250)
+                        ToolbarVisibilityPicker(selection: $settings.topBarVisibility)
                     }
                     .onChange(of: settings.topBarVisibility) { _, _ in
                         settings.saveSettings()
@@ -71,16 +63,12 @@ struct AppearanceSettingsView: View {
                     
                     SettingsDivider()
                     SettingsRow(
-                        title: "Drag Area Position",
-                        message: "Controls whether the window drag area is at the top or bottom edge."
+                        title: "Toolbar Position",
+                        message: "Controls whether the toolbar is at the top or bottom edge.",
+                        icon: "arrow.up.and.down",
+                        iconColor: .blue
                     ) {
-                        Picker("", selection: $settings.dragAreaPosition) {
-                            ForEach(DragAreaPosition.allCases) { position in
-                                Text(position.rawValue).tag(position)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 250)
+                        DragAreaPositionPicker(selection: $settings.dragAreaPosition)
                     }
                     .onChange(of: settings.dragAreaPosition) { _, _ in
                         settings.saveSettings()
@@ -88,49 +76,52 @@ struct AppearanceSettingsView: View {
                     
                     if settings.topBarVisibility == .hidden {
                         SettingsDivider()
-                        SettingsRow(
+                        SettingsToggleRow(
                             title: "Show on Modifier Keys",
-                            message: "Show the hidden bar while holding tab/engine shortcut modifiers."
-                        ) {
-                            Toggle("", isOn: $settings.showHiddenBarOnModifiers)
-                                .toggleStyle(.switch)
-                                .onChange(of: settings.showHiddenBarOnModifiers) { _, _ in
-                                    settings.saveSettings()
-                                }
+                            message: "Show the hidden bar while holding tab/engine shortcut modifiers.",
+                            icon: "keyboard",
+                            iconColor: .blue,
+                            isOn: $settings.showHiddenBarOnModifiers
+                        )
+                        .onChange(of: settings.showHiddenBarOnModifiers) { _, _ in
+                            settings.saveSettings()
                         }
                     }
                 }
                 
-                SettingsSection(title: "Selectors") {
+                SettingsSection(title: "Selectors", icon: "square.grid.2x2.fill", iconColor: .purple) {
                     SettingsRow(
                         title: "Selector Display",
-                        message: "Controls how engine and session selectors appear. Auto switches based on window width."
+                        message: "Controls how engine and session selectors appear. Auto switches based on window width.",
+                        icon: "rectangle.grid.1x2.fill",
+                        iconColor: .purple
                     ) {
-                        Picker("", selection: $settings.selectorDisplayMode) {
-                            ForEach(SelectorDisplayMode.allCases) { mode in
-                                Text(mode.rawValue).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 250)
+                        SelectorDisplayPicker(selection: $settings.selectorDisplayMode)
                     }
                     .onChange(of: settings.selectorDisplayMode) { _, _ in
                         settings.saveSettings()
                     }
                 }
                 
-                SettingsSection(title: "Color Scheme") {
+                SettingsSection(title: "Color Scheme", icon: "paintpalette.fill", iconColor: .orange) {
                     SettingsRow(
                         title: "Appearance",
-                        message: "Force light or dark mode, or follow the system setting."
+                        message: "Force light or dark mode, or follow the system setting.",
+                        icon: "circle.lefthalf.filled",
+                        iconColor: .orange
                     ) {
-                        Picker("", selection: colorSchemeBinding) {
-                            ForEach(AppColorScheme.allCases) { scheme in
-                                Text(scheme.rawValue).tag(scheme)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 250)
+                        ColorSchemePicker(selection: colorSchemeBinding, accentColor: .orange)
+                    }
+                    
+                    SettingsDivider()
+                    
+                    SettingsRow(
+                        title: "Settings Style",
+                        message: "Toggle between section-specific colors and classic monochrome style.",
+                        icon: "circle.circle",
+                        iconColor: .orange
+                    ) {
+                        SettingsStylePicker(selection: settingsStyleBinding)
                     }
                 }
                 
@@ -153,10 +144,12 @@ struct AppearanceSettingsView: View {
     
     @ViewBuilder
     private func dualThemeWindowSection() -> some View {
-        SettingsSection(title: "Window") {
+        SettingsSection(title: "Window", icon: "macwindow", iconColor: .indigo) {
             SettingsToggleRow(
                 title: "Show on all spaces",
                 message: "Keep the Quiper window visible when switching Spaces.",
+                icon: "square.on.square.fill",
+                iconColor: .indigo,
                 isOn: $settings.showOnAllSpaces
             )
             
@@ -165,7 +158,9 @@ struct AppearanceSettingsView: View {
             // Background Style row with Light and Dark pickers
             DualThemeRow(
                 title: "Background Style",
-                message: "Use macOS system materials or a solid color."
+                message: "Use macOS system materials or a solid color.",
+                icon: "circle.fill.square.fill",
+                iconColor: .indigo
             ) {
                 Picker("", selection: modeBinding(for: .light)) {
                     ForEach(WindowBackgroundMode.allCases) { mode in
@@ -209,7 +204,9 @@ struct AppearanceSettingsView: View {
         if lightMode == WindowBackgroundMode.macOSEffects && darkMode == WindowBackgroundMode.macOSEffects {
             DualThemeRow(
                 title: "Material",
-                message: "Select the system material style."
+                message: "Select the system material style.",
+                icon: "eyedropper",
+                iconColor: .indigo
             ) {
                 Picker("", selection: materialBinding(for: .light)) {
                     ForEach(WindowMaterial.allCases) { material in
@@ -230,7 +227,9 @@ struct AppearanceSettingsView: View {
         else if lightMode == WindowBackgroundMode.solidColor && darkMode == WindowBackgroundMode.solidColor {
             DualThemeRow(
                 title: "Color",
-                message: "Choose the background color and opacity."
+                message: "Choose the background color and opacity.",
+                icon: "eyedropper",
+                iconColor: .indigo
             ) {
                 ColorPicker("", selection: colorBinding(for: .light), supportsOpacity: true)
                     .labelsHidden()
@@ -243,7 +242,9 @@ struct AppearanceSettingsView: View {
         else {
             DualThemeRow(
                 title: lightMode == WindowBackgroundMode.macOSEffects ? "Material / Color" : "Color / Material",
-                message: "Configure appearance for each theme."
+                message: "Configure appearance for each theme.",
+                icon: "eyedropper",
+                iconColor: .indigo
             ) {
                 if lightMode == WindowBackgroundMode.macOSEffects {
                     Picker("", selection: materialBinding(for: .light)) {
@@ -274,7 +275,6 @@ struct AppearanceSettingsView: View {
         }
     }
     
-
     
     @ViewBuilder
     private func dualThemeBlurRadiusRow() -> some View {
@@ -283,7 +283,9 @@ struct AppearanceSettingsView: View {
         
         DualThemeRow(
             title: "Blur Radius",
-            message: "Apply background blur (1 = no blur, higher = more blur)."
+            message: "Apply background blur (1 = no blur, higher = more blur).",
+            icon: "sparkles",
+            iconColor: .indigo
         ) {
             if lightMode == WindowBackgroundMode.solidColor {
                 HStack(spacing: 4) {
@@ -443,6 +445,18 @@ struct AppearanceSettingsView: View {
         )
     }
     
+    private var settingsStyleBinding: Binding<SettingsColorStyle> {
+        Binding(
+            get: { settings.settingsColorStyle },
+            set: { newStyle in
+                DispatchQueue.main.async {
+                    settings.settingsColorStyle = newStyle
+                    settings.saveSettings()
+                }
+            }
+        )
+    }
+    
     private func applyColorChange(_ newColor: Color, for theme: ThemeVariant) {
         let nsColor = NSColor(newColor)
         DispatchQueue.main.async {
@@ -500,7 +514,9 @@ struct AppearanceSettingsView: View {
     private func dualThemeOutlineWidthRow() -> some View {
         DualThemeRow(
             title: "Border Width",
-            message: "Thickness of the window edge border."
+            message: "Thickness of the window edge border.",
+            icon: "square.inset.filled",
+            iconColor: .indigo
         ) {
             HStack(spacing: 4) {
                 Slider(value: outlineWidthBinding(for: .light), in: 0...4, step: 0.5)
@@ -524,7 +540,9 @@ struct AppearanceSettingsView: View {
     private func dualThemeOutlineColorRow() -> some View {
         DualThemeRow(
             title: "Border Color",
-            message: "Color of the window edge border."
+            message: "Color of the window edge border.",
+            icon: "paintpalette.fill",
+            iconColor: .indigo
         ) {
             ColorPicker("", selection: outlineColorBinding(for: .light), supportsOpacity: true)
                 .labelsHidden()
