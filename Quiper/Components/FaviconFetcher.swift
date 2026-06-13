@@ -7,7 +7,7 @@ final class FaviconFetcher {
         return URLSession(configuration: configuration, delegate: FaviconFetcherSessionDelegate.shared, delegateQueue: nil)
     }()
 
-    private static func isLocalHost(_ host: String) -> Bool {
+    internal static func isLocalHost(_ host: String) -> Bool {
         let lower = host.lowercased()
         return lower == "localhost" || lower == "127.0.0.1" || lower.hasSuffix(".local")
     }
@@ -74,7 +74,7 @@ final class FaviconFetcher {
     
     /// Checks if a base64 PNG string is high resolution (>= 96x96 pixels)
     @MainActor
-    private static func isHighRes(_ base64: String) -> Bool {
+    internal static func isHighRes(_ base64: String) -> Bool {
         guard let decodedData = Data(base64Encoded: base64),
               let image = NSImage(data: decodedData) else {
             return false
@@ -92,7 +92,7 @@ final class FaviconFetcher {
     /// Normalizes URL string by prepending http:// or https:// if scheme is missing.
     /// Also forces IPv4 for localhost to avoid IPv6 "Connection refused" from servers
     /// that only bind to 127.0.0.1 (e.g. llama.cpp).
-    private static func normalizeURL(_ urlString: String) -> URL? {
+    internal static func normalizeURL(_ urlString: String) -> URL? {
         var normalized = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return nil }
         
