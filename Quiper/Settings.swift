@@ -321,6 +321,11 @@ class Settings: ObservableObject {
             saveSettings()
         }
     }
+    @Published var settingsColorStyle: SettingsColorStyle = .colorful {
+        didSet {
+            saveSettings()
+        }
+    }
     
     func reset() {
         services = []
@@ -342,6 +347,7 @@ class Settings: ObservableObject {
         enableHUDDoubleTapCmd = true
         enableHUDCmdEscape = true
         showOnAllSpaces = false
+        settingsColorStyle = .colorful
     }
 
     private let settingsFile: URL = {
@@ -999,6 +1005,9 @@ class Settings: ObservableObject {
         if colorScheme != (persisted.colorScheme ?? .system) {
             colorScheme = persisted.colorScheme ?? .system
         }
+        if settingsColorStyle != (persisted.settingsColorStyle ?? .colorful) {
+            settingsColorStyle = persisted.settingsColorStyle ?? .colorful
+        }
         automaticallySwitchEngineOnLastSessionClose = persisted.automaticallySwitchEngineOnLastSessionClose ?? true
         autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation ?? true
         shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData ?? true
@@ -1049,7 +1058,8 @@ class Settings: ObservableObject {
                                             hasCompletedGhostOnboarding: hasCompletedGhostOnboarding,
                                             enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
                                             enableHUDCmdEscape: enableHUDCmdEscape,
-                                            showOnAllSpaces: showOnAllSpaces)
+                                            showOnAllSpaces: showOnAllSpaces,
+                                            settingsColorStyle: settingsColorStyle)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
@@ -1077,7 +1087,8 @@ class Settings: ObservableObject {
             hasCompletedGhostOnboarding: hasCompletedGhostOnboarding,
             enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
             enableHUDCmdEscape: enableHUDCmdEscape,
-            showOnAllSpaces: showOnAllSpaces
+            showOnAllSpaces: showOnAllSpaces,
+            settingsColorStyle: settingsColorStyle
         )
     }
 
@@ -1104,6 +1115,7 @@ class Settings: ObservableObject {
         enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
+        settingsColorStyle = persisted.settingsColorStyle ?? .colorful
         if let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         }

@@ -9,6 +9,7 @@ import WebKit
 struct SettingsView: View {
     @State private var selectedTab = "Engines"
     @StateObject private var shortcutState = ShortcutRecordingState()
+    @ObservedObject private var settings = Settings.shared
     var appController: AppController?
     var initialServiceURL: String?
     
@@ -72,151 +73,231 @@ struct GeneralSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                SettingsSection(title: "Documentation") {
-                    SettingsRow(
-                        title: "User Guide & Reference",
-                        message: "Learn about engines, Touch ID encryption, custom actions, CSS overrides, and all keyboard shortcuts."
-                    ) {
-                        Link("Open Documentation", destination: URL(string: "https://sassanh.github.io/quiper/")!)
-                            .buttonStyle(.bordered)
-                    }
-                }
-
-                 SettingsSection(title: "Startup") {
-                    SettingsToggleRow(
-                        title: "Launch at login",
-                        message: "Install Quiper as a login item so it’s ready immediately after you sign in.",
-                        isOn: $launchAtLogin
-                    )
-                    .onChange(of: launchAtLogin) { _, isEnabled in
-                        if isEnabled {
-                            appController?.installAtLogin(nil)
-                        } else {
-                            appController?.uninstallFromLogin(nil)
+                // Premium Documentation Banner
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "book.pages.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white)
+                            .frame(width: 38, height: 38)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color.blue.settingsResolved, Color.purple.settingsResolved],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .cornerRadius(8)
+                            .shadow(color: Color.blue.settingsResolved.opacity(0.25), radius: 3, x: 0, y: 1)
+                        
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Quiper User Guide & Reference")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                            Text("Learn about engines, Touch ID encryption, custom actions, CSS overrides, and all keyboard shortcuts.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(2)
                         }
-                    }
-                    
-                    SettingsDivider()
-                    
-                    SettingsToggleRow(
-                        title: "Purge orphaned cache data",
-                        message: "Identify and automatically delete orphaned, persistent WebKit caches left behind by deleted engines at startup to preserve disk space.",
-                        isOn: $settings.shouldPurgeDanglingWebData
-                    )
-                    .onChange(of: settings.shouldPurgeDanglingWebData) { _, _ in
-                        settings.saveSettings()
-                    }
-                }
-                
-                SettingsSection(title: "Behavior") {
-                    SettingsToggleRow(
-                        title: "Automatically switch engines",
-                        message: "When you close the last session of an engine, automatically switch to the last active session of another engine instead of staying on the current engine.",
-                        isOn: $settings.automaticallySwitchEngineOnLastSessionClose
-                    )
-                    .onChange(of: settings.automaticallySwitchEngineOnLastSessionClose) { _, _ in
-                        settings.saveSettings()
-                    }
-                    SettingsToggleRow(
-                        title: "Auto-create session on engine activation",
-                        message: "When you switch to an engine that has no open sessions, automatically create a new session. When disabled, the empty state is shown instead.",
-                        isOn: $settings.autoCreateSessionOnEmptyEngineActivation
-                    )
-                    .onChange(of: settings.autoCreateSessionOnEmptyEngineActivation) { _, _ in
-                        settings.saveSettings()
+                        
+                        Spacer(minLength: 16)
+                        
+                        Link(destination: URL(string: "https://sassanh.github.io/quiper/")!) {
+                            HStack(spacing: 4) {
+                                Text("Open Guide")
+                                Image(systemName: "arrow.up.right")
+                            }
+                            .fontWeight(.medium)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
                     }
                 }
-                
-                SettingsSection(title: "Notifications") {
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color(NSColor.controlBackgroundColor))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                        )
+                )
+
+                SettingsSection(title: "Startup", icon: "rocket.fill", iconColor: .purple) {
                     SettingsRow(
-                        title: "Notification permission",
-                        message: notificationPermissionMessage
+                        title: "Startup Options",
+                        message: "Configure automatic login and cache cleanup behavior at startup.",
+                        icon: "bolt.fill",
+                        iconColor: .purple
+                    ) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle("Launch at login", isOn: $launchAtLogin)
+                                .onChange(of: launchAtLogin) { _, isEnabled in
+                                    if isEnabled {
+                                        appController?.installAtLogin(nil)
+                                    } else {
+                                        appController?.uninstallFromLogin(nil)
+                                    }
+                                }
+                            Toggle("Purge orphaned cache data", isOn: $settings.shouldPurgeDanglingWebData)
+                                .onChange(of: settings.shouldPurgeDanglingWebData) { _, _ in
+                                    settings.saveSettings()
+                                }
+                        }
+                        .toggleStyle(.coloredCheckbox(Color.purple.settingsResolved))
+                        .frame(width: 260, alignment: .leading)
+                    }
+                }
+                
+                SettingsSection(title: "Behavior", icon: "slider.horizontal.3", iconColor: .blue) {
+                    SettingsRow(
+                        title: "Session Switching",
+                        message: "Manage automatic switching between engines and auto-creating empty sessions.",
+                        icon: "shuffle",
+                        iconColor: .blue
+                    ) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle("Switch engines automatically", isOn: $settings.automaticallySwitchEngineOnLastSessionClose)
+                                .onChange(of: settings.automaticallySwitchEngineOnLastSessionClose) { _, _ in
+                                    settings.saveSettings()
+                                }
+                            Toggle("Auto-create session", isOn: $settings.autoCreateSessionOnEmptyEngineActivation)
+                                .onChange(of: settings.autoCreateSessionOnEmptyEngineActivation) { _, _ in
+                                    settings.saveSettings()
+                                }
+                        }
+                        .toggleStyle(.coloredCheckbox(Color.blue.settingsResolved))
+                        .frame(width: 260, alignment: .leading)
+                    }
+                }
+                
+                SettingsSection(title: "Notifications", icon: "bell.fill", iconColor: .orange) {
+                    SettingsRow(
+                        title: "Notification Permission",
+                        message: notificationPermissionMessage,
+                        icon: "bell.and.waveform.fill",
+                        iconColor: .orange
                     ) {
                         HStack {
                             Text(notificationPermissionStatus)
                                 .foregroundColor(notificationPermissionColor)
                                 .font(.callout)
                             
-                            Button("Open System Settings") {
+                            Spacer()
+                            
+                            Button("System Settings") {
                                 notificationDispatcher.openSystemNotificationSettings()
                             }
                         }
+                        .frame(width: 260)
                     }
                 }
                 
-                SettingsSection(title: "Config") {
+                SettingsSection(title: "Config", icon: "square.and.arrow.up.on.square.fill", iconColor: .green) {
                     SettingsRow(
-                        title: "Export Config",
-                        message: "Save all settings and action scripts to a .quiper file."
+                        title: "Backup & Restore",
+                        message: "Export your setup to a backup file, or restore configuration from an existing backup.",
+                        icon: "doc.badge.gearshape.fill",
+                        iconColor: .green
                     ) {
-                        Button("Export") {
-                            ConfigPortManager.showExportPanel(in: NSApp.keyWindow) { result in
-                                switch result {
-                                case .success(let url):
-                                    exportSuccessMessage = "Config exported to \(url.lastPathComponent)"
-                                case .failure(let error):
-                                    exportError = error.localizedDescription
+                        HStack(spacing: 8) {
+                            Button(action: {
+                                ConfigPortManager.showExportPanel(in: NSApp.keyWindow) { result in
+                                    switch result {
+                                    case .success(let url):
+                                        exportSuccessMessage = "Config exported to \(url.lastPathComponent)"
+                                    case .failure(let error):
+                                        exportError = error.localizedDescription
+                                    }
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "square.and.arrow.up")
+                                    Text("Export")
                                 }
                             }
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-
-                    Divider()
-
-                    SettingsRow(
-                        title: "Import Config",
-                        message: "Restore settings and action scripts from a .quiper file. This will overwrite your current configuration."
-                    ) {
-                        Button("Import") {
-                            ConfigPortManager.showImportPanel(in: NSApp.keyWindow) { result in
-                                if case .failure(let error) = result {
-                                    importError = error.localizedDescription
-                                } else {
-                                    appController?.reloadServices()
+                            .buttonStyle(.bordered)
+                            
+                            Button(action: {
+                                ConfigPortManager.showImportPanel(in: NSApp.keyWindow) { result in
+                                    if case .failure(let error) = result {
+                                        importError = error.localizedDescription
+                                    } else {
+                                        appController?.reloadServices()
+                                    }
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "square.and.arrow.down")
+                                    Text("Import")
                                 }
                             }
+                            .buttonStyle(.bordered)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .frame(width: 260, alignment: .trailing)
                     }
                 }
 
-                SettingsSection(title: "Danger Zone", cardBackground: Color.red.opacity(0.05)) {
-                    SettingsRow(title: "Clear All Web Data",
-                                message: "Delete cookies, caches, and storage for every engine so all sites behave like fresh logins.") {
+                SettingsSection(title: "Danger Zone", titleColor: .red, cardBackground: Color.red.opacity(0.05), icon: "exclamationmark.triangle.fill", iconColor: .red) {
+                    SettingsRow(
+                        title: "Clear All Web Data",
+                        message: "Delete cookies, caches, and storage for every engine so all sites behave like fresh logins.",
+                        icon: "globe",
+                        iconColor: .red
+                    ) {
                         Button(role: .destructive) {
                             showClearWebConfirmation = true
                         } label:{
-                            Text("Clear All Web Data")
+                            HStack {
+                                Image(systemName: "trash")
+                                Text("Clear Data")
+                            }
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
+                        .frame(width: 260, alignment: .trailing)
                     }
                     
-                    Divider()
+                    SettingsDivider()
                     
-                    SettingsRow(title: "Erase All Engines",
-                                message: "Remove every configured service and its stored scripts.") {
+                    SettingsRow(
+                        title: "Erase All Engines",
+                        message: "Remove every configured service and its stored scripts.",
+                        icon: "cpu.fill",
+                        iconColor: .red
+                    ) {
                         Button(role: .destructive) {
                             showEraseEnginesConfirmation = true
                         } label: {
-                            Text("Erase All Engines")
+                            HStack {
+                                Image(systemName: "xmark.bin")
+                                Text("Erase Engines")
+                            }
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
+                        .frame(width: 260, alignment: .trailing)
                     }
                     
-                    Divider()
+                    SettingsDivider()
                     
-                    SettingsRow(title: "Erase All Actions",
-                                message: "Delete every custom action and its scripts across services.") {
+                    SettingsRow(
+                        title: "Erase All Actions",
+                        message: "Delete every custom action and its scripts across services.",
+                        icon: "terminal.fill",
+                        iconColor: .red
+                    ) {
                         Button(role: .destructive) {
                             showEraseActionsConfirmation = true
                         } label: {
-                            Text("Erase All Actions")
+                            HStack {
+                                Image(systemName: "play.slash")
+                                Text("Erase Actions")
+                            }
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
+                        .frame(width: 260, alignment: .trailing)
                     }
                 }
             }
@@ -310,10 +391,8 @@ struct GeneralSettingsView: View {
     
     private var notificationPermissionColor: Color {
         switch notificationDispatcher.authorizationStatus {
-        case .authorized, .provisional, .ephemeral: return .green
         case .denied: return .red
-        case .notDetermined: return .secondary
-        @unknown default: return .secondary
+        default: return .secondary
         }
     }
     
