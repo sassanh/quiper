@@ -4,17 +4,22 @@
 
 ### Added
 
+- **Settings Style Selection ([AppearanceSettingsView.swift](Quiper/AppearanceSettingsView.swift), [Settings.swift](Quiper/Settings.swift), [SettingsModels.swift](Quiper/SettingsModels.swift))**: Introduced a customizable "Settings Color Style" preference supporting **Colorful** (vibrant defaults) and **Classic** (clean monochrome) modes.
+- **Settings Style Picker ([SettingsPickers.swift](Quiper/Components/SettingsPickers.swift))**: Created a custom picker display featuring side-by-side graphical layout previews for both Colorful and Classic modes.
+- **Custom Colored Checkbox Toggle Style ([SettingsComponents.swift](Quiper/Components/SettingsComponents.swift))**: Added a custom SF Symbol-based `ColoredCheckboxToggleStyle` to customize settings checkboxes dynamically based on active styling.
+- **Settings Styling Guidelines ([settings-styling.md](docs/settings-styling.md))**: Documented development standards for settings rows, state observation, and color resolution, and linked it in [AGENTS.md](AGENTS.md).
 - **Comprehensive Unit Testing Suite ([FaviconFetcherTests](QuiperTests/FaviconFetcherTests.swift), [WebKitCacheCleanerTests](QuiperTests/WebKitCacheCleanerTests.swift), [SecureStorageManagerTests](QuiperTests/SecureStorageManagerTests.swift), [SettingsDirectoryMigratorTests](QuiperTests/SettingsDirectoryMigratorTests.swift))**: Added 31 unit tests verifying URL normalization, localhost resolution, WebKit cache cleaning filters, random key generation, Keychain errors, and Application Support directory migration.
 - **Settings Directory Migrator ([SettingsDirectoryMigrator.swift](Quiper/Components/SettingsDirectoryMigrator.swift))**: Introduced a dedicated helper component to manage legacy Application Support directory migration independently of the main application lifecycle.
 - **Interactive Onboarding Tips**: Introduced a premium, step-by-step onboarding guide (`GhostOnboardingManager`) with glassy physical keycap tooltips (`GhostOnboardingHUDView`) to help new users learn service/session selectors, shortcuts, and triggers on first launch.
 - **Auto-start Detection**: Configured the LaunchAgent startup wrapper to pass a `--autostart` flag so the app remains hidden in the status bar at boot, showing the window only on explicit user launches.
-
 - **Comprehensive Documentation Site**: Migrated extensive setup guides, engine management instructions, and troubleshooting tables from the README into a dedicated VitePress documentation site hosted on GitHub Pages.
 - **In-App Documentation Shortcuts ([App.swift](Quiper/App.swift), [StatusBar.swift](Quiper/StatusBar.swift), [SettingsView.swift](Quiper/SettingsView.swift))**: Added native "Documentation" link shortcuts inside the main `Help` menu, the session selector's "..." dropdown menu, the macOS Status Bar menu, and the General Settings pane.
 - **Window on All Spaces Toggle ([AppearanceSettingsView.swift](Quiper/AppearanceSettingsView.swift), [MainWindowController.swift](Quiper/MainWindowController.swift), [App.swift](Quiper/App.swift))**: Added a new setting under Appearance -> Window allowing the user to configure the Quiper main window to stay visible across all macOS desktop spaces.
 
 ### Changed
 
+- **Decomposed SettingsComponents ([SettingsComponents.swift](Quiper/Components/SettingsComponents.swift), [SettingsPickers.swift](Quiper/Components/SettingsPickers.swift))**: Split custom picker controls out of the primary components file into a dedicated pickers file to improve organization and build times.
+- **Instant Settings Style Re-rendering ([SettingsComponents.swift](Quiper/Components/SettingsComponents.swift), [UpdatesSettingsView.swift](Quiper/UpdatesSettingsView.swift))**: Added `@ObservedObject` references to Settings inside custom components so changes apply immediately.
 - **FaviconFetcher and WebKitCacheCleaner Refactoring ([FaviconFetcher.swift](Quiper/Components/FaviconFetcher.swift), [WebKitCacheCleaner.swift](Quiper/Components/WebKitCacheCleaner.swift))**: Refactored URL normalization, resolution checks, and orphaned-store filtering logic from private to internal static functions, enabling isolated logic validation without UI overhead.
 - **App Directory Migration Delegation ([Main.swift](Quiper/Main.swift))**: Updated the application entry point to delegate legacy path migrations to the new `SettingsDirectoryMigrator` helper.
 - **Streamlined Landing Page**: Completely rewrote the `README.md` to serve as a focused, compelling landing page highlighting core features, visual galleries, and security audits, while delegating deep-dive technical configuration guides to the official documentation site.
@@ -22,6 +27,8 @@
 
 ### Fixed
 
+- **macOS Checkbox Rendering Bug**: Replaced native checkbox toggles in Settings with the custom symbol-based toggle style to prevent solid black background rendering.
+- **Danger Zone and Button Readability**: Ensured warning sections (Danger Zone) remain bright red and primary buttons (e.g., Check for Updates) remain fully colored and legible under both color styles.
 - **Native Fullscreen Space Jump**: Fixed an issue where activating Quiper via the global hotkey on top of a native macOS fullscreen space (e.g., a fullscreen video in Safari/Firefox) caused a space transition/jump back to the last active normal space. The overlay window now always maintains its collection behavior as `.canJoinAllSpaces` when hidden, transitioning to `.moveToActiveSpace` only while visible to properly align with space switching preferences without triggering space jumps.
 - **Space-switching global hotkey behavior ([App.swift](Quiper/App.swift))**: Fixed an issue where switching to another desktop Space and hitting the global shortcut would close the window on the original Space rather than bringing it to the active Space. The shortcut now checks `isOnActiveSpace` to ensure the window is correctly shown on the active Space on the first press.
 - **Nightly and Beta Tag Loop Resolution ([integration_delivery.yml](.github/workflows/integration_delivery.yml), [build-app.sh](build-app.sh))**: Fixed an issue where nightly and beta builds would pull previous nightly release tags as their version base, resulting in a feedback loop that prepended hyphens and appended run numbers (e.g., `nightly-----v4.0.0-660-666-667-668-669`). Restructured the `git describe` command to target only release tags starting with `v*`.
