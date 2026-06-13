@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Comprehensive Unit Testing Suite ([FaviconFetcherTests](QuiperTests/FaviconFetcherTests.swift), [WebKitCacheCleanerTests](QuiperTests/WebKitCacheCleanerTests.swift), [SecureStorageManagerTests](QuiperTests/SecureStorageManagerTests.swift), [SettingsDirectoryMigratorTests](QuiperTests/SettingsDirectoryMigratorTests.swift))**: Added 31 unit tests verifying URL normalization, localhost resolution, WebKit cache cleaning filters, random key generation, Keychain errors, and Application Support directory migration.
+- **Settings Directory Migrator ([SettingsDirectoryMigrator.swift](Quiper/Components/SettingsDirectoryMigrator.swift))**: Introduced a dedicated helper component to manage legacy Application Support directory migration independently of the main application lifecycle.
 - **Interactive Onboarding Tips**: Introduced a premium, step-by-step onboarding guide (`GhostOnboardingManager`) with glassy physical keycap tooltips (`GhostOnboardingHUDView`) to help new users learn service/session selectors, shortcuts, and triggers on first launch.
 - **Auto-start Detection**: Configured the LaunchAgent startup wrapper to pass a `--autostart` flag so the app remains hidden in the status bar at boot, showing the window only on explicit user launches.
 
@@ -13,6 +15,8 @@
 
 ### Changed
 
+- **FaviconFetcher and WebKitCacheCleaner Refactoring ([FaviconFetcher.swift](Quiper/Components/FaviconFetcher.swift), [WebKitCacheCleaner.swift](Quiper/Components/WebKitCacheCleaner.swift))**: Refactored URL normalization, resolution checks, and orphaned-store filtering logic from private to internal static functions, enabling isolated logic validation without UI overhead.
+- **App Directory Migration Delegation ([Main.swift](Quiper/Main.swift))**: Updated the application entry point to delegate legacy path migrations to the new `SettingsDirectoryMigrator` helper.
 - **Streamlined Landing Page**: Completely rewrote the `README.md` to serve as a focused, compelling landing page highlighting core features, visual galleries, and security audits, while delegating deep-dive technical configuration guides to the official documentation site.
 - **Custom CSS and Appearance Separation**: Cleaned up the documentation architecture by relocating Custom CSS injection guides out of the general "Appearance" page and correctly associating them with the "Managing Engines" guide where they are configured.
 
