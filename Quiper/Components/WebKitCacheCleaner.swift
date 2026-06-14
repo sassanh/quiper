@@ -17,8 +17,8 @@ final class WebKitCacheCleaner {
             .appendingPathComponent("WebsiteDataStore")
     }
     
-    /// Scans the WebKit stores, filters directories that match UUID layout but do not exist
-    /// in the active user settings configuration, and purges them asynchronously.
+    /// Scans the WebKit stores, Application Support directories, and filters items that match UUID layout
+    /// but do not exist in the active user settings configuration, purging them asynchronously.
     @MainActor
     static func cleanOrphanedStores() {
         guard Settings.shared.shouldPurgeDanglingWebData else {
@@ -33,49 +33,115 @@ final class WebKitCacheCleaner {
             return
         }
         
-        guard FileManager.default.fileExists(atPath: storeDir.path) else {
-            return
-        }
-        
         // Enumerate directory entries in the background (disk I/O)
         DispatchQueue.global(qos: .utility).async {
             let fileManager = FileManager.default
-            guard let contents = try? fileManager.contentsOfDirectory(
+            
+            // 1. Clean per-engine WebKit data stores
+            if fileManager.fileExists(atPath: storeDir.path),
+               let contents = try? fileManager.contentsOfDirectory(
                 at: storeDir,
                 includingPropertiesForKeys: nil,
                 options: [.skipsHiddenFiles]
-            ) else {
-                return
-            }
-            
-            // Loop through directory paths and detect UUID-based orphans
-            for url in contents {
-                let folderName = url.lastPathComponent
-                
-                // 1 & 2: Check if this directory is an orphaned UUID data store
-                guard isOrphanedStore(folderName: folderName, activeIDs: activeIDs) else {
-                    continue
-                }
-                
-                // 3. Purge orphaned directory natively via WebKit
-                // The storeUUID is safely extracted since isOrphanedStore passed
-                let storeUUID = UUID(uuidString: folderName)!
-                
-                DispatchQueue.main.async {
-                    NSLog("[WebKitCacheCleaner] Purging orphaned cache data store: \(storeUUID)")
-                    WKWebsiteDataStore.remove(forIdentifier: storeUUID) { error in
-                        if let error = error {
-                            NSLog("[WebKitCacheCleaner] Failed to natively remove data store \(storeUUID): \(error.localizedDescription)")
-                            // Fallback file manager deletion just in case WebKit is locked or busy
-                            let pathToDelete = url.path
-                            DispatchQueue.global(qos: .utility).async {
-                                try? FileManager.default.removeItem(atPath: pathToDelete)
+               ) {
+                // Loop through directory paths and detect UUID-based orphans
+                for url in contents {
+                    let folderName = url.lastPathComponent
+                    
+                    // Check if this directory is an orphaned UUID data store
+                    guard isOrphanedStore(folderName: folderName, activeIDs: activeIDs) else {
+                        continue
+                    }
+                    
+                    // Purge orphaned directory natively via WebKit
+                    let storeUUID = UUID(uuidString: folderName)!
+                    
+                    DispatchQueue.main.async {
+                        NSLog("[WebKitCacheCleaner] Purging orphaned cache data store: \(storeUUID)")
+                        WKWebsiteDataStore.remove(forIdentifier: storeUUID) { error in
+                            if let error = error {
+                                NSLog("[WebKitCacheCleaner] Failed to natively remove data store \(storeUUID): \(error.localizedDescription)")
+                                // Fallback file manager deletion just in case WebKit is locked or busy
+                                let pathToDelete = url.path
+                                DispatchQueue.global(qos: .utility).async {
+                                    try? fileManager.removeItem(atPath: pathToDelete)
+                                }
+                            } else {
+                                NSLog("[WebKitCacheCleaner] Successfully removed data store \(storeUUID)")
                             }
-                        } else {
-                            NSLog("[WebKitCacheCleaner] Successfully removed data store \(storeUUID)")
                         }
                     }
                 }
+            }
+            
+            // 2. Clean Application Support folders
+            if let appSupportDir = baseAppSupportDirectory {
+                let cssDir = appSupportDir.appendingPathComponent("CustomCSS", isDirectory: true)
+                purgeOrphanedFiles(in: cssDir, fileExtension: "css", activeIDs: activeIDs, fileManager: fileManager)
+                
+                let selectorsDir = appSupportDir.appendingPathComponent("FocusSelectors", isDirectory: true)
+                purgeOrphanedFiles(in: selectorsDir, fileExtension: "txt", activeIDs: activeIDs, fileManager: fileManager)
+                
+                let scriptsDir = appSupportDir.appendingPathComponent("ActionScripts", isDirectory: true)
+                purgeOrphanedFiles(in: scriptsDir, fileExtension: nil, activeIDs: activeIDs, fileManager: fileManager)
+                
+                let encryptedDir = appSupportDir.appendingPathComponent("EncryptedStores", isDirectory: true)
+                purgeOrphanedFiles(in: encryptedDir, fileExtension: "sparsebundle", activeIDs: activeIDs, fileManager: fileManager)
+            }
+        }
+    }
+    
+    private static var baseAppSupportDirectory: URL? {
+        let isRunningTests = NSClassFromString("XCTestCase") != nil
+        let isUITesting = CommandLine.arguments.contains("--uitesting")
+        
+        let appDir: URL
+        if isRunningTests || isUITesting {
+            let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            appDir = tempDir.appendingPathComponent("QuiperTests-\(ProcessInfo.processInfo.processIdentifier)")
+        } else {
+            guard let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+                return nil
+            }
+            appDir = supportDir.appendingPathComponent(Constants.APP_FOLDER_NAME, isDirectory: true)
+        }
+        return appDir
+    }
+    
+    internal static func purgeOrphanedFiles(
+        in directory: URL,
+        fileExtension: String?,
+        activeIDs: Set<UUID>,
+        fileManager: FileManager
+    ) {
+        guard fileManager.fileExists(atPath: directory.path) else { return }
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        
+        for url in contents {
+            let nameWithoutExtension: String
+            if let ext = fileExtension {
+                guard url.pathExtension.lowercased() == ext.lowercased() else { continue }
+                nameWithoutExtension = url.deletingPathExtension().lastPathComponent
+            } else {
+                nameWithoutExtension = url.lastPathComponent
+            }
+            
+            guard isOrphanedStore(folderName: nameWithoutExtension, activeIDs: activeIDs) else {
+                continue
+            }
+            
+            let uuid = UUID(uuidString: nameWithoutExtension)!
+            
+            NSLog("[WebKitCacheCleaner] Purging orphaned leftovers at: \(url.path)")
+            try? fileManager.removeItem(at: url)
+            
+            // Delete matching key from Keychain on the MainActor
+            DispatchQueue.main.async {
+                SecureStorageManager.shared.deleteKeyFromKeychain(for: uuid)
             }
         }
     }

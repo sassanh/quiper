@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Extended Background Leftover Cleanup ([WebKitCacheCleaner.swift](Quiper/Components/WebKitCacheCleaner.swift), [WebKitCacheCleanerTests.swift](QuiperTests/WebKitCacheCleanerTests.swift))**: Expanded the startup cache cleaner to automatically find and purge orphaned custom CSS files, focus selector files, action script directories, APFS sparsebundles, and secure Keychain password keys when their corresponding engines/services are deleted.
+
 - **Settings Style Selection ([AppearanceSettingsView.swift](Quiper/AppearanceSettingsView.swift), [Settings.swift](Quiper/Settings.swift), [SettingsModels.swift](Quiper/SettingsModels.swift))**: Introduced a customizable "Settings Color Style" preference supporting **Colorful** (vibrant defaults) and **Classic** (clean monochrome) modes.
 - **Settings Style Picker ([SettingsPickers.swift](Quiper/Components/SettingsPickers.swift))**: Created a custom picker display featuring side-by-side graphical layout previews for both Colorful and Classic modes.
 - **Custom Colored Checkbox Toggle Style ([SettingsComponents.swift](Quiper/Components/SettingsComponents.swift))**: Added a custom SF Symbol-based `ColoredCheckboxToggleStyle` to customize settings checkboxes dynamically based on active styling.

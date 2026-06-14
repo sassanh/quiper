@@ -8,7 +8,7 @@
 
 ## Build, Test, and Development Commands
 
-- `swift run` — Debug build with console logs; fastest way to iterate.
+- `xcodebuild -project Quiper.xcodeproj -scheme Quiper -configuration Debug -destination "platform=macOS" build` — Debug build.
 - `./build-app.sh` — Release bundle + Info.plist + assets + ad-hoc codesign; outputs `Quiper.app`.
 - Ensure Xcode 16+ Command Line Tools (`xcode-select --install`) are available.
 
@@ -23,8 +23,10 @@
 
 ## Testing Guidelines
 
-- No XCTest target today. If you add one, name it `Tests/QuiperTests/` and mirror module names.
-- Prefer focused unit tests for shortcut parsing, notification metadata, and settings serialization. Run with `swift test`.
+- The XCTest targets are `QuiperTests` (unit tests) and `QuiperUITests` (UI tests).
+- Prefer focused unit tests for shortcut parsing, notification metadata, and settings serialization. Run only unit tests with:
+  `xcodebuild test -project Quiper.xcodeproj -scheme Quiper -destination "platform=macOS" -only-testing:QuiperTests`
+- To run all tests including code coverage, run `./tests-with-coverage.sh`.
 - For UI changes, include a quick manual checklist (hotkey capture, overlay show/hide, service switching) in the PR.
 
 ## Commit & Pull Request Guidelines
@@ -43,3 +45,4 @@
 ## Agent Behavior Rules
 
 - **BUILD WARNINGS ARE NOT ACCEPTABLE**: When implementing or refactoring code, always aim for zero compiler warnings. Code must be written cleanly, following the strict concurrency guidelines of Swift 6, and avoiding deprecated APIs. Any warnings introduced during changes must be resolved immediately before completing the task.
+- **DO NOT RUN ALL TESTS BLINDLY**: When executing tests, target the specific test classes or methods relevant to your changes (e.g., using `-only-testing:QuiperTests/SecureStorageManagerTests` or `--filter SecureStorageManagerTests`) rather than running entire targets or suites unconditionally. UI and integration tests may trigger biometric or LocalAuthentication prompts that require active user approval, leading to timeouts or failures in unattended/headless environments.
