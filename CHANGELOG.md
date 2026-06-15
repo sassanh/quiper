@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-06-15
+
 ### Added
 
 - **Extended Background Leftover Cleanup ([WebKitCacheCleaner.swift](Quiper/Components/WebKitCacheCleaner.swift), [WebKitCacheCleanerTests.swift](QuiperTests/WebKitCacheCleanerTests.swift))**: Expanded the startup cache cleaner to automatically find and purge orphaned custom CSS files, focus selector files, action script directories, APFS sparsebundles, and secure Keychain password keys when their corresponding engines/services are deleted.
