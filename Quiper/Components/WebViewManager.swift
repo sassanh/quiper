@@ -112,8 +112,31 @@ final class WebViewManager: NSObject {
         webviewsByID[service.id]?.removeValue(forKey: sessionIndex)
         wrappersByID[service.id]?.removeValue(forKey: sessionIndex)
     }
+
+    func getOpenSessionsState() -> [String: [Int: String]] {
+        var state: [String: [Int: String]] = [:]
+        let currentSavedState = Settings.shared.persistedTabState?.openTabs
+
+        for service in services {
+            guard let sessionMap = webviewsByID[service.id] else { continue }
+            var sessionURLs: [Int: String] = [:]
+            for (idx, webView) in sessionMap {
+                if let urlString = webView.url?.absoluteString, !urlString.isEmpty, urlString != "about:blank" {
+                    sessionURLs[idx] = urlString
+                } else if let previouslySavedURL = currentSavedState?[service.url]?[idx], !previouslySavedURL.isEmpty {
+                    sessionURLs[idx] = previouslySavedURL
+                } else {
+                    sessionURLs[idx] = service.url
+                }
+            }
+            if !sessionURLs.isEmpty {
+                state[service.url] = sessionURLs
+            }
+        }
+        return state
+    }
     
-    func getOrCreateWebView(for service: Service, sessionIndex: Int, dragArea: NSView?) -> WKWebView {
+    func getOrCreateWebView(for service: Service, sessionIndex: Int, dragArea: NSView?, targetURL: String? = nil) -> WKWebView {
         if let dragArea = dragArea {
             self.dragArea = dragArea
         }
@@ -190,7 +213,8 @@ final class WebViewManager: NSObject {
         // Load initial URL with encryption check
         if service.isEncrypted {
             if EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
-                if let url = URL(string: service.url) {
+                let activeURLString = targetURL ?? service.url
+                if let url = URL(string: activeURLString) {
                     if url.isFileURL {
                         webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
                     } else {
@@ -200,7 +224,7 @@ final class WebViewManager: NSObject {
             } else {
                 // Show LockOverlayView on top of wrapper
                 let serviceId = service.id
-                let serviceUrl = service.url
+                let serviceUrl = targetURL ?? service.url
                 
                 var lockOverlayRef: LockOverlayView? = nil
                 let lockOverlay = LockOverlayView(frame: wrapperView.bounds, serviceName: service.name) { [weak self, weak webview, weak wrapperView] context in
@@ -313,7 +337,8 @@ final class WebViewManager: NSObject {
                 }
             }
             
-            if let url = URL(string: service.url) {
+            let activeURLString = targetURL ?? service.url
+            if let url = URL(string: activeURLString) {
                 if url.isFileURL {
                     webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
                 } else {
@@ -373,7 +398,6 @@ final class WebViewManager: NSObject {
             sessionMap.values.forEach { webView in
                 if let wrapper = webView.superview {
                     wrapper.isHidden = true
-                    wrapper.removeFromSuperview()
                 }
             }
         }
@@ -456,7 +480,7 @@ final class WebViewManager: NSObject {
         
         wrapper.isHidden = false
         
-        if let container = containerView {
+        if let container = containerView, wrapper.superview != container {
             if let dragArea = self.dragArea {
                 container.addSubview(wrapper, positioned: .below, relativeTo: dragArea)
             } else {

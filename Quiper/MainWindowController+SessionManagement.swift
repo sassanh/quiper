@@ -43,6 +43,7 @@ extension MainWindowController {
         
         showHeaderTemporarily()
         GhostOnboardingManager.shared.serviceDidSwitch()
+        saveTabsState()
     }
 
     func switchSession(to index: Int) {
@@ -78,6 +79,7 @@ extension MainWindowController {
         
         showHeaderTemporarily()
         GhostOnboardingManager.shared.sessionDidSwitch()
+        saveTabsState()
     }
 
     func reloadServices() {
@@ -472,6 +474,7 @@ extension MainWindowController {
         webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
         let key = "\(service.url)_\(sessionIndex)"
         sessionTitleObservations[key] = nil
+        saveTabsState()
     }
 
     func hideEmptyState() {

@@ -771,6 +771,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if Settings.shared.tabSurvivalPolicy == .askOnExit {
+            NSApp.activate(ignoringOtherApps: true)
+
+            let alert = NSAlert()
+            alert.messageText = "Close all tabs before exiting?"
+            alert.informativeText = "Would you like to close all your open tabs, or keep them for your next session?"
+            alert.addButton(withTitle: "Keep Tabs")
+            alert.addButton(withTitle: "Close All Tabs")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .informational
+
+            let response = alert.runModal()
+            if response == .alertSecondButtonReturn {
+                Settings.shared.discardSavedTabs()
+            } else if response == .alertThirdButtonReturn {
+                return .terminateCancel
+            }
+        } else if Settings.shared.tabSurvivalPolicy == .never {
+            Settings.shared.discardSavedTabs()
+        }
+
         // 1. Immediately lock all encrypted engines in state
         for service in Settings.shared.services {
             if service.isEncrypted {

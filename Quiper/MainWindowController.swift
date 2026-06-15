@@ -701,6 +701,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         webViewManager.updateServices(services)
 
+        restoreTabsState()
+
         findBarViewController = FindBarViewController()
         findBarViewController.delegate = self
         findBarViewController.addTo(parentWindow: window!, topOffset: Settings.shared.dragAreaPosition == .top ? Constants.DRAGGABLE_AREA_HEIGHT : 0)
@@ -713,6 +715,59 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateHeaderTrackingArea()
         layoutSelectors()
         updateHeaderVisibility(animated: false)
+    }
+
+    func saveTabsState() {
+        guard Settings.shared.tabSurvivalPolicy != .never else { return }
+
+        var state = PersistedTabState()
+        state.activeServiceURL = currentServiceURL
+        state.activeIndicesByURL = activeIndicesByURL
+        if let manager = webViewManager {
+            state.openTabs = manager.getOpenSessionsState()
+        }
+
+        Settings.shared.persistedTabState = state
+        Settings.shared.saveSettings()
+    }
+
+    func restoreTabsState() {
+        guard Settings.shared.tabSurvivalPolicy != .never,
+              let savedState = Settings.shared.persistedTabState else {
+            return
+        }
+
+        // Restore activeIndicesByURL
+        for (url, index) in savedState.activeIndicesByURL {
+            if services.contains(where: { $0.url == url }) {
+                activeIndicesByURL[url] = index
+            }
+        }
+
+        // Restore open tabs
+        for (svcURL, sessions) in savedState.openTabs {
+            guard let service = services.first(where: { $0.url == svcURL }) else { continue }
+            for (sessionIndex, urlString) in sessions {
+                // Pre-instantiate the webview with its restored URL
+                _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString)
+
+                // Set up observers
+                if let webView = webViewManager.getWebView(for: service, sessionIndex: sessionIndex) {
+                    setupSessionTitleObserver(for: service, sessionIndex: sessionIndex, webView: webView)
+                }
+            }
+        }
+
+        // Restore active service selection
+        if let activeURL = savedState.activeServiceURL,
+           services.contains(where: { $0.url == activeURL }) {
+            currentServiceURL = activeURL
+            if let index = services.firstIndex(where: { $0.url == activeURL }) {
+                currentServiceName = services[index].name
+            }
+        }
+
+        refreshInstantiationState()
     }
 
     private func createDragArea(in contentView: NSView) {

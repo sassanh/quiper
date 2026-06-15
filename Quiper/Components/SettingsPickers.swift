@@ -553,3 +553,132 @@ struct SettingsStylePicker: View {
         .frame(width: 260, alignment: .trailing)
     }
 }
+
+struct TabSurvivalPolicyPicker: View {
+    @Binding var selection: TabSurvivalPolicy
+    @ObservedObject private var settings = Settings.shared
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Always
+            Button(action: { selection = .always }) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        // Window outline
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                            .frame(width: 44, height: 36)
+
+                        // Active tabs (filled color boxes)
+                        HStack(spacing: 2) {
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(Color.orange.settingsResolved.opacity(0.8))
+                                .frame(width: 8, height: 6)
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(Color.orange.settingsResolved.opacity(0.5))
+                                .frame(width: 8, height: 6)
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(Color.orange.settingsResolved.opacity(0.5))
+                                .frame(width: 8, height: 6)
+                        }
+                        .offset(y: -8)
+
+                        // circular reload/restore arrow
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(Color.orange.settingsResolved)
+                            .offset(y: 6)
+                    }
+                    .frame(width: 44, height: 36)
+                    .padding(8)
+                    .pickerCardStyle(isSelected: selection == .always, accentColor: .orange)
+
+                    Text("Always")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(selection == .always ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Ask on Exit
+            Button(action: { selection = .askOnExit }) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        // Window outline
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                            .frame(width: 44, height: 36)
+
+                        // Active tabs (filled color boxes)
+                        HStack(spacing: 2) {
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(Color.orange.settingsResolved.opacity(0.8))
+                                .frame(width: 8, height: 6)
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(Color.orange.settingsResolved.opacity(0.5))
+                                .frame(width: 8, height: 6)
+                        }
+                        .offset(y: -8)
+
+                        // Question mark alert bubble/box
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.orange.settingsResolved.opacity(0.7))
+                                .frame(width: 14, height: 12)
+                            Text("?")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                        .offset(y: 6)
+                    }
+                    .frame(width: 44, height: 36)
+                    .padding(8)
+                    .pickerCardStyle(isSelected: selection == .askOnExit, accentColor: .orange)
+
+                    Text("Ask on Exit")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(selection == .askOnExit ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Never
+            Button(action: { selection = .never }) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        // Window outline
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                            .frame(width: 44, height: 36)
+
+                        // No active tabs / empty outline tabs
+                        HStack(spacing: 2) {
+                            RoundedRectangle(cornerRadius: 1)
+                                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                                .frame(width: 8, height: 6)
+                            RoundedRectangle(cornerRadius: 1)
+                                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                                .frame(width: 8, height: 6)
+                        }
+                        .offset(y: -8)
+
+                        // Slash / X / empty trash icon
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(.gray.opacity(0.8))
+                            .offset(y: 6)
+                    }
+                    .frame(width: 44, height: 36)
+                    .padding(8)
+                    .pickerCardStyle(isSelected: selection == .never, accentColor: .orange)
+
+                    Text("Never")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(selection == .never ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 260, alignment: .trailing)
+    }
+}

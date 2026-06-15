@@ -326,8 +326,20 @@ class Settings: ObservableObject {
             saveSettings()
         }
     }
+    @Published var tabSurvivalPolicy: TabSurvivalPolicy = .always {
+        didSet {
+            saveSettings()
+        }
+    }
+    @Published var persistedTabState: PersistedTabState? = nil {
+        didSet {
+            saveSettings()
+        }
+    }
     
     func reset() {
+        isPerformingWipe = true
+        defer { isPerformingWipe = false }
         services = []
         hotkeyConfiguration = HotkeyManager.defaultConfiguration
         customActions = []
@@ -348,6 +360,8 @@ class Settings: ObservableObject {
         enableHUDCmdEscape = true
         showOnAllSpaces = false
         settingsColorStyle = .colorful
+        tabSurvivalPolicy = .always
+        persistedTabState = nil
     }
 
     private let settingsFile: URL = {
@@ -593,7 +607,7 @@ class Settings: ObservableObject {
             body, mat-sidenav-container, response-container>* {
               background-color: transparent !important;
             }
-            input-container::before {
+            input-container, input-container::before {
               background: transparent !important;
             }
             """
@@ -1015,6 +1029,8 @@ class Settings: ObservableObject {
         enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
+        tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
+        persistedTabState = persisted.persistedTabState
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
@@ -1032,9 +1048,13 @@ class Settings: ObservableObject {
         return defaultActions.first { $0.name.lowercased() == normalized }?.id
     }
 
+    func discardSavedTabs() {
+        persistedTabState = nil
+        saveSettings()
+    }
+
     func saveSettings() {
         if isPerformingWipe {
-            isPerformingWipe = false
             return
         }
         do {
@@ -1059,7 +1079,9 @@ class Settings: ObservableObject {
                                             enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
                                             enableHUDCmdEscape: enableHUDCmdEscape,
                                             showOnAllSpaces: showOnAllSpaces,
-                                            settingsColorStyle: settingsColorStyle)
+                                            settingsColorStyle: settingsColorStyle,
+                                            tabSurvivalPolicy: tabSurvivalPolicy,
+                                            persistedTabState: persistedTabState)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
@@ -1088,7 +1110,9 @@ class Settings: ObservableObject {
             enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
             enableHUDCmdEscape: enableHUDCmdEscape,
             showOnAllSpaces: showOnAllSpaces,
-            settingsColorStyle: settingsColorStyle
+            settingsColorStyle: settingsColorStyle,
+            tabSurvivalPolicy: tabSurvivalPolicy,
+            persistedTabState: persistedTabState
         )
     }
 
@@ -1116,6 +1140,8 @@ class Settings: ObservableObject {
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         settingsColorStyle = persisted.settingsColorStyle ?? .colorful
+        tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
+        persistedTabState = persisted.persistedTabState
         if let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         }
@@ -1145,6 +1171,7 @@ class Settings: ObservableObject {
 
     func wipeAllData() {
         isPerformingWipe = true
+        defer { isPerformingWipe = false }
         services.removeAll()
         customActions.removeAll()
         updatePreferences = UpdatePreferences()

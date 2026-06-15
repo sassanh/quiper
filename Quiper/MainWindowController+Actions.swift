@@ -318,6 +318,7 @@ extension MainWindowController: WebViewManagerDelegate {
     }
     
     func webViewDidFinishNavigation(_ webView: WKWebView) {
+        saveTabsState()
         guard webView == currentWebView() else { return }
         
         if webView.title?.isEmpty ?? true {

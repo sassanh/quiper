@@ -169,6 +169,17 @@ struct GeneralSettingsView: View {
                         .toggleStyle(.coloredCheckbox(Color.blue.settingsResolved))
                         .frame(width: 260, alignment: .leading)
                     }
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Tab Preservation",
+                        message: "Determine whether open tabs should be preserved when the application restarts or crashes.",
+                        icon: "square.stack.3d.down.right.fill",
+                        iconColor: .blue
+                    ) {
+                        TabSurvivalPolicyPicker(selection: $settings.tabSurvivalPolicy)
+                    }
                 }
                 
                 SettingsSection(title: "Notifications", icon: "bell.fill", iconColor: .orange) {

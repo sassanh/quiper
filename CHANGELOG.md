@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Tab Preservation & Relaunch Recovery ([SettingsModels.swift](Quiper/SettingsModels.swift), [Settings.swift](Quiper/Settings.swift), [WebViewManager.swift](Quiper/Components/WebViewManager.swift), [MainWindowController.swift](Quiper/MainWindowController.swift), [App.swift](Quiper/App.swift), [SettingsPickers.swift](Quiper/Components/SettingsPickers.swift), [SettingsView.swift](Quiper/SettingsView.swift))**: Added support for persisting open session tabs across application restarts and crashes. Users can configure this behavior inside General Settings with three policies: **Always Restore** (automatic serialization), **Ask on Exit** (interactive modal prompt to save or close tabs), and **Never Restore** (fresh session on every launch). Includes comprehensive unit tests in [TabSurvivalTests.swift](QuiperTests/TabSurvivalTests.swift).
+
+### Changed
+
+- **Optimized Tab Switching and Visibility ([WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Updated the session show/hide logic to toggle the `isHidden` property of session wrapper views rather than detaching them from the view hierarchy via `removeFromSuperview()`. This prevents visual blinking, WKWebView load cancellations, and web content process terminations during rapid navigation and startup restoration.
+
 ## [4.1.0] - 2026-06-15
 
 ### Added

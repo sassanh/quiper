@@ -473,6 +473,8 @@ struct PersistedSettings: Codable {
     var enableHUDCmdEscape: Bool?
     var showOnAllSpaces: Bool?
     var settingsColorStyle: SettingsColorStyle?
+    var tabSurvivalPolicy: TabSurvivalPolicy?
+    var persistedTabState: PersistedTabState?
     var version: Int? = 1
 
     enum CodingKeys: String, CodingKey {
@@ -487,6 +489,8 @@ struct PersistedSettings: Codable {
         case enableHUDCmdEscape
         case showOnAllSpaces
         case settingsColorStyle
+        case tabSurvivalPolicy
+        case persistedTabState
     }
 
     init(services: [Service],
@@ -511,6 +515,8 @@ struct PersistedSettings: Codable {
          enableHUDCmdEscape: Bool? = nil,
          showOnAllSpaces: Bool? = nil,
          settingsColorStyle: SettingsColorStyle? = nil,
+         tabSurvivalPolicy: TabSurvivalPolicy? = nil,
+         persistedTabState: PersistedTabState? = nil,
          version: Int? = 1) {
         self.services = services
         self.hotkey = hotkey
@@ -534,6 +540,8 @@ struct PersistedSettings: Codable {
         self.enableHUDCmdEscape = enableHUDCmdEscape
         self.showOnAllSpaces = showOnAllSpaces
         self.settingsColorStyle = settingsColorStyle
+        self.tabSurvivalPolicy = tabSurvivalPolicy
+        self.persistedTabState = persistedTabState
         self.version = version
     }
 
@@ -561,6 +569,22 @@ struct PersistedSettings: Codable {
         enableHUDCmdEscape = try container.decodeIfPresent(Bool.self, forKey: .enableHUDCmdEscape)
         showOnAllSpaces = try container.decodeIfPresent(Bool.self, forKey: .showOnAllSpaces)
         settingsColorStyle = try container.decodeIfPresent(SettingsColorStyle.self, forKey: .settingsColorStyle)
+        tabSurvivalPolicy = try container.decodeIfPresent(TabSurvivalPolicy.self, forKey: .tabSurvivalPolicy)
+        persistedTabState = try container.decodeIfPresent(PersistedTabState.self, forKey: .persistedTabState)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }
+}
+
+enum TabSurvivalPolicy: String, Codable, CaseIterable, Identifiable {
+    case always = "Always Restore"
+    case askOnExit = "Ask on Exit"
+    case never = "Never Restore"
+
+    var id: String { rawValue }
+}
+
+struct PersistedTabState: Codable {
+    var activeServiceURL: String?
+    var activeIndicesByURL: [String: Int] = [:]
+    var openTabs: [String: [Int: String]] = [:] // serviceURL -> [sessionIndex: currentURL]
 }
