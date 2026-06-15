@@ -69,16 +69,16 @@ struct KeyBindingsSettingsView: View {
                     
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Command + Escape")
+                            Text("Both Command Keys")
                                 .fontWeight(.semibold)
-                            Text("Open the Control Center HUD by pressing Command and Escape.")
+                            Text("Open the Control Center HUD by pressing Left and Right Command together.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
                         
                         HStack(spacing: 6) {
-                            Text("⌘")
+                            Text("L ⌘")
                                 .font(.system(size: 13, weight: .medium, design: .monospaced))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
@@ -86,7 +86,7 @@ struct KeyBindingsSettingsView: View {
                             Text("+")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text("⎋")
+                            Text("R ⌘")
                                 .font(.system(size: 13, weight: .medium, design: .monospaced))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)

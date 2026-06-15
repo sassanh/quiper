@@ -116,6 +116,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var selectorCursorMonitor: Timer?
     var lastCommandPressedTime: TimeInterval = 0
     var lastCommandReleasedTime: TimeInterval = 0
+    var wasBothCmdsDown = false
     var modifierHUDView: ModifierHUDView?
     var onboardingHUD: GhostOnboardingHUDView?
 

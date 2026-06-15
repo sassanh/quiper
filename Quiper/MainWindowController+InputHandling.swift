@@ -22,17 +22,7 @@ extension MainWindowController {
                         // Invalidate Command modifier tap-timings upon keyboard activity
                         self.lastCommandPressedTime = 0
                         self.lastCommandReleasedTime = 0
-                        
-                        // Command + Escape hotkey
-                        let cmdOnly = event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command
-                        NSLog("[QuiperDebug] Local Monitor KeyDown: keyCode=\(event.keyCode), modifiersRaw=\(event.modifierFlags.rawValue), cmdOnly=\(cmdOnly)")
-                        if event.keyCode == kVK_Escape && cmdOnly {
-                            if Settings.shared.enableHUDCmdEscape {
-                                NSLog("[QuiperDebug] Local Monitor triggered Cmd+Escape! Toggling HUD.")
-                                self.toggleModifierHUD()
-                                return nil // Swallow the key
-                            }
-                        }
+                        self.wasBothCmdsDown = false
                         
                         if event.keyCode == kVK_Escape || event.keyCode == kVK_Return || event.keyCode == kVK_Space {
                             if self.modifierHUDView != nil {
@@ -93,6 +83,15 @@ extension MainWindowController {
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let now = event.timestamp
+        
+        let isLeftCmdDown = (event.modifierFlags.rawValue & UInt(NX_DEVICELCMDKEYMASK)) != 0
+        let isRightCmdDown = (event.modifierFlags.rawValue & UInt(NX_DEVICERCMDKEYMASK)) != 0
+        let bothCmdsDown = isLeftCmdDown && isRightCmdDown
+        
+        if bothCmdsDown && !wasBothCmdsDown && Settings.shared.enableHUDCmdEscape {
+            toggleModifierHUD()
+        }
+        wasBothCmdsDown = bothCmdsDown
         
         // Double-tap on Command detection
         let isCmdKey = event.keyCode == 55 || event.keyCode == 54 // Left command = 55, Right command = 54
