@@ -7,7 +7,7 @@ import AppKit
 struct DockVisibilityPicker: View {
     @Binding var selection: DockVisibility
     @ObservedObject private var settings = Settings.shared
-    
+
     var body: some View {
         HStack(spacing: 12) {
             // Never (Menu bar app)
@@ -19,13 +19,13 @@ struct DockVisibilityPicker: View {
                             .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                             .background(RoundedRectangle(cornerRadius: 4).fill(Color.clear))
                             .frame(width: 44, height: 36)
-                        
+
                         // Menu bar
                         RoundedRectangle(cornerRadius: 1, style: .continuous)
                             .fill(Color.gray.opacity(0.3))
                             .frame(width: 40, height: 4)
                             .offset(y: -14)
-                        
+
                         // Center window (no dock)
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
                             .stroke(Color.gray.opacity(0.6), lineWidth: 1)
@@ -35,14 +35,14 @@ struct DockVisibilityPicker: View {
                     .frame(width: 44, height: 36)
                     .padding(8)
                     .pickerCardStyle(isSelected: selection == .never, accentColor: .teal)
-                    
+
                     Text(DockVisibility.never.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .never ? .primary : .secondary)
                 }
             }
             .buttonStyle(.plain)
-            
+
             // When Visible
             Button(action: { selection = .whenVisible }) {
                 VStack(spacing: 8) {
@@ -52,19 +52,19 @@ struct DockVisibilityPicker: View {
                             .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                             .background(RoundedRectangle(cornerRadius: 4).fill(Color.clear))
                             .frame(width: 44, height: 36)
-                        
+
                         // Menu bar
                         RoundedRectangle(cornerRadius: 1, style: .continuous)
                             .fill(Color.gray.opacity(0.3))
                             .frame(width: 40, height: 4)
                             .offset(y: -14)
-                        
+
                         // Center window
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
                             .stroke(Color.gray.opacity(0.6), lineWidth: 1)
                             .frame(width: 20, height: 12)
                             .offset(y: -2)
-                        
+
                         // Dock
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
                             .fill(Color.teal.settingsResolved.opacity(0.6))
@@ -74,14 +74,14 @@ struct DockVisibilityPicker: View {
                     .frame(width: 44, height: 36)
                     .padding(8)
                     .pickerCardStyle(isSelected: selection == .whenVisible, accentColor: .teal)
-                    
+
                     Text(DockVisibility.whenVisible.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .whenVisible ? .primary : .secondary)
                 }
             }
             .buttonStyle(.plain)
-            
+
             // Always
             Button(action: { selection = .always }) {
                 VStack(spacing: 8) {
@@ -91,13 +91,13 @@ struct DockVisibilityPicker: View {
                             .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                             .background(RoundedRectangle(cornerRadius: 4).fill(Color.clear))
                             .frame(width: 44, height: 36)
-                        
+
                         // Menu bar
                         RoundedRectangle(cornerRadius: 1, style: .continuous)
                             .fill(Color.gray.opacity(0.3))
                             .frame(width: 40, height: 4)
                             .offset(y: -14)
-                        
+
                         // Dock (prominent)
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
                             .fill(Color.teal.settingsResolved.opacity(0.8))
@@ -107,7 +107,7 @@ struct DockVisibilityPicker: View {
                     .frame(width: 44, height: 36)
                     .padding(8)
                     .pickerCardStyle(isSelected: selection == .always, accentColor: .teal)
-                    
+
                     Text(DockVisibility.always.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .always ? .primary : .secondary)
@@ -118,12 +118,12 @@ struct DockVisibilityPicker: View {
         .frame(width: 260, alignment: .trailing)
     }
 }
- 
+
 // 1. Toolbar Visibility
 struct ToolbarVisibilityPicker: View {
     @Binding var selection: TopBarVisibility
     @ObservedObject private var settings = Settings.shared
-    
+
     var body: some View {
         HStack(spacing: 12) {
             // Visible option
@@ -134,7 +134,7 @@ struct ToolbarVisibilityPicker: View {
                             .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                             .background(RoundedRectangle(cornerRadius: 4).fill(Color.clear))
                             .frame(height: 36)
-                        
+
                         // Toolbar strip
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(Color.blue.settingsResolved.opacity(0.6))
@@ -146,14 +146,14 @@ struct ToolbarVisibilityPicker: View {
                     .frame(width: 56)
                     .padding(8)
                     .pickerCardStyle(isSelected: selection == .visible, accentColor: .blue)
-                    
+
                     Text(TopBarVisibility.visible.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .visible ? .primary : .secondary)
                 }
             }
             .buttonStyle(.plain)
-            
+
             // Hidden option
             Button(action: { selection = .hidden }) {
                 VStack(spacing: 8) {
@@ -166,7 +166,7 @@ struct ToolbarVisibilityPicker: View {
                     .frame(width: 56)
                     .padding(8)
                     .pickerCardStyle(isSelected: selection == .hidden, accentColor: .blue)
-                    
+
                     Text(TopBarVisibility.hidden.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .hidden ? .primary : .secondary)
@@ -177,12 +177,12 @@ struct ToolbarVisibilityPicker: View {
         .frame(width: 260, alignment: .trailing)
     }
 }
- 
+
 // 2. Toolbar Position
 struct DragAreaPositionPicker: View {
     @Binding var selection: DragAreaPosition
     @ObservedObject private var settings = Settings.shared
-    
+
     var body: some View {
         HStack(spacing: 12) {
             // Top option
@@ -193,7 +193,7 @@ struct DragAreaPositionPicker: View {
                             .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                             .background(RoundedRectangle(cornerRadius: 4).fill(Color.clear))
                             .frame(height: 36)
-                        
+
                         // Toolbar strip at top
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(Color.blue.settingsResolved.opacity(0.6))
@@ -205,14 +205,14 @@ struct DragAreaPositionPicker: View {
                     .frame(width: 56)
                     .padding(8)
                     .pickerCardStyle(isSelected: selection == .top, accentColor: .blue)
-                    
+
                     Text(DragAreaPosition.top.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .top ? .primary : .secondary)
                 }
             }
             .buttonStyle(.plain)
-            
+
             // Bottom option
             Button(action: { selection = .bottom }) {
                 VStack(spacing: 8) {
@@ -221,7 +221,7 @@ struct DragAreaPositionPicker: View {
                             .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                             .background(RoundedRectangle(cornerRadius: 4).fill(Color.clear))
                             .frame(height: 36)
-                        
+
                         // Toolbar strip at bottom
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(Color.blue.settingsResolved.opacity(0.6))
@@ -233,7 +233,7 @@ struct DragAreaPositionPicker: View {
                     .frame(width: 56)
                     .padding(8)
                     .pickerCardStyle(isSelected: selection == .bottom, accentColor: .blue)
-                    
+
                     Text(DragAreaPosition.bottom.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .bottom ? .primary : .secondary)
@@ -244,12 +244,12 @@ struct DragAreaPositionPicker: View {
         .frame(width: 260, alignment: .trailing)
     }
 }
- 
+
 // 3. Selector Display
 struct SelectorDisplayPicker: View {
     @Binding var selection: SelectorDisplayMode
     @ObservedObject private var settings = Settings.shared
-    
+
     var body: some View {
         HStack(spacing: 12) {
             // Expanded
@@ -260,24 +260,24 @@ struct SelectorDisplayPicker: View {
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
                             .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                             .frame(width: 40, height: 14)
-                        
+
                         HStack(spacing: 0) {
                             // Selected segment
                             RoundedRectangle(cornerRadius: 2, style: .continuous)
                                 .fill(Color.purple.settingsResolved.opacity(0.6))
                                 .frame(width: 12, height: 12)
-                            
+
                             Rectangle()
                                 .fill(Color(NSColor.separatorColor))
                                 .frame(width: 1, height: 8)
-                            
+
                             Color.clear
                                 .frame(width: 12, height: 12)
-                            
+
                             Rectangle()
                                 .fill(Color(NSColor.separatorColor))
                                 .frame(width: 1, height: 8)
-                            
+
                             Color.clear
                                 .frame(width: 12, height: 12)
                         }
@@ -286,14 +286,14 @@ struct SelectorDisplayPicker: View {
                     .frame(width: 44, height: 36)
                     .padding(8)
                     .pickerCardStyle(isSelected: selection == .expanded, accentColor: .purple)
-                    
+
                     Text(SelectorDisplayMode.expanded.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .expanded ? .primary : .secondary)
                 }
             }
             .buttonStyle(.plain)
-            
+
             // Compact
             Button(action: { selection = .compact }) {
                 VStack(spacing: 8) {
@@ -306,14 +306,14 @@ struct SelectorDisplayPicker: View {
                     .frame(width: 44, height: 36)
                     .padding(8)
                     .pickerCardStyle(isSelected: selection == .compact, accentColor: .purple)
-                    
+
                     Text(SelectorDisplayMode.compact.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .compact ? .primary : .secondary)
                 }
             }
             .buttonStyle(.plain)
-            
+
             // Auto
             Button(action: { selection = .auto }) {
                 VStack(spacing: 8) {
@@ -340,11 +340,11 @@ struct SelectorDisplayPicker: View {
                             }
                             .frame(width: 20, height: 10)
                         }
-                        
+
                         Image(systemName: "arrow.left.and.right")
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundColor(.gray.opacity(0.8))
-                        
+
                         // Small Compact control
                         ZStack {
                             RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -356,7 +356,7 @@ struct SelectorDisplayPicker: View {
                     .frame(width: 44, height: 36)
                     .padding(8)
                     .pickerCardStyle(isSelected: selection == .auto, accentColor: .purple)
-                    
+
                     Text(SelectorDisplayMode.auto.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .auto ? .primary : .secondary)
@@ -367,13 +367,13 @@ struct SelectorDisplayPicker: View {
         .frame(width: 260, alignment: .trailing)
     }
 }
- 
+
 // 4. Color Scheme
 struct ColorSchemePicker: View {
     @Binding var selection: AppColorScheme
     var accentColor: Color = .orange
     @ObservedObject private var settings = Settings.shared
-    
+
     var body: some View {
         let resolvedColor = settings.settingsColorStyle == .classic ? Color.secondary : accentColor
         HStack(spacing: 16) {
@@ -395,14 +395,14 @@ struct ColorSchemePicker: View {
                     .overlay(
                         Circle().stroke(selection == .system ? resolvedColor : Color.clear, lineWidth: 2)
                     )
-                    
+
                     Text(AppColorScheme.system.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .system ? .primary : .secondary)
                 }
             }
             .buttonStyle(.plain)
-            
+
             // Light
             Button(action: { selection = .light }) {
                 VStack(spacing: 8) {
@@ -414,14 +414,14 @@ struct ColorSchemePicker: View {
                         .overlay(
                             Circle().stroke(selection == .light ? resolvedColor : Color.clear, lineWidth: 2)
                         )
-                    
+
                     Text(AppColorScheme.light.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .light ? .primary : .secondary)
                 }
             }
             .buttonStyle(.plain)
-            
+
             // Dark
             Button(action: { selection = .dark }) {
                 VStack(spacing: 8) {
@@ -433,7 +433,7 @@ struct ColorSchemePicker: View {
                         .overlay(
                             Circle().stroke(selection == .dark ? resolvedColor : Color.clear, lineWidth: 2)
                         )
-                    
+
                     Text(AppColorScheme.dark.rawValue)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .dark ? .primary : .secondary)
@@ -449,7 +449,7 @@ struct ColorSchemePicker: View {
 struct SettingsStylePicker: View {
     @Binding var selection: SettingsColorStyle
     @ObservedObject private var settings = Settings.shared
-    
+
     var body: some View {
         HStack(spacing: 12) {
             // Colorful
@@ -461,7 +461,7 @@ struct SettingsStylePicker: View {
                             .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                             .background(RoundedRectangle(cornerRadius: 4).fill(Color(NSColor.controlBackgroundColor)))
                             .frame(width: 44, height: 36)
-                        
+
                         // Mini rows with colors (static, always colorful)
                         VStack(spacing: 4) {
                             HStack(spacing: 3) {
@@ -493,14 +493,14 @@ struct SettingsStylePicker: View {
                     .frame(width: 44, height: 36)
                     .padding(8)
                     .pickerCardStyle(isSelected: selection == .colorful, accentColor: .blue)
-                    
+
                     Text("Colorful")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .colorful ? .primary : .secondary)
                 }
             }
             .buttonStyle(.plain)
-            
+
             // Classic
             Button(action: { selection = .classic }) {
                 VStack(spacing: 8) {
@@ -510,7 +510,7 @@ struct SettingsStylePicker: View {
                             .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                             .background(RoundedRectangle(cornerRadius: 4).fill(Color(NSColor.controlBackgroundColor)))
                             .frame(width: 44, height: 36)
-                        
+
                         // Mini rows with monochrome gray (static, always classic)
                         VStack(spacing: 4) {
                             HStack(spacing: 3) {
@@ -542,7 +542,7 @@ struct SettingsStylePicker: View {
                     .frame(width: 44, height: 36)
                     .padding(8)
                     .pickerCardStyle(isSelected: selection == .classic, accentColor: .secondary)
-                    
+
                     Text("Classic")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .classic ? .primary : .secondary)
@@ -675,6 +675,104 @@ struct TabSurvivalPolicyPicker: View {
                     Text("Never")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(selection == .never ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 260, alignment: .trailing)
+    }
+}
+
+struct SessionSwitchingPicker: View {
+    @ObservedObject private var settings = Settings.shared
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Auto-Switch Engine
+            Button(action: {
+                settings.automaticallySwitchEngineOnLastSessionClose.toggle()
+                settings.saveSettings()
+            }) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        // Screen outline
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                            .frame(width: 44, height: 36)
+
+                        // Engine 1 (Left) - representing closed engine
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .stroke(Color.gray.opacity(0.4), lineWidth: 1)
+                            .frame(width: 10, height: 10)
+                            .offset(x: -12)
+
+                        // X mark inside Engine 1 to show it has no sessions / closed
+                        Image(systemName: "xmark")
+                            .font(.system(size: 6, weight: .bold))
+                            .foregroundColor(.gray.opacity(0.6))
+                            .offset(x: -12)
+
+                        // Arrow pointing right
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(settings.automaticallySwitchEngineOnLastSessionClose ? Color.blue.settingsResolved : .gray.opacity(0.4))
+
+                        // Engine 2 (Right) - representing target engine
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(settings.automaticallySwitchEngineOnLastSessionClose ? Color.blue.settingsResolved.opacity(0.2) : Color.clear)
+                            .stroke(settings.automaticallySwitchEngineOnLastSessionClose ? Color.blue.settingsResolved : Color.gray.opacity(0.4), lineWidth: 1)
+                            .frame(width: 10, height: 10)
+                            .offset(x: 12)
+                    }
+                    .frame(width: 44, height: 36)
+                    .padding(8)
+                    .pickerCardStyle(isSelected: settings.automaticallySwitchEngineOnLastSessionClose, accentColor: .blue)
+
+                    Text("Auto-Switch")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.automaticallySwitchEngineOnLastSessionClose ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Auto-Create Session
+            Button(action: {
+                settings.autoCreateSessionOnEmptyEngineActivation.toggle()
+                settings.saveSettings()
+            }) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        // Screen outline
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                            .frame(width: 44, height: 36)
+
+                        // Tab strip on top with a tab + plus
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 1.5)
+                                .fill(settings.autoCreateSessionOnEmptyEngineActivation ? Color.blue.settingsResolved.opacity(0.2) : Color.clear)
+                                .stroke(settings.autoCreateSessionOnEmptyEngineActivation ? Color.blue.settingsResolved : Color.gray.opacity(0.4), lineWidth: 1)
+                                .frame(width: 18, height: 8)
+
+                            Image(systemName: "plus")
+                                .font(.system(size: 6, weight: .bold))
+                                .foregroundColor(settings.autoCreateSessionOnEmptyEngineActivation ? Color.blue.settingsResolved : .gray.opacity(0.6))
+                        }
+                        .offset(y: -8)
+
+                        // Browser content area
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            .frame(width: 28, height: 14)
+                            .offset(y: 6)
+                    }
+                    .frame(width: 44, height: 36)
+                    .padding(8)
+                    .pickerCardStyle(isSelected: settings.autoCreateSessionOnEmptyEngineActivation, accentColor: .blue)
+
+                    Text("Auto-Create")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.autoCreateSessionOnEmptyEngineActivation ? .primary : .secondary)
                 }
             }
             .buttonStyle(.plain)

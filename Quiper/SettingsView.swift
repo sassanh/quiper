@@ -149,25 +149,14 @@ struct GeneralSettingsView: View {
                     }
                 }
                 
-                SettingsSection(title: "Behavior", icon: "slider.horizontal.3", iconColor: .blue) {
+                SettingsSection(title: "Behavior", icon: "slider.horizontal.3", iconColor: .blue.settingsResolved) {
                     SettingsRow(
                         title: "Session Switching",
                         message: "Manage automatic switching between engines and auto-creating empty sessions.",
                         icon: "shuffle",
-                        iconColor: .blue
+                        iconColor: .blue.settingsResolved
                     ) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Toggle("Switch engines automatically", isOn: $settings.automaticallySwitchEngineOnLastSessionClose)
-                                .onChange(of: settings.automaticallySwitchEngineOnLastSessionClose) { _, _ in
-                                    settings.saveSettings()
-                                }
-                            Toggle("Auto-create session", isOn: $settings.autoCreateSessionOnEmptyEngineActivation)
-                                .onChange(of: settings.autoCreateSessionOnEmptyEngineActivation) { _, _ in
-                                    settings.saveSettings()
-                                }
-                        }
-                        .toggleStyle(.coloredCheckbox(Color.blue.settingsResolved))
-                        .frame(width: 260, alignment: .leading)
+                        SessionSwitchingPicker()
                     }
 
                     SettingsDivider()
@@ -176,7 +165,7 @@ struct GeneralSettingsView: View {
                         title: "Tab Preservation",
                         message: "Determine whether open tabs should be preserved when the application restarts or crashes.",
                         icon: "square.stack.3d.down.right.fill",
-                        iconColor: .blue
+                        iconColor: .blue.settingsResolved
                     ) {
                         TabSurvivalPolicyPicker(selection: $settings.tabSurvivalPolicy)
                     }

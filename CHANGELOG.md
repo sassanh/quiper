@@ -5,10 +5,12 @@
 ### Added
 
 - **Tab Preservation & Relaunch Recovery ([SettingsModels.swift](Quiper/SettingsModels.swift), [Settings.swift](Quiper/Settings.swift), [WebViewManager.swift](Quiper/Components/WebViewManager.swift), [MainWindowController.swift](Quiper/MainWindowController.swift), [App.swift](Quiper/App.swift), [SettingsPickers.swift](Quiper/Components/SettingsPickers.swift), [SettingsView.swift](Quiper/SettingsView.swift))**: Added support for persisting open session tabs across application restarts and crashes. Users can configure this behavior inside General Settings with three policies: **Always Restore** (automatic serialization), **Ask on Exit** (interactive modal prompt to save or close tabs), and **Never Restore** (fresh session on every launch). Includes comprehensive unit tests in [TabSurvivalTests.swift](QuiperTests/TabSurvivalTests.swift).
+- **Graphical Session Switching Picker ([SettingsPickers.swift](Quiper/Components/SettingsPickers.swift), [SettingsView.swift](Quiper/SettingsView.swift))**: Replaced raw checkboxes under Behavior in General Settings with a custom graphical card picker (`SessionSwitchingPicker`). It presents side-by-side interactive card layouts for **Auto-Switch** (automatic switching when closing the last tab of an engine) and **Auto-Create** (automatic tab creation when switching to an empty engine) with custom schematic diagrams of engine transitions and tab layouts.
 
 ### Changed
 
 - **Optimized Tab Switching and Visibility ([WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Updated the session show/hide logic to toggle the `isHidden` property of session wrapper views rather than detaching them from the view hierarchy via `removeFromSuperview()`. This prevents visual blinking, WKWebView load cancellations, and web content process terminations during rapid navigation and startup restoration.
+- **Behavior Section Styling Realignment ([SettingsView.swift](Quiper/SettingsView.swift))**: Aligned Behavior section headers and row icons to resolve dynamically via `.settingsResolved`, satisfying standard #2 of the settings styling guidelines.
 
 ## [4.1.0] - 2026-06-15
 
