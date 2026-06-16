@@ -18,9 +18,11 @@ final class SecureStorageManager {
     
     /// Saves an encryption key to the macOS Keychain, protected by system-level encryption.
     /// We enforce biometrics strictly in code via LAContext.evaluatePolicy before retrieval.
-    func saveKeyToKeychain(_ key: String, for serviceID: UUID) -> Bool {
+    func saveKeyToKeychain(_ key: String, for serviceID: UUID) throws {
         let serviceName = "com.quiper.enginekey.\(serviceID.uuidString)"
-        guard let keyData = key.data(using: .utf8) else { return false }
+        guard let keyData = key.data(using: .utf8) else {
+            throw KeychainError.unknown(errSecParam)
+        }
         
         // First delete any old key
         deleteKeyFromKeychain(for: serviceID)
@@ -35,7 +37,10 @@ final class SecureStorageManager {
         
         let status = SecItemAdd(query as CFDictionary, nil)
         NSLog("[SecureStorage] saveKeyToKeychain status: %d (0 = success) for service %@", status, serviceID.uuidString)
-        return status == errSecSuccess
+        
+        if status != errSecSuccess {
+            throw KeychainError.unknown(status)
+        }
     }
     
     enum KeychainError: Error, LocalizedError {

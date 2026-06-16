@@ -1355,7 +1355,6 @@ struct ServiceDetailView: View {
         if isSecuring {
             // 1. Generate key first so we can mount/create
             let randomKey = SecureStorageManager.shared.generateRandomKey()
-            _ = SecureStorageManager.shared.saveKeyToKeychain(randomKey, for: serviceID)
             
             // 2. Backup if requested
             let backupSuccess: Bool
@@ -1368,7 +1367,11 @@ struct ServiceDetailView: View {
             
             Task {
                 do {
-                    // 3. Create volume & mount
+                    // 3. Save key to Keychain
+                    migrationMessage = "Saving key to Keychain..."
+                    try SecureStorageManager.shared.saveKeyToKeychain(randomKey, for: serviceID)
+                    
+                    // 4. Create volume & mount
                     migrationMessage = "Creating encrypted volume..."
                     try await EncryptedVolumeManager.shared.createVolume(for: serviceID, passphrase: randomKey)
                     

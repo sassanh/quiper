@@ -337,9 +337,9 @@ struct OnboardingWizardView: View {
                     statusText = "Securing \(serviceName)..."
                     
                     let randomKey = SecureStorageManager.shared.generateRandomKey()
-                    _ = SecureStorageManager.shared.saveKeyToKeychain(randomKey, for: serviceID)
                     
                     do {
+                        try SecureStorageManager.shared.saveKeyToKeychain(randomKey, for: serviceID)
                         try await EncryptedVolumeManager.shared.createVolume(for: serviceID, passphrase: randomKey)
                         settings.services[idx].isEncrypted = true
                     } catch {
