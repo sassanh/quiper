@@ -624,6 +624,17 @@ struct ServicesSettingsView: View {
         let idSet = Set(ids)
         let removedServices = settings.services.filter { idSet.contains($0.id) }
         settings.services.removeAll { idSet.contains($0.id) }
+        
+        Task {
+            for service in removedServices {
+                if service.isEncrypted {
+                    try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
+                    EncryptedVolumeManager.shared.deleteVolume(for: service.id)
+                    SecureStorageManager.shared.deleteKeyFromKeychain(for: service.id)
+                }
+            }
+        }
+        
         removedServices.forEach { service in
             ActionScriptStorage.deleteScripts(for: service.id)
             CustomCSSStorage.deleteCSS(for: service.id)

@@ -343,6 +343,29 @@ extension MainWindowController: WebViewManagerDelegate {
     
     func engineDidUnlock(serviceID: UUID) {
         NSLog("[MainWindowController] Engine unlocked successfully: %@", serviceID.uuidString)
+        
+        if Settings.shared.tabSurvivalPolicy != .never,
+           let service = services.first(where: { $0.id == serviceID }) {
+            let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
+            if let data = try? Data(contentsOf: stateURL),
+               let state = try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data) {
+                
+                activeIndicesByURL[service.url] = state.activeIndex
+                
+                for (sessionIndex, urlString) in state.openTabs {
+                    _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString)
+                    
+                    if let webView = webViewManager.getWebView(for: service, sessionIndex: sessionIndex) {
+                        setupSessionTitleObserver(for: service, sessionIndex: sessionIndex, webView: webView)
+                    }
+                }
+                
+                if currentServiceURL == service.url {
+                    updateActiveWebview()
+                }
+            }
+        }
+        
         updateSessionSelector()
         layoutSelectors()
     }

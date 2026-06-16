@@ -287,8 +287,19 @@ final class WebViewManager: NSObject {
                             self.urlsByWebView[ObjectIdentifier(realWebView)] = service.url
                             
                             // Load real URL
-                            if let url = URL(string: serviceUrl) {
-                                NSLog("[LockOverlay] Loading URL: %@", serviceUrl)
+                            var targetURLString = serviceUrl
+                            if Settings.shared.tabSurvivalPolicy != .never {
+                                let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceId).appendingPathComponent("quiper_tabs.json")
+                                if let data = try? Data(contentsOf: stateURL),
+                                   let state = try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data) {
+                                    if let saved = state.openTabs[sessionIndex] {
+                                        targetURLString = saved
+                                    }
+                                }
+                            }
+                            
+                            if let url = URL(string: targetURLString) {
+                                NSLog("[LockOverlay] Loading URL: %@", targetURLString)
                                 if url.isFileURL {
                                     realWebView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
                                 } else {
@@ -303,7 +314,7 @@ final class WebViewManager: NSObject {
                         } catch {
                             NSLog("[LockOverlay] Error: %@", error.localizedDescription)
                             let errString = error.localizedDescription
-                            if errString.contains("Canceled") || errString.contains("cancel") || errString.contains("denied") || errString.contains("failed") {
+                            if errString.contains("Canceled") || errString.contains("cancel") || errString.contains("denied") {
                                 // User cancelled biometric prompt
                                 overlay.stopLoading()
                                 return

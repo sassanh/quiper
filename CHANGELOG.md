@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Privacy-Aware Secure Tab Persistence ([MainWindowController.swift](Quiper/MainWindowController.swift), [MainWindowController+Actions.swift](Quiper/MainWindowController+Actions.swift), [WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Extended the Tab Preservation feature to fully support Secure Engines without leaking URLs or browsing state to unencrypted preference files. Automatically serializes active secure tabs into an isolated `quiper_tabs.json` file securely housed inside the engine's encrypted 256-bit AES APFS sparsebundle. Restores tabs automatically upon successful biometric Touch ID unlock of the engine.
 - **Tab Preservation & Relaunch Recovery ([SettingsModels.swift](Quiper/SettingsModels.swift), [Settings.swift](Quiper/Settings.swift), [WebViewManager.swift](Quiper/Components/WebViewManager.swift), [MainWindowController.swift](Quiper/MainWindowController.swift), [App.swift](Quiper/App.swift), [SettingsPickers.swift](Quiper/Components/SettingsPickers.swift), [SettingsView.swift](Quiper/SettingsView.swift))**: Added support for persisting open session tabs across application restarts and crashes. Users can configure this behavior inside General Settings with three policies: **Always Restore** (automatic serialization), **Ask on Exit** (interactive modal prompt to save or close tabs), and **Never Restore** (fresh session on every launch). Includes comprehensive unit tests in [TabSurvivalTests.swift](QuiperTests/TabSurvivalTests.swift).
 - **Graphical Session Switching Picker ([SettingsPickers.swift](Quiper/Components/SettingsPickers.swift), [SettingsView.swift](Quiper/SettingsView.swift))**: Replaced raw checkboxes under Behavior in General Settings with a custom graphical card picker (`SessionSwitchingPicker`). It presents side-by-side interactive card layouts for **Auto-Switch** (automatic switching when closing the last tab of an engine) and **Auto-Create** (automatic tab creation when switching to an empty engine) with custom schematic diagrams of engine transitions and tab layouts.
 
@@ -11,6 +12,11 @@
 
 - **Optimized Tab Switching and Visibility ([WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Updated the session show/hide logic to toggle the `isHidden` property of session wrapper views rather than detaching them from the view hierarchy via `removeFromSuperview()`. This prevents visual blinking, WKWebView load cancellations, and web content process terminations during rapid navigation and startup restoration.
 - **Behavior Section Styling Realignment ([SettingsView.swift](Quiper/SettingsView.swift))**: Aligned Behavior section headers and row icons to resolve dynamically via `.settingsResolved`, satisfying standard #2 of the settings styling guidelines.
+
+### Fixed
+
+- **Encrypted Volume Deletion Cleanup ([SettingsView.swift](Quiper/SettingsView.swift))**: Fixed a critical edge case where deleting an encrypted engine via the Settings sidebar would silently fail to remove the underlying `.sparsebundle` file if the volume was currently mounted, leaving the file orphaned on disk while deleting its Keychain password. Volume deletion is now explicitly wrapped in a concurrent Task that successfully unmounts the volume before safely obliterating the file and Keychain entry.
+- **Lock Overlay Error Exposing ([WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Removed a generic `"failed"` keyword filter in the biometric authentication catch block that previously swallowed critical `hdiutil` authentication mismatch errors. Users will now correctly see an informative error message overlay if their sparse bundle fails to attach due to a corrupted Keychain state, rather than being stuck on an unresponsive lock screen.
 
 ## [4.1.0] - 2026-06-15
 

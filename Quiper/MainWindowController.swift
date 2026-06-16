@@ -718,14 +718,52 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateHeaderVisibility(animated: false)
     }
 
+struct SecureTabState: Codable {
+    var activeIndex: Int
+    var openTabs: [Int: String]
+}
+
     func saveTabsState() {
         guard Settings.shared.tabSurvivalPolicy != .never else { return }
 
         var state = PersistedTabState()
-        state.activeServiceURL = currentServiceURL
-        state.activeIndicesByURL = activeIndicesByURL
+        
+        // Filter out encrypted engines from the global active Service URL
+        if let currentURL = currentServiceURL,
+           let svc = services.first(where: { $0.url == currentURL }),
+           svc.isEncrypted {
+            state.activeServiceURL = nil
+        } else {
+            state.activeServiceURL = currentServiceURL
+        }
+        
+        // Filter out encrypted engines from global active indices
+        var unencryptedIndices = activeIndicesByURL
+        for svc in services where svc.isEncrypted {
+            unencryptedIndices.removeValue(forKey: svc.url)
+        }
+        state.activeIndicesByURL = unencryptedIndices
+
         if let manager = webViewManager {
-            state.openTabs = manager.getOpenSessionsState()
+            var allOpenTabs = manager.getOpenSessionsState()
+            
+            // Extract and save encrypted services securely
+            for svc in services where svc.isEncrypted {
+                if let sessions = allOpenTabs[svc.url] {
+                    // Only save to secure storage if it's currently unlocked
+                    if EncryptedVolumeManager.shared.isUnlocked(for: svc.id) {
+                        let activeIdx = activeIndicesByURL[svc.url] ?? 0
+                        let secureState = SecureTabState(activeIndex: activeIdx, openTabs: sessions)
+                        let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: svc.id).appendingPathComponent("quiper_tabs.json")
+                        if let data = try? JSONEncoder().encode(secureState) {
+                            try? data.write(to: stateURL)
+                        }
+                    }
+                }
+                // Remove from the global unencrypted state
+                allOpenTabs.removeValue(forKey: svc.url)
+            }
+            state.openTabs = allOpenTabs
         }
 
         Settings.shared.persistedTabState = state
