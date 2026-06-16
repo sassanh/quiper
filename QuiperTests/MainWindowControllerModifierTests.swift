@@ -137,4 +137,31 @@ final class MainWindowControllerModifierTests: XCTestCase {
         }
         XCTAssertTrue(collapsed, "Service selector should collapse immediately on key release")
     }
+
+    func testModifierHUDSearchAndFiltering() async throws {
+        let services = [
+            Service(name: "Gmail", url: "https://mail.google.com", focus_selector: ""),
+            Service(name: "GitHub", url: "https://github.com", focus_selector: "")
+        ]
+        let controller = MainWindowController(services: services)
+        controller.skipSafeAreaCheck = true
+        controller.skipModalCheck = true
+        
+        let hud = ModifierHUDView(frame: NSRect(x: 0, y: 0, width: 600, height: 600), windowController: controller)
+        
+        // Mirror check allItems count (2 services + 1 automatically opened active tab = 3)
+        let allItems: [Any] = getPrivateProperty(hud, "allItems") ?? []
+        XCTAssertEqual(allItems.count, 3)
+        
+        // Get search field and simulate filtering
+        let searchField: NSTextField = getPrivateProperty(hud, "searchField")!
+        searchField.stringValue = "Git"
+        hud.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        
+        let filteredItems: [Any] = getPrivateProperty(hud, "filteredItems") ?? []
+        XCTAssertEqual(filteredItems.count, 1)
+        
+        let highlightedIndex: Int = getPrivateProperty(hud, "highlightedIndex") ?? -1
+        XCTAssertEqual(highlightedIndex, 0)
+    }
 }

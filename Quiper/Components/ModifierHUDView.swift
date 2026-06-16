@@ -7,6 +7,24 @@ final class ModifierHUDView: NSView {
     private let visualEffectView: NSVisualEffectView
     private let containerView: NSView
     
+    private var searchField: NSTextField!
+    private let enginesScrollView = NSScrollView()
+    private let enginesStack = FlippedStackView()
+    
+    private struct FilteredItem {
+        enum ItemType {
+            case engine(service: Service, index: Int, shortcut: String?)
+            case tab(session: (sessionIndex: Int, title: String), service: Service, serviceIndex: Int, isSelected: Bool, shortcut: String?)
+        }
+        let type: ItemType
+        let view: NSView
+        let button: NSControl
+    }
+    
+    private var allItems: [FilteredItem] = []
+    private var filteredItems: [FilteredItem] = []
+    private var highlightedIndex: Int = -1
+    
     init(frame frameRect: NSRect, windowController: MainWindowController) {
         self.wc = windowController
         
@@ -90,6 +108,37 @@ final class ModifierHUDView: NSView {
         closeBtn.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(closeBtn)
         
+        // Search Container Wrapper
+        let searchContainer = NSView()
+        searchContainer.wantsLayer = true
+        searchContainer.layer?.cornerRadius = 8
+        searchContainer.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.2).cgColor
+        searchContainer.layer?.borderColor = NSColor.white.withAlphaComponent(0.08).cgColor
+        searchContainer.layer?.borderWidth = 1
+        searchContainer.translatesAutoresizingMaskIntoConstraints = false
+        containerView.addSubview(searchContainer)
+        
+        let searchIcon = NSImageView()
+        if let searchImg = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil) {
+            searchImg.isTemplate = true
+            searchIcon.image = searchImg
+        }
+        searchIcon.contentTintColor = .secondaryLabelColor
+        searchIcon.translatesAutoresizingMaskIntoConstraints = false
+        searchContainer.addSubview(searchIcon)
+        
+        let searchField = NSTextField()
+        searchField.placeholderString = "Search engines & tabs..."
+        searchField.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        searchField.isBordered = false
+        searchField.drawsBackground = false
+        searchField.focusRingType = .none
+        searchField.textColor = .labelColor
+        searchField.delegate = self
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        searchContainer.addSubview(searchField)
+        self.searchField = searchField
+        
         // Divider
         let divider = NSView()
         divider.wantsLayer = true
@@ -107,7 +156,6 @@ final class ModifierHUDView: NSView {
         enginesTitle.translatesAutoresizingMaskIntoConstraints = false
         col1.addSubview(enginesTitle)
         
-        let enginesScrollView = NSScrollView()
         enginesScrollView.drawsBackground = false
         enginesScrollView.hasVerticalScroller = true
         enginesScrollView.hasHorizontalScroller = false
@@ -117,7 +165,6 @@ final class ModifierHUDView: NSView {
         enginesScrollView.translatesAutoresizingMaskIntoConstraints = false
         col1.addSubview(enginesScrollView)
         
-        let enginesStack = NSStackView()
         enginesStack.orientation = .vertical
         enginesStack.spacing = 6
         enginesStack.alignment = .leading
@@ -126,10 +173,13 @@ final class ModifierHUDView: NSView {
         
         enginesScrollView.documentView = enginesStack
         
-        // Populate engines & nested tabs
+        // Populate all items list
         let currentSvcURL = wc.currentServiceURL
         let activeSession = wc.activeIndicesByURL[currentSvcURL ?? ""] ?? 0
         let appShortcuts = Settings.shared.appShortcutBindings
+        
+        allItems.removeAll()
+        
         for (idx, service) in wc.services.enumerated() {
             let shortcutStr = getShortcutString(for: service, index: idx, appShortcuts: appShortcuts)
             let btn = HUDEngineButton(title: service.name, shortcut: shortcutStr)
@@ -140,8 +190,12 @@ final class ModifierHUDView: NSView {
             }
             btn.translatesAutoresizingMaskIntoConstraints = false
             btn.heightAnchor.constraint(equalToConstant: 28).isActive = true
-            enginesStack.addArrangedSubview(btn)
-            btn.widthAnchor.constraint(equalTo: enginesStack.widthAnchor).isActive = true
+            
+            allItems.append(FilteredItem(
+                type: .engine(service: service, index: idx, shortcut: shortcutStr),
+                view: btn,
+                button: btn
+            ))
             
             if let openSessions = wc.webViewManager?.getOpenSessions(for: service) {
                 for session in openSessions {
@@ -174,11 +228,16 @@ final class ModifierHUDView: NSView {
                         tabBtn.bottomAnchor.constraint(equalTo: indentContainer.bottomAnchor)
                     ])
                     
-                    enginesStack.addArrangedSubview(indentContainer)
-                    indentContainer.widthAnchor.constraint(equalTo: enginesStack.widthAnchor).isActive = true
+                    allItems.append(FilteredItem(
+                        type: .tab(session: session, service: service, serviceIndex: idx, isSelected: isTabSelected, shortcut: sessionShortcutStr),
+                        view: indentContainer,
+                        button: tabBtn
+                    ))
                 }
             }
         }
+        
+        updateFilteredList(filter: "")
         
         // Column 2: Shortcuts / Global Actions
         let col2 = NSView()
@@ -286,7 +345,7 @@ final class ModifierHUDView: NSView {
             containerView.centerXAnchor.constraint(equalTo: visualEffectView.centerXAnchor),
             containerView.centerYAnchor.constraint(equalTo: visualEffectView.centerYAnchor),
             containerView.widthAnchor.constraint(equalToConstant: 492),
-            containerView.heightAnchor.constraint(equalToConstant: 410),
+            containerView.heightAnchor.constraint(equalToConstant: 465),
             
             col1.widthAnchor.constraint(equalTo: col2.widthAnchor),
             
@@ -298,9 +357,23 @@ final class ModifierHUDView: NSView {
             closeBtn.widthAnchor.constraint(equalToConstant: 24),
             closeBtn.heightAnchor.constraint(equalToConstant: 24),
             
+            searchContainer.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
+            searchContainer.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
+            searchContainer.topAnchor.constraint(equalTo: headerTitle.bottomAnchor, constant: 12),
+            searchContainer.heightAnchor.constraint(equalToConstant: 34),
+            
+            searchIcon.leadingAnchor.constraint(equalTo: searchContainer.leadingAnchor, constant: 10),
+            searchIcon.centerYAnchor.constraint(equalTo: searchContainer.centerYAnchor),
+            searchIcon.widthAnchor.constraint(equalToConstant: 14),
+            searchIcon.heightAnchor.constraint(equalToConstant: 14),
+            
+            searchField.leadingAnchor.constraint(equalTo: searchIcon.trailingAnchor, constant: 8),
+            searchField.trailingAnchor.constraint(equalTo: searchContainer.trailingAnchor, constant: -10),
+            searchField.centerYAnchor.constraint(equalTo: searchContainer.centerYAnchor),
+            
             divider.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
             divider.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
-            divider.topAnchor.constraint(equalTo: headerTitle.bottomAnchor, constant: 12),
+            divider.topAnchor.constraint(equalTo: searchContainer.bottomAnchor, constant: 12),
             divider.heightAnchor.constraint(equalToConstant: 1),
             
             columnsStack.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 18),
@@ -361,6 +434,10 @@ final class ModifierHUDView: NSView {
         self.alphaValue = 0
         view.addSubview(self)
         
+        if let window = self.window {
+            window.makeFirstResponder(self.searchField)
+        }
+        
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.25
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -398,6 +475,7 @@ final class HUDCloseButton: NSControl {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 12
+        refusesFirstResponder = true
         
         if let image = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil) {
             image.isTemplate = true
@@ -468,6 +546,9 @@ final class HUDEngineButton: NSControl {
     var isSelected = false {
         didSet { updateAppearance() }
     }
+    var isKeyboardHighlighted = false {
+        didSet { updateAppearance() }
+    }
     private var isHovered = false {
         didSet { updateAppearance() }
     }
@@ -482,6 +563,7 @@ final class HUDEngineButton: NSControl {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 6
+        refusesFirstResponder = true
         
         activeDot.wantsLayer = true
         activeDot.layer?.cornerRadius = 3.5
@@ -581,17 +663,22 @@ final class HUDEngineButton: NSControl {
     private func updateAppearance() {
         if isSelected {
             layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.2).cgColor
-            layer?.borderColor = NSColor.controlAccentColor.cgColor
-            layer?.borderWidth = 1
+            if isKeyboardHighlighted {
+                layer?.borderColor = NSColor.white.cgColor
+                layer?.borderWidth = 1.5
+            } else {
+                layer?.borderColor = NSColor.controlAccentColor.cgColor
+                layer?.borderWidth = 1
+            }
             titleField.textColor = .labelColor
             activeDot.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
             activeDot.isHidden = false
             shortcutContainer.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.35).cgColor
             shortcutField.textColor = .labelColor
-        } else if isHovered {
+        } else if isHovered || isKeyboardHighlighted {
             layer?.backgroundColor = NSColor.white.withAlphaComponent(0.08).cgColor
-            layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
-            layer?.borderWidth = 1
+            layer?.borderColor = isKeyboardHighlighted ? NSColor.white.withAlphaComponent(0.3).cgColor : NSColor.white.withAlphaComponent(0.12).cgColor
+            layer?.borderWidth = isKeyboardHighlighted ? 1.5 : 1
             titleField.textColor = .labelColor
             activeDot.layer?.backgroundColor = NSColor.secondaryLabelColor.cgColor
             activeDot.isHidden = true
@@ -626,6 +713,7 @@ final class HUDSessionButton: NSControl {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 6
+        refusesFirstResponder = true
         
         label.stringValue = "\(number)"
         label.font = NSFont.systemFont(ofSize: 12, weight: .bold)
@@ -712,6 +800,7 @@ final class HUDShortcutRow: NSControl {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 6
+        refusesFirstResponder = true
         
         if let image = NSImage(systemSymbolName: iconName, accessibilityDescription: nil) {
             image.isTemplate = true
@@ -827,6 +916,9 @@ final class HUDTabButton: NSControl {
     var isSelected = false {
         didSet { updateAppearance() }
     }
+    var isKeyboardHighlighted = false {
+        didSet { updateAppearance() }
+    }
     private var isHovered = false {
         didSet { updateAppearance() }
     }
@@ -842,6 +934,7 @@ final class HUDTabButton: NSControl {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 4
+        refusesFirstResponder = true
         
         activeDot.wantsLayer = true
         activeDot.layer?.cornerRadius = 2.5
@@ -952,7 +1045,11 @@ final class HUDTabButton: NSControl {
             activeDot.isHidden = false
             shortcutContainer.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.25).cgColor
             shortcutField.textColor = .white
-        } else if isHovered {
+            if isKeyboardHighlighted {
+                layer?.borderWidth = 1.5
+                layer?.borderColor = NSColor.white.withAlphaComponent(0.8).cgColor
+            }
+        } else if isHovered || isKeyboardHighlighted {
             layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
             titleField.textColor = .labelColor
             titleField.font = NSFont.systemFont(ofSize: 11, weight: .medium)
@@ -960,6 +1057,10 @@ final class HUDTabButton: NSControl {
             activeDot.isHidden = true
             shortcutContainer.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.25).cgColor
             shortcutField.textColor = .labelColor
+            if isKeyboardHighlighted {
+                layer?.borderWidth = 1
+                layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
+            }
         } else {
             layer?.backgroundColor = NSColor.clear.cgColor
             titleField.textColor = .secondaryLabelColor
@@ -970,4 +1071,138 @@ final class HUDTabButton: NSControl {
             shortcutField.textColor = .secondaryLabelColor
         }
     }
+}
+
+// MARK: - Filtering and Keyboard Navigation Helpers
+extension ModifierHUDView {
+    private func updateFilteredList(filter: String) {
+        for view in enginesStack.arrangedSubviews {
+            enginesStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        
+        let query = filter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        
+        if query.isEmpty {
+            filteredItems = allItems
+        } else {
+            var matchedServices = Set<String>()
+            var matchedTabs = Set<String>()
+            
+            for item in allItems {
+                switch item.type {
+                case .engine(let service, _, _):
+                    if service.name.lowercased().contains(query) {
+                        matchedServices.insert(service.url)
+                    }
+                case .tab(let session, let service, _, _, _):
+                    if session.title.lowercased().contains(query) {
+                        matchedServices.insert(service.url)
+                        matchedTabs.insert("\(service.url)_\(session.sessionIndex)")
+                    }
+                }
+            }
+            
+            filteredItems = allItems.filter { item in
+                switch item.type {
+                case .engine(let service, _, _):
+                    return matchedServices.contains(service.url)
+                case .tab(let session, let service, _, _, _):
+                    if service.name.lowercased().contains(query) {
+                        return true
+                    }
+                    return matchedTabs.contains("\(service.url)_\(session.sessionIndex)")
+                }
+            }
+        }
+        
+        for item in filteredItems {
+            enginesStack.addArrangedSubview(item.view)
+            item.view.widthAnchor.constraint(equalTo: enginesStack.widthAnchor).isActive = true
+        }
+        
+        updateHighlighting()
+    }
+    
+    private func updateHighlighting() {
+        for item in allItems {
+            if let engineBtn = item.button as? HUDEngineButton {
+                engineBtn.isKeyboardHighlighted = false
+            } else if let tabBtn = item.button as? HUDTabButton {
+                tabBtn.isKeyboardHighlighted = false
+            }
+        }
+        
+        if filteredItems.isEmpty {
+            highlightedIndex = -1
+        } else {
+            if highlightedIndex >= filteredItems.count {
+                highlightedIndex = filteredItems.count - 1
+            }
+            if highlightedIndex < 0 {
+                highlightedIndex = 0
+            }
+            
+            let activeItem = filteredItems[highlightedIndex]
+            if let engineBtn = activeItem.button as? HUDEngineButton {
+                engineBtn.isKeyboardHighlighted = true
+            } else if let tabBtn = activeItem.button as? HUDTabButton {
+                tabBtn.isKeyboardHighlighted = true
+            }
+            
+            scrollToHighlightedItem()
+        }
+    }
+    
+    private func scrollToHighlightedItem() {
+        guard highlightedIndex >= 0, highlightedIndex < filteredItems.count else { return }
+        let item = filteredItems[highlightedIndex]
+        _ = item.view.scrollToVisible(item.view.bounds)
+    }
+}
+
+// MARK: - NSTextFieldDelegate
+extension ModifierHUDView: NSTextFieldDelegate {
+    func controlTextDidChange(_ obj: Notification) {
+        guard let textField = obj.object as? NSTextField else { return }
+        updateFilteredList(filter: textField.stringValue)
+    }
+    
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.moveDown(_:)) {
+            if highlightedIndex < filteredItems.count - 1 {
+                highlightedIndex += 1
+                updateHighlighting()
+            }
+            return true
+        } else if commandSelector == #selector(NSResponder.moveUp(_:)) {
+            if highlightedIndex > 0 {
+                highlightedIndex -= 1
+                updateHighlighting()
+            }
+            return true
+        } else if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            if highlightedIndex >= 0 && highlightedIndex < filteredItems.count {
+                let activeItem = filteredItems[highlightedIndex]
+                switch activeItem.type {
+                case .engine(_, let idx, _):
+                    wc?.selectService(at: idx)
+                case .tab(let session, _, let serviceIndex, _, _):
+                    wc?.selectService(at: serviceIndex)
+                    wc?.switchSession(to: session.sessionIndex)
+                }
+                hide()
+            }
+            return true
+        } else if commandSelector == #selector(NSResponder.insertTab(_:)) ||
+                  commandSelector == #selector(NSResponder.insertBacktab(_:)) {
+            return true
+        }
+        return false
+    }
+}
+
+// MARK: - Flipped Stack View
+final class FlippedStackView: NSStackView {
+    override var isFlipped: Bool { true }
 }

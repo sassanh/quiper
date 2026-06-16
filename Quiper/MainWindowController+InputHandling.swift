@@ -24,12 +24,10 @@ extension MainWindowController {
                         self.lastCommandReleasedTime = 0
                         self.wasBothCmdsDown = false
                         
-                        if event.keyCode == kVK_Escape || event.keyCode == kVK_Return || event.keyCode == kVK_Space {
-                            if self.modifierHUDView != nil {
+                        if self.modifierHUDView != nil {
+                            if event.keyCode == kVK_Escape {
                                 self.hideModifierHUD()
-                                if event.keyCode == kVK_Escape {
-                                    return nil // Swallow escape so it doesn't hide the main window
-                                }
+                                return nil // Swallow escape so it doesn't hide the main window
                             }
                         }
                         if self.modifierHUDView != nil {
