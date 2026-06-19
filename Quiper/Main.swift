@@ -17,7 +17,7 @@ struct MainApp {
         guard let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return
         }
-        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
+        let bundleID = Constants.BUNDLE_ID
         
         SettingsDirectoryMigrator.migrateIfNeeded(fileManager: .default, bundleID: bundleID, supportDir: supportDir)
     }

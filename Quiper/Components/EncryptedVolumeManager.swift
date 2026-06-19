@@ -32,7 +32,7 @@ final class EncryptedVolumeManager {
     func getMountPointURL(for serviceID: UUID) -> URL {
         let fileManager = FileManager.default
         let libraryURL = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
+        let bundleID = Constants.BUNDLE_ID
         
         return libraryURL
             .appendingPathComponent("WebKit")
@@ -97,7 +97,7 @@ final class EncryptedVolumeManager {
                 "-size", "5g",
                 "-fs", "APFS",
                 "-encryption", "AES-256",
-                "-volname", "QuiperEngine-\(serviceID.uuidString)",
+                "-volname", Constants.IS_DEV ? "QuiperDevEngine-\(serviceID.uuidString)" : "QuiperEngine-\(serviceID.uuidString)",
                 "-type", "SPARSEBUNDLE",
                 "-stdinpass",
                 bundleURL.path

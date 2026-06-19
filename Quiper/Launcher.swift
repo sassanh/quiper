@@ -42,7 +42,10 @@ enum Launcher {
     }
 
     private static func agentLabel() -> String {
-        "com.\(NSUserName()).quiper"
+        if Constants.IS_DEV {
+            return "com.\(NSUserName()).quiper.dev"
+        }
+        return "com.\(NSUserName()).quiper"
     }
 
     private static func agentPlistURL() throws -> URL {

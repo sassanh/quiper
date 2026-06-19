@@ -10,7 +10,7 @@ final class WebKitCacheCleaner {
         guard let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first else {
             return nil
         }
-        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
+        let bundleID = Constants.BUNDLE_ID
         return libraryURL
             .appendingPathComponent("WebKit")
             .appendingPathComponent(bundleID)

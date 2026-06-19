@@ -817,7 +817,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func hasMountedEncryptedVolumes() -> Bool {
         let fileManager = FileManager.default
         let libraryURL = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
+        let bundleID = Constants.BUNDLE_ID
         let webKitBase = libraryURL
             .appendingPathComponent("WebKit")
             .appendingPathComponent(bundleID)
@@ -851,7 +851,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     nonisolated private func unmountAllEncryptedVolumes() {
         let fileManager = FileManager.default
         let libraryURL = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
+        let bundleID = Constants.BUNDLE_ID
         let webKitBase = libraryURL
             .appendingPathComponent("WebKit")
             .appendingPathComponent(bundleID)

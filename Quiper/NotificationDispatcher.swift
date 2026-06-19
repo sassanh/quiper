@@ -65,7 +65,7 @@ final class NotificationDispatcher: NSObject, UNUserNotificationCenterDelegate, 
 
     @MainActor
     func openSystemNotificationSettings() {
-        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper"
+        let bundleID = Constants.BUNDLE_ID
         // Try specific deep link first
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications?id=\(bundleID)") {
             _ = urlOpener.open(url)

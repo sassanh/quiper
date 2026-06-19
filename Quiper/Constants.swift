@@ -4,8 +4,16 @@ struct Constants {
     static let APP_NAME = "Quiper"
     static let DEFAULT_SERVICE = "Grok"
     
-    static let APP_FOLDER_NAME: String = {
+    nonisolated static let BUNDLE_ID: String = {
         return Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
+    }()
+
+    nonisolated static let APP_FOLDER_NAME: String = {
+        return BUNDLE_ID
+    }()
+
+    nonisolated static let IS_DEV: Bool = {
+        return BUNDLE_ID.hasSuffix("QuiperDev")
     }()
 
     static let LOGO_PATH = "logo/logo.png"

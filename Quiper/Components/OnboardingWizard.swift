@@ -62,7 +62,7 @@ public struct OnboardingWizard {
         guard let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first else {
             return false
         }
-        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
+        let bundleID = Constants.BUNDLE_ID
         let newStoreURL = libraryURL
             .appendingPathComponent("WebKit")
             .appendingPathComponent(bundleID)
@@ -78,7 +78,7 @@ public struct OnboardingWizard {
         guard let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first else {
             return false
         }
-        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
+        let bundleID = Constants.BUNDLE_ID
         let oldStoreURL = libraryURL
             .appendingPathComponent("WebKit")
             .appendingPathComponent(bundleID)
@@ -181,7 +181,7 @@ struct OnboardingWizardView: View {
                 
                 Button("Show Legacy Data in Finder") {
                     if let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first {
-                        let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
+                        let bundleID = Constants.BUNDLE_ID
                         let oldStoreURL = libraryURL
                             .appendingPathComponent("WebKit")
                             .appendingPathComponent(bundleID)
@@ -315,7 +315,7 @@ struct OnboardingWizardView: View {
         Task {
             let fileManager = FileManager.default
             let libraryURL = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first!
-            let bundleID = Bundle.main.bundleIdentifier ?? "app.sassanh.quiper.Quiper"
+            let bundleID = Constants.BUNDLE_ID
             
             let legacyWebDir = libraryURL
                 .appendingPathComponent("WebKit")

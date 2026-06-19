@@ -16,10 +16,15 @@ final class SecureStorageManager {
         return bytes.map { String(format: "%02x", $0) }.joined()
     }
     
+    private func serviceName(for serviceID: UUID) -> String {
+        let prefix = Constants.IS_DEV ? "com.quiper-dev" : "com.quiper"
+        return "\(prefix).enginekey.\(serviceID.uuidString)"
+    }
+
     /// Saves an encryption key to the macOS Keychain, protected by system-level encryption.
     /// We enforce biometrics strictly in code via LAContext.evaluatePolicy before retrieval.
     func saveKeyToKeychain(_ key: String, for serviceID: UUID) throws {
-        let serviceName = "com.quiper.enginekey.\(serviceID.uuidString)"
+        let serviceName = serviceName(for: serviceID)
         guard let keyData = key.data(using: .utf8) else {
             throw KeychainError.unknown(errSecParam)
         }
@@ -69,7 +74,7 @@ final class SecureStorageManager {
                 NSApp.keyWindow?.makeKeyAndOrderFront(nil)
             }
         }
-        let serviceName = "com.quiper.enginekey.\(serviceID.uuidString)"
+        let serviceName = serviceName(for: serviceID)
         
         let authContext = context ?? LAContext()
         
@@ -114,7 +119,7 @@ final class SecureStorageManager {
     
     /// Deletes the key from the macOS Keychain when encryption is turned off or engine is deleted.
     func deleteKeyFromKeychain(for serviceID: UUID) {
-        let serviceName = "com.quiper.enginekey.\(serviceID.uuidString)"
+        let serviceName = serviceName(for: serviceID)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -125,7 +130,7 @@ final class SecureStorageManager {
     
     /// Checks if a key already exists in the Keychain for this service.
     func hasKeyInKeychain(for serviceID: UUID) -> Bool {
-        let serviceName = "com.quiper.enginekey.\(serviceID.uuidString)"
+        let serviceName = serviceName(for: serviceID)
         let context = LAContext()
         context.interactionNotAllowed = true
         let query: [String: Any] = [
