@@ -35,6 +35,73 @@ extension MainWindowController {
         }
     }
 
+    @objc func handleLockCurrentEngineShortcut() {
+        guard let service = currentService() else { return }
+        
+        if service.isEncrypted {
+            if EncryptedVolumeManager.shared.isMounted(for: service.id) {
+                manualLockTapped(NSButton())
+            }
+        } else {
+            promptToSecureEngine(service)
+        }
+    }
+    
+    @objc func handleLockAllEnginesShortcut() {
+        let secureServices = services.filter { $0.isEncrypted }
+        
+        if secureServices.isEmpty {
+            if let service = currentService() {
+                promptToSecureEngine(service)
+            }
+        } else {
+            for service in secureServices {
+                if EncryptedVolumeManager.shared.isMounted(for: service.id) {
+                    webViewManager.tearDownAllWebViews(for: service)
+                    Task {
+                        try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
+                        if self.currentService()?.id == service.id {
+                            await MainActor.run {
+                                self.updateActiveWebview(focusWebView: true, forceCreate: true)
+                                self.updateSessionSelector()
+                                self.layoutSelectors()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func promptToSecureEngine(_ service: Service) {
+        let alert = NSAlert()
+        alert.messageText = "Secure Engine"
+        alert.informativeText = "The current engine (\(service.name)) is not secured. Would you like to enable secure storage for this engine?"
+        alert.addButton(withTitle: "Enable Secure Storage")
+        alert.addButton(withTitle: "Cancel")
+        
+        if let window = window {
+            alert.beginSheetModal(for: window) { response in
+                if response == .alertFirstButtonReturn {
+                    NotificationCenter.default.post(name: .showSettings, object: nil, userInfo: [
+                        "tab": "Engines",
+                        "serviceID": service.id,
+                        "subtab": "security"
+                    ])
+                }
+            }
+        } else {
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                NotificationCenter.default.post(name: .showSettings, object: nil, userInfo: [
+                    "tab": "Engines",
+                    "serviceID": service.id,
+                    "subtab": "security"
+                ])
+            }
+        }
+    }
+
     @objc func refreshStopTapped(_ sender: NSButton) {
         guard let webView = currentWebView() else { return }
         if webView.isLoading {

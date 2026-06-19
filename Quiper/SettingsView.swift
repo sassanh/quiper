@@ -50,6 +50,11 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .startGlobalHotkeyCapture)) { _ in
             selectedTab = "Shortcuts"
         }
+        .onReceive(NotificationCenter.default.publisher(for: .showSettings)) { notification in
+            if let userInfo = notification.userInfo, let tab = userInfo["tab"] as? String {
+                selectedTab = tab
+            }
+        }
         .environmentObject(shortcutState)
         .overlay { ShortcutRecordingOverlay(state: shortcutState).allowsHitTesting(shortcutState.isPresenting) }
     }
@@ -461,6 +466,11 @@ struct ServicesSettingsView: View {
             }
             settings.saveSettings()
             appController?.reloadServices()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showSettings)) { notification in
+            if let userInfo = notification.userInfo, let serviceID = userInfo["serviceID"] as? UUID {
+                selectedServiceID = serviceID
+            }
         }
     }
 
@@ -1578,6 +1588,13 @@ struct ServiceDetailView: View {
             }
         } message: {
             Text("This will permanently clear all cookies, local storage, databases, and cache for '\(service.name)'. You will be logged out of all sites within this engine.")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showSettings)) { notification in
+            if let userInfo = notification.userInfo, let subtab = userInfo["subtab"] as? String {
+                if subtab == "security" {
+                    detailSelection = .security
+                }
+            }
         }
     }
 

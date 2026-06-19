@@ -525,6 +525,7 @@ struct KeyBindingsSettingsView: View {
         case .nextSession: return "Next session"
         case .previousService: return "Previous engine"
         case .nextService: return "Next engine"
+        case .lockCurrentEngine: return "Lock current engine"
         }
     }
 
@@ -534,6 +535,7 @@ struct KeyBindingsSettingsView: View {
         case .nextSession: return "Cycle to the session on the right."
         case .previousService: return "Move to the previous engine."
         case .nextService: return "Move to the next engine."
+        case .lockCurrentEngine: return "Lock the current secure engine. Add Shift to lock all secure engines."
         }
     }
 

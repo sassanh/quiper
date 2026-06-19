@@ -299,28 +299,11 @@ final class LockOverlayView: NSView {
         subtitleLabel.cell?.isScrollable = false
         containerStack.addArrangedSubview(subtitleLabel)
 
-        // Premium "Use Password..." link button
-        let passwordButton = InteractiveLinkButton()
-        passwordButton.isBordered = false
-        passwordButton.target = self
-        passwordButton.action = #selector(usePasswordClicked)
-        passwordButton.translatesAutoresizingMaskIntoConstraints = false
-        
-        let linkColor = NSColor(name: nil) { appearance in
-            if appearance.bestMatch(from: [.darkAqua, .vibrantDark]) != nil {
-                return NSColor(calibratedRed: 0.35, green: 0.65, blue: 1.0, alpha: 1.0)
-            } else {
-                return NSColor(calibratedRed: 0.0, green: 0.45, blue: 0.9, alpha: 1.0)
-            }
+        let passwordButton = LockScreenShortcutButton(title: "Use Password...", shortcut: "⌘P")
+        passwordButton.onClick = { [weak self] in
+            self?.usePasswordClicked()
         }
-        
-        let buttonTitle = "Use Password..."
-        let attributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: linkColor,
-            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-            .underlineStyle: NSUnderlineStyle.single.rawValue
-        ]
-        passwordButton.attributedTitle = NSAttributedString(string: buttonTitle, attributes: attributes)
+        passwordButton.translatesAutoresizingMaskIntoConstraints = false
         
         containerStack.addArrangedSubview(passwordButton)
 
@@ -386,6 +369,18 @@ final class LockOverlayView: NSView {
         errorDetailsLabel.cell?.wraps = true
         errorDetailsLabel.cell?.isScrollable = false
         errorStack.addArrangedSubview(errorDetailsLabel)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
+            if event.charactersIgnoringModifiers == "p" || event.charactersIgnoringModifiers == "P" {
+                if activeFallbackContext == nil {
+                    usePasswordClicked()
+                    return true
+                }
+            }
+        }
+        return super.performKeyEquivalent(with: event)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -649,5 +644,106 @@ final class LockOverlayView: NSView {
         }
         
         self.unlockClicked()
+    }
+}
+
+final class LockScreenShortcutButton: NSControl {
+    var onClick: (() -> Void)?
+    
+    private let titleField = NSTextField(labelWithString: "")
+    private let shortcutContainer = NSView()
+    private let shortcutField = NSTextField(labelWithString: "")
+    
+    private var isHovered = false { didSet { updateAppearance() } }
+    private var isPressed = false { didSet { updateAppearance() } }
+    private var trackingArea: NSTrackingArea?
+    
+    init(title: String, shortcut: String) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor.separatorColor.cgColor
+        refusesFirstResponder = true
+        
+        // Title
+        titleField.stringValue = title
+        titleField.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        titleField.textColor = .labelColor
+        titleField.isBordered = false
+        titleField.drawsBackground = false
+        titleField.isEditable = false
+        titleField.isSelectable = false
+        titleField.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleField)
+        
+        // Shortcut Badge
+        shortcutContainer.wantsLayer = true
+        shortcutContainer.layer?.cornerRadius = 5
+        shortcutContainer.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.2).cgColor
+        shortcutContainer.layer?.borderColor = NSColor.white.withAlphaComponent(0.08).cgColor
+        shortcutContainer.layer?.borderWidth = 1
+        shortcutContainer.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(shortcutContainer)
+        
+        shortcutField.stringValue = shortcut
+        shortcutField.font = NSFont.systemFont(ofSize: 10, weight: .bold)
+        shortcutField.textColor = .secondaryLabelColor
+        shortcutField.alignment = .center
+        shortcutField.isBordered = false
+        shortcutField.drawsBackground = false
+        shortcutField.isEditable = false
+        shortcutField.isSelectable = false
+        shortcutField.translatesAutoresizingMaskIntoConstraints = false
+        shortcutContainer.addSubview(shortcutField)
+        
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 28),
+            
+            titleField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            titleField.centerYAnchor.constraint(equalTo: centerYAnchor),
+            
+            shortcutContainer.leadingAnchor.constraint(equalTo: titleField.trailingAnchor, constant: 8),
+            shortcutContainer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            shortcutContainer.centerYAnchor.constraint(equalTo: centerYAnchor),
+            shortcutContainer.heightAnchor.constraint(equalToConstant: 18),
+            
+            shortcutField.leadingAnchor.constraint(equalTo: shortcutContainer.leadingAnchor, constant: 5),
+            shortcutField.trailingAnchor.constraint(equalTo: shortcutContainer.trailingAnchor, constant: -5),
+            shortcutField.centerYAnchor.constraint(equalTo: shortcutContainer.centerYAnchor)
+        ])
+        
+        updateAppearance()
+    }
+    
+    required init?(coder: NSCoder) { fatalError() }
+    
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingArea { removeTrackingArea(existing) }
+        let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways]
+        trackingArea = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
+        addTrackingArea(trackingArea!)
+    }
+    
+    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseExited(with event: NSEvent) { isHovered = false }
+    override func mouseDown(with event: NSEvent) { isPressed = true }
+    override func mouseUp(with event: NSEvent) {
+        isPressed = false
+        let point = convert(event.locationInWindow, from: nil)
+        if bounds.contains(point) {
+            onClick?()
+        }
+    }
+    
+    private func updateAppearance() {
+        if isPressed {
+            layer?.backgroundColor = NSColor.white.withAlphaComponent(0.2).cgColor
+        } else if isHovered {
+            layer?.backgroundColor = NSColor.white.withAlphaComponent(0.12).cgColor
+        } else {
+            layer?.backgroundColor = NSColor.white.withAlphaComponent(0.05).cgColor
+        }
     }
 }

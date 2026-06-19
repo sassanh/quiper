@@ -319,6 +319,7 @@ struct AppShortcutBindings: Codable, Equatable {
         case previousSession
         case nextService
         case previousService
+        case lockCurrentEngine
 
         var id: String { rawValue }
     }
@@ -333,10 +334,12 @@ struct AppShortcutBindings: Codable, Equatable {
     var previousSession: HotkeyManager.Configuration
     var nextService: HotkeyManager.Configuration
     var previousService: HotkeyManager.Configuration
+    var lockCurrentEngine: HotkeyManager.Configuration
     var alternateNextSession: HotkeyManager.Configuration?
     var alternatePreviousSession: HotkeyManager.Configuration?
     var alternateNextService: HotkeyManager.Configuration?
     var alternatePreviousService: HotkeyManager.Configuration?
+    var alternateLockCurrentEngine: HotkeyManager.Configuration?
     var sessionDigitsModifiers: UInt
     var sessionDigitsAlternateModifiers: UInt?
     var serviceDigitsModifiers: UInt?
@@ -344,8 +347,8 @@ struct AppShortcutBindings: Codable, Equatable {
     var serviceDigitsSecondaryModifiers: UInt?
 
     private enum CodingKeys: String, CodingKey {
-        case nextSession, previousSession, nextService, previousService
-        case alternateNextSession, alternatePreviousSession, alternateNextService, alternatePreviousService
+        case nextSession, previousSession, nextService, previousService, lockCurrentEngine
+        case alternateNextSession, alternatePreviousSession, alternateNextService, alternatePreviousService, alternateLockCurrentEngine
         case sessionDigitsModifiers, sessionDigitsAlternateModifiers
         case serviceDigitsModifiers, serviceDigitsPrimaryModifiers, serviceDigitsSecondaryModifiers
     }
@@ -367,6 +370,10 @@ struct AppShortcutBindings: Codable, Equatable {
             keyCode: UInt32(kVK_LeftArrow),
             modifierFlags: NSEvent.ModifierFlags([.command, .control]).rawValue
         ),
+        lockCurrentEngine: HotkeyManager.Configuration(
+            keyCode: UInt32(kVK_ANSI_L),
+            modifierFlags: NSEvent.ModifierFlags([.command, .option]).rawValue
+        ),
         alternateNextSession: HotkeyManager.Configuration(
             keyCode: UInt32(kVK_ANSI_L),
             modifierFlags: NSEvent.ModifierFlags.command.rawValue
@@ -383,6 +390,7 @@ struct AppShortcutBindings: Codable, Equatable {
             keyCode: UInt32(kVK_ANSI_H),
             modifierFlags: NSEvent.ModifierFlags([.command, .control]).rawValue
         ),
+        alternateLockCurrentEngine: nil,
         sessionDigitsModifiers: NSEvent.ModifierFlags.command.rawValue,
         sessionDigitsAlternateModifiers: nil,
         serviceDigitsModifiers: nil,
@@ -396,6 +404,7 @@ struct AppShortcutBindings: Codable, Equatable {
         case .previousSession: return previousSession
         case .nextService: return nextService
         case .previousService: return previousService
+        case .lockCurrentEngine: return lockCurrentEngine
         }
     }
 
@@ -405,6 +414,7 @@ struct AppShortcutBindings: Codable, Equatable {
         case .previousSession: return alternatePreviousSession
         case .nextService: return alternateNextService
         case .previousService: return alternatePreviousService
+        case .lockCurrentEngine: return alternateLockCurrentEngine
         }
     }
 
@@ -418,6 +428,7 @@ struct AppShortcutBindings: Codable, Equatable {
         case .previousSession: previousSession = configuration
         case .nextService: nextService = configuration
         case .previousService: previousService = configuration
+        case .lockCurrentEngine: lockCurrentEngine = configuration
         }
     }
 
@@ -427,6 +438,7 @@ struct AppShortcutBindings: Codable, Equatable {
         case .previousSession: alternatePreviousSession = configuration
         case .nextService: alternateNextService = configuration
         case .previousService: alternatePreviousService = configuration
+        case .lockCurrentEngine: alternateLockCurrentEngine = configuration
         }
     }
 }
@@ -438,10 +450,12 @@ extension AppShortcutBindings {
         previousSession = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .previousSession) ?? AppShortcutBindings.defaults.previousSession
         nextService = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .nextService) ?? AppShortcutBindings.defaults.nextService
         previousService = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .previousService) ?? AppShortcutBindings.defaults.previousService
+        lockCurrentEngine = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .lockCurrentEngine) ?? AppShortcutBindings.defaults.lockCurrentEngine
         alternateNextSession = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternateNextSession)
         alternatePreviousSession = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternatePreviousSession)
         alternateNextService = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternateNextService)
         alternatePreviousService = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternatePreviousService)
+        alternateLockCurrentEngine = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternateLockCurrentEngine)
         sessionDigitsModifiers = try container.decodeIfPresent(UInt.self, forKey: .sessionDigitsModifiers) ?? AppShortcutBindings.defaults.sessionDigitsModifiers
         sessionDigitsAlternateModifiers = try container.decodeIfPresent(UInt.self, forKey: .sessionDigitsAlternateModifiers)
         serviceDigitsModifiers = try container.decodeIfPresent(UInt.self, forKey: .serviceDigitsModifiers)

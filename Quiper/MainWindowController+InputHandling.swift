@@ -270,6 +270,22 @@ extension MainWindowController {
                 stepService(by: 1)
                 return true
             }
+            
+            let lockConfig = appShortcuts.configuration(for: .lockCurrentEngine)
+            let altLockConfig = appShortcuts.alternateConfiguration(for: .lockCurrentEngine)
+            
+            let lockAllConfig = HotkeyManager.Configuration(keyCode: lockConfig.keyCode, modifierFlags: lockConfig.modifierFlags | NSEvent.ModifierFlags.shift.rawValue)
+            let altLockAllConfig = altLockConfig.map { HotkeyManager.Configuration(keyCode: $0.keyCode, modifierFlags: $0.modifierFlags | NSEvent.ModifierFlags.shift.rawValue) }
+            
+            if matches(config, lockAllConfig) || matches(config, altLockAllConfig) {
+                handleLockAllEnginesShortcut()
+                return true
+            }
+            
+            if matches(config, lockConfig) || matches(config, altLockConfig) {
+                handleLockCurrentEngineShortcut()
+                return true
+            }
             if matches(config, appShortcuts.configuration(for: .previousService)) || matches(config, appShortcuts.alternateConfiguration(for: .previousService)) {
                 stepService(by: -1)
                 return true
@@ -299,6 +315,22 @@ extension MainWindowController {
 
         if matches(config, appShortcuts.configuration(for: .nextSession)) || matches(config, appShortcuts.alternateConfiguration(for: .nextSession)) {
             stepSession(by: 1)
+            return true
+        }
+        
+        let lockConfig = appShortcuts.configuration(for: .lockCurrentEngine)
+        let altLockConfig = appShortcuts.alternateConfiguration(for: .lockCurrentEngine)
+        
+        let lockAllConfig = HotkeyManager.Configuration(keyCode: lockConfig.keyCode, modifierFlags: lockConfig.modifierFlags | NSEvent.ModifierFlags.shift.rawValue)
+        let altLockAllConfig = altLockConfig.map { HotkeyManager.Configuration(keyCode: $0.keyCode, modifierFlags: $0.modifierFlags | NSEvent.ModifierFlags.shift.rawValue) }
+        
+        if matches(config, lockAllConfig) || matches(config, altLockAllConfig) {
+            handleLockAllEnginesShortcut()
+            return true
+        }
+        
+        if matches(config, lockConfig) || matches(config, altLockConfig) {
+            handleLockCurrentEngineShortcut()
             return true
         }
         if matches(config, appShortcuts.configuration(for: .previousSession)) || matches(config, appShortcuts.alternateConfiguration(for: .previousSession)) {

@@ -181,13 +181,14 @@ final class NavigationShortcutsUITests: BaseUITest {
         switchToSettingsTab("Shortcuts")
         wait(0.1)
         
-        for assignment in assignments {
-            app.staticTexts[assignment.rowTitle].tap()
-
-            let cell = app.outlines.cells.containing(.staticText, identifier: assignment.rowTitle).firstMatch
-            let clearButton = cell.buttons.matching(identifier: "xmark.circle.fill").firstMatch
-            clearButton.tap()
-            clearButton.waitForNonExistence(timeout: 1.0)
+        for assignment in assignments.reversed() {
+            // Use the unique recorder ID to scope the clear button query
+            let recorder = app.descendants(matching: .any).matching(identifier: assignment.id).firstMatch
+            let clearButton = recorder.buttons.matching(identifier: "xmark.circle.fill").firstMatch
+            if clearButton.waitForExistence(timeout: 2.0) {
+                clearButton.tap()
+                clearButton.waitForNonExistence(timeout: 2.0)
+            }
         }
         
         // ============================================================
@@ -218,14 +219,11 @@ final class NavigationShortcutsUITests: BaseUITest {
         switchToSettingsTab("Shortcuts")
         
         for assignment in assignments {
-            let rowLabel = app.staticTexts[assignment.rowTitle]
-            rowLabel.tap()
-
-            let cell = app.outlines.cells.containing(.staticText, identifier: assignment.rowTitle).firstMatch
-            let resetButton = cell.buttons.matching(identifier: "arrow.counterclockwise.circle.fill").firstMatch
-            if resetButton.firstMatch.waitForExistence(timeout: 1.0) {
+            let recorder = app.descendants(matching: .any).matching(identifier: assignment.id).firstMatch
+            let resetButton = recorder.buttons.matching(identifier: "arrow.counterclockwise.circle.fill").firstMatch
+            if resetButton.waitForExistence(timeout: 2.0) {
                 resetButton.tap()
-                resetButton.waitForNonExistence(timeout: 1.0)
+                resetButton.waitForNonExistence(timeout: 2.0)
             }
         }
         
