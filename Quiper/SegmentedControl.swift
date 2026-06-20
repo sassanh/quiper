@@ -38,38 +38,121 @@ class SegmentedControl: NSSegmentedControl {
         didSet { needsDisplay = true }
     }
     
-    // Tooltips
+    // Tooltips and properties
+    var customLabels: [String] = [] {
+        didSet {
+            updateAllSegmentWidths()
+            needsDisplay = true
+        }
+    }
+    var customLockedStates: [Bool]? = nil {
+        didSet {
+            updateAllSegmentWidths()
+            needsDisplay = true
+        }
+    }
+    var customInstantiatedStates: [Bool]? = nil {
+        didSet {
+            updateAllSegmentWidths()
+            needsDisplay = true
+        }
+    }
+    override var segmentCount: Int {
+        didSet {
+            updateAllSegmentWidths()
+        }
+    }
+    
     private var segmentToolTips: [Int: String] = [:]
     private(set) var lastHoveredSegment: Int?
     var alwaysShowTooltips: Bool = true
 
     var forceHighlight: Bool = false
 
+    // MARK: - Width Helpers
+
+    override func setLabel(_ label: String, forSegment segment: Int) {
+        super.setLabel(label, forSegment: segment)
+        updateWidth(for: segment)
+    }
+
+    private func updateAllSegmentWidths() {
+        guard segmentCount > 0 else { return }
+        let font = self.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize(for: self.controlSize))
+        for i in 0..<segmentCount {
+            let label = customLabels.indices.contains(i) ? customLabels[i] : (self.label(forSegment: i) ?? "")
+            let textWidth = (label as NSString).size(withAttributes: [.font: font]).width
+            var w = textWidth + 16 // standard labelPadding
+            
+            let isLocked: Bool
+            if let customL = customLockedStates, customL.indices.contains(i) {
+                isLocked = customL[i]
+            } else if let sel = parentSelector {
+                isLocked = selectorDelegate?.selector(sel, isLocked: i) == true
+            } else {
+                isLocked = selectorDelegate?.segmentedControl(self, isLocked: i) == true
+            }
+            
+            if isLocked {
+                w += 13
+            }
+            super.setWidth(w, forSegment: i)
+        }
+    }
+    
+    private func updateWidth(for segment: Int) {
+        guard segment >= 0 && segment < segmentCount else { return }
+        let font = self.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize(for: self.controlSize))
+        let label = customLabels.indices.contains(segment) ? customLabels[segment] : (self.label(forSegment: segment) ?? "")
+        let textWidth = (label as NSString).size(withAttributes: [.font: font]).width
+        var w = textWidth + 16
+        
+        let isLocked: Bool
+        if let customL = customLockedStates, customL.indices.contains(segment) {
+            isLocked = customL[segment]
+        } else if let sel = parentSelector {
+            isLocked = selectorDelegate?.selector(sel, isLocked: segment) == true
+        } else {
+            isLocked = selectorDelegate?.segmentedControl(self, isLocked: segment) == true
+        }
+        
+        if isLocked {
+            w += 13
+        }
+        super.setWidth(w, forSegment: segment)
+    }
+
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        guard showInstantiationState else {
-            super.draw(dirtyRect)
-            return
-        }
-
-        let uninstantiatedFontColor = parentSelector == nil
-            ? NSColor.controlBackgroundColor.withAlphaComponent(0.2)
-            : NSColor.underPageBackgroundColor.withAlphaComponent(0.3)
-        let instantiatedFontColor = NSColor.textColor
-        let uninstantiatedBackgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.5)
-        let instantiatedBackgroundColor = NSColor.underPageBackgroundColor.withAlphaComponent(0.3)
-        
-        let isOuterPill = segmentStyle == .rounded || segmentStyle == .automatic
+        let isOuterPill = segmentStyle == .rounded || segmentStyle == .automatic || segmentStyle == .capsule
 
         // Determine instantiation state per segment up front
-        var instantiated = [Bool](repeating: false, count: segmentCount)
+        var instantiated = [Bool](repeating: true, count: segmentCount)
+        var locked = [Bool](repeating: false, count: segmentCount)
         for i in 0..<segmentCount {
-            if let sel = parentSelector {
+            if let customL = customLockedStates, customL.indices.contains(i) {
+                locked[i] = customL[i]
+            } else if let sel = parentSelector {
+                locked[i] = selectorDelegate?.selector(sel, isLocked: i) == true
+            } else {
+                locked[i] = selectorDelegate?.segmentedControl(self, isLocked: i) == true
+            }
+            
+            if let customI = customInstantiatedStates, customI.indices.contains(i) {
+                instantiated[i] = customI[i]
+            } else if let sel = parentSelector {
                 instantiated[i] = selectorDelegate?.selector(sel, isInstantiated: i) == true
             } else {
                 instantiated[i] = selectorDelegate?.segmentedControl(self, isInstantiated: i) == true
             }
+        }
+
+        // Temporarily clear labels so super.draw doesn't draw native text (ghosting)
+        // We MUST do this because we draw our own text to support lock icons and custom colors.
+        let actualLabels = (0..<segmentCount).map { label(forSegment: $0) ?? "" }
+        for i in 0..<segmentCount {
+            super.setLabel("", forSegment: i)
         }
 
         NSGraphicsContext.saveGraphicsState()
@@ -79,46 +162,123 @@ class SegmentedControl: NSSegmentedControl {
 
         super.draw(dirtyRect)
 
+        let uninstantiatedFontColor = NSColor.textColor.withAlphaComponent(0.5)
+        let instantiatedFontColor = NSColor.textColor
+        let uninstantiatedBackgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.5)
+        let instantiatedBackgroundColor = NSColor.underPageBackgroundColor.withAlphaComponent(0.3)
+        
         let segFont = font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize(for: controlSize))
         for i in 0..<segmentCount {
             let isSelected = (i == selectedSegment)
-            guard let originalLabel = label(forSegment: i), !originalLabel.isEmpty else { continue }
+            
+            // Read from customLabels if available, otherwise fallback to the real native label
+            let originalLabel = customLabels.indices.contains(i) ? customLabels[i] : actualLabels[i]
+            guard !originalLabel.isEmpty else { continue }
 
             let rawFrame = rect(forSegment: i)
             let segFrame = backingAlignedRect(rawFrame, options: .alignAllEdgesNearest)
-
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: segFont,
-                .foregroundColor: isSelected
-                    ? NSColor.white
-                    : instantiated[i] ? instantiatedFontColor : uninstantiatedFontColor
-            ]
-            let size = (originalLabel as NSString).size(withAttributes: attrs)
-            let textRect = NSRect(
-                x: segFrame.midX - size.width / 2,
-                y: segFrame.midY - size.height / 2,
-                width: size.width,
-                height: size.height
-            )
 
             NSGraphicsContext.saveGraphicsState()
             if isSelected {
                 NSColor.controlAccentColor.setFill()
                 segFrame.fill(using: .sourceOver)
-            } else if (instantiated[i]) {
-                instantiatedBackgroundColor.setFill()
+            } else if showInstantiationState {
+                if instantiated[i] {
+                    instantiatedBackgroundColor.setFill()
+                } else {
+                    uninstantiatedBackgroundColor.setFill()
+                }
                 segFrame.insetBy(dx: 0, dy: 1).fill(using: .sourceOver)
-            } else {
-                uninstantiatedBackgroundColor.setFill()
-                segFrame.insetBy(dx: 0, dy: 1).fill(using: .sourceOver)
-                // textRect.insetBy(dx: -1, dy: -2).fill()
             }
             NSGraphicsContext.restoreGraphicsState()
 
+            var fontColor: NSColor
+            let isLockedSegment = locked[i]
+            
+            if isSelected {
+                fontColor = .white
+            } else if isLockedSegment {
+                fontColor = uninstantiatedFontColor.withAlphaComponent(0.4) // requested low contrast
+            } else if showInstantiationState && !instantiated[i] {
+                fontColor = uninstantiatedFontColor
+            } else {
+                fontColor = instantiatedFontColor
+            }
+
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.lineBreakMode = .byTruncatingTail
+            
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: segFont,
+                .foregroundColor: fontColor,
+                .paragraphStyle: paragraphStyle
+            ]
+            let size = (originalLabel as NSString).size(withAttributes: attrs)
+            
+            var lockImg: NSImage?
+            var lockWidth: CGFloat = 0
+            if isLockedSegment {
+                let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+                if let img = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?.withSymbolConfiguration(config)?.copy() as? NSImage {
+                    img.isTemplate = true
+                    lockImg = img
+                    lockWidth = img.size.width
+                }
+            }
+            
+            let lockSpacing: CGFloat = 4
+            let totalWidth = isLockedSegment ? (size.width + lockSpacing + lockWidth) : size.width
+            
+            let availableWidth = segFrame.width - 8
+            var actualTotalWidth = totalWidth
+            var textDrawWidth = size.width
+            
+            if actualTotalWidth > availableWidth {
+                actualTotalWidth = availableWidth
+                textDrawWidth = actualTotalWidth - (isLockedSegment ? (lockSpacing + lockWidth) : 0)
+                if textDrawWidth < 0 { textDrawWidth = 0 }
+            }
+            
+            let startX = segFrame.midX - actualTotalWidth / 2
+            
+            let textRect = NSRect(
+                x: startX,
+                y: segFrame.midY - size.height / 2,
+                width: textDrawWidth,
+                height: size.height
+            )
+
             (originalLabel as NSString).draw(in: textRect, withAttributes: attrs)
+            
+            if isLockedSegment, let finalLockImg = lockImg {
+                var lockColor = fontColor
+                if let rgbColor = fontColor.usingColorSpace(.sRGB) {
+                    var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+                    rgbColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+                    lockColor = NSColor(hue: hue, saturation: saturation, brightness: 1.0 - brightness, alpha: alpha)
+                }
+                
+                finalLockImg.lockFocus()
+                lockColor.set()
+                NSRect(origin: .zero, size: finalLockImg.size).fill(using: .sourceAtop)
+                finalLockImg.unlockFocus()
+                
+                let imgRect = NSRect(
+                    x: textRect.maxX + lockSpacing,
+                    y: segFrame.midY - finalLockImg.size.height / 2,
+                    width: finalLockImg.size.width,
+                    height: finalLockImg.size.height
+                )
+                finalLockImg.draw(in: imgRect, from: .zero, operation: .sourceOver, fraction: 1.0, respectFlipped: true, hints: nil)
+            }
         }
 
         NSGraphicsContext.restoreGraphicsState()
+
+        // Restore native labels so accessibility and UI tests see them
+        for i in 0..<segmentCount {
+            super.setLabel(actualLabels[i], forSegment: i)
+        }
     }
 
     var enableDragReorder: Bool = false
@@ -295,7 +455,7 @@ class SegmentedControl: NSSegmentedControl {
         return -1
     }
     
-    private func rect(forSegment segment: Int) -> NSRect {
+    func rect(forSegment segment: Int) -> NSRect {
         guard segment >= 0 && segment < segmentCount else { return .zero }
         
         if let cell = cell as? NSSegmentedCell {

@@ -14,6 +14,12 @@ protocol CollapsibleSelectorDelegate: AnyObject {
     /// Called to check if segment at index represents an instantiated session/service (standalone SegmentedControl)
     func segmentedControl(_ control: SegmentedControl, isInstantiated index: Int) -> Bool
     
+    /// Called to check if segment at index represents a locked service (CollapsibleSelector)
+    func selector(_ selector: CollapsibleSelector, isLocked index: Int) -> Bool
+    
+    /// Called to check if segment at index represents a locked service (standalone SegmentedControl)
+    func segmentedControl(_ control: SegmentedControl, isLocked index: Int) -> Bool
+    
     /// Called when a drag reorder completes
     func selector(_ selector: CollapsibleSelector, didDragSegment index: Int, to newIndex: Int)
     
@@ -29,6 +35,8 @@ extension CollapsibleSelectorDelegate {
     func isLoading(index: Int) -> Bool { false }
     func selector(_ selector: CollapsibleSelector, isInstantiated index: Int) -> Bool { true } // Default: assume instantiated
     func segmentedControl(_ control: SegmentedControl, isInstantiated index: Int) -> Bool { true } // Default: assume instantiated
+    func selector(_ selector: CollapsibleSelector, isLocked index: Int) -> Bool { false } // Default: not locked
+    func segmentedControl(_ control: SegmentedControl, isLocked index: Int) -> Bool { false } // Default: not locked
     func selector(_ selector: CollapsibleSelector, didDragSegment index: Int, to newIndex: Int) {}
     func selectorWillExpand(_ selector: CollapsibleSelector) {}
     func collapsibleSelector(_ selector: CollapsibleSelector, didChangeExpansionState isExpanded: Bool) {}
@@ -48,14 +56,14 @@ class CollapsibleSelector: NSView {
     var enableDragReorder: Bool = false
     
     /// Padding around segment labels
-    var labelPadding: CGFloat = 20
+    var labelPadding: CGFloat = 16
     
     /// Controls whether hover/click interaction is enabled (set to false when window loses focus)
     var isInteractionEnabled: Bool = true
     
-    /// Controls whether to show visual indication for uninstantiated segments (grayed out)
     var showInstantiationState: Bool = false {
         didSet {
+            collapsedControl.showInstantiationState = showInstantiationState
             expandedControl?.showInstantiationState = showInstantiationState
             needsDisplay = true
             collapsedControl.needsDisplay = true
@@ -154,14 +162,15 @@ class CollapsibleSelector: NSView {
     }
     
     private func setupCollapsedControl() {
-        collapsedControl.segmentStyle = .texturedSquare // Allow custom background
+        collapsedControl.segmentStyle = .capsule
         collapsedControl.trackingMode = .selectOne
         collapsedControl.segmentCount = 1
         collapsedControl.selectedSegment = 0 // Force selection so it draws blue
-        collapsedControl.segmentDistribution = .fit  // Size to content, don't center
+        collapsedControl.segmentDistribution = .fill
         collapsedControl.target = self
         collapsedControl.action = #selector(collapsedControlClicked)
         collapsedControl.alwaysShowTooltips = alwaysShowTooltips
+        collapsedControl.showInstantiationState = showInstantiationState
         collapsedControl.selectorDelegate = delegate
         collapsedControl.parentSelector = self
         addSubview(collapsedControl)
@@ -208,14 +217,16 @@ class CollapsibleSelector: NSView {
                 control.segmentCount = newItems.count
             }
             
+            if let segControl = control as? SegmentedControl {
+                segControl.customLockedStates = newItems.indices.map { delegate?.selector(self, isLocked: $0) == true }
+                segControl.customLabels = newItems
+            }
+            
             for (i, item) in newItems.enumerated() {
                 control.setLabel(item, forSegment: i)
                 control.setImage(nil, forSegment: i)
                 if let tip = tooltips[i] { control.setToolTip(tip, forSegment: i) }
             }
-            
-            // Re-fit
-            control.sizeToFit()
             // Update panel frame if needed? 
             // For pure reorder total width is same, but for change it might differ.
             // Let's at least ensure control frame is valid in the container.
@@ -238,35 +249,29 @@ class CollapsibleSelector: NSView {
     
     private func updateCollapsedControlTitle() {
         let label: String
+        let isLocked: Bool
+        let isInstantiated: Bool
         if _selectedSegment >= 0, items.indices.contains(_selectedSegment) {
             label = items[_selectedSegment]
+            isLocked = delegate?.selector(self, isLocked: _selectedSegment) ?? false
+            isInstantiated = delegate?.selector(self, isInstantiated: _selectedSegment) ?? false
         } else {
             label = placeholderLabel
+            isLocked = false
+            isInstantiated = false
         }
+        
+        collapsedControl.customLabels = [label]
+        collapsedControl.customLockedStates = [isLocked]
+        collapsedControl.customInstantiatedStates = [isInstantiated]
+        
         collapsedControl.setLabel(label, forSegment: 0)
+        collapsedControl.setImage(nil, forSegment: 0)
         collapsedControl.selectedSegment = _selectedSegment >= 0 ? 0 : -1
-        
-        // Calculate dynamic width + padding
-        let font = NSFont.systemFont(ofSize: 13)
-        let w = (label as NSString).size(withAttributes: [.font: font]).width + labelPadding
-        
-        collapsedControl.sizeToFit()
-        
-        // Ensure the control's frame matches the calculated width
-        var frame = collapsedControl.frame
-        frame.size.width = w
-        collapsedControl.frame = frame
     }
     
     var currentWidth: CGFloat {
-        let label: String
-        if _selectedSegment >= 0, items.indices.contains(_selectedSegment) {
-            label = items[_selectedSegment]
-        } else {
-            label = placeholderLabel
-        }
-        let width = (label as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width + labelPadding
-        return width
+        return collapsedControl.width(forSegment: 0)
     }
     
     override var intrinsicContentSize: NSSize {
@@ -338,6 +343,11 @@ class CollapsibleSelector: NSView {
         
         // 2. Configure Items & Events
         
+        control.customLockedStates = items.indices.map { delegate?.selector(self, isLocked: $0) == true }
+        control.customInstantiatedStates = items.indices.map { delegate?.selector(self, isInstantiated: $0) == true }
+        control.customLabels = items
+        control.showInstantiationState = showInstantiationState
+        
         for (i, item) in items.enumerated() {
             control.setLabel(item, forSegment: i)
             control.setImage(nil, forSegment: i)
@@ -398,14 +408,11 @@ class CollapsibleSelector: NSView {
         
         let panelX: CGFloat
         if _selectedSegment >= 0, items.indices.contains(_selectedSegment) {
-            // Calculate Active Segment Center using Measured Strategy (Unified)
             var currentX: CGFloat = 0
             for i in 0..<_selectedSegment {
-                let w = (items[i] as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width + labelPadding + 1 // Segment separator is 1pt
-                currentX += w
+                currentX += control.width(forSegment: i)
             }
-            
-            let selectedWidth = (items[_selectedSegment] as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width + labelPadding
+            let selectedWidth = control.width(forSegment: _selectedSegment)
             let selectedCenter = currentX + selectedWidth / 2
             panelX = collapsedCenter - selectedCenter
         } else {

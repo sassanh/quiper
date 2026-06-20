@@ -78,6 +78,7 @@ extension MainWindowController {
         guard let drag = dragArea,
               let title = titleLabel,
               let actionsBtn = sessionActionsButton else { return }
+
         
         let isBottom = Settings.shared.dragAreaPosition == .bottom
         findBarViewController?.layoutIn(parentWindow: window!, topOffset: isBottom ? 0 : Constants.DRAGGABLE_AREA_HEIGHT)
@@ -276,12 +277,18 @@ extension MainWindowController {
     }
 
     func refreshServiceSegments() {
-        serviceSelector?.segmentCount = services.count
         let items = services.map { $0.name }
+        
+        if let segControl = serviceSelector {
+            segControl.segmentCount = items.count
+            segControl.customLockedStates = services.map { $0.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: $0.id) }
+            segControl.customLabels = items
+        }
         
         for (index, item) in items.enumerated() {
             serviceSelector?.setLabel(item, forSegment: index)
             serviceSelector?.setToolTip(services[index].name, forSegment: index)
+            serviceSelector?.setImage(nil, forSegment: index)
         }
 
         collapsibleServiceSelector?.setItems(items)
@@ -366,10 +373,12 @@ extension MainWindowController {
     }
 
     func estimatedWidthForServiceSegments() -> CGFloat {
-        let font = serviceSelector?.font ?? NSFont.systemFont(ofSize: 13)
+        let font = serviceSelector?.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize(for: serviceSelector?.controlSize ?? .regular))
         return services.reduce(0) { partialResult, service in
             let size = (service.name as NSString).size(withAttributes: [.font: font])
-            return partialResult + size.width + 20
+            let isLocked = service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+            let w = size.width + 16 + (isLocked ? 13 : 0)
+            return partialResult + w
         }
     }
 
