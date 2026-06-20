@@ -308,6 +308,24 @@ extension MainWindowController: CollapsibleSelectorDelegate {
         return true
     }
     
+    func selector(_ selector: CollapsibleSelector, isLocked index: Int) -> Bool {
+        if selector === collapsibleServiceSelector {
+            guard services.indices.contains(index) else { return false }
+            let service = services[index]
+            return service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+        }
+        return false
+    }
+    
+    func segmentedControl(_ control: SegmentedControl, isLocked index: Int) -> Bool {
+        if control === serviceSelector {
+            guard services.indices.contains(index) else { return false }
+            let service = services[index]
+            return service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+        }
+        return false
+    }
+    
     func selector(_ selector: CollapsibleSelector, didDragSegment index: Int, to newIndex: Int) {
     }
     

@@ -850,8 +850,11 @@ struct SecureTabState: Codable {
         serviceSel.segmentCount = services.count
         for (index, service) in services.enumerated() {
             serviceSel.setLabel(service.name, forSegment: index)
+            serviceSel.setImage(nil, forSegment: index)
             serviceSel.setToolTip(service.name, forSegment: index)
         }
+        serviceSel.customLockedStates = services.map { $0.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: $0.id) }
+        serviceSel.customLabels = services.map { $0.name }
         serviceSel.setAccessibilityIdentifier("ServiceSelector")
         drag.addSubview(serviceSel)
         serviceSelector = serviceSel
@@ -882,9 +885,11 @@ struct SecureTabState: Codable {
         let sessionSel = SegmentedControl(frame: .zero)
         sessionSel.trackingMode = .selectOne
         sessionSel.segmentCount = 10
+        sessionSel.customLabels = (0..<10).map { "\($0 == 9 ? 0 : $0 + 1)" }
         for i in 0..<10 {
             sessionSel.setLabel("\(i == 9 ? 0 : i + 1)", forSegment: i)
         }
+        
         sessionSel.target = self
         sessionSel.action = #selector(sessionChanged(_:))
         sessionSel.selectorDelegate = self
