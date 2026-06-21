@@ -597,8 +597,38 @@ enum TabSurvivalPolicy: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+struct TabInputState: Codable, Equatable {
+    var text: String
+    var isContentEditable: Bool
+    var start: Int
+    var end: Int
+}
+
 struct PersistedTabState: Codable {
     var activeServiceURL: String?
     var activeIndicesByURL: [String: Int] = [:]
     var openTabs: [String: [Int: String]] = [:] // serviceURL -> [sessionIndex: currentURL]
+    var tabInputs: [String: [Int: TabInputState]] = [:] // serviceURL -> [sessionIndex: TabInputState]
+
+    enum CodingKeys: String, CodingKey {
+        case activeServiceURL
+        case activeIndicesByURL
+        case openTabs
+        case tabInputs
+    }
+
+    init(activeServiceURL: String? = nil, activeIndicesByURL: [String: Int] = [:], openTabs: [String: [Int: String]] = [:], tabInputs: [String: [Int: TabInputState]] = [:]) {
+        self.activeServiceURL = activeServiceURL
+        self.activeIndicesByURL = activeIndicesByURL
+        self.openTabs = openTabs
+        self.tabInputs = tabInputs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        activeServiceURL = try container.decodeIfPresent(String.self, forKey: .activeServiceURL)
+        activeIndicesByURL = try container.decodeIfPresent([String: Int].self, forKey: .activeIndicesByURL) ?? [:]
+        openTabs = try container.decodeIfPresent([String: [Int: String]].self, forKey: .openTabs) ?? [:]
+        tabInputs = try container.decodeIfPresent([String: [Int: TabInputState]].self, forKey: .tabInputs) ?? [:]
+    }
 }

@@ -272,11 +272,167 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let selector = FocusSelectorStorage.loadSelector(serviceID: service.id, fallback: service.focus_selector)
         guard !selector.isEmpty else { return }
         guard let webView = currentWebView() else { return }
-        let escaped = escapeForJavaScript(selector)
-        webView.evaluateJavaScript(
-            "setTimeout(() => document.querySelector(\"\(escaped)\")?.focus(), 0);",
-            completionHandler: nil
-        )
+        let escapedSelector = escapeForJavaScript(selector)
+        
+        let sessionIdx = activeIndicesByURL[service.url] ?? 0
+        let shouldRestore = service.preservePrompt
+        let inputState = shouldRestore ? webViewManager?.getTabInputState(for: service.url, sessionIndex: sessionIdx) : nil
+        
+        let hasSaved = inputState != nil
+        let textVal = inputState?.text ?? ""
+        let startVal = inputState?.start ?? 0
+        let endVal = inputState?.end ?? 0
+        let jsString = """
+        (function() {
+            const selector = "\(escapedSelector)";
+            const hasSaved = \(hasSaved);
+            const text = \(escapeForJavaScriptLiteral(textVal));
+            const start = \(startVal);
+            const end = \(endVal);
+            
+            function getContentEditableSelection(el) {
+                const selection = window.getSelection();
+                if (!selection.rangeCount) return { start: 0, end: 0 };
+                const range = selection.getRangeAt(0);
+                const preCaretRange = range.cloneRange();
+                preCaretRange.selectNodeContents(el);
+                preCaretRange.setEnd(range.startContainer, range.startOffset);
+                const startOffset = preCaretRange.toString().length;
+                preCaretRange.setEnd(range.endContainer, range.endOffset);
+                const endOffset = preCaretRange.toString().length;
+                return { start: startOffset, end: endOffset };
+            }
+
+            function setContentEditableSelection(el, start, end) {
+                const range = document.createRange();
+                const selection = window.getSelection();
+                
+                let currentOffset = 0;
+                let startNode = null;
+                let startNodeOffset = 0;
+                let endNode = null;
+                let endNodeOffset = 0;
+                
+                function traverse(node) {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        const len = node.length;
+                        if (!startNode && currentOffset + len >= start) {
+                            startNode = node;
+                            startNodeOffset = start - currentOffset;
+                        }
+                        if (!endNode && currentOffset + len >= end) {
+                            endNode = node;
+                            endNodeOffset = end - currentOffset;
+                        }
+                        currentOffset += len;
+                    } else {
+                        for (let i = 0; i < node.childNodes.length; i++) {
+                            traverse(node.childNodes[i]);
+                            if (startNode && endNode) break;
+                        }
+                    }
+                }
+                
+                traverse(el);
+                
+                if (!startNode) {
+                    startNode = el;
+                    startNodeOffset = el.childNodes.length;
+                }
+                if (!endNode) {
+                    endNode = el;
+                    endNodeOffset = el.childNodes.length;
+                }
+                
+                try {
+                    range.setStart(startNode, startNodeOffset);
+                    range.setEnd(endNode, endNodeOffset);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                } catch (e) {
+                    console.error("Error setting contenteditable selection", e);
+                }
+            }
+
+            function tryFocusAndRestore(el) {
+                const isContentEditable = el.contentEditable === 'true' || el.getAttribute('contenteditable') === 'true';
+                
+                if (hasSaved) {
+                    window.__quiperHasSavedSelection = true;
+                    window.__quiperSavedStart = start;
+                    window.__quiperSavedEnd = end;
+                    
+                    if (isContentEditable) {
+                        if (typeof text === 'string' && el.innerText !== text) {
+                            el.innerText = text;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    } else {
+                        if (typeof text === 'string' && el.value !== text) {
+                            el.value = text;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }
+                } else {
+                    window.__quiperHasSavedSelection = false;
+                }
+                
+                el.focus();
+                
+                if (hasSaved) {
+                    if (isContentEditable) {
+                        setContentEditableSelection(el, start, end);
+                    } else {
+                        el.setSelectionRange(start, end);
+                    }
+                }
+
+                // Register a focus listener to override programmatic focus resets
+                if (!el.__quiperFocusListenerAdded) {
+                    el.__quiperFocusListenerAdded = true;
+                    el.addEventListener('focus', () => {
+                        const lastInteract = window.__quiperLastInteractionTime || 0;
+                        if (hasSaved && (Date.now() - lastInteract > 300)) {
+                            if (isContentEditable) {
+                                setContentEditableSelection(el, start, end);
+                            } else {
+                                el.setSelectionRange(start, end);
+                            }
+                        }
+                    });
+                }
+            }
+
+            if (window.__quiperFocusInterval) {
+                clearInterval(window.__quiperFocusInterval);
+                window.__quiperFocusInterval = null;
+            }
+
+            const initialEl = document.querySelector(selector);
+            if (initialEl) {
+                tryFocusAndRestore(initialEl);
+                return;
+            }
+
+            const startTime = Date.now();
+            const timeout = 15000;
+            window.__quiperFocusInterval = setInterval(() => {
+                const polledEl = document.querySelector(selector);
+                if (polledEl) {
+                    clearInterval(window.__quiperFocusInterval);
+                    window.__quiperFocusInterval = null;
+                    tryFocusAndRestore(polledEl);
+                } else if (Date.now() - startTime > timeout) {
+                    clearInterval(window.__quiperFocusInterval);
+                    window.__quiperFocusInterval = null;
+                }
+            }, 100);
+        })();
+        """
+        
+        webView.evaluateJavaScript(jsString, completionHandler: nil)
     }
 
     func focusInputInActiveWebviewWithFallback() {
@@ -400,6 +556,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private func escapeForJavaScriptLiteral(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+        return "\"\(escaped)\""
     }
 
     var isEmptyStateActive: Bool {
@@ -721,6 +886,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 struct SecureTabState: Codable {
     var activeIndex: Int
     var openTabs: [Int: String]
+    var tabInputs: [Int: TabInputState]?
+
+    enum CodingKeys: String, CodingKey {
+        case activeIndex
+        case openTabs
+        case tabInputs
+    }
+
+    init(activeIndex: Int, openTabs: [Int: String], tabInputs: [Int: TabInputState]?) {
+        self.activeIndex = activeIndex
+        self.openTabs = openTabs
+        self.tabInputs = tabInputs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        activeIndex = try container.decode(Int.self, forKey: .activeIndex)
+        openTabs = try container.decode([Int: String].self, forKey: .openTabs)
+        tabInputs = try container.decodeIfPresent([Int: TabInputState].self, forKey: .tabInputs)
+    }
 }
 
     func saveTabsState() {
@@ -746,6 +931,14 @@ struct SecureTabState: Codable {
 
         if let manager = webViewManager {
             var allOpenTabs = manager.getOpenSessionsState()
+            var allTabInputs = manager.getOpenSessionsInputState()
+            
+            // Filter out services with preservePrompt disabled
+            for svc in services {
+                if !svc.preservePrompt {
+                    allTabInputs.removeValue(forKey: svc.url)
+                }
+            }
             
             // Extract and save encrypted services securely
             for svc in services where svc.isEncrypted {
@@ -753,7 +946,8 @@ struct SecureTabState: Codable {
                     // Only save to secure storage if it's currently unlocked
                     if EncryptedVolumeManager.shared.isUnlocked(for: svc.id) {
                         let activeIdx = activeIndicesByURL[svc.url] ?? 0
-                        let secureState = SecureTabState(activeIndex: activeIdx, openTabs: sessions)
+                        let secureInputs = allTabInputs[svc.url]
+                        let secureState = SecureTabState(activeIndex: activeIdx, openTabs: sessions, tabInputs: secureInputs)
                         let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: svc.id).appendingPathComponent("quiper_tabs.json")
                         if let data = try? JSONEncoder().encode(secureState) {
                             try? data.write(to: stateURL)
@@ -762,8 +956,10 @@ struct SecureTabState: Codable {
                 }
                 // Remove from the global unencrypted state
                 allOpenTabs.removeValue(forKey: svc.url)
+                allTabInputs.removeValue(forKey: svc.url)
             }
             state.openTabs = allOpenTabs
+            state.tabInputs = allTabInputs
         }
 
         Settings.shared.persistedTabState = state
@@ -783,10 +979,26 @@ struct SecureTabState: Codable {
             }
         }
 
+        // Restore tab input states
+        webViewManager.restoreTabInputStates(savedState.tabInputs)
+
         // Restore open tabs
         for (svcURL, sessions) in savedState.openTabs {
             guard let service = services.first(where: { $0.url == svcURL }) else { continue }
-            for (sessionIndex, urlString) in sessions {
+            
+            var secureSessions = sessions
+            if service.isEncrypted && EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
+                let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: service.id).appendingPathComponent("quiper_tabs.json")
+                if let data = try? Data(contentsOf: stateURL),
+                   let secureState = try? JSONDecoder().decode(SecureTabState.self, from: data) {
+                    secureSessions = secureState.openTabs
+                    if let secureInputs = secureState.tabInputs {
+                        webViewManager.restoreTabInputStates([service.url: secureInputs])
+                    }
+                }
+            }
+            
+            for (sessionIndex, urlString) in secureSessions {
                 // Pre-instantiate the webview with its restored URL
                 _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString)
 
@@ -1184,6 +1396,7 @@ struct SecureTabState: Codable {
         }
         GhostOnboardingManager.shared.windowDidResignKey()
         hideModifierHUD()
+        saveTabsState()
     }
 }
 

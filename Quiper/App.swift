@@ -771,6 +771,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        statusBarController?.appController.window.saveTabsState()
         if Settings.shared.tabSurvivalPolicy == .askOnExit {
             NSApp.activate(ignoringOtherApps: true)
 

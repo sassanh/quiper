@@ -21,6 +21,7 @@ struct Service: Codable, Identifiable {
     var lockOnSwitchAway: Bool = true
     var lockAfterInactivity: Bool = false
     var autoLockInactivityTimeout: Int = 5
+    var preservePrompt: Bool = true
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -38,6 +39,7 @@ struct Service: Codable, Identifiable {
         case lockAfterInactivity
         case autoLockInactivityTimeout
         case autoLockPolicy // Keep for decoding legacy settings
+        case preservePrompt
     }
 
     init(id: UUID = UUID(),
@@ -53,7 +55,8 @@ struct Service: Codable, Identifiable {
          isEncrypted: Bool = false,
          lockOnSwitchAway: Bool = true,
          lockAfterInactivity: Bool = false,
-         autoLockInactivityTimeout: Int = 5) {
+         autoLockInactivityTimeout: Int = 5,
+         preservePrompt: Bool = true) {
         self.id = id
         self.name = name
         self.url = url
@@ -68,6 +71,7 @@ struct Service: Codable, Identifiable {
         self.lockOnSwitchAway = lockOnSwitchAway
         self.lockAfterInactivity = lockAfterInactivity
         self.autoLockInactivityTimeout = autoLockInactivityTimeout
+        self.preservePrompt = preservePrompt
     }
 
     init(from decoder: Decoder) throws {
@@ -99,6 +103,7 @@ struct Service: Codable, Identifiable {
         }
         
         autoLockInactivityTimeout = try container.decodeIfPresent(Int.self, forKey: .autoLockInactivityTimeout) ?? 5
+        preservePrompt = try container.decodeIfPresent(Bool.self, forKey: .preservePrompt) ?? true
     }
 
     func encode(to encoder: Encoder) throws {
@@ -129,6 +134,7 @@ struct Service: Codable, Identifiable {
         try container.encode(lockOnSwitchAway, forKey: .lockOnSwitchAway)
         try container.encode(lockAfterInactivity, forKey: .lockAfterInactivity)
         try container.encode(autoLockInactivityTimeout, forKey: .autoLockInactivityTimeout)
+        try container.encode(preservePrompt, forKey: .preservePrompt)
     }
 }
 

@@ -406,6 +406,8 @@ extension MainWindowController: WebViewManagerDelegate {
         saveTabsState()
         guard webView == currentWebView() else { return }
         
+        webView.evaluateJavaScript("window.__quiperInputTrackerActive = true", completionHandler: nil)
+        
         if webView.title?.isEmpty ?? true {
              updateTitleLabel(withFallback: "-")
         }

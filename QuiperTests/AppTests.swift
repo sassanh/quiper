@@ -56,9 +56,14 @@ class MockMainWindowController: MainWindowControlling {
     var selectServiceWithURLCalled = false
     var switchSessionCalled = false
     var showQuitOverlayCalled = false
+    var saveTabsStateCalled = false
     
     func showQuitOverlay() {
         showQuitOverlayCalled = true
+    }
+
+    func saveTabsState() {
+        saveTabsStateCalled = true
     }
 
     func show() {
@@ -139,19 +144,22 @@ final class AppControllerTests: XCTestCase {
         mockNotificationDispatcher = MockNotificationDispatcher()
         
         await MainActor.run {
+            Settings.shared.wipeAllData()
+            _ = Settings.shared.loadSettings()
             appController = AppController(windowController: mockMainWindowController, hotkeyManager: mockHotkeyManager, engineHotkeyManager: mockEngineHotkeyManager, notificationDispatcher: mockNotificationDispatcher)
         }
     }
 
     override func tearDown() async throws {
-        try await super.tearDown()
         await MainActor.run {
+            Settings.shared.wipeAllData()
             appController = nil
             mockHotkeyManager = nil
             mockEngineHotkeyManager = nil
             mockMainWindowController = nil
             mockNotificationDispatcher = nil
         }
+        try await super.tearDown()
     }
 
     func testInitialization() {

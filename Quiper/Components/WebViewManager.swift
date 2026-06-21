@@ -33,6 +33,7 @@ final class WebViewManager: NSObject {
     private var navigationContinuations: [ObjectIdentifier: CheckedContinuation<Void, Never>] = [:]
     private var initialLoadAwaitingFocus = Set<ObjectIdentifier>()
     private var notificationBridges: [ObjectIdentifier: WebNotificationBridge] = [:]
+    private var tabInputStates: [String: [Int: TabInputState]] = [:]
 
     init(containerView: NSView) {
         self.containerView = containerView
@@ -72,6 +73,13 @@ final class WebViewManager: NSObject {
         }
         
         self.services = newServices
+
+        let incomingURLs = Set(newServices.map { $0.url })
+        for url in tabInputStates.keys {
+            if !incomingURLs.contains(url) {
+                tabInputStates.removeValue(forKey: url)
+            }
+        }
     }
     
     func updateZoomLevels(_ levels: [String: CGFloat]) {
@@ -111,6 +119,7 @@ final class WebViewManager: NSObject {
         tearDownWebView(webView)
         webviewsByID[service.id]?.removeValue(forKey: sessionIndex)
         wrappersByID[service.id]?.removeValue(forKey: sessionIndex)
+        tabInputStates[service.url]?.removeValue(forKey: sessionIndex)
     }
 
     func getOpenSessionsState() -> [String: [Int: String]] {
@@ -134,6 +143,310 @@ final class WebViewManager: NSObject {
             }
         }
         return state
+    }
+
+    func getOpenSessionsInputState() -> [String: [Int: TabInputState]] {
+        return tabInputStates
+    }
+
+    func getTabInputState(for serviceURL: String, sessionIndex: Int) -> TabInputState? {
+        return tabInputStates[serviceURL]?[sessionIndex]
+    }
+
+    func setTabInputState(_ state: TabInputState, for serviceURL: String, sessionIndex: Int) {
+        if tabInputStates[serviceURL] == nil {
+            tabInputStates[serviceURL] = [:]
+        }
+        tabInputStates[serviceURL]?[sessionIndex] = state
+    }
+
+    func restoreTabInputStates(_ states: [String: [Int: TabInputState]]) {
+        for (url, sessionMap) in states {
+            if self.tabInputStates[url] == nil {
+                self.tabInputStates[url] = [:]
+            }
+            for (idx, state) in sessionMap {
+                self.tabInputStates[url]?[idx] = state
+            }
+        }
+    }
+
+    func didReceiveInputStateMessage(_ message: WKScriptMessage) {
+        NSLog("[Quiper] didReceiveInputStateMessage: name=\(message.name)")
+        guard message.name == "quiperInputState",
+              let payload = message.body as? [String: Any] else {
+            NSLog("[Quiper] message.name mismatch or body is not a dictionary")
+            return
+        }
+
+        guard let text = payload["text"] as? String else {
+            NSLog("[Quiper] text is missing or not a String: \(String(describing: payload["text"]))")
+            return
+        }
+        guard let isContentEditable = payload["isContentEditable"] as? Bool else {
+            NSLog("[Quiper] isContentEditable is missing or not a Bool: \(String(describing: payload["isContentEditable"]))")
+            return
+        }
+        guard let start = payload["start"] as? Int else {
+            NSLog("[Quiper] start is missing or not an Int: \(String(describing: payload["start"]))")
+            return
+        }
+        guard let end = payload["end"] as? Int else {
+            NSLog("[Quiper] end is missing or not an Int: \(String(describing: payload["end"]))")
+            return
+        }
+
+        guard let webView = message.webView,
+              let (service, sessionIndex) = findServiceAndSession(for: webView) else {
+            NSLog("[Quiper] webView or service/sessionIndex not found")
+            return
+        }
+
+        guard service.preservePrompt else {
+            return
+        }
+
+        let debug = payload["debug"] as? String ?? ""
+        NSLog("[Quiper] Successfully parsed input state: textLength=\(text.count), isContentEditable=\(isContentEditable), start=\(start), end=\(end), debug='\(debug)' for \(service.name) index \(sessionIndex)")
+        let inputState = TabInputState(text: text, isContentEditable: isContentEditable, start: start, end: end)
+        setTabInputState(inputState, for: service.url, sessionIndex: sessionIndex)
+    }
+
+    func findServiceAndSession(for webView: WKWebView) -> (Service, Int)? {
+        for service in services {
+            if let map = webviewsByID[service.id] {
+                for (idx, wv) in map {
+                    if wv == webView {
+                        return (service, idx)
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    private func makeInputStateTrackerScript(for service: Service) -> WKUserScript {
+        let selector = FocusSelectorStorage.loadSelector(serviceID: service.id, fallback: service.focus_selector)
+        let escapedSelector = selector
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            
+        let source = """
+        (function() {
+            if (window.__quiperInputTrackerInstalled) return;
+            window.__quiperInputTrackerInstalled = true;
+            window.__quiperInputTrackerActive = false;
+
+            const selector = "\(escapedSelector)";
+
+            function getContentEditableSelection(el) {
+                try {
+                    const selection = window.getSelection();
+                    if (!selection.rangeCount) return { start: 0, end: 0, debug: "no rangeCount" };
+                    const range = selection.getRangeAt(0);
+                    
+                    if (!el.contains(range.startContainer)) {
+                        return { start: 0, end: 0, debug: "el does not contain startContainer" };
+                    }
+                    
+                    const preCaretRange = range.cloneRange();
+                    preCaretRange.selectNodeContents(el);
+                    preCaretRange.setEnd(range.startContainer, range.startOffset);
+                    const startOffset = preCaretRange.toString().length;
+                    preCaretRange.setEnd(range.endContainer, range.endOffset);
+                    const endOffset = preCaretRange.toString().length;
+                    return { start: startOffset, end: endOffset, debug: "ok" };
+                } catch (e) {
+                    console.error("Quiper: error getting contenteditable selection", e);
+                    return { start: 0, end: 0, debug: "exception: " + e.message };
+                }
+            }
+
+            function setContentEditableSelection(el, start, end) {
+                const range = document.createRange();
+                const selection = window.getSelection();
+                
+                let currentOffset = 0;
+                let startNode = null;
+                let startNodeOffset = 0;
+                let endNode = null;
+                let endNodeOffset = 0;
+                
+                function traverse(node) {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        const len = node.length;
+                        if (!startNode && currentOffset + len >= start) {
+                            startNode = node;
+                            startNodeOffset = start - currentOffset;
+                        }
+                        if (!endNode && currentOffset + len >= end) {
+                            endNode = node;
+                            endNodeOffset = end - currentOffset;
+                        }
+                        currentOffset += len;
+                    } else {
+                        for (let i = 0; i < node.childNodes.length; i++) {
+                            traverse(node.childNodes[i]);
+                            if (startNode && endNode) break;
+                        }
+                    }
+                }
+                
+                traverse(el);
+                
+                if (!startNode) {
+                    startNode = el;
+                    startNodeOffset = el.childNodes.length;
+                }
+                if (!endNode) {
+                    endNode = el;
+                    endNodeOffset = el.childNodes.length;
+                }
+                
+                try {
+                    range.setStart(startNode, startNodeOffset);
+                    range.setEnd(endNode, endNodeOffset);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                } catch (e) {
+                    console.error("Error setting contenteditable selection", e);
+                }
+            }
+
+            function getElementState(el) {
+                if (!el) return null;
+                const isContentEditable = el.contentEditable === 'true' || el.getAttribute('contenteditable') === 'true';
+                if (isContentEditable) {
+                    const sel = getContentEditableSelection(el);
+                    return {
+                        text: el.innerText || "",
+                        isContentEditable: true,
+                        start: typeof sel.start === 'number' ? sel.start : 0,
+                        end: typeof sel.end === 'number' ? sel.end : 0,
+                        debug: sel.debug || ""
+                    };
+                } else if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                    let start = 0;
+                    let end = 0;
+                    try {
+                        start = typeof el.selectionStart === 'number' ? el.selectionStart : 0;
+                        end = typeof el.selectionEnd === 'number' ? el.selectionEnd : 0;
+                    } catch (e) {
+                        // ignore if selection is not supported by input type
+                    }
+                    return {
+                        text: el.value || "",
+                        isContentEditable: false,
+                        start: start,
+                        end: end,
+                        debug: "input"
+                    };
+                }
+                return null;
+            }
+
+            function getTargetElement() {
+                if (!selector) return null;
+                return document.querySelector(selector);
+            }
+
+            let lastSentText = null;
+            let lastSentStart = null;
+            let lastSentEnd = null;
+
+            function sendState(immediate) {
+                if (window.__quiperInputTrackerActive === false) return;
+                const el = getTargetElement();
+                if (!el) return;
+                
+                const hasFocus = document.hasFocus();
+                const state = getElementState(el);
+                if (!state) return;
+
+                let start = state.start;
+                let end = state.end;
+                if (!hasFocus) {
+                    start = lastSentStart !== null ? lastSentStart : state.start;
+                    end = lastSentEnd !== null ? lastSentEnd : state.end;
+                }
+
+                if (state.text === lastSentText && start === lastSentStart && end === lastSentEnd) {
+                    return;
+                }
+
+                lastSentText = state.text;
+                lastSentStart = start;
+                lastSentEnd = end;
+
+                const payload = {
+                    text: state.text,
+                    isContentEditable: state.isContentEditable,
+                    start: start,
+                    end: end,
+                    debug: state.debug || ""
+                };
+
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.quiperInputState) {
+                    window.webkit.messageHandlers.quiperInputState.postMessage(payload);
+                }
+            }
+
+            let debounceTimer = null;
+            function debouncedSend() {
+                if (debounceTimer) clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    sendState(false);
+                }, 150);
+            }
+
+            // User interaction tracking
+            window.__quiperLastInteractionTime = 0;
+            function updateInteractionTime() {
+                window.__quiperLastInteractionTime = Date.now();
+                window.__quiperHasSavedSelection = false;
+            }
+            document.addEventListener('mousedown', updateInteractionTime, true);
+            document.addEventListener('keydown', updateInteractionTime, true);
+            document.addEventListener('touchstart', updateInteractionTime, true);
+
+            document.addEventListener('input', (e) => {
+                const el = getTargetElement();
+                if (el && (el === e.target || el.contains(e.target))) {
+                    debouncedSend();
+                }
+            }, true);
+
+            document.addEventListener('selectionchange', () => {
+                const el = getTargetElement();
+                if (el && (document.activeElement === el || el.contains(document.activeElement))) {
+                    const lastInteract = window.__quiperLastInteractionTime || 0;
+                    if (Date.now() - lastInteract < 500) {
+                        debouncedSend();
+                    } else if (window.__quiperHasSavedSelection) {
+                        const current = getElementState(el);
+                        if (current && (current.start !== window.__quiperSavedStart || current.end !== window.__quiperSavedEnd)) {
+                            if (current.isContentEditable) {
+                                setContentEditableSelection(el, window.__quiperSavedStart, window.__quiperSavedEnd);
+                            } else {
+                                el.setSelectionRange(window.__quiperSavedStart, window.__quiperSavedEnd);
+                            }
+                        }
+                    }
+                }
+            });
+
+            window.addEventListener('blur', () => {
+                sendState(true);
+            });
+
+            window.addEventListener('pagehide', () => {
+                sendState(true);
+            });
+        })();
+        """
+        return WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
     }
     
     func getOrCreateWebView(for service: Service, sessionIndex: Int, dragArea: NSView?, targetURL: String? = nil) -> WKWebView {
@@ -286,17 +599,20 @@ final class WebViewManager: NSObject {
                             self.webviewsByID[service.id]?[sessionIndex] = realWebView
                             self.urlsByWebView[ObjectIdentifier(realWebView)] = service.url
                             
-                            // Load real URL
-                            var targetURLString = serviceUrl
-                            if Settings.shared.tabSurvivalPolicy != .never {
-                                let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceId).appendingPathComponent("quiper_tabs.json")
-                                if let data = try? Data(contentsOf: stateURL),
-                                   let state = try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data) {
-                                    if let saved = state.openTabs[sessionIndex] {
-                                        targetURLString = saved
-                                    }
-                                }
-                            }
+                             // Load real URL
+                             var targetURLString = serviceUrl
+                             if Settings.shared.tabSurvivalPolicy != .never {
+                                 let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceId).appendingPathComponent("quiper_tabs.json")
+                                 if let data = try? Data(contentsOf: stateURL),
+                                    let state = try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data) {
+                                     if let saved = state.openTabs[sessionIndex] {
+                                         targetURLString = saved
+                                     }
+                                     if let secureInputs = state.tabInputs {
+                                         self.restoreTabInputStates([service.url: secureInputs])
+                                     }
+                                 }
+                             }
                             
                             if let url = URL(string: targetURLString) {
                                 NSLog("[LockOverlay] Loading URL: %@", targetURLString)
@@ -387,6 +703,13 @@ final class WebViewManager: NSObject {
             userContentController.addUserScript(userScript)
         }
 
+        // Inject input state tracking user script
+        let inputScript = makeInputStateTrackerScript(for: service)
+        userContentController.addUserScript(inputScript)
+        
+        let inputHandler = InputStateScriptMessageHandler(manager: self)
+        userContentController.add(inputHandler, name: "quiperInputState")
+
         let webview = WKWebView(frame: bounds, configuration: config)
         webview.setValue(false, forKey: "drawsBackground")
         webview.autoresizingMask = [.width, .height]
@@ -409,6 +732,7 @@ final class WebViewManager: NSObject {
             sessionMap.values.forEach { webView in
                 if let wrapper = webView.superview {
                     wrapper.isHidden = true
+                    webView.evaluateJavaScript("window.__quiperInputTrackerActive = false", completionHandler: nil)
                 }
             }
         }
@@ -490,6 +814,7 @@ final class WebViewManager: NSObject {
         }
         
         wrapper.isHidden = false
+        webView.evaluateJavaScript("window.__quiperInputTrackerActive = true", completionHandler: nil)
         
         if let container = containerView, wrapper.superview != container {
             if let dragArea = self.dragArea {
@@ -547,6 +872,7 @@ final class WebViewManager: NSObject {
         webView.navigationDelegate = nil
  
         detachNotificationBridge(from: webView)
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "quiperInputState")
  
         // Resume and clear any pending navigation continuation to prevent CheckedContinuation leaks
         let token = ObjectIdentifier(webView)
@@ -1032,5 +1358,20 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         
         // 4. Update the delegate so it sets up layout correctly
         self.delegate?.engineDidUnlock(serviceID: serviceID)
+    }
+}
+
+private final class InputStateScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    private weak var manager: WebViewManager?
+    
+    init(manager: WebViewManager) {
+        self.manager = manager
+    }
+    
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        let mgr = manager
+        Task { @MainActor in
+            mgr?.didReceiveInputStateMessage(message)
+        }
     }
 }

@@ -1000,13 +1000,13 @@ struct ServiceDetailView: View {
                 }
 
                 Section("Routing") {
-                    Label("Focus Selector", systemImage: "eye.fill")
-                        .tag(DetailSelection.focus)
                     Label("Friend Domains", systemImage: "link")
                         .tag(DetailSelection.friendDomains)
                 }
                 
                 Section("Customization") {
+                    Label("Prompt Element", systemImage: "eye.fill")
+                        .tag(DetailSelection.focus)
                     Label("Custom CSS", systemImage: "paintpalette.fill")
                         .tag(DetailSelection.css)
                 }
@@ -1067,34 +1067,122 @@ struct ServiceDetailView: View {
                 Image(systemName: "eye.fill")
                     .font(.title2)
                     .foregroundColor(.accentColor)
-                Text("Focus Selector")
+                Text("Prompt Element")
                     .font(.title3)
                     .fontWeight(.bold)
             }
             
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Specify a CSS selector (e.g. input[type='text']) to automatically target and focus a text input whenever this engine launches or gains activation.")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                HighlightedCodeContainer(
-                    code: Binding(
-                        get: { loadFocusSelector() },
-                        set: { newValue in
-                            service.focus_selector = newValue
-                            FocusSelectorStorage.saveSelector(newValue, serviceID: service.id)
-                            settings.saveSettings()
-                            appController?.reloadServices()
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Specify a CSS selector (e.g. input[type='text']) to automatically target and focus a text input whenever this engine launches or gains activation.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    HighlightedCodeContainer(
+                        code: Binding(
+                            get: { loadFocusSelector() },
+                            set: { newValue in
+                                service.focus_selector = newValue
+                                FocusSelectorStorage.saveSelector(newValue, serviceID: service.id)
+                                settings.saveSettings()
+                                appController?.reloadServices()
+                            }
+                        ),
+                        language: "css",
+                        fileName: "focus.txt",
+                        openInEditor: { openFocusSelectorInEditor() },
+                        revealInFinder: { revealFocusSelectorInFinder() },
+                        copyFilePath: { copyFocusSelectorFilePath() }
+                    )
+                    .frame(height: 200)
+                    
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    // Preserve Prompt Card
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Preserve Prompt")
+                                    .font(.body)
+                                    .fontWeight(.medium)
+                                Text("Automatically keep your typed prompts and selection ranges when switching engines or relaunching Quiper.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { service.preservePrompt },
+                                set: { newValue in
+                                    service.preservePrompt = newValue
+                                    settings.saveSettings()
+                                    appController?.reloadServices()
+                                }
+                            ))
+                            .toggleStyle(.switch)
                         }
-                    ),
-                    language: "css",
-                    fileName: "focus.txt",
-                    openInEditor: { openFocusSelectorInEditor() },
-                    revealInFinder: { revealFocusSelectorInFinder() },
-                    copyFilePath: { copyFocusSelectorFilePath() }
-                )
-                .frame(maxHeight: .infinity)
+                        
+                        // Graphic/Illustration Section
+                        HStack(spacing: 12) {
+                            VStack(alignment: .center, spacing: 4) {
+                                Image(systemName: "square.and.pencil")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(.accentColor)
+                                Text("Drafting")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(width: 54, height: 44)
+                            .background(Color(NSColor.controlBackgroundColor).opacity(0.6))
+                            .cornerRadius(6)
+                            
+                            Image(systemName: "arrow.right.circle.fill")
+                                .foregroundColor(.secondary.opacity(0.6))
+                                .font(.system(size: 12))
+                            
+                            VStack(alignment: .center, spacing: 4) {
+                                Image(systemName: "square.stack.3d.up.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.secondary)
+                                Text("Switch / Quit")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(width: 64, height: 44)
+                            .background(Color(NSColor.controlBackgroundColor).opacity(0.6))
+                            .cornerRadius(6)
+                            
+                            Image(systemName: "arrow.right.circle.fill")
+                                .foregroundColor(.secondary.opacity(0.6))
+                                .font(.system(size: 12))
+                            
+                            VStack(alignment: .center, spacing: 4) {
+                                Image(systemName: "arrow.uturn.backward.circle.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(.accentColor)
+                                Text("Restored")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(width: 54, height: 44)
+                            .background(Color(NSColor.controlBackgroundColor).opacity(0.6))
+                            .cornerRadius(6)
+                        }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 10)
+                        .background(Color.secondary.opacity(0.04))
+                        .cornerRadius(8)
+                    }
+                    .padding(14)
+                    .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+                    )
+                }
             }
         }
         .padding()

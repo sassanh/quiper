@@ -9,8 +9,17 @@ final class MainWindowControllerShortcutTests: XCTestCase {
         try await super.setUp()
         // Ensure tests are not affected by any persisted shortcut customizations.
         await MainActor.run {
+            Settings.shared.wipeAllData()
+            _ = Settings.shared.loadSettings()
             Settings.shared.appShortcutBindings = .defaults
         }
+    }
+
+    override func tearDown() async throws {
+        await MainActor.run {
+            Settings.shared.wipeAllData()
+        }
+        try await super.tearDown()
     }
 
     func testCommandArrowAdvancesSession() {

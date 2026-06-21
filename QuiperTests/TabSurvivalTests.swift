@@ -3,8 +3,14 @@ import Foundation
 import AppKit
 @testable import Quiper
 
+@Suite(.serialized)
 @MainActor
 struct TabSurvivalTests {
+
+    init() {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+    }
 
     @Test func tabSurvivalPolicy_AllCases() {
         #expect(TabSurvivalPolicy.allCases.count == 3)
@@ -34,6 +40,41 @@ struct TabSurvivalTests {
         #expect(decoded.activeIndicesByURL["https://gemini.google.com"] == 2)
         #expect(decoded.openTabs["https://gemini.google.com"]?[0] == "https://gemini.google.com/app")
         #expect(decoded.openTabs["https://gemini.google.com"]?[2] == "https://gemini.google.com/chat")
+    }
+
+    @Test func persistedTabState_Codable_WithInputs() throws {
+        let inputState = TabInputState(text: "Hello World", isContentEditable: true, start: 5, end: 11)
+        var state = PersistedTabState()
+        state.activeServiceURL = "https://gemini.google.com"
+        state.activeIndicesByURL = ["https://gemini.google.com": 2]
+        state.openTabs = ["https://gemini.google.com": [2: "https://gemini.google.com/chat"]]
+        state.tabInputs = ["https://gemini.google.com": [2: inputState]]
+
+        let data = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(PersistedTabState.self, from: data)
+
+        #expect(decoded.activeServiceURL == "https://gemini.google.com")
+        #expect(decoded.activeIndicesByURL["https://gemini.google.com"] == 2)
+        #expect(decoded.openTabs["https://gemini.google.com"]?[2] == "https://gemini.google.com/chat")
+        #expect(decoded.tabInputs["https://gemini.google.com"]?[2] == inputState)
+    }
+
+    @Test func persistedTabState_BackwardCompatibility() throws {
+        // Raw JSON without tabInputs
+        let jsonStr = """
+        {
+            "activeServiceURL": "https://gemini.google.com",
+            "activeIndicesByURL": {"https://gemini.google.com": 2},
+            "openTabs": {"https://gemini.google.com": {"2": "https://gemini.google.com/chat"}}
+        }
+        """
+        guard let data = jsonStr.data(using: .utf8) else { return }
+        let decoded = try JSONDecoder().decode(PersistedTabState.self, from: data)
+
+        #expect(decoded.activeServiceURL == "https://gemini.google.com")
+        #expect(decoded.activeIndicesByURL["https://gemini.google.com"] == 2)
+        #expect(decoded.openTabs["https://gemini.google.com"]?[2] == "https://gemini.google.com/chat")
+        #expect(decoded.tabInputs.isEmpty)
     }
 
     @Test func settings_TabSurvivalPolicyPersistence() throws {

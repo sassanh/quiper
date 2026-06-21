@@ -2,8 +2,13 @@ import Testing
 import Foundation
 @testable import Quiper
 
+@Suite(.serialized)
 @MainActor
 struct UpdateSettingsTests {
+    init() {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+    }
     
     @Test func updatePreferences_DefaultValue() {
         let prefs = UpdatePreferences()

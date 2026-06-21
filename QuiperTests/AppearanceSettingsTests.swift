@@ -3,8 +3,13 @@ import Foundation
 import AppKit
 @testable import Quiper
 
+@Suite(.serialized)
 @MainActor
 struct AppearanceSettingsTests {
+    init() {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+    }
     
     // MARK: - AppColorScheme Tests
     

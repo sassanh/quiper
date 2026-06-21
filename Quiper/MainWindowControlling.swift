@@ -19,6 +19,7 @@ protocol MainWindowControlling: AnyObject {
     func selectService(withURL url: String) -> Bool
     func switchSession(to index: Int)
     func showQuitOverlay()
+    func saveTabsState()
 }
 
 extension MainWindowController: MainWindowControlling {}
