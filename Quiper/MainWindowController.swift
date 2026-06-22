@@ -149,6 +149,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             removeObserver(self, forKeyPath: "window")
             win?.removeObserver(self, forKeyPath: "effectiveAppearance")
             NotificationCenter.default.removeObserver(self)
+            NSWorkspace.shared.notificationCenter.removeObserver(self)
             
             if let monitor = activityMonitor {
                 NSEvent.removeMonitor(monitor)
@@ -581,6 +582,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func show() {
+        checkInactivityLock()
         var didTeleport = false
         if let window = window {
             // Standard show attempt
@@ -1224,6 +1226,7 @@ struct SecureTabState: Codable {
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowAppearanceChanged), name: .windowAppearanceChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationStatusChanged), name: NSApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationStatusChanged), name: NSApplication.didResignActiveNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleWorkspaceWake), name: NSWorkspace.didWakeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleColorSchemeChanged), name: .colorSchemeChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowOnAllSpacesChanged), name: .showOnAllSpacesChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettings), name: .settingsWindowDidOpen, object: nil)
@@ -1264,12 +1267,18 @@ struct SecureTabState: Codable {
     }
 
     @objc private func handleApplicationStatusChanged(_ notification: Notification) {
-        if notification.name == NSApplication.didResignActiveNotification {
+        if notification.name == NSApplication.didBecomeActiveNotification {
+            checkInactivityLock()
+        } else if notification.name == NSApplication.didResignActiveNotification {
             isModifiersForHeaderDown = false
             collapsibleSessionSelector?.collapse()
             collapsibleServiceSelector?.collapse()
         }
         updateHeaderVisibility(animated: true)
+    }
+
+    @objc private func handleWorkspaceWake(_ notification: Notification) {
+        checkInactivityLock()
     }
 
     @objc private func handleDockVisibilityChanged(_ notification: Notification) {

@@ -232,7 +232,10 @@ extension MainWindowController {
     }
     
     func setupInactivityMonitoring() {
-        activityMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown, .mouseMoved]) { [weak self] event in
+        activityMonitor = NSEvent.addLocalMonitorForEvents(matching: [
+            .leftMouseDown, .rightMouseDown, .keyDown, .mouseMoved,
+            .scrollWheel, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged
+        ]) { [weak self] event in
             self?.lastActivityTime = Date()
             return event
         }
