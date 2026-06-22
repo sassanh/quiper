@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Control Center HUD Readability ([ModifierHUDView.swift](Quiper/Components/ModifierHUDView.swift))**: Resolved a critical readability issue in the Control Center HUD when the system is in Light Mode. Forced the HUD view to render using `.vibrantDark` appearance and resolved all dynamic layer colors (such as card background and separators) against the dark appearance context. Replaced the translucent card background with a high-opacity dark charcoal color to ensure text is fully readable against all background colors (even pure white or high-contrast split backgrounds).
+
 ## [4.2.0] - 2026-06-21
 
 ### Added

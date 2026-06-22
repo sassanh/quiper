@@ -33,6 +33,7 @@ final class ModifierHUDView: NSView {
         
         super.init(frame: frameRect)
         
+        self.appearance = NSAppearance(named: .vibrantDark)
         self.autoresizingMask = [.width, .height]
         
         visualEffectView.autoresizingMask = [.width, .height]
@@ -81,7 +82,7 @@ final class ModifierHUDView: NSView {
         
         containerView.wantsLayer = true
         containerView.layer?.cornerRadius = 16
-        containerView.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.55).cgColor
+        containerView.layer?.backgroundColor = NSColor(white: 0.12, alpha: 0.95).cgColor
         containerView.layer?.borderColor = NSColor.white.withAlphaComponent(0.08).cgColor
         containerView.layer?.borderWidth = 1
         containerView.layer?.shadowColor = NSColor.black.cgColor
@@ -142,7 +143,7 @@ final class ModifierHUDView: NSView {
         // Divider
         let divider = NSView()
         divider.wantsLayer = true
-        divider.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        divider.layer?.backgroundColor = self.resolvedCGColor(.separatorColor)
         divider.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(divider)
         
@@ -649,7 +650,7 @@ final class HUDEngineButton: NSControl {
     }
     
     override func mouseDown(with event: NSEvent) {
-        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.3).cgColor
+        layer?.backgroundColor = resolvedCGColor(NSColor.controlAccentColor.withAlphaComponent(0.3))
     }
     
     override func mouseUp(with event: NSEvent) {
@@ -662,16 +663,16 @@ final class HUDEngineButton: NSControl {
     
     private func updateAppearance() {
         if isSelected {
-            layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.2).cgColor
+            layer?.backgroundColor = resolvedCGColor(NSColor.controlAccentColor.withAlphaComponent(0.2))
             if isKeyboardHighlighted {
                 layer?.borderColor = NSColor.white.cgColor
                 layer?.borderWidth = 1.5
             } else {
-                layer?.borderColor = NSColor.controlAccentColor.cgColor
+                layer?.borderColor = resolvedCGColor(.controlAccentColor)
                 layer?.borderWidth = 1
             }
             titleField.textColor = .labelColor
-            activeDot.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+            activeDot.layer?.backgroundColor = resolvedCGColor(.controlAccentColor)
             activeDot.isHidden = false
             shortcutContainer.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.35).cgColor
             shortcutField.textColor = .labelColor
@@ -680,7 +681,7 @@ final class HUDEngineButton: NSControl {
             layer?.borderColor = isKeyboardHighlighted ? NSColor.white.withAlphaComponent(0.3).cgColor : NSColor.white.withAlphaComponent(0.12).cgColor
             layer?.borderWidth = isKeyboardHighlighted ? 1.5 : 1
             titleField.textColor = .labelColor
-            activeDot.layer?.backgroundColor = NSColor.secondaryLabelColor.cgColor
+            activeDot.layer?.backgroundColor = resolvedCGColor(.secondaryLabelColor)
             activeDot.isHidden = true
             shortcutContainer.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.3).cgColor
             shortcutField.textColor = .labelColor
@@ -689,7 +690,7 @@ final class HUDEngineButton: NSControl {
             layer?.borderColor = NSColor.white.withAlphaComponent(0.05).cgColor
             layer?.borderWidth = 1
             titleField.textColor = .secondaryLabelColor
-            activeDot.layer?.backgroundColor = NSColor.tertiaryLabelColor.cgColor
+            activeDot.layer?.backgroundColor = resolvedCGColor(.tertiaryLabelColor)
             activeDot.isHidden = true
             shortcutContainer.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.15).cgColor
             shortcutField.textColor = .secondaryLabelColor
@@ -753,7 +754,7 @@ final class HUDSessionButton: NSControl {
     }
     
     override func mouseDown(with event: NSEvent) {
-        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.4).cgColor
+        layer?.backgroundColor = resolvedCGColor(NSColor.controlAccentColor.withAlphaComponent(0.4))
     }
     
     override func mouseUp(with event: NSEvent) {
@@ -766,7 +767,7 @@ final class HUDSessionButton: NSControl {
     
     private func updateAppearance() {
         if isSelected {
-            layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+            layer?.backgroundColor = resolvedCGColor(.controlAccentColor)
             label.textColor = .white
             layer?.borderWidth = 0
         } else if isHovered {
@@ -880,7 +881,7 @@ final class HUDShortcutRow: NSControl {
     }
     
     override func mouseDown(with event: NSEvent) {
-        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.3).cgColor
+        layer?.backgroundColor = resolvedCGColor(NSColor.controlAccentColor.withAlphaComponent(0.3))
     }
     
     override func mouseUp(with event: NSEvent) {
@@ -1205,4 +1206,14 @@ extension ModifierHUDView: NSTextFieldDelegate {
 // MARK: - Flipped Stack View
 final class FlippedStackView: NSStackView {
     override var isFlipped: Bool { true }
+}
+
+extension NSView {
+    fileprivate func resolvedCGColor(_ color: NSColor) -> CGColor {
+        let oldAppearance = NSAppearance.current
+        NSAppearance.current = self.effectiveAppearance
+        let result = color.cgColor
+        NSAppearance.current = oldAppearance
+        return result
+    }
 }
