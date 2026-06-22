@@ -27,6 +27,7 @@ extension MainWindowController {
                 await MainActor.run {
                     updateActiveWebview(focusWebView: true, forceCreate: true)
                     updateSessionSelector()
+                    refreshServiceSegments()
                     layoutSelectors()
                 }
             } catch {
@@ -228,6 +229,9 @@ extension MainWindowController {
         webViewManager.tearDownAllWebViews(for: service)
         Task {
             try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
+            await MainActor.run {
+                self.refreshServiceSegments()
+            }
         }
     }
     
@@ -258,8 +262,12 @@ extension MainWindowController {
                     webViewManager.tearDownAllWebViews(for: service)
                     Task {
                         try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
-                        if self.currentService()?.id == service.id {
-                            self.updateActiveWebview(focusWebView: false)
+                        await MainActor.run {
+                            if self.currentService()?.id == service.id {
+                                self.updateActiveWebview(focusWebView: false)
+                            }
+                            self.refreshServiceSegments()
+                            self.layoutSelectors()
                         }
                     }
                 }
@@ -456,6 +464,7 @@ extension MainWindowController: WebViewManagerDelegate {
             }
         }
         
+        refreshServiceSegments()
         updateSessionSelector()
         layoutSelectors()
     }

@@ -182,12 +182,15 @@ final class NavigationShortcutsUITests: BaseUITest {
         wait(0.1)
         
         for assignment in assignments.reversed() {
-            // Use the unique recorder ID to scope the clear button query
-            let recorder = app.descendants(matching: .any).matching(identifier: assignment.id).firstMatch
-            let clearButton = recorder.buttons.matching(identifier: "xmark.circle.fill").firstMatch
-            if clearButton.waitForExistence(timeout: 2.0) {
-                clearButton.tap()
-                clearButton.waitForNonExistence(timeout: 2.0)
+            let cell = app.outlines.cells.containing(.staticText, identifier: assignment.rowTitle).firstMatch
+            if cell.waitForExistence(timeout: 2.0) {
+                cell.hover()
+                let recorder = cell.descendants(matching: .any).matching(identifier: assignment.id).firstMatch
+                let clearButton = recorder.buttons.matching(identifier: "xmark.circle.fill").firstMatch
+                if clearButton.waitForExistence(timeout: 2.0) {
+                    clearButton.tap()
+                    clearButton.waitForNonExistence(timeout: 2.0)
+                }
             }
         }
         
@@ -219,11 +222,15 @@ final class NavigationShortcutsUITests: BaseUITest {
         switchToSettingsTab("Shortcuts")
         
         for assignment in assignments {
-            let recorder = app.descendants(matching: .any).matching(identifier: assignment.id).firstMatch
-            let resetButton = recorder.buttons.matching(identifier: "arrow.counterclockwise.circle.fill").firstMatch
-            if resetButton.waitForExistence(timeout: 2.0) {
-                resetButton.tap()
-                resetButton.waitForNonExistence(timeout: 2.0)
+            let cell = app.outlines.cells.containing(.staticText, identifier: assignment.rowTitle).firstMatch
+            if cell.waitForExistence(timeout: 2.0) {
+                cell.hover()
+                let recorder = cell.descendants(matching: .any).matching(identifier: assignment.id).firstMatch
+                let resetButton = recorder.buttons.matching(identifier: "arrow.counterclockwise.circle.fill").firstMatch
+                if resetButton.waitForExistence(timeout: 2.0) {
+                    resetButton.tap()
+                    resetButton.waitForNonExistence(timeout: 2.0)
+                }
             }
         }
         
