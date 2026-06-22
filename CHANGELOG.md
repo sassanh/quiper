@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-06-21
+
 ### Added
 
 - **Per-Engine 'Preserve Prompt' Configuration ([Settings.swift](Quiper/Settings.swift), [SettingsView.swift](Quiper/SettingsView.swift), [SettingsModels.swift](Quiper/SettingsModels.swift))**: Added a configurable per-engine setting named "Preserve Prompt" with a premium card design and SF Symbols schematic transition graphic under the newly relocated "Prompt Element" (formerly "Focus Selector") settings section.
