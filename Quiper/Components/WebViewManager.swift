@@ -15,7 +15,7 @@ final class WebViewManager: NSObject {
     weak var delegate: WebViewManagerDelegate?
     
     // Storage
-    private var webviewsByID: [UUID: [Int: WKWebView]] = [:]
+    var webviewsByID: [UUID: [Int: WKWebView]] = [:]
     private var wrappersByID: [UUID: [Int: NSView]] = [:]
     private var urlsByWebView: [ObjectIdentifier: String] = [:]
     private var activeDownloads: [Any] = []

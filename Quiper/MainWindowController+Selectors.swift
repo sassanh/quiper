@@ -31,8 +31,9 @@ extension MainWindowController {
                 let staticServiceWidth = max(minimumServiceWidth, estimatedWidthForServiceSegments())
                 let staticSessionWidth = sessionSelector?.fittingSize.width ?? 0
 
-                let rsButtonSpace: CGFloat = 20 + gap
-                let requiredWidth = minTitleWidth + rsButtonSpace + rightOffset + inset + staticSessionWidth + staticServiceWidth + (2 * gap) + (2 * titleAreaMargin)
+                let rsButtonSpace: CGFloat = 24 + gap
+                let trashButtonSpace: CGFloat = 24 + gap
+                let requiredWidth = minTitleWidth + rsButtonSpace + trashButtonSpace + rightOffset + inset + staticSessionWidth + staticServiceWidth + (2 * gap) + (2 * titleAreaMargin)
 
                 useCompact = windowWidth < requiredWidth
             }
@@ -194,12 +195,23 @@ extension MainWindowController {
         }
         
         let rsButtonSize: CGFloat = 24
+        
+        let trashX: CGFloat
         let rsX: CGFloat
         if let sessionSel = activeSessionSel {
-            rsX = sessionSel.frame.minX - gap - rsButtonSize
+            trashX = sessionSel.frame.minX - gap - rsButtonSize
+            rsX = trashX - gap - rsButtonSize
         } else {
-            rsX = rightReferenceX - rsButtonSize
+            trashX = rightReferenceX - rsButtonSize
+            rsX = trashX - gap - rsButtonSize
         }
+        
+        trashSessionButton.frame = NSRect(
+            x: trashX,
+            y: buttonY,
+            width: rsButtonSize,
+            height: rsButtonSize
+        )
         
         refreshStopButton.frame = NSRect(
             x: rsX,
@@ -215,8 +227,10 @@ extension MainWindowController {
         
         if isEmptyStateActive || isEngineLocked {
             refreshStopButton.isHidden = true
+            trashSessionButton.isHidden = true
         } else {
             refreshStopButton.isHidden = false
+            trashSessionButton.isHidden = false
         }
         
         let shouldShowManualLock = {
@@ -237,7 +251,18 @@ extension MainWindowController {
             manualLockButton.isHidden = true
         }
         
-        let rightSideMinX = shouldShowManualLock ? manualLockButton.frame.minX : (refreshStopButton.isHidden ? rsX : refreshStopButton.frame.minX)
+        let rightSideMinX: CGFloat
+        if shouldShowManualLock {
+            rightSideMinX = manualLockButton.frame.minX
+        } else if !refreshStopButton.isHidden {
+            rightSideMinX = refreshStopButton.frame.minX
+        } else if !trashSessionButton.isHidden {
+            rightSideMinX = trashSessionButton.frame.minX
+        } else if let sessionSel = activeSessionSel {
+            rightSideMinX = sessionSel.frame.minX
+        } else {
+            rightSideMinX = rightReferenceX
+        }
         
         let titleAreaX = leftSideMaxX + gap + titleAreaMargin
         let titleWidth = max(0, rightSideMinX - gap - titleAreaMargin - titleAreaX)

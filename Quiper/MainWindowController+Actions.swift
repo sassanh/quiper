@@ -112,6 +112,10 @@ extension MainWindowController {
         }
     }
 
+    @objc func closeSessionTapped(_ sender: NSButton) {
+        closeCurrentTab()
+    }
+
     func buildSessionActionsMenu() -> NSMenu {
         let menu = NSMenu(title: "Session Actions")
         menu.autoenablesItems = false

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Session Trash Button ([MainWindowController.swift](Quiper/MainWindowController.swift), [MainWindowController+Selectors.swift](Quiper/MainWindowController+Selectors.swift), [MainWindowController+Actions.swift](Quiper/MainWindowController+Actions.swift), [MainWindowControllerTests.swift](QuiperTests/MainWindowControllerTests.swift))**: Added a premium hover-sensitive trash button positioned between the reload/stop button and the session segmented control. Clicking the trash button closes the active session (matching the behavior of `Cmd+W`). Included comprehensive unit tests to verify button initialization and action bindings.
+- **Escape Key Stop Loading Shortcut ([MainWindowController+InputHandling.swift](Quiper/MainWindowController+InputHandling.swift), [MainWindowControllerTests.swift](QuiperTests/MainWindowControllerTests.swift))**: Configured the `Escape` key (`kVK_Escape`) to stop page loading when the active session's webview is loading. Swallows the keypress event only when active, allowing normal escape key operations in other states. Included unit tests to verify event-swallowing behavior under loading and idle webview states.
+- **Toolbar Buttons Tooltips ([MainWindowController.swift](Quiper/MainWindowController.swift), [NavigationButtonGroup.swift](Quiper/NavigationButtonGroup.swift), [MainWindowControllerTests.swift](QuiperTests/MainWindowControllerTests.swift))**: Added descriptive, user-friendly tooltips to all non-selector toolbar buttons, including the Back/Forward navigation capsule buttons ("Go Back", "Go Forward"), the new trash button ("Close Current Session"), the session actions ellipsis button ("Session Actions"), and the manual engine lock button ("Lock Engine"). Added unit tests to assert correct tooltip values.
+
 ### Fixed
 
 - **Control Center HUD Readability ([ModifierHUDView.swift](Quiper/Components/ModifierHUDView.swift))**: Resolved a critical readability issue in the Control Center HUD when the system is in Light Mode. Forced the HUD view to render using `.vibrantDark` appearance and resolved all dynamic layer colors (such as card background and separators) against the dark appearance context. Replaced the translucent card background with a high-opacity dark charcoal color to ensure text is fully readable against all background colors (even pure white or high-contrast split backgrounds).

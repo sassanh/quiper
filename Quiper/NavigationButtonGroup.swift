@@ -15,8 +15,8 @@ final class NavigationButtonGroup: NSView {
     private let buttonSize: CGFloat = 24
     private let spacing: CGFloat = 0
     
-    private let backButton: HoverIconButton
-    private let forwardButton: HoverIconButton
+    let backButton: HoverIconButton
+    let forwardButton: HoverIconButton
     
     override var acceptsFirstResponder: Bool { false }
     
@@ -28,7 +28,9 @@ final class NavigationButtonGroup: NSView {
             .withSymbolConfiguration(config)!
         
         backButton = HoverIconButton(image: backImage, target: nil, action: nil)
+        backButton.toolTip = "Go Back"
         forwardButton = HoverIconButton(image: forwardImage, target: nil, action: nil)
+        forwardButton.toolTip = "Go Forward"
         
         super.init(frame: .zero)
         setAccessibilityIdentifier("NavigationButtonGroup")

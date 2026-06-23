@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import WebKit
 
 extension MainWindowController {
     
@@ -10,39 +11,7 @@ extension MainWindowController {
             if keyDownEventMonitor == nil {
                 keyDownEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
                     guard let self = self else { return event }
-                    if event.type == .keyDown {
-                        if GhostOnboardingManager.shared.isActive {
-                            if event.keyCode == kVK_Return || event.keyCode == kVK_Space {
-                                GhostOnboardingManager.shared.advanceStep()
-                            }
-                            // Swallow ALL keys during onboarding — no shortcuts, no typing
-                            return nil
-                        }
-                        
-                        // Invalidate Command modifier tap-timings upon keyboard activity
-                        self.lastCommandPressedTime = 0
-                        self.lastCommandReleasedTime = 0
-                        self.wasBothCmdsDown = false
-                        
-                        if self.modifierHUDView != nil {
-                            if event.keyCode == kVK_Escape {
-                                self.hideModifierHUD()
-                                return nil // Swallow escape so it doesn't hide the main window
-                            }
-                        }
-                        if self.modifierHUDView != nil {
-                            let hasModifier = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.option) || event.modifierFlags.contains(.control)
-                            if hasModifier {
-                                self.hideModifierHUD()
-                            }
-                        }
-                        if self.handleCommandShortcut(event: event) == true {
-                            return nil
-                        }
-                    } else if event.type == .flagsChanged {
-                        self.handleFlagsChanged(event: event)
-                    }
-                    return event
+                    return self.handleLocalEvent(event)
                 }
             }
         } else {
@@ -51,6 +20,46 @@ extension MainWindowController {
                 keyDownEventMonitor = nil
             }
         }
+    }
+
+    func handleLocalEvent(_ event: NSEvent) -> NSEvent? {
+        if event.type == .keyDown {
+            if GhostOnboardingManager.shared.isActive {
+                if event.keyCode == kVK_Return || event.keyCode == kVK_Space {
+                    GhostOnboardingManager.shared.advanceStep()
+                }
+                // Swallow ALL keys during onboarding — no shortcuts, no typing
+                return nil
+            }
+            
+            // Invalidate Command modifier tap-timings upon keyboard activity
+            self.lastCommandPressedTime = 0
+            self.lastCommandReleasedTime = 0
+            self.wasBothCmdsDown = false
+            
+            if event.keyCode == kVK_Escape {
+                if self.modifierHUDView != nil {
+                    self.hideModifierHUD()
+                    return nil // Swallow escape so it doesn't hide the main window
+                }
+                if let webView = self.currentWebView(), webView.isLoading {
+                    webView.stopLoading()
+                    return nil // Swallow escape so it stops loading
+                }
+            }
+            if self.modifierHUDView != nil {
+                let hasModifier = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.option) || event.modifierFlags.contains(.control)
+                if hasModifier {
+                    self.hideModifierHUD()
+                }
+            }
+            if self.handleCommandShortcut(event: event) == true {
+                return nil
+            }
+        } else if event.type == .flagsChanged {
+            self.handleFlagsChanged(event: event)
+        }
+        return event
     }
     
     func showHeaderTemporarily() {

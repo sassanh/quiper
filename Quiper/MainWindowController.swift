@@ -71,6 +71,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var titleLabel: HoverTextField!
     var navigationButtonGroup: NavigationButtonGroup!
     var refreshStopButton: RefreshStopButton!
+    var trashSessionButton: HoverIconButton!
     var canGoBackObservation: NSKeyValueObservation?
     var canGoForwardObservation: NSKeyValueObservation?
     var isLoadingNavObservation: NSKeyValueObservation?
@@ -1174,12 +1175,22 @@ struct SecureTabState: Codable {
         drag.addSubview(navGroup)
         navigationButtonGroup = navGroup
         
+        // Trash Button Y & Size config
+        let buttonIconConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        
         // Refresh/Stop Button
         let rsButton = RefreshStopButton()
         rsButton.target = self
         rsButton.action = #selector(refreshStopTapped(_:))
         drag.addSubview(rsButton)
         refreshStopButton = rsButton
+
+        // Trash Button
+        let trashImage = NSImage(systemSymbolName: "trash", accessibilityDescription: "Close Current Session")!.withSymbolConfiguration(buttonIconConfig)!
+        let trashBtn = HoverIconButton(image: trashImage, target: self, action: #selector(closeSessionTapped(_:)))
+        trashBtn.toolTip = "Close Current Session"
+        drag.addSubview(trashBtn)
+        trashSessionButton = trashBtn
 
         // Loading Border View
         let borderView = LoadingBorderView(frame: .zero)
@@ -1209,12 +1220,14 @@ struct SecureTabState: Codable {
         let iconConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
         let actionsImage = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Session Actions")!.withSymbolConfiguration(iconConfig)!
         let actionsBtn = HoverIconButton(image: actionsImage, target: self, action: #selector(sessionActionsButtonTapped(_:)))
+        actionsBtn.toolTip = "Session Actions"
         drag.addSubview(actionsBtn)
         sessionActionsButton = actionsBtn
 
         // Manual Lock Button
         let lockImage = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Lock Engine")!.withSymbolConfiguration(iconConfig)!
         let lockBtn = HoverIconButton(image: lockImage, target: self, action: #selector(manualLockTapped(_:)))
+        lockBtn.toolTip = "Lock Engine"
         drag.addSubview(lockBtn)
         manualLockButton = lockBtn
 
