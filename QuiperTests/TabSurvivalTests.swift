@@ -75,6 +75,26 @@ struct TabSurvivalTests {
         #expect(decoded.activeIndicesByURL["https://gemini.google.com"] == 2)
         #expect(decoded.openTabs["https://gemini.google.com"]?[2] == "https://gemini.google.com/chat")
         #expect(decoded.tabInputs.isEmpty)
+        #expect(decoded.tabPromptHistories.isEmpty)
+        #expect(decoded.tabPromptHistoryEnabledOverrides.isEmpty)
+    }
+
+    @Test func persistedTabState_Codable_WithPromptHistories() throws {
+        let entry1 = PromptHistoryEntry(text: "Prompt 1", timestamp: Date(timeIntervalSince1970: 1000))
+        let entry2 = PromptHistoryEntry(text: "Prompt 2", timestamp: Date(timeIntervalSince1970: 2000))
+        var state = PersistedTabState()
+        state.activeServiceURL = "https://gemini.google.com"
+        state.openTabs = ["https://gemini.google.com": [2: "https://gemini.google.com/chat"]]
+        state.tabPromptHistories = ["https://gemini.google.com": [2: [entry1, entry2]]]
+        state.tabPromptHistoryEnabledOverrides = ["https://gemini.google.com": [2: false]]
+
+        let data = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(PersistedTabState.self, from: data)
+
+        #expect(decoded.tabPromptHistories["https://gemini.google.com"]?[2]?.count == 2)
+        #expect(decoded.tabPromptHistories["https://gemini.google.com"]?[2]?[0].text == "Prompt 1")
+        #expect(decoded.tabPromptHistories["https://gemini.google.com"]?[2]?[1].text == "Prompt 2")
+        #expect(decoded.tabPromptHistoryEnabledOverrides["https://gemini.google.com"]?[2] == false)
     }
 
     @Test func settings_TabSurvivalPolicyPersistence() throws {

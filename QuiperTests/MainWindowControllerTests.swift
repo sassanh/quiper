@@ -51,6 +51,46 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertEqual(controller.navigationButtonGroup.forwardButton.toolTip, "Go Forward")
     }
 
+    func testPromptHistoryButtonInitialization() {
+        let service = Service(id: UUID(), name: "Service 1", url: "https://example.com/1", focus_selector: "", activationShortcut: nil)
+        let controller = MainWindowController(services: [service])
+        _ = controller.window
+        
+        XCTAssertNotNil(controller.promptHistoryButton)
+        XCTAssertEqual(controller.promptHistoryButton.toolTip, "Prompt History")
+        XCTAssertEqual(controller.promptHistoryButton.action, #selector(MainWindowController.promptHistoryButtonTapped(_:)))
+    }
+
+    func testPromptHistoryRecordingToggle() {
+        let service = Service(id: UUID(), name: "Service 1", url: "https://example.com/1", focus_selector: "", activationShortcut: nil)
+        let controller = MainWindowController(services: [service])
+        
+        // Default should follow Settings (true)
+        XCTAssertTrue(controller.webViewManager.isPromptHistoryEnabled(for: service.url, sessionIndex: 0))
+        
+        // Override to false
+        controller.webViewManager.setPromptHistoryEnabled(false, for: service.url, sessionIndex: 0)
+        XCTAssertFalse(controller.webViewManager.isPromptHistoryEnabled(for: service.url, sessionIndex: 0))
+        
+        // Override to true
+        controller.webViewManager.setPromptHistoryEnabled(true, for: service.url, sessionIndex: 0)
+        XCTAssertTrue(controller.webViewManager.isPromptHistoryEnabled(for: service.url, sessionIndex: 0))
+    }
+
+    func testPromptHistoryClearing() {
+        let service = Service(id: UUID(), name: "Service 1", url: "https://example.com/1", focus_selector: "", activationShortcut: nil)
+        let controller = MainWindowController(services: [service])
+        
+        let entry = PromptHistoryEntry(text: "Test Prompt", timestamp: Date())
+        controller.webViewManager.addPromptHistoryEntry(entry, for: service.url, sessionIndex: 0)
+        
+        XCTAssertEqual(controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).count, 1)
+        XCTAssertEqual(controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).first?.text, "Test Prompt")
+        
+        controller.webViewManager.clearPromptHistory(for: service.url, sessionIndex: 0)
+        XCTAssertTrue(controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).isEmpty)
+    }
+
     func testEscapeKeySwallowsEventWhenLoading() {
         class MockWebView: WKWebView {
             var mockIsLoading = false

@@ -489,6 +489,7 @@ struct PersistedSettings: Codable {
     var settingsColorStyle: SettingsColorStyle?
     var tabSurvivalPolicy: TabSurvivalPolicy?
     var persistedTabState: PersistedTabState?
+    var enablePromptHistory: Bool?
     var version: Int? = 1
 
     enum CodingKeys: String, CodingKey {
@@ -505,6 +506,7 @@ struct PersistedSettings: Codable {
         case settingsColorStyle
         case tabSurvivalPolicy
         case persistedTabState
+        case enablePromptHistory
     }
 
     init(services: [Service],
@@ -531,6 +533,7 @@ struct PersistedSettings: Codable {
          settingsColorStyle: SettingsColorStyle? = nil,
          tabSurvivalPolicy: TabSurvivalPolicy? = nil,
          persistedTabState: PersistedTabState? = nil,
+         enablePromptHistory: Bool? = nil,
          version: Int? = 1) {
         self.services = services
         self.hotkey = hotkey
@@ -556,6 +559,7 @@ struct PersistedSettings: Codable {
         self.settingsColorStyle = settingsColorStyle
         self.tabSurvivalPolicy = tabSurvivalPolicy
         self.persistedTabState = persistedTabState
+        self.enablePromptHistory = enablePromptHistory
         self.version = version
     }
 
@@ -585,6 +589,7 @@ struct PersistedSettings: Codable {
         settingsColorStyle = try container.decodeIfPresent(SettingsColorStyle.self, forKey: .settingsColorStyle)
         tabSurvivalPolicy = try container.decodeIfPresent(TabSurvivalPolicy.self, forKey: .tabSurvivalPolicy)
         persistedTabState = try container.decodeIfPresent(PersistedTabState.self, forKey: .persistedTabState)
+        enablePromptHistory = try container.decodeIfPresent(Bool.self, forKey: .enablePromptHistory)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }
 }
@@ -604,24 +609,35 @@ struct TabInputState: Codable, Equatable {
     var end: Int
 }
 
+struct PromptHistoryEntry: Codable, Equatable {
+    var text: String
+    var timestamp: Date
+}
+
 struct PersistedTabState: Codable {
     var activeServiceURL: String?
     var activeIndicesByURL: [String: Int] = [:]
     var openTabs: [String: [Int: String]] = [:] // serviceURL -> [sessionIndex: currentURL]
     var tabInputs: [String: [Int: TabInputState]] = [:] // serviceURL -> [sessionIndex: TabInputState]
+    var tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:] // serviceURL -> [sessionIndex: [PromptHistoryEntry]]
+    var tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:] // serviceURL -> [sessionIndex: Bool]
 
     enum CodingKeys: String, CodingKey {
         case activeServiceURL
         case activeIndicesByURL
         case openTabs
         case tabInputs
+        case tabPromptHistories
+        case tabPromptHistoryEnabledOverrides
     }
 
-    init(activeServiceURL: String? = nil, activeIndicesByURL: [String: Int] = [:], openTabs: [String: [Int: String]] = [:], tabInputs: [String: [Int: TabInputState]] = [:]) {
+    init(activeServiceURL: String? = nil, activeIndicesByURL: [String: Int] = [:], openTabs: [String: [Int: String]] = [:], tabInputs: [String: [Int: TabInputState]] = [:], tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:], tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:]) {
         self.activeServiceURL = activeServiceURL
         self.activeIndicesByURL = activeIndicesByURL
         self.openTabs = openTabs
         self.tabInputs = tabInputs
+        self.tabPromptHistories = tabPromptHistories
+        self.tabPromptHistoryEnabledOverrides = tabPromptHistoryEnabledOverrides
     }
 
     init(from decoder: Decoder) throws {
@@ -630,5 +646,7 @@ struct PersistedTabState: Codable {
         activeIndicesByURL = try container.decodeIfPresent([String: Int].self, forKey: .activeIndicesByURL) ?? [:]
         openTabs = try container.decodeIfPresent([String: [Int: String]].self, forKey: .openTabs) ?? [:]
         tabInputs = try container.decodeIfPresent([String: [Int: TabInputState]].self, forKey: .tabInputs) ?? [:]
+        tabPromptHistories = try container.decodeIfPresent([String: [Int: [PromptHistoryEntry]]].self, forKey: .tabPromptHistories) ?? [:]
+        tabPromptHistoryEnabledOverrides = try container.decodeIfPresent([String: [Int: Bool]].self, forKey: .tabPromptHistoryEnabledOverrides) ?? [:]
     }
 }

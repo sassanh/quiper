@@ -174,6 +174,19 @@ struct GeneralSettingsView: View {
                     ) {
                         TabSurvivalPolicyPicker(selection: $settings.tabSurvivalPolicy)
                     }
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Prompt History",
+                        message: "Keep a history of sent prompts per session.",
+                        icon: "clock.arrow.circlepath",
+                        iconColor: .blue.settingsResolved
+                    ) {
+                        Toggle("Enable prompt history", isOn: $settings.enablePromptHistory)
+                            .toggleStyle(.coloredCheckbox(Color.blue.settingsResolved))
+                            .frame(width: 260, alignment: .leading)
+                    }
                 }
                 
                 SettingsSection(title: "Notifications", icon: "bell.fill", iconColor: .orange) {

@@ -72,6 +72,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var navigationButtonGroup: NavigationButtonGroup!
     var refreshStopButton: RefreshStopButton!
     var trashSessionButton: HoverIconButton!
+    var promptHistoryButton: HoverIconButton!
     var canGoBackObservation: NSKeyValueObservation?
     var canGoForwardObservation: NSKeyValueObservation?
     var isLoadingNavObservation: NSKeyValueObservation?
@@ -890,17 +891,23 @@ struct SecureTabState: Codable {
     var activeIndex: Int
     var openTabs: [Int: String]
     var tabInputs: [Int: TabInputState]?
+    var tabPromptHistories: [Int: [PromptHistoryEntry]]?
+    var tabPromptHistoryEnabledOverrides: [Int: Bool]?
 
     enum CodingKeys: String, CodingKey {
         case activeIndex
         case openTabs
         case tabInputs
+        case tabPromptHistories
+        case tabPromptHistoryEnabledOverrides
     }
 
-    init(activeIndex: Int, openTabs: [Int: String], tabInputs: [Int: TabInputState]?) {
+    init(activeIndex: Int, openTabs: [Int: String], tabInputs: [Int: TabInputState]?, tabPromptHistories: [Int: [PromptHistoryEntry]]?, tabPromptHistoryEnabledOverrides: [Int: Bool]?) {
         self.activeIndex = activeIndex
         self.openTabs = openTabs
         self.tabInputs = tabInputs
+        self.tabPromptHistories = tabPromptHistories
+        self.tabPromptHistoryEnabledOverrides = tabPromptHistoryEnabledOverrides
     }
 
     init(from decoder: Decoder) throws {
@@ -908,6 +915,8 @@ struct SecureTabState: Codable {
         activeIndex = try container.decode(Int.self, forKey: .activeIndex)
         openTabs = try container.decode([Int: String].self, forKey: .openTabs)
         tabInputs = try container.decodeIfPresent([Int: TabInputState].self, forKey: .tabInputs)
+        tabPromptHistories = try container.decodeIfPresent([Int: [PromptHistoryEntry]].self, forKey: .tabPromptHistories)
+        tabPromptHistoryEnabledOverrides = try container.decodeIfPresent([Int: Bool].self, forKey: .tabPromptHistoryEnabledOverrides)
     }
 }
 
@@ -935,6 +944,8 @@ struct SecureTabState: Codable {
         if let manager = webViewManager {
             var allOpenTabs = manager.getOpenSessionsState()
             var allTabInputs = manager.getOpenSessionsInputState()
+            var allPromptHistories = manager.getOpenSessionsPromptHistories()
+            var allPromptHistoryOverrides = manager.getOpenSessionsPromptHistoryOverrides()
             
             // Filter out services with preservePrompt disabled
             for svc in services {
@@ -950,7 +961,15 @@ struct SecureTabState: Codable {
                     if EncryptedVolumeManager.shared.isUnlocked(for: svc.id) {
                         let activeIdx = activeIndicesByURL[svc.url] ?? 0
                         let secureInputs = allTabInputs[svc.url]
-                        let secureState = SecureTabState(activeIndex: activeIdx, openTabs: sessions, tabInputs: secureInputs)
+                        let secureHistories = allPromptHistories[svc.url]
+                        let secureOverrides = allPromptHistoryOverrides[svc.url]
+                        let secureState = SecureTabState(
+                            activeIndex: activeIdx,
+                            openTabs: sessions,
+                            tabInputs: secureInputs,
+                            tabPromptHistories: secureHistories,
+                            tabPromptHistoryEnabledOverrides: secureOverrides
+                        )
                         let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: svc.id).appendingPathComponent("quiper_tabs.json")
                         if let data = try? JSONEncoder().encode(secureState) {
                             try? data.write(to: stateURL)
@@ -960,9 +979,13 @@ struct SecureTabState: Codable {
                 // Remove from the global unencrypted state
                 allOpenTabs.removeValue(forKey: svc.url)
                 allTabInputs.removeValue(forKey: svc.url)
+                allPromptHistories.removeValue(forKey: svc.url)
+                allPromptHistoryOverrides.removeValue(forKey: svc.url)
             }
             state.openTabs = allOpenTabs
             state.tabInputs = allTabInputs
+            state.tabPromptHistories = allPromptHistories
+            state.tabPromptHistoryEnabledOverrides = allPromptHistoryOverrides
         }
 
         Settings.shared.persistedTabState = state
@@ -984,6 +1007,8 @@ struct SecureTabState: Codable {
 
         // Restore tab input states
         webViewManager.restoreTabInputStates(savedState.tabInputs)
+        webViewManager.restoreTabPromptHistories(savedState.tabPromptHistories)
+        webViewManager.restoreTabPromptHistoryOverrides(savedState.tabPromptHistoryEnabledOverrides)
 
         // Restore open tabs
         for (svcURL, sessions) in savedState.openTabs {
@@ -997,6 +1022,12 @@ struct SecureTabState: Codable {
                     secureSessions = secureState.openTabs
                     if let secureInputs = secureState.tabInputs {
                         webViewManager.restoreTabInputStates([service.url: secureInputs])
+                    }
+                    if let secureHistories = secureState.tabPromptHistories {
+                        webViewManager.restoreTabPromptHistories([service.url: secureHistories])
+                    }
+                    if let secureOverrides = secureState.tabPromptHistoryEnabledOverrides {
+                        webViewManager.restoreTabPromptHistoryOverrides([service.url: secureOverrides])
                     }
                 }
             }
@@ -1177,6 +1208,14 @@ struct SecureTabState: Codable {
         
         // Trash Button Y & Size config
         let buttonIconConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        
+        // Prompt History Button
+        let historyImage = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: "Prompt History")!
+            .withSymbolConfiguration(buttonIconConfig)!
+        let historyBtn = HoverIconButton(image: historyImage, target: self, action: #selector(promptHistoryButtonTapped(_:)))
+        historyBtn.toolTip = "Prompt History"
+        drag.addSubview(historyBtn)
+        promptHistoryButton = historyBtn
         
         // Refresh/Stop Button
         let rsButton = RefreshStopButton()

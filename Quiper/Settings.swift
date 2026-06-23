@@ -337,6 +337,11 @@ class Settings: ObservableObject {
             saveSettings()
         }
     }
+    @Published var enablePromptHistory: Bool = true {
+        didSet {
+            saveSettings()
+        }
+    }
     @Published var persistedTabState: PersistedTabState? = nil {
         didSet {
             saveSettings()
@@ -367,6 +372,7 @@ class Settings: ObservableObject {
         showOnAllSpaces = false
         settingsColorStyle = .colorful
         tabSurvivalPolicy = .always
+        enablePromptHistory = true
         persistedTabState = nil
     }
 
@@ -1036,6 +1042,7 @@ class Settings: ObservableObject {
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
+        enablePromptHistory = persisted.enablePromptHistory ?? true
         persistedTabState = persisted.persistedTabState
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
@@ -1087,7 +1094,8 @@ class Settings: ObservableObject {
                                             showOnAllSpaces: showOnAllSpaces,
                                             settingsColorStyle: settingsColorStyle,
                                             tabSurvivalPolicy: tabSurvivalPolicy,
-                                            persistedTabState: persistedTabState)
+                                            persistedTabState: persistedTabState,
+                                            enablePromptHistory: enablePromptHistory)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
@@ -1118,7 +1126,8 @@ class Settings: ObservableObject {
             showOnAllSpaces: showOnAllSpaces,
             settingsColorStyle: settingsColorStyle,
             tabSurvivalPolicy: tabSurvivalPolicy,
-            persistedTabState: persistedTabState
+            persistedTabState: persistedTabState,
+            enablePromptHistory: enablePromptHistory
         )
     }
 
@@ -1147,6 +1156,7 @@ class Settings: ObservableObject {
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         settingsColorStyle = persisted.settingsColorStyle ?? .colorful
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
+        enablePromptHistory = persisted.enablePromptHistory ?? true
         persistedTabState = persisted.persistedTabState
         if let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey

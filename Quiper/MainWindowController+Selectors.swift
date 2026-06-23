@@ -179,7 +179,7 @@ extension MainWindowController {
         let navGroupWidth = navigationButtonGroup.idealWidth
         let showNav = !isEmptyStateActive && !navigationButtonGroup.isHidden && navGroupWidth > 0
         
-        let leftSideMaxX: CGFloat
+        var leftSideMaxX: CGFloat
         if showNav {
             let navX = serviceSel.frame.maxX + gap
             navigationButtonGroup.frame = NSRect(
@@ -192,6 +192,21 @@ extension MainWindowController {
         } else {
             leftSideMaxX = serviceSel.frame.maxX
             navigationButtonGroup.isHidden = true
+        }
+        
+        let showHistoryBtn = !isEmptyStateActive
+        if showHistoryBtn {
+            promptHistoryButton.isHidden = false
+            let historyX = leftSideMaxX + gap
+            promptHistoryButton.frame = NSRect(
+                x: historyX,
+                y: buttonY,
+                width: buttonSize,
+                height: buttonSize
+            )
+            leftSideMaxX = promptHistoryButton.frame.maxX
+        } else {
+            promptHistoryButton.isHidden = true
         }
         
         let rsButtonSize: CGFloat = 24

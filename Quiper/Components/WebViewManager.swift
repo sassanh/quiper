@@ -8,6 +8,7 @@ protocol WebViewManagerDelegate: AnyObject {
     func webViewDidUpdateLoading(_ isLoading: Bool, for webView: WKWebView)
     func webViewDidFinishNavigation(_ webView: WKWebView)
     func engineDidUnlock(serviceID: UUID)
+    func inputStateRequestSave()
 }
 
 @MainActor
@@ -34,6 +35,8 @@ final class WebViewManager: NSObject {
     private var initialLoadAwaitingFocus = Set<ObjectIdentifier>()
     private var notificationBridges: [ObjectIdentifier: WebNotificationBridge] = [:]
     private var tabInputStates: [String: [Int: TabInputState]] = [:]
+    private var tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:]
+    private var tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:]
 
     init(containerView: NSView) {
         self.containerView = containerView
@@ -80,6 +83,16 @@ final class WebViewManager: NSObject {
                 tabInputStates.removeValue(forKey: url)
             }
         }
+        for url in tabPromptHistories.keys {
+            if !incomingURLs.contains(url) {
+                tabPromptHistories.removeValue(forKey: url)
+            }
+        }
+        for url in tabPromptHistoryEnabledOverrides.keys {
+            if !incomingURLs.contains(url) {
+                tabPromptHistoryEnabledOverrides.removeValue(forKey: url)
+            }
+        }
     }
     
     func updateZoomLevels(_ levels: [String: CGFloat]) {
@@ -120,6 +133,8 @@ final class WebViewManager: NSObject {
         webviewsByID[service.id]?.removeValue(forKey: sessionIndex)
         wrappersByID[service.id]?.removeValue(forKey: sessionIndex)
         tabInputStates[service.url]?.removeValue(forKey: sessionIndex)
+        tabPromptHistories[service.url]?.removeValue(forKey: sessionIndex)
+        tabPromptHistoryEnabledOverrides[service.url]?.removeValue(forKey: sessionIndex)
     }
 
     func getOpenSessionsState() -> [String: [Int: String]] {
@@ -171,45 +186,125 @@ final class WebViewManager: NSObject {
         }
     }
 
+    func getOpenSessionsPromptHistories() -> [String: [Int: [PromptHistoryEntry]]] {
+        return tabPromptHistories
+    }
+
+    func getOpenSessionsPromptHistoryOverrides() -> [String: [Int: Bool]] {
+        return tabPromptHistoryEnabledOverrides
+    }
+
+    func restoreTabPromptHistories(_ states: [String: [Int: [PromptHistoryEntry]]]) {
+        for (url, sessionMap) in states {
+            if self.tabPromptHistories[url] == nil {
+                self.tabPromptHistories[url] = [:]
+            }
+            for (idx, history) in sessionMap {
+                self.tabPromptHistories[url]?[idx] = history
+            }
+        }
+    }
+
+    func restoreTabPromptHistoryOverrides(_ states: [String: [Int: Bool]]) {
+        for (url, sessionMap) in states {
+            if self.tabPromptHistoryEnabledOverrides[url] == nil {
+                self.tabPromptHistoryEnabledOverrides[url] = [:]
+            }
+            for (idx, override) in sessionMap {
+                self.tabPromptHistoryEnabledOverrides[url]?[idx] = override
+            }
+        }
+    }
+
+    func getPromptHistory(for serviceURL: String, sessionIndex: Int) -> [PromptHistoryEntry] {
+        return tabPromptHistories[serviceURL]?[sessionIndex] ?? []
+    }
+
+    func addPromptHistoryEntry(_ entry: PromptHistoryEntry, for serviceURL: String, sessionIndex: Int) {
+        if tabPromptHistories[serviceURL] == nil {
+            tabPromptHistories[serviceURL] = [:]
+        }
+        if tabPromptHistories[serviceURL]?[sessionIndex] == nil {
+            tabPromptHistories[serviceURL]?[sessionIndex] = []
+        }
+        
+        tabPromptHistories[serviceURL]?[sessionIndex]?.append(entry)
+        if let count = tabPromptHistories[serviceURL]?[sessionIndex]?.count, count > 50 {
+            tabPromptHistories[serviceURL]?[sessionIndex]?.removeFirst(count - 50)
+        }
+    }
+
+    func clearPromptHistory(for serviceURL: String, sessionIndex: Int) {
+        tabPromptHistories[serviceURL]?.removeValue(forKey: sessionIndex)
+    }
+
+    func isPromptHistoryEnabled(for serviceURL: String, sessionIndex: Int) -> Bool {
+        if let override = tabPromptHistoryEnabledOverrides[serviceURL]?[sessionIndex] {
+            return override
+        }
+        return Settings.shared.enablePromptHistory
+    }
+
+    func setPromptHistoryEnabled(_ enabled: Bool, for serviceURL: String, sessionIndex: Int) {
+        if tabPromptHistoryEnabledOverrides[serviceURL] == nil {
+            tabPromptHistoryEnabledOverrides[serviceURL] = [:]
+        }
+        tabPromptHistoryEnabledOverrides[serviceURL]?[sessionIndex] = enabled
+    }
+
     func didReceiveInputStateMessage(_ message: WKScriptMessage) {
         NSLog("[Quiper] didReceiveInputStateMessage: name=\(message.name)")
-        guard message.name == "quiperInputState",
-              let payload = message.body as? [String: Any] else {
-            NSLog("[Quiper] message.name mismatch or body is not a dictionary")
+        guard message.name == "quiperInputState" else {
+            NSLog("[Quiper] [Error] message name mismatch: \(message.name)")
+            return
+        }
+        
+        guard let payload = message.body as? [String: Any] else {
+            NSLog("[Quiper] [Error] message body is not a dictionary: \(String(describing: message.body))")
             return
         }
 
-        guard let text = payload["text"] as? String else {
-            NSLog("[Quiper] text is missing or not a String: \(String(describing: payload["text"]))")
-            return
-        }
-        guard let isContentEditable = payload["isContentEditable"] as? Bool else {
-            NSLog("[Quiper] isContentEditable is missing or not a Bool: \(String(describing: payload["isContentEditable"]))")
-            return
-        }
-        guard let start = payload["start"] as? Int else {
-            NSLog("[Quiper] start is missing or not an Int: \(String(describing: payload["start"]))")
-            return
-        }
-        guard let end = payload["end"] as? Int else {
-            NSLog("[Quiper] end is missing or not an Int: \(String(describing: payload["end"]))")
-            return
-        }
+        NSLog("[Quiper] [Payload] Received raw input state payload: \(payload)")
+
+        let text = payload["text"] as? String ?? ""
+        let isContentEditable = payload["isContentEditable"] as? Bool ?? false
+        let start = payload["start"] as? Int ?? 0
+        let end = payload["end"] as? Int ?? 0
+        let wasSent = payload["wasSent"] as? Bool ?? false
+        let wasSentText = payload["wasSentText"] as? String ?? ""
+        let debug = payload["debug"] as? String ?? ""
 
         guard let webView = message.webView,
               let (service, sessionIndex) = findServiceAndSession(for: webView) else {
-            NSLog("[Quiper] webView or service/sessionIndex not found")
+            NSLog("[Quiper] [Error] webView or service/sessionIndex not found in mapping")
             return
         }
+
+        NSLog("[Quiper] [State] Target service: \(service.name), sessionIndex: \(sessionIndex), preservePrompt: \(service.preservePrompt)")
 
         guard service.preservePrompt else {
             return
         }
 
-        let debug = payload["debug"] as? String ?? ""
-        NSLog("[Quiper] Successfully parsed input state: textLength=\(text.count), isContentEditable=\(isContentEditable), start=\(start), end=\(end), debug='\(debug)' for \(service.name) index \(sessionIndex)")
+        if wasSent {
+            NSLog("[Quiper] [History] wasSent is true. Text to record: '\(wasSentText)'")
+            let trimmed = wasSentText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.count >= 2 && isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex) {
+                let newEntry = PromptHistoryEntry(text: wasSentText, timestamp: Date())
+                addPromptHistoryEntry(newEntry, for: service.url, sessionIndex: sessionIndex)
+                NSLog("[Quiper] [History] Successfully added entry to session \(sessionIndex) prompt history")
+                self.delegate?.inputStateRequestSave()
+            } else {
+                NSLog("[Quiper] [History] Entry ignored. Trimmed length: \(trimmed.count), enabled: \(isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex))")
+            }
+        }
+
         let inputState = TabInputState(text: text, isContentEditable: isContentEditable, start: start, end: end)
         setTabInputState(inputState, for: service.url, sessionIndex: sessionIndex)
+        
+        if wasSent {
+            self.delegate?.inputStateRequestSave()
+        }
     }
 
     func findServiceAndSession(for webView: WKWebView) -> (Service, Int)? {
@@ -223,6 +318,36 @@ final class WebViewManager: NSObject {
             }
         }
         return nil
+    }
+
+    private func makeInputStartScript() -> WKUserScript {
+        let source = """
+        (function() {
+            if (window.__quiperInputStartInstalled) return;
+            window.__quiperInputStartInstalled = true;
+
+            function interceptProperty(proto, prop) {
+                try {
+                    const descriptor = Object.getOwnPropertyDescriptor(proto, prop);
+                    if (!descriptor) return;
+                    const originalSet = descriptor.set;
+                    if (!originalSet) return;
+                    descriptor.set = function(val) {
+                        originalSet.call(this, val);
+                        try {
+                            this.dispatchEvent(new CustomEvent('quiper-value-set', { detail: { value: val } }));
+                        } catch(e) {}
+                    };
+                    Object.defineProperty(proto, prop, descriptor);
+                } catch (e) {
+                    console.error("Quiper: failed to intercept " + prop, e);
+                }
+            }
+            interceptProperty(HTMLTextAreaElement.prototype, 'value');
+            interceptProperty(HTMLInputElement.prototype, 'value');
+        })();
+        """
+        return WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false)
     }
 
     private func makeInputStateTrackerScript(for service: Service) -> WKUserScript {
@@ -240,6 +365,7 @@ final class WebViewManager: NSObject {
             window.__quiperInputTrackerActive = false;
 
             const selector = "\(escapedSelector)";
+            window.__quiperLatestTypedText = "";
 
             function getContentEditableSelection(el) {
                 try {
@@ -320,8 +446,9 @@ final class WebViewManager: NSObject {
                 const isContentEditable = el.contentEditable === 'true' || el.getAttribute('contenteditable') === 'true';
                 if (isContentEditable) {
                     const sel = getContentEditableSelection(el);
+                    const text = el.innerText || "";
                     return {
-                        text: el.innerText || "",
+                        text: text,
                         isContentEditable: true,
                         start: typeof sel.start === 'number' ? sel.start : 0,
                         end: typeof sel.end === 'number' ? sel.end : 0,
@@ -336,8 +463,9 @@ final class WebViewManager: NSObject {
                     } catch (e) {
                         // ignore if selection is not supported by input type
                     }
+                    const text = el.value || "";
                     return {
-                        text: el.value || "",
+                        text: text,
                         isContentEditable: false,
                         start: start,
                         end: end,
@@ -372,7 +500,20 @@ final class WebViewManager: NSObject {
                     end = lastSentEnd !== null ? lastSentEnd : state.end;
                 }
 
-                if (state.text === lastSentText && start === lastSentStart && end === lastSentEnd) {
+                if (state.text && state.text.trim() !== "") {
+                    window.__quiperLatestTypedText = state.text;
+                }
+
+                let wasSent = false;
+                let wasSentText = "";
+                const isTextEmpty = !state.text || state.text.trim() === "";
+                if (isTextEmpty && window.__quiperLatestTypedText && window.__quiperLatestTypedText.trim() !== "") {
+                    wasSent = true;
+                    wasSentText = window.__quiperLatestTypedText;
+                    window.__quiperLatestTypedText = "";
+                }
+
+                if (!wasSent && state.text === lastSentText && start === lastSentStart && end === lastSentEnd) {
                     return;
                 }
 
@@ -385,6 +526,8 @@ final class WebViewManager: NSObject {
                     isContentEditable: state.isContentEditable,
                     start: start,
                     end: end,
+                    wasSent: wasSent,
+                    wasSentText: wasSentText,
                     debug: state.debug || ""
                 };
 
@@ -403,7 +546,7 @@ final class WebViewManager: NSObject {
 
             // User interaction tracking
             window.__quiperLastInteractionTime = 0;
-            function updateInteractionTime() {
+            function updateInteractionTime(e) {
                 window.__quiperLastInteractionTime = Date.now();
                 window.__quiperHasSavedSelection = false;
             }
@@ -414,6 +557,10 @@ final class WebViewManager: NSObject {
             document.addEventListener('input', (e) => {
                 const el = getTargetElement();
                 if (el && (el === e.target || el.contains(e.target))) {
+                    const state = getElementState(el);
+                    if (state && state.text && state.text.trim() !== "") {
+                        window.__quiperLatestTypedText = state.text;
+                    }
                     debouncedSend();
                 }
             }, true);
@@ -444,6 +591,39 @@ final class WebViewManager: NSObject {
             window.addEventListener('pagehide', () => {
                 sendState(true);
             });
+
+            // Listen to value updates programmatically intercepted by the document start script
+            document.addEventListener('quiper-value-set', (e) => {
+                const el = getTargetElement();
+                if (el && (e.target === el || el.contains(e.target))) {
+                    sendState(true);
+                }
+            }, true);
+
+            // Setup MutationObserver on document body to find target element if it's contenteditable
+            let observer = null;
+            function setupMutationObserver() {
+                try {
+                    if (observer) observer.disconnect();
+                    observer = new MutationObserver((mutations) => {
+                        const el = getTargetElement();
+                        if (el) {
+                            const isContentEditable = el.contentEditable === 'true' || el.getAttribute('contenteditable') === 'true';
+                            if (isContentEditable) {
+                                sendState(true);
+                            }
+                        }
+                    });
+                    observer.observe(document.body, { childList: true, characterData: true, subtree: true });
+                } catch (e) {
+                    console.error("Quiper: failed to setup MutationObserver", e);
+                }
+            }
+            if (document.body) {
+                setupMutationObserver();
+            } else {
+                document.addEventListener('DOMContentLoaded', setupMutationObserver);
+            }
         })();
         """
         return WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
@@ -702,6 +882,10 @@ final class WebViewManager: NSObject {
             let userScript = WKUserScript(source: cssScript, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
             userContentController.addUserScript(userScript)
         }
+
+        // Inject input setter interceptor script at document start
+        let startScript = makeInputStartScript()
+        userContentController.addUserScript(startScript)
 
         // Inject input state tracking user script
         let inputScript = makeInputStateTrackerScript(for: service)
