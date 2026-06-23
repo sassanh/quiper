@@ -38,7 +38,7 @@ final class EncryptedVolumeManager {
             .appendingPathComponent("WebKit")
             .appendingPathComponent(bundleID)
             .appendingPathComponent("WebsiteDataStore")
-            .appendingPathComponent(serviceID.uuidString.lowercased())
+            .appendingPathComponent(serviceID.uuidString)
     }
     
     /// Checks if the sparsebundle is physically present on disk

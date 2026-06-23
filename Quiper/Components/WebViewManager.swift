@@ -19,6 +19,7 @@ final class WebViewManager: NSObject {
     var webviewsByID: [UUID: [Int: WKWebView]] = [:]
     private var wrappersByID: [UUID: [Int: NSView]] = [:]
     private var urlsByWebView: [ObjectIdentifier: String] = [:]
+    private var pendingLazyLoadURLs: [ObjectIdentifier: String] = [:]
     private var activeDownloads: [Any] = []
     
     // State needed for logic
@@ -629,7 +630,7 @@ final class WebViewManager: NSObject {
         return WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
     }
     
-    func getOrCreateWebView(for service: Service, sessionIndex: Int, dragArea: NSView?, targetURL: String? = nil) -> WKWebView {
+    func getOrCreateWebView(for service: Service, sessionIndex: Int, dragArea: NSView?, targetURL: String? = nil, loadImmediately: Bool = true) -> WKWebView {
         if let dragArea = dragArea {
             self.dragArea = dragArea
         }
@@ -706,13 +707,17 @@ final class WebViewManager: NSObject {
         // Load initial URL with encryption check
         if service.isEncrypted {
             if EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
-                let activeURLString = targetURL ?? service.url
-                if let url = URL(string: activeURLString) {
-                    if url.isFileURL {
-                        webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-                    } else {
-                        webview.load(URLRequest(url: url))
+                if loadImmediately {
+                    let activeURLString = targetURL ?? service.url
+                    if let url = URL(string: activeURLString) {
+                        if url.isFileURL {
+                            webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+                        } else {
+                            webview.load(URLRequest(url: url))
+                        }
                     }
+                } else {
+                    pendingLazyLoadURLs[token] = targetURL ?? service.url
                 }
             } else {
                 // Show LockOverlayView on top of wrapper
@@ -754,6 +759,9 @@ final class WebViewManager: NSObject {
                             }
                             NSLog("[LockOverlay] Mounting volume")
                             try await EncryptedVolumeManager.shared.mountVolume(for: serviceId, passphrase: key)
+                            
+                            overlay.updateStatus("Loading secure session...")
+                            try? await Task.sleep(nanoseconds: 1_000_000_000)
                             
                             // Remove non-persistent webview and clean observers
                             webview.removeObserver(self, forKeyPath: "title")
@@ -844,13 +852,17 @@ final class WebViewManager: NSObject {
                 }
             }
             
-            let activeURLString = targetURL ?? service.url
-            if let url = URL(string: activeURLString) {
-                if url.isFileURL {
-                    webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-                } else {
-                    webview.load(URLRequest(url: url))
+            if loadImmediately {
+                let activeURLString = targetURL ?? service.url
+                if let url = URL(string: activeURLString) {
+                    if url.isFileURL {
+                        webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+                    } else {
+                        webview.load(URLRequest(url: url))
+                    }
                 }
+            } else {
+                pendingLazyLoadURLs[token] = targetURL ?? service.url
             }
         }
         
@@ -1008,6 +1020,16 @@ final class WebViewManager: NSObject {
             }
         }
         
+        let token = ObjectIdentifier(webView)
+        if let targetURLString = pendingLazyLoadURLs.removeValue(forKey: token), let url = URL(string: targetURLString) {
+            NSLog("[WebViewManager] Lazy loading background session webview: %@", targetURLString)
+            if url.isFileURL {
+                webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+            } else {
+                webView.load(URLRequest(url: url))
+            }
+        }
+        
         updateLayout()
     }
     
@@ -1065,6 +1087,7 @@ final class WebViewManager: NSObject {
         }
         initialLoadAwaitingFocus.remove(token)
         urlsByWebView.removeValue(forKey: token)
+        pendingLazyLoadURLs.removeValue(forKey: token)
  
         // Clean user content controller to break configuration references
         webView.configuration.userContentController.removeAllUserScripts()

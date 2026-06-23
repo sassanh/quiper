@@ -531,7 +531,7 @@ extension MainWindowController: WebViewManagerDelegate {
                 activeIndicesByURL[service.url] = state.activeIndex
                 
                 for (sessionIndex, urlString) in state.openTabs {
-                    _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString)
+                    _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString, loadImmediately: (sessionIndex == state.activeIndex))
                     
                     if let webView = webViewManager.getWebView(for: service, sessionIndex: sessionIndex) {
                         setupSessionTitleObserver(for: service, sessionIndex: sessionIndex, webView: webView)

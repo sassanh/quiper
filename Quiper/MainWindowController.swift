@@ -1032,9 +1032,10 @@ struct SecureTabState: Codable {
                 }
             }
             
+            let activeIndex = activeIndicesByURL[service.url] ?? 0
             for (sessionIndex, urlString) in secureSessions {
                 // Pre-instantiate the webview with its restored URL
-                _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString)
+                _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString, loadImmediately: (sessionIndex == activeIndex))
 
                 // Set up observers
                 if let webView = webViewManager.getWebView(for: service, sessionIndex: sessionIndex) {
