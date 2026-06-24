@@ -164,4 +164,50 @@ final class MainWindowControllerModifierTests: XCTestCase {
         let highlightedIndex: Int = getPrivateProperty(hud, "highlightedIndex") ?? -1
         XCTAssertEqual(highlightedIndex, 0)
     }
+
+    func testPromptHistoryHUD() async throws {
+        let services = [Service(name: "Test", url: "https://test.com", focus_selector: "")]
+        let controller = MainWindowController(services: services)
+        controller.webViewManager = WebViewManager(containerView: NSView())
+        
+        let hud = PromptHistoryHUDView(frame: NSRect(x: 0, y: 0, width: 600, height: 600), windowController: controller)
+        
+        // Initially empty history
+        let allItems: [Any] = getPrivateProperty(hud, "allItems") ?? []
+        XCTAssertEqual(allItems.count, 0)
+        
+        // Add entry
+        let entry = PromptHistoryEntry(text: "Hello World", timestamp: Date())
+        controller.webViewManager.addPromptHistoryEntry(entry, for: "https://test.com", sessionIndex: 0)
+        
+        // Reload HUD
+        hud.reloadEntries()
+        
+        let allItemsAfter: [Any] = getPrivateProperty(hud, "allItems") ?? []
+        XCTAssertEqual(allItemsAfter.count, 1)
+        
+        // Test filtering
+        let searchField: NSTextField = getPrivateProperty(hud, "searchField")!
+        searchField.stringValue = "Hello"
+        hud.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        
+        let filteredItems: [Any] = getPrivateProperty(hud, "filteredItems") ?? []
+        XCTAssertEqual(filteredItems.count, 1)
+        
+        // Test handleHUDShortcut Cmd+R (keyCode 15)
+        let eventCmdR = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0, context: nil, characters: "r", charactersIgnoringModifiers: "r", isARepeat: false, keyCode: 15)!
+        XCTAssertTrue(hud.handleHUDShortcut(eventCmdR))
+        
+        // Test handleHUDShortcut Cmd+1 (keyCode 18)
+        let eventCmd1 = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0, context: nil, characters: "1", charactersIgnoringModifiers: "1", isARepeat: false, keyCode: 18)!
+        XCTAssertFalse(hud.handleHUDShortcut(eventCmd1))
+        
+        // Test handleHUDShortcut Cmd+K (keyCode 40)
+        let eventCmdK = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0, context: nil, characters: "k", charactersIgnoringModifiers: "k", isARepeat: false, keyCode: 40)!
+        XCTAssertTrue(hud.handleHUDShortcut(eventCmdK))
+        
+        // Test handleHUDShortcut Cmd+Delete (keyCode 51)
+        let eventCmdDelete = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 51)!
+        XCTAssertTrue(hud.handleHUDShortcut(eventCmdDelete))
+    }
 }

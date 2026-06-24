@@ -177,15 +177,25 @@ struct GeneralSettingsView: View {
 
                     SettingsDivider()
 
-                    SettingsRow(
+                    SettingsToggleRow(
                         title: "Prompt History",
                         message: "Keep a history of sent prompts per session.",
                         icon: "clock.arrow.circlepath",
-                        iconColor: .blue.settingsResolved
-                    ) {
-                        Toggle("Enable prompt history", isOn: $settings.enablePromptHistory)
-                            .toggleStyle(.coloredCheckbox(Color.blue.settingsResolved))
-                            .frame(width: 260, alignment: .leading)
+                        iconColor: .blue,
+                        isOn: $settings.enablePromptHistory
+                    )
+
+                    if settings.enablePromptHistory {
+                        SettingsDivider()
+
+                        SettingsRow(
+                            title: "Recording Triggers",
+                            message: "Configure which actions record the prompt to history.",
+                            icon: "arrow.right.doc.on.clipboard",
+                            iconColor: .blue.settingsResolved
+                        ) {
+                            PromptHistoryTriggerPicker()
+                        }
                     }
                 }
                 

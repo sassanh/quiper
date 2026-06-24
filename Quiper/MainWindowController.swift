@@ -120,6 +120,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var lastCommandReleasedTime: TimeInterval = 0
     var wasBothCmdsDown = false
     var modifierHUDView: ModifierHUDView?
+    var promptHistoryHUDView: PromptHistoryHUDView?
     var onboardingHUD: GhostOnboardingHUDView?
 
     private var isCompactMode = false

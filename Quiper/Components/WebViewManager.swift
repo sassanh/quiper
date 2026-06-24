@@ -229,6 +229,8 @@ final class WebViewManager: NSObject {
             tabPromptHistories[serviceURL]?[sessionIndex] = []
         }
         
+        tabPromptHistories[serviceURL]?[sessionIndex]?.removeAll(where: { $0.text == entry.text })
+        
         tabPromptHistories[serviceURL]?[sessionIndex]?.append(entry)
         if let count = tabPromptHistories[serviceURL]?[sessionIndex]?.count, count > 50 {
             tabPromptHistories[serviceURL]?[sessionIndex]?.removeFirst(count - 50)
@@ -237,6 +239,14 @@ final class WebViewManager: NSObject {
 
     func clearPromptHistory(for serviceURL: String, sessionIndex: Int) {
         tabPromptHistories[serviceURL]?.removeValue(forKey: sessionIndex)
+    }
+
+    func deletePromptHistoryEntry(_ entry: PromptHistoryEntry, for serviceURL: String, sessionIndex: Int) {
+        guard var history = tabPromptHistories[serviceURL]?[sessionIndex] else { return }
+        if let idx = history.firstIndex(of: entry) {
+            history.remove(at: idx)
+            tabPromptHistories[serviceURL]?[sessionIndex] = history
+        }
     }
 
     func isPromptHistoryEnabled(for serviceURL: String, sessionIndex: Int) -> Bool {
@@ -288,15 +298,28 @@ final class WebViewManager: NSObject {
         }
 
         if wasSent {
-            NSLog("[Quiper] [History] wasSent is true. Text to record: '\(wasSentText)'")
-            let trimmed = wasSentText.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.count >= 2 && isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex) {
-                let newEntry = PromptHistoryEntry(text: wasSentText, timestamp: Date())
-                addPromptHistoryEntry(newEntry, for: service.url, sessionIndex: sessionIndex)
-                NSLog("[Quiper] [History] Successfully added entry to session \(sessionIndex) prompt history")
-                self.delegate?.inputStateRequestSave()
-            } else {
-                NSLog("[Quiper] [History] Entry ignored. Trimmed length: \(trimmed.count), enabled: \(isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex))")
+            let clearType = payload["clearType"] as? String ?? "submit"
+            var shouldRecord = false
+            if clearType == "submit" {
+                shouldRecord = Settings.shared.promptHistoryRecordOnSubmit
+            } else if clearType == "cmdBackspace" {
+                shouldRecord = Settings.shared.promptHistoryRecordOnCmdBackspace
+            } else if clearType == "selectionClear" {
+                shouldRecord = Settings.shared.promptHistoryRecordOnSelectionClear
+            }
+            
+            NSLog("[Quiper] [History] wasSent is true. Text to record: '\(wasSentText)', clearType: \(clearType), shouldRecord: \(shouldRecord)")
+            
+            if shouldRecord {
+                let trimmed = wasSentText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.count >= 2 && isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex) {
+                    let newEntry = PromptHistoryEntry(text: wasSentText, timestamp: Date())
+                    addPromptHistoryEntry(newEntry, for: service.url, sessionIndex: sessionIndex)
+                    NSLog("[Quiper] [History] Successfully added entry to session \(sessionIndex) prompt history")
+                    self.delegate?.inputStateRequestSave()
+                } else {
+                    NSLog("[Quiper] [History] Entry ignored. Trimmed length: \(trimmed.count), enabled: \(isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex))")
+                }
             }
         }
 
@@ -320,6 +343,44 @@ final class WebViewManager: NSObject {
         }
         return nil
     }
+    
+    #if DEBUG
+    func mockReceiveInputStateMessage(payload: [String: Any], service: Service, sessionIndex: Int) {
+        let text = payload["text"] as? String ?? ""
+        let isContentEditable = payload["isContentEditable"] as? Bool ?? false
+        let start = payload["start"] as? Int ?? 0
+        let end = payload["end"] as? Int ?? 0
+        let wasSent = payload["wasSent"] as? Bool ?? false
+        let wasSentText = payload["wasSentText"] as? String ?? ""
+        
+        guard service.preservePrompt else {
+            return
+        }
+
+        if wasSent {
+            let clearType = payload["clearType"] as? String ?? "submit"
+            var shouldRecord = false
+            if clearType == "submit" {
+                shouldRecord = Settings.shared.promptHistoryRecordOnSubmit
+            } else if clearType == "cmdBackspace" {
+                shouldRecord = Settings.shared.promptHistoryRecordOnCmdBackspace
+            } else if clearType == "selectionClear" {
+                shouldRecord = Settings.shared.promptHistoryRecordOnSelectionClear
+            }
+            
+            if shouldRecord {
+                let trimmed = wasSentText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.count >= 2 && isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex) {
+                    let newEntry = PromptHistoryEntry(text: wasSentText, timestamp: Date())
+                    addPromptHistoryEntry(newEntry, for: service.url, sessionIndex: sessionIndex)
+                }
+            }
+        }
+
+        let inputState = TabInputState(text: text, isContentEditable: isContentEditable, start: start, end: end)
+        setTabInputState(inputState, for: service.url, sessionIndex: sessionIndex)
+    }
+    #endif
 
     private func makeInputStartScript() -> WKUserScript {
         let source = """
@@ -367,6 +428,7 @@ final class WebViewManager: NSObject {
 
             const selector = "\(escapedSelector)";
             window.__quiperLatestTypedText = "";
+            window.__quiperLastInputWasTrustedClear = false;
 
             function getContentEditableSelection(el) {
                 try {
@@ -501,17 +563,34 @@ final class WebViewManager: NSObject {
                     end = lastSentEnd !== null ? lastSentEnd : state.end;
                 }
 
-                if (state.text && state.text.trim() !== "") {
+                if (!window.__quiperForceRecordPrompt && state.text && state.text.trim() !== "") {
                     window.__quiperLatestTypedText = state.text;
                 }
 
                 let wasSent = false;
                 let wasSentText = "";
-                const isTextEmpty = !state.text || state.text.trim() === "";
-                if (isTextEmpty && window.__quiperLatestTypedText && window.__quiperLatestTypedText.trim() !== "") {
+                let clearType = "submit";
+                
+                if (window.__quiperForceRecordPrompt && window.__quiperLatestTypedText && window.__quiperLatestTypedText.trim() !== "") {
                     wasSent = true;
                     wasSentText = window.__quiperLatestTypedText;
+                    if (window.__quiperLastClearType) {
+                        clearType = window.__quiperLastClearType;
+                    }
+                    window.__quiperForceRecordPrompt = false;
                     window.__quiperLatestTypedText = "";
+                    window.__quiperLastClearType = null;
+                } else {
+                    const isTextEmpty = !state.text || state.text.trim() === "";
+                    if (isTextEmpty && window.__quiperLatestTypedText && window.__quiperLatestTypedText.trim() !== "") {
+                        wasSent = true;
+                        wasSentText = window.__quiperLatestTypedText;
+                        if (window.__quiperLastClearType) {
+                            clearType = window.__quiperLastClearType;
+                        }
+                        window.__quiperLatestTypedText = "";
+                        window.__quiperLastClearType = null;
+                    }
                 }
 
                 if (!wasSent && state.text === lastSentText && start === lastSentStart && end === lastSentEnd) {
@@ -529,6 +608,7 @@ final class WebViewManager: NSObject {
                     end: end,
                     wasSent: wasSent,
                     wasSentText: wasSentText,
+                    clearType: clearType,
                     debug: state.debug || ""
                 };
 
@@ -545,25 +625,123 @@ final class WebViewManager: NSObject {
                 }, 150);
             }
 
-            // User interaction tracking
+            // User interaction tracking & clear type detection
             window.__quiperLastInteractionTime = 0;
+            let selectionLengthBeforeInput = 0;
+            let textLengthBeforeInput = 0;
+            let textBeforeInput = "";
+            let selectedTextBeforeInput = "";
+            let hasCapturedBeforeState = false;
+            window.__quiperLastClearType = null;
+            window.__quiperForceRecordPrompt = false;
+            
             function updateInteractionTime(e) {
                 window.__quiperLastInteractionTime = Date.now();
                 window.__quiperHasSavedSelection = false;
             }
             document.addEventListener('mousedown', updateInteractionTime, true);
-            document.addEventListener('keydown', updateInteractionTime, true);
             document.addEventListener('touchstart', updateInteractionTime, true);
+            
+            function captureBeforeState() {
+                if (hasCapturedBeforeState) return;
+                const el = getTargetElement();
+                if (!el) return;
+                const state = getElementState(el);
+                if (!state) return;
+                textBeforeInput = state.text || "";
+                textLengthBeforeInput = textBeforeInput.length;
+                if (state.isContentEditable) {
+                    const sel = window.getSelection();
+                    selectedTextBeforeInput = sel ? sel.toString() : "";
+                    selectionLengthBeforeInput = selectedTextBeforeInput.length;
+                } else {
+                    const start = (typeof el.selectionStart === 'number') ? el.selectionStart : 0;
+                    const end = (typeof el.selectionEnd === 'number') ? el.selectionEnd : 0;
+                    selectionLengthBeforeInput = (end - start) || 0;
+                    selectedTextBeforeInput = el.value ? el.value.substring(start, end) : "";
+                }
+                hasCapturedBeforeState = true;
+            }
+
+            document.addEventListener('keydown', (e) => {
+                updateInteractionTime(e);
+                captureBeforeState();
+                const el = getTargetElement();
+                if (el && e.isTrusted) {
+                    const isDeleteKey = e.key === 'Backspace' || e.key === 'Delete';
+                    const isCmd = e.metaKey || e.ctrlKey;
+                    
+                    if (isDeleteKey) {
+                        if (isCmd) {
+                            window.__quiperLastClearType = "cmdBackspace";
+                        } else if (selectionLengthBeforeInput > 0) {
+                            window.__quiperLastClearType = "selectionClear";
+                        } else {
+                            window.__quiperLastClearType = "normalDelete";
+                        }
+                    } else if ((e.key === 'x' || e.key === 'X') && isCmd) {
+                        window.__quiperLastClearType = "selectionClear";
+                    }
+                }
+            }, true);
+
+            document.addEventListener('keyup', (e) => {
+                hasCapturedBeforeState = false;
+            }, true);
+
+            document.addEventListener('mouseup', (e) => {
+                hasCapturedBeforeState = false;
+            }, true);
+
+            document.addEventListener('cut', (e) => {
+                if (e && e.isTrusted) {
+                    window.__quiperLastClearType = "selectionClear";
+                }
+            }, true);
+
+            document.addEventListener('beforeinput', (e) => {
+                if (e && e.isTrusted) {
+                    captureBeforeState();
+                    if (e.inputType && e.inputType.startsWith('delete')) {
+                        if (window.__quiperLastClearType === null) {
+                            window.__quiperLastClearType = "selectionClear";
+                        }
+                    }
+                }
+            }, true);
 
             document.addEventListener('input', (e) => {
                 const el = getTargetElement();
                 if (el && (el === e.target || el.contains(e.target))) {
                     const state = getElementState(el);
-                    if (state && state.text && state.text.trim() !== "") {
-                        window.__quiperLatestTypedText = state.text;
+                    if (state) {
+                        const normSel = selectedTextBeforeInput.replace(/\\s/g, '');
+                        const normFull = textBeforeInput.replace(/\\s/g, '');
+                        const wasSelectAll = normSel.length > 0 && (normSel === normFull || (normFull.length > 0 && normSel.length / normFull.length >= 0.95));
+                        
+                        if (wasSelectAll && textBeforeInput && textBeforeInput.trim() !== "") {
+                            window.__quiperLastClearType = "selectionClear";
+                            window.__quiperLatestTypedText = textBeforeInput;
+                            window.__quiperForceRecordPrompt = true;
+                            sendState(true);
+                            selectedTextBeforeInput = "";
+                            selectionLengthBeforeInput = 0;
+                            textBeforeInput = "";
+                        }
+                        
+                        if (state.text && state.text.trim() !== "") {
+                            window.__quiperLatestTypedText = state.text;
+                        }
+                        
+                        const isTextEmpty = !state.text || state.text.trim() === "";
+                        if (isTextEmpty) {
+                            sendState(true);
+                        } else {
+                            debouncedSend();
+                        }
                     }
-                    debouncedSend();
                 }
+                hasCapturedBeforeState = false;
             }, true);
 
             document.addEventListener('selectionchange', () => {
@@ -597,6 +775,7 @@ final class WebViewManager: NSObject {
             document.addEventListener('quiper-value-set', (e) => {
                 const el = getTargetElement();
                 if (el && (e.target === el || el.contains(e.target))) {
+                    window.__quiperLastInputWasTrustedClear = false;
                     sendState(true);
                 }
             }, true);

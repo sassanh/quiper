@@ -141,4 +141,46 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertEqual(resultEvent2, escapeEvent)
         XCTAssertFalse(mockWebView.stopLoadingCalled)
     }
+
+    func testPromptHistorySelectionClearRecording() {
+        let service = Service(id: UUID(), name: "Service 1", url: "https://example.com/1", focus_selector: "", activationShortcut: nil, preservePrompt: true)
+        let controller = MainWindowController(services: [service])
+        
+        // 1. When selectionClear trigger is disabled (default):
+        Settings.shared.promptHistoryRecordOnSelectionClear = false
+        controller.webViewManager.clearPromptHistory(for: service.url, sessionIndex: 0)
+        
+        let payloadDisabled: [String: Any] = [
+            "text": "new text",
+            "isContentEditable": false,
+            "start": 8,
+            "end": 8,
+            "wasSent": true,
+            "wasSentText": "previous select-all prompt",
+            "clearType": "selectionClear"
+        ]
+        
+        controller.webViewManager.mockReceiveInputStateMessage(payload: payloadDisabled, service: service, sessionIndex: 0)
+        XCTAssertTrue(controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).isEmpty)
+        
+        // 2. When selectionClear trigger is enabled:
+        Settings.shared.promptHistoryRecordOnSelectionClear = true
+        let payloadEnabled: [String: Any] = [
+            "text": "new text",
+            "isContentEditable": false,
+            "start": 8,
+            "end": 8,
+            "wasSent": true,
+            "wasSentText": "previous select-all prompt",
+            "clearType": "selectionClear"
+        ]
+        
+        controller.webViewManager.mockReceiveInputStateMessage(payload: payloadEnabled, service: service, sessionIndex: 0)
+        let history = controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0)
+        XCTAssertEqual(history.count, 1)
+        XCTAssertEqual(history.first?.text, "previous select-all prompt")
+        
+        // Cleanup settings to default false
+        Settings.shared.promptHistoryRecordOnSelectionClear = false
+    }
 }

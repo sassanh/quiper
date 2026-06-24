@@ -38,6 +38,10 @@ extension MainWindowController {
             self.wasBothCmdsDown = false
             
             if event.keyCode == kVK_Escape {
+                if self.promptHistoryHUDView != nil {
+                    self.hidePromptHistoryHUD()
+                    return nil
+                }
                 if self.modifierHUDView != nil {
                     self.hideModifierHUD()
                     return nil // Swallow escape so it doesn't hide the main window
@@ -45,6 +49,16 @@ extension MainWindowController {
                 if let webView = self.currentWebView(), webView.isLoading {
                     webView.stopLoading()
                     return nil // Swallow escape so it stops loading
+                }
+            }
+            if let hud = self.promptHistoryHUDView {
+                if hud.handleHUDShortcut(event) {
+                    return nil
+                }
+                let isEditingShortcut = event.modifierFlags.contains(.command) && [0, 6, 7, 8, 9, 12, 15, 40, 51, 117].contains(event.keyCode)
+                let hasModifier = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.option) || event.modifierFlags.contains(.control)
+                if hasModifier && !isEditingShortcut {
+                    self.hidePromptHistoryHUD()
                 }
             }
             if self.modifierHUDView != nil {
@@ -189,6 +203,7 @@ extension MainWindowController {
     
     private func showModifierHUD() {
         guard let contentView = window?.contentView else { return }
+        hidePromptHistoryHUD()
         NSLog("[QuiperDebug] showModifierHUD called, current HUD is \(modifierHUDView == nil ? "nil" : "not nil")")
         if modifierHUDView == nil {
             modifierHUDView = ModifierHUDView(frame: contentView.bounds, windowController: self)
@@ -308,6 +323,9 @@ extension MainWindowController {
                 case "h", "q":
                     hide()
                     return true
+                case "y":
+                    togglePromptHistoryHUD()
+                    return true
                 case ",":
                     NotificationCenter.default.post(name: .showSettings, object: nil)
                     return true
@@ -414,11 +432,11 @@ extension MainWindowController {
         case "m":
             toggleWindowSize()
             return true
-        case "h":
+        case "h", "q":
             hide()
             return true
-        case "q":
-            hide()
+        case "y":
+            togglePromptHistoryHUD()
             return true
         case "w":
             closeCurrentTab()

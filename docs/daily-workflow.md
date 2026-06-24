@@ -28,6 +28,19 @@ Quiper divides your workspaces into two hierarchical layers:
 
 ---
 
+## Prompt History HUD
+
+Quiper includes a native Prompt History Heads-Up Display (HUD) overlay that tracks your past prompts. You can search, copy, restore, or delete old prompts instantly.
+
+*   **To Open/Close HUD:** Press **`⌘ Y`** (Command + Y) while the overlay is visible.
+*   **Search:** Simply type into the search bar at the top to filter past prompts in real-time.
+*   **Restore Prompt:** Use the Up/Down arrow keys to highlight a prompt and press **`Enter`** (or click the row) to insert it back into the active chat session's input field.
+*   **Copy to Clipboard:** Highlight a prompt and press **`⌘ C`** (or click the copy pill `[ 📄 ⌘C ]`) to copy the text.
+*   **Delete Entry:** Highlight a prompt and press **`⌘ ⌫`** (or click the trash pill `[ 🗑️ ⌘⌫ ]`) to permanently remove it from history.
+*   **Clear All History:** Press **`⌘ K`** (or click the "Clear All" button) to wipe out the history for the active session.
+
+---
+
 ## Complete Keyboard Shortcuts Reference
 
 Below is the exhaustive reference of Quiper's keyboard shortcuts, grouped by category.
@@ -39,6 +52,7 @@ Below is the exhaustive reference of Quiper's keyboard shortcuts, grouped by cat
 | **Summon / Dismiss Window** | `⌥ Space` | Global | Toggles the visibility of the overlay window. |
 | **Toggle Window Size** | `⌘ M` | In-App | Switches between a centered Standard layout and a top-right Compact layout. |
 | **Open Settings** | `⌘ ,` | In-App | Opens the native SwiftUI Settings panel. |
+| **Toggle Prompt History HUD** | `⌘ Y` | In-App | Toggles the native Prompt History HUD overlay. |
 | **Quit Quiper** | `⌘ ⌃ ⇧ Q` | In-App | Completely shuts down the Quiper application. |
 
 *Note: When running under Xcode debugger, standard `⌘ Q` will quit the application directly.*

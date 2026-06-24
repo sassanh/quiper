@@ -490,6 +490,9 @@ struct PersistedSettings: Codable {
     var tabSurvivalPolicy: TabSurvivalPolicy?
     var persistedTabState: PersistedTabState?
     var enablePromptHistory: Bool?
+    var promptHistoryRecordOnSubmit: Bool?
+    var promptHistoryRecordOnCmdBackspace: Bool?
+    var promptHistoryRecordOnSelectionClear: Bool?
     var version: Int? = 1
 
     enum CodingKeys: String, CodingKey {
@@ -507,6 +510,9 @@ struct PersistedSettings: Codable {
         case tabSurvivalPolicy
         case persistedTabState
         case enablePromptHistory
+        case promptHistoryRecordOnSubmit
+        case promptHistoryRecordOnCmdBackspace
+        case promptHistoryRecordOnSelectionClear
     }
 
     init(services: [Service],
@@ -534,6 +540,9 @@ struct PersistedSettings: Codable {
          tabSurvivalPolicy: TabSurvivalPolicy? = nil,
          persistedTabState: PersistedTabState? = nil,
          enablePromptHistory: Bool? = nil,
+         promptHistoryRecordOnSubmit: Bool? = nil,
+         promptHistoryRecordOnCmdBackspace: Bool? = nil,
+         promptHistoryRecordOnSelectionClear: Bool? = nil,
          version: Int? = 1) {
         self.services = services
         self.hotkey = hotkey
@@ -560,6 +569,9 @@ struct PersistedSettings: Codable {
         self.tabSurvivalPolicy = tabSurvivalPolicy
         self.persistedTabState = persistedTabState
         self.enablePromptHistory = enablePromptHistory
+        self.promptHistoryRecordOnSubmit = promptHistoryRecordOnSubmit
+        self.promptHistoryRecordOnCmdBackspace = promptHistoryRecordOnCmdBackspace
+        self.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear
         self.version = version
     }
 
@@ -590,6 +602,9 @@ struct PersistedSettings: Codable {
         tabSurvivalPolicy = try container.decodeIfPresent(TabSurvivalPolicy.self, forKey: .tabSurvivalPolicy)
         persistedTabState = try container.decodeIfPresent(PersistedTabState.self, forKey: .persistedTabState)
         enablePromptHistory = try container.decodeIfPresent(Bool.self, forKey: .enablePromptHistory)
+        promptHistoryRecordOnSubmit = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnSubmit)
+        promptHistoryRecordOnCmdBackspace = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnCmdBackspace)
+        promptHistoryRecordOnSelectionClear = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnSelectionClear)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }
 }

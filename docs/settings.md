@@ -20,6 +20,19 @@ These controls dictate how Quiper handles session cycling and engine switching d
 
 ---
 
+## Prompt History Settings
+
+Quiper can maintain a local history of your sent prompts on a per-session basis, allowing you to quickly review, search, copy, or restore past inputs.
+
+### Record Prompt History
+*   **Description:** Globally enables or disables prompt recording for all engines and session slots.
+*   **Triggers:** You can customize what specific actions trigger prompt recording:
+    *   **On Submit / Enter:** Records the prompt when you hit Enter to submit it to the AI.
+    *   **On Cmd+Enter:** Records the prompt when you submit via Command + Enter.
+    *   **On Clear / Overwrite:** Records the prior prompt when it is cleared (via `Cmd+X` or `Backspace` on empty) or overwritten (typing/pasting after `Cmd+A` select-all).
+
+---
+
 ## Configuration backups (Import/Export)
 
 You can backup or migrate your entire Quiper setup (including all configured service engines, custom CSS layout injects, custom action scripts, and global hotkeys) into a single, encrypted `.quiper` file.

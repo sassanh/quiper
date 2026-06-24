@@ -13,6 +13,9 @@
 
 ### Fixed
 
+- **Prompt Reset Overwrite Detection ([WebViewManager.swift](Quiper/Components/WebViewManager.swift), [MainWindowControllerTests.swift](QuiperTests/MainWindowControllerTests.swift))**: Refined WebKit selection tracking to use transaction-based state capture and whitespace-normalized comparison, ensuring that prompt overwrites following a select-all (`Cmd+A`) are correctly recorded and mapped to settings triggers. Added corresponding unit tests.
+- **Unified HUD Item Layout and Shortcut ([PromptHistoryHUDView.swift](Quiper/Components/PromptHistoryHUDView.swift), [SettingsPickers.swift](Quiper/Components/SettingsPickers.swift), [MainWindowController+InputHandling.swift](Quiper/MainWindowController+InputHandling.swift))**: Redesigned prompt history list items to combine action icons and keyboard shortcuts into unified pill-shaped buttons (`[ 📄 ⌘C ]` and `[ 🗑️ ⌘⌫ ]`). Updated the settings option label to "Clear / Overwrite" for clarity. Added `Cmd+Y` keyboard shortcut to toggle the HUD overlay.
+
 - **Case-Sensitivity Alignment ([EncryptedVolumeManager.swift](Quiper/Components/EncryptedVolumeManager.swift))**: Changed the SparseBundle mount point directory casing to match WebKit's uppercase UUID naming format, resolving mount issues and avoiding data leaks on case-sensitive APFS volumes.
 
 - **Stale Prompt Resolution ([WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Fixed an issue where programmatically-cleared prompts would reappear in the input field when switching sessions. Transitioned the input tracker to a 100% event-driven architecture using a document start script (`.atDocumentStart`) to intercept prototype setters and dispatch a custom `'quiper-value-set'` event, completely eliminating the need for periodic interval polling.

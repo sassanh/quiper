@@ -14,75 +14,36 @@ extension MainWindowController {
     }
 
     @objc func promptHistoryButtonTapped(_ sender: HoverIconButton) {
-        guard let service = currentService() else { return }
-        let sessionIdx = activeIndicesByURL[service.url] ?? 0
-        
-        let menu = NSMenu(title: "Prompt History")
-        menu.autoenablesItems = false
-        
-        let isEnabled = webViewManager.isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIdx)
-        let recordItem = NSMenuItem(title: "Record Prompt History", action: #selector(togglePromptHistoryRecording(_:)), keyEquivalent: "")
-        recordItem.state = isEnabled ? .on : .off
-        recordItem.target = self
-        menu.addItem(recordItem)
-        
-        let clearItem = NSMenuItem(title: "Clear History", action: #selector(clearPromptHistory(_:)), keyEquivalent: "")
-        clearItem.target = self
-        let history = webViewManager.getPromptHistory(for: service.url, sessionIndex: sessionIdx)
-        clearItem.isEnabled = !history.isEmpty
-        menu.addItem(clearItem)
-        
-        menu.addItem(.separator())
-        
-        if history.isEmpty {
-            let emptyItem = NSMenuItem(title: "No History", action: nil, keyEquivalent: "")
-            emptyItem.isEnabled = false
-            menu.addItem(emptyItem)
-        } else {
-            let sortedHistory = history.sorted(by: { $0.timestamp > $1.timestamp })
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-            
-            for entry in sortedHistory {
-                let dateStr = dateFormatter.string(from: entry.timestamp)
-                let singleLine = entry.text.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
-                let truncatedText = singleLine.count > 60 ? String(singleLine.prefix(60)) + "..." : singleLine
-                let itemTitle = "[\(dateStr)] \(truncatedText)"
-                
-                let historyItem = NSMenuItem(title: itemTitle, action: #selector(promptHistoryItemClicked(_:)), keyEquivalent: "")
-                historyItem.target = self
-                historyItem.representedObject = entry.text
-                menu.addItem(historyItem)
+        togglePromptHistoryHUD()
+    }
+
+    func showPromptHistoryHUD() {
+        guard let contentView = window?.contentView else { return }
+        hideModifierHUD()
+        if let hud = promptHistoryHUDView {
+            if hud.isHiding {
+                hud.isHiding = false
+                hud.show(in: contentView)
             }
+            return
         }
-        
-        let origin = NSPoint(x: 0, y: sender.bounds.height + 4)
-        menu.popUp(positioning: nil, at: origin, in: sender)
+        let hud = PromptHistoryHUDView(frame: contentView.bounds, windowController: self)
+        promptHistoryHUDView = hud
+        hud.show(in: contentView)
     }
 
-    @objc func togglePromptHistoryRecording(_ sender: NSMenuItem) {
-        guard let service = currentService() else { return }
-        let sessionIdx = activeIndicesByURL[service.url] ?? 0
-        let currentVal = webViewManager.isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIdx)
-        webViewManager.setPromptHistoryEnabled(!currentVal, for: service.url, sessionIndex: sessionIdx)
-        saveTabsState()
+    func hidePromptHistoryHUD() {
+        if let hud = promptHistoryHUDView, !hud.isHiding {
+            hud.hide()
+        }
     }
 
-    @objc func clearPromptHistory(_ sender: NSMenuItem) {
-        guard let service = currentService() else { return }
-        let sessionIdx = activeIndicesByURL[service.url] ?? 0
-        webViewManager.clearPromptHistory(for: service.url, sessionIndex: sessionIdx)
-        saveTabsState()
-    }
-
-    @objc func promptHistoryItemClicked(_ sender: NSMenuItem) {
-        guard let fullText = sender.representedObject as? String,
-              let service = currentService() else { return }
-        
-        let sessionIdx = activeIndicesByURL[service.url] ?? 0
-        let inputState = TabInputState(text: fullText, isContentEditable: false, start: fullText.count, end: fullText.count)
-        webViewManager.setTabInputState(inputState, for: service.url, sessionIndex: sessionIdx)
-        focusInputInActiveWebview()
+    func togglePromptHistoryHUD() {
+        if let hud = promptHistoryHUDView, !hud.isHiding {
+            hidePromptHistoryHUD()
+        } else {
+            showPromptHistoryHUD()
+        }
     }
 
     @objc func manualLockTapped(_ sender: NSButton) {

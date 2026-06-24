@@ -780,3 +780,113 @@ struct SessionSwitchingPicker: View {
         .frame(width: 260, alignment: .trailing)
     }
 }
+
+struct PromptHistoryTriggerPicker: View {
+    @ObservedObject private var settings = Settings.shared
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // 1. On Submit Card
+            Button(action: {
+                settings.promptHistoryRecordOnSubmit.toggle()
+                settings.saveSettings()
+            }) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        // Card container outline (handled by pickerCardStyle)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                            .frame(width: 44, height: 36)
+
+                        // Input field line
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(width: 28, height: 4)
+                            .offset(y: -8)
+
+                        // Paperplane sending
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(settings.promptHistoryRecordOnSubmit ? Color.blue.settingsResolved : .gray.opacity(0.4))
+                            .offset(y: 4)
+                    }
+                    .frame(width: 44, height: 36)
+                    .padding(8)
+                    .pickerCardStyle(isSelected: settings.promptHistoryRecordOnSubmit, accentColor: .blue)
+
+                    Text("On Submit")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.promptHistoryRecordOnSubmit ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // 2. Cmd + Backspace Card
+            Button(action: {
+                settings.promptHistoryRecordOnCmdBackspace.toggle()
+                settings.saveSettings()
+            }) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                            .frame(width: 44, height: 36)
+
+                        // Command symbol & Delete icon
+                        HStack(spacing: 3) {
+                            Text("⌘")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(settings.promptHistoryRecordOnCmdBackspace ? Color.blue.settingsResolved : .gray.opacity(0.4))
+                            Image(systemName: "delete.left.fill")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(settings.promptHistoryRecordOnCmdBackspace ? Color.blue.settingsResolved : .gray.opacity(0.4))
+                        }
+                    }
+                    .frame(width: 44, height: 36)
+                    .padding(8)
+                    .pickerCardStyle(isSelected: settings.promptHistoryRecordOnCmdBackspace, accentColor: .blue)
+
+                    Text("Cmd+⌫")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.promptHistoryRecordOnCmdBackspace ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // 3. Selection Clear Card
+            Button(action: {
+                settings.promptHistoryRecordOnSelectionClear.toggle()
+                settings.saveSettings()
+            }) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                            .frame(width: 44, height: 36)
+
+                        // Selected text representation
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(settings.promptHistoryRecordOnSelectionClear ? Color.blue.settingsResolved.opacity(0.3) : Color.gray.opacity(0.2))
+                            .frame(width: 26, height: 10)
+                            .offset(y: -6)
+
+                        // Scissors / Cut icon
+                        Image(systemName: "scissors")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(settings.promptHistoryRecordOnSelectionClear ? Color.blue.settingsResolved : .gray.opacity(0.4))
+                            .offset(y: 6)
+                    }
+                    .frame(width: 44, height: 36)
+                    .padding(8)
+                    .pickerCardStyle(isSelected: settings.promptHistoryRecordOnSelectionClear, accentColor: .blue)
+
+                    Text("Clear / Overwrite")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.promptHistoryRecordOnSelectionClear ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 260, alignment: .trailing)
+    }
+}
