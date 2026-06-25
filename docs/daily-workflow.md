@@ -9,7 +9,6 @@ Quiper is designed to be operated almost entirely from your keyboard, letting yo
 *   **To Summon:** Press **`⌥ Space`** (Option + Space) on any screen. The Quiper window will slide into focus immediately over your active workspace.
 *   **To Hide / Dismiss:**
     *   Press **`⌥ Space`** again.
-    *   Or press **`Escape`**.
     *   Or press **`⌘ H`** (Command + H).
     *   Or press **`⌘ Q`** (Command + Q).
 *   **Workflow Focus Restoration:** When Quiper is dismissed, it automatically returns keyboard focus to the application you were using immediately before summoning it, allowing you to resume typing without clicking back.

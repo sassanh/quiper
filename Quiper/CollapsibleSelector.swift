@@ -217,10 +217,8 @@ class CollapsibleSelector: NSView {
                 control.segmentCount = newItems.count
             }
             
-            if let segControl = control as? SegmentedControl {
-                segControl.customLockedStates = newItems.indices.map { delegate?.selector(self, isLocked: $0) == true }
-                segControl.customLabels = newItems
-            }
+            control.customLockedStates = newItems.indices.map { delegate?.selector(self, isLocked: $0) == true }
+            control.customLabels = newItems
             
             for (i, item) in newItems.enumerated() {
                 control.setLabel(item, forSegment: i)
@@ -484,4 +482,3 @@ class ActivePanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
-

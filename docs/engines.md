@@ -60,12 +60,14 @@ If you add a custom web service and notice that your keyboard focus doesn't land
 
 | Service | Focus Selector |
 | :--- | :--- |
-| **Gemini** | `.textarea` |
-| **Claude** | `div[contenteditable='true']` |
-| **Grok** | `textarea[aria-label='Ask Grok anything'],div[contenteditable=true]` |
-| **ChatGPT** | `#prompt-textarea` |
-| **X (Grok)** | `div[contenteditable='true']` |
-| **Open WebUI** | `#chat-input[contenteditable='true']` |
+| **Gemini** | `rich-textarea .textarea, .textarea, div[contenteditable='true'], textarea` |
+| **Claude** | `[data-testid='chat-input'] div[contenteditable='true'], div[contenteditable='true'], textarea` |
+| **Grok** | `textarea[aria-label='Ask Grok anything'], textarea, div[contenteditable='true']` |
+| **ChatGPT** | `#prompt-textarea, textarea, div[contenteditable='true']` |
+| **X (Grok)** | `div[contenteditable='true'], textarea` |
+| **Open WebUI** | `#chat-input[contenteditable='true'], textarea, div[contenteditable='true']` |
+| **Z.ai** | `textarea, div[contenteditable='true'], [role='textbox']` |
+| **DeepSeek** | `textarea, div[contenteditable='true'], [role='textbox']` |
 
 ---
 

@@ -34,7 +34,7 @@ extension Notification.Name {
 
 @MainActor
 final class AppController: NSObject, NSWindowDelegate {
-    
+
     private let windowController: MainWindowControlling
     var window: MainWindowControlling { return windowController }
     let hotkeyManager: HotkeyManaging
@@ -44,22 +44,25 @@ final class AppController: NSObject, NSWindowDelegate {
         private var lastActiveTime: Date?
         private let testDataStore: WKWebsiteDataStore
         private var screenshotPromptController: ScreenshotPromptController?
-        
+        #if DEBUG
+        private var templateValidationServer: TemplateValidationServer?
+        #endif
+
         init(windowController: MainWindowControlling? = nil,
-    
+
          hotkeyManager: HotkeyManaging? = nil,
          engineHotkeyManager: EngineHotkeyManaging? = nil,
          notificationDispatcher: NotificationDispatching? = nil) {
-        
+
         // Instantiate defaults inside the body (which is safely on MainActor)
         self.windowController = windowController ?? MainWindowController()
         self.hotkeyManager = hotkeyManager ?? HotkeyManager()
         self.engineHotkeyManager = engineHotkeyManager ?? EngineHotkeyManager()
         self.notificationDispatcher = notificationDispatcher ?? NotificationDispatcher.shared
         self.testDataStore = WKWebsiteDataStore.nonPersistent()
-        
+
         super.init()
-        
+
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettingsNotification), name: .showSettings, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationDidBecomeActive(_:)), name: NSApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationDidResignActive(_:)), name: NSApplication.didResignActiveNotification, object: nil)
@@ -75,46 +78,69 @@ final class AppController: NSObject, NSWindowDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidShow), name: .windowDidShow, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidHide), name: .windowDidHide, object: nil)
     }
-    
-    
-    
+
+
+
     deinit {
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
-    
-    
-    
+
+
+
     func start() {
         if ProcessInfo.processInfo.arguments.contains("--interactive-mode") {
             screenshotPromptController = ScreenshotPromptController()
             showScreenshotPrompt()
         }
-        
+
+        #if DEBUG
+        if TemplateValidationServer.shouldStart() {
+            startTemplateValidationServer()
+        }
+        #endif
+
         if Settings.shared.dockVisibility == .always {
             NSApp.setActivationPolicy(.regular)
         }
-        
+
         registerOverlayHotkey()
         registerEngineHotkeys()
         UpdateManager.shared.handleLaunchIfNeeded()
     }
-    
+
+    #if DEBUG
+    private func startTemplateValidationServer() {
+        guard let concreteWindowController = windowController as? MainWindowController else {
+            NSLog("[Quiper] Template validation server could not start: unsupported window controller")
+            return
+        }
+
+        let server = TemplateValidationServer(windowController: concreteWindowController)
+        do {
+            try server.start()
+            templateValidationServer = server
+        } catch {
+            NSLog("[Quiper] Template validation server could not start: %@", error.localizedDescription)
+        }
+    }
+    #endif
+
     private func showScreenshotPrompt() {
         let alert = NSAlert()
         alert.messageText = "Screenshot Generator (Interactive)"
         alert.informativeText = "The app is ready. Click 'Go' to start.\n\nFor each screenshot, a small floating window will appear. You can interact with the app, and click 'Take Screenshot' when you're ready."
         alert.addButton(withTitle: "Go")
         alert.addButton(withTitle: "Cancel")
-        
+
         let response = alert.runModal()
         if response != .alertFirstButtonReturn {
             NSApp.terminate(nil)
         }
     }
-    
-    
-    
+
+
+
     @objc func showWindow(_ sender: Any?) {
         captureFrontmostNonQuiperApplication()
         if isActiveSpaceFullscreen() {
@@ -129,46 +155,46 @@ final class AppController: NSObject, NSWindowDelegate {
 
     private func isActiveSpaceFullscreen() -> Bool {
         guard let mainScreen = NSScreen.main else { return false }
-        
+
         let screenFrame = mainScreen.frame
         let options = CGWindowListOption(arrayLiteral: .excludeDesktopElements, .optionOnScreenOnly)
         guard let windowListInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
             return false
         }
-        
+
         for info in windowListInfo {
             let ownerName = info[kCGWindowOwnerName as String] as? String ?? ""
             let layer = info[kCGWindowLayer as String] as? Int ?? -1
             let ownerPID = info[kCGWindowOwnerPID as String] as? Int ?? -1
-            
+
             // Ignore windows owned by Quiper itself
             if ownerPID == NSRunningApplication.current.processIdentifier {
                 continue
             }
-            
+
             // Ignore system UI elements
             if ownerName == "Dock" || ownerName == "Window Server" || ownerName == "Control Center" {
                 continue
             }
-            
+
             guard layer < 20 else { continue }
-            
+
             var bounds = CGRect.zero
             if let boundsDict = info[kCGWindowBounds as String] as? [String: Any] {
                 bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) ?? .zero
             }
-            
+
             let widthDiff = abs(bounds.width - screenFrame.width)
             let isXAligned = abs(bounds.minX - screenFrame.minX) < 10
             let yDiff = bounds.minY - screenFrame.minY
             let heightDiff = screenFrame.height - bounds.height
-            
+
             // Allow a tolerance (up to 120 points) for notch area at the top of the screen
             if isXAligned && widthDiff < 10 && yDiff >= 0 && yDiff <= 120 && heightDiff >= 0 && heightDiff <= 120 {
                 return true
             }
         }
-        
+
         return false
     }
 
@@ -191,7 +217,7 @@ final class AppController: NSObject, NSWindowDelegate {
     @objc private func handleWindowDidHide(_ notification: Notification) {
         let visibility = Settings.shared.dockVisibility
         activateLastKnownApplication()
-        
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self = self else { return }
             if visibility == .always {
@@ -206,7 +232,7 @@ final class AppController: NSObject, NSWindowDelegate {
             NotificationCenter.default.post(name: .appVisibilityChanged, object: false)
         }
     }
-    
+
     @objc func closeSettingsOrHide(_ sender: Any?) {
         if AppDelegate.sharedSettingsWindow.isVisible == true && AppDelegate.sharedSettingsWindow.isKeyWindow {
             dismissSettingsWindow()
@@ -214,11 +240,11 @@ final class AppController: NSObject, NSWindowDelegate {
             hideWindow(sender)
         }
     }
-    
-    
-    
-    
-    
+
+
+
+
+
     @objc func showSettings(_ sender: Any?) {
         presentSettingsWindow()
     }
@@ -231,9 +257,9 @@ final class AppController: NSObject, NSWindowDelegate {
     @objc func toggleInspector(_ sender: Any?) {
         windowController.toggleInspector()
     }
-    
-    
-    
+
+
+
     @objc func clearWebViewData(_ sender: Any?) {
         let store = AppController.isRunningTests ? testDataStore : WKWebsiteDataStore.default()
         store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
@@ -244,9 +270,9 @@ final class AppController: NSObject, NSWindowDelegate {
         }
     }
     @objc func handleDockVisibilityChanged(_ notification: Notification) {
-        
+
         let visibility = Settings.shared.dockVisibility
-        
+
         switch visibility {
         case .always:
             NSApp.setActivationPolicy(.regular)
@@ -259,14 +285,14 @@ final class AppController: NSObject, NSWindowDelegate {
                 NSApp.setActivationPolicy(.accessory)
             }
         }
-        
+
         // Force activation to prevent focus loss during policy switch
         NSApp.activate(ignoringOtherApps: true)
-        
+
         // Removed: AppDelegate.sharedSettingsWindow.makeKeyAndOrderFront(nil)
         // This was causing the settings window to pop up unexpectedly (e.g. during drag reorder)
     }
-    
+
     @objc func setHotkey(_ sender: Any?) {
         presentSettingsWindow()
         NotificationCenter.default.post(name: .startGlobalHotkeyCapture, object: nil)
@@ -276,54 +302,54 @@ final class AppController: NSObject, NSWindowDelegate {
         presentSettingsWindow()
         notificationDispatcher.openSystemNotificationSettings()
     }
-    
-    
-    
+
+
+
     @objc func checkForUpdates(_ sender: Any?) {
-        
+
         UpdateManager.shared.checkForUpdates(userInitiated: true)
-        
+
     }
-    
-    
-    
+
+
+
     @objc func installAtLogin(_ sender: Any?) {
-        
+
         Launcher.installAtLogin()
-        
+
     }
-    
-    
-    
+
+
+
     @objc func uninstallFromLogin(_ sender: Any?) {
-        
+
         Launcher.uninstallFromLogin()
-        
+
     }
-    
-    
-    
+
+
+
     func reloadServices() {
-        
+
         windowController.reloadServices()
         registerEngineHotkeys()
-        
+
     }
-    
+
     func updateOverlayHotkey(_ configuration: HotkeyManager.Configuration) {
         hotkeyManager.updateConfiguration(configuration)
         NotificationCenter.default.post(name: .hotkeyConfigurationChanged, object: nil)
     }
-    
-    
-    
+
+
+
     func focusMainWindowIfVisible() {
-        
+
         guard windowController.window?.isVisible == true else { return }
-        
+
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            
+
             if UpdatePromptWindowController.shared.window?.isVisible == true {
                 UpdatePromptWindowController.shared.window?.makeKeyAndOrderFront(nil)
             } else if AppDelegate.sharedSettingsWindow.isVisible {
@@ -337,27 +363,27 @@ final class AppController: NSObject, NSWindowDelegate {
                 }
             }
         }
-        
+
     }
-    
-    
-    
+
+
+
     func setMainWindowShortcutsEnabled(_ enabled: Bool) {
         windowController.setShortcutsEnabled(enabled)
         guard windowController.window?.isVisible == true else {
             return
         }
     }
-    
+
     var currentServiceURL: String? {
         windowController.activeServiceURL
     }
-    
+
     var isWindowVisible: Bool {
         guard let window = windowController.window else { return false }
         return window.isVisible && window.isOnActiveSpace
     }
-    
+
     private func captureFrontmostNonQuiperApplication() {
         guard let frontmost = NSWorkspace.shared.frontmostApplication,
               frontmost.processIdentifier != NSRunningApplication.current.processIdentifier else {
@@ -365,15 +391,15 @@ final class AppController: NSObject, NSWindowDelegate {
         }
         lastNonQuiperApplication = frontmost
     }
-    
+
     private func activateLastKnownApplication() {
         guard let app = lastNonQuiperApplication, !app.isTerminated else { return }
-        
+
         if hasWindowOnActiveSpace(pid: app.processIdentifier) {
             app.activate(options: [.activateAllWindows])
         }
     }
-    
+
     private func hasWindowOnActiveSpace(pid: pid_t) -> Bool {
         guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else {
             return false
@@ -387,7 +413,7 @@ final class AppController: NSObject, NSWindowDelegate {
         }
         return false
     }
-    
+
     @objc private func handleApplicationDidActivate(_ notification: Notification) {
         guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
               app.processIdentifier != NSRunningApplication.current.processIdentifier else {
@@ -395,7 +421,7 @@ final class AppController: NSObject, NSWindowDelegate {
         }
         lastNonQuiperApplication = app
     }
-    
+
     @objc private func handleApplicationDidBecomeActive(_ notification: Notification) {
         lastActiveTime = nil
     }
@@ -413,20 +439,20 @@ final class AppController: NSObject, NSWindowDelegate {
                 NSApp.setActivationPolicy(.accessory)
             }
         }
-        
+
         guard Settings.shared.showOnAllSpaces else { return }
-        
+
         let wasActive = NSApp.isActive || (lastActiveTime.map { Date().timeIntervalSince($0) < 1.5 } ?? false)
         if wasActive {
             NSApp.activate(ignoringOtherApps: true)
             focusMainWindowIfVisible()
         }
     }
-    
-    
-    
+
+
+
     private var mainWindowShield: InteractionShieldView?
-    
+
     private func presentSettingsWindow() {
         let settingsWindow = AppDelegate.sharedSettingsWindow
         settingsWindow.appController = self
@@ -444,14 +470,14 @@ final class AppController: NSObject, NSWindowDelegate {
             }
             return
         }
-        
+
         if settingsWindow.isVisible == true {
             dismissSettingsWindow()
         } else {
             beginModalSettingsWindow(settingsWindow, over: mainWindow)
         }
     }
-    
+
     private func beginModalSettingsWindow(_ settingsWindow: NSWindow, over parent: NSWindow) {
         setMainWindowShortcutsEnabled(false)
         installShieldIfNeeded(on: parent)
@@ -464,7 +490,7 @@ final class AppController: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         NotificationCenter.default.post(name: .settingsWindowDidOpen, object: nil)
     }
-    
+
     private func dismissSettingsWindow() {
         let settingsWindow = AppDelegate.sharedSettingsWindow
         if let parent = settingsWindow.parent {
@@ -474,14 +500,14 @@ final class AppController: NSObject, NSWindowDelegate {
         removeShieldIfNeeded(from: windowController.window)
         setMainWindowShortcutsEnabled(true)
         focusMainWindowIfVisible()
-        
+
         let visibility = Settings.shared.dockVisibility
         if isWindowVisible == false && visibility == .whenVisible {
             NSApp.setActivationPolicy(.accessory)
         }
         NotificationCenter.default.post(name: .settingsWindowDidClose, object: nil)
     }
-    
+
     private func registerOverlayHotkey() {
         hotkeyManager.registerCurrentHotkey { [weak self] in
             guard let self else { return }
@@ -492,7 +518,7 @@ final class AppController: NSObject, NSWindowDelegate {
             }
         }
     }
-    
+
     private func registerEngineHotkeys() {
         let overlayHotkey = Settings.shared.hotkeyConfiguration
         var blockedHotkeys: [HotkeyManager.Configuration] = [overlayHotkey]
@@ -505,7 +531,7 @@ final class AppController: NSObject, NSWindowDelegate {
                 )
             )
         }
-        
+
         let entries: [EngineHotkeyManager.Entry] = Settings.shared.services.compactMap { service in
             guard let shortcut = service.activationShortcut,
                   isBlocked(shortcut, blockedHotkeys: blockedHotkeys) == false else { return nil }
@@ -519,7 +545,7 @@ final class AppController: NSObject, NSWindowDelegate {
             self?.activateService(for: serviceID)
         }
     }
-    
+
     private func activateService(for serviceID: UUID) {
         guard let index = Settings.shared.services.firstIndex(where: { $0.id == serviceID }) else {
             engineHotkeyManager.unregister(serviceID: serviceID)
@@ -529,7 +555,7 @@ final class AppController: NSObject, NSWindowDelegate {
         windowController.selectService(at: index)
         windowController.focusInputInActiveWebview()
     }
-    
+
     private func isBlocked(_ configuration: HotkeyManager.Configuration,
                            blockedHotkeys: [HotkeyManager.Configuration]) -> Bool {
         let normalizedModifiers = NSEvent.ModifierFlags(rawValue: configuration.modifierFlags)
@@ -544,7 +570,7 @@ final class AppController: NSObject, NSWindowDelegate {
     static var isRunningTests: Bool {
         return ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
-    
+
     static var isRunningInXcode: Bool {
         if (AppController.isRunningTests) {
             return false
@@ -562,7 +588,7 @@ final class AppController: NSObject, NSWindowDelegate {
         }
         return false
     }
-    
+
     @objc private func handleShowSettingsNotification() {
         presentSettingsWindow()
     }
@@ -588,7 +614,7 @@ final class AppController: NSObject, NSWindowDelegate {
             focusMainWindowIfVisible()
         }
     }
-    
+
     private func installShieldIfNeeded(on window: NSWindow) {
         guard mainWindowShield == nil, let contentView = window.contentView else { return }
         let shield = InteractionShieldView(frame: contentView.bounds)
@@ -596,7 +622,7 @@ final class AppController: NSObject, NSWindowDelegate {
         contentView.addSubview(shield, positioned: .above, relativeTo: nil)
         mainWindowShield = shield
     }
-    
+
     private func removeShieldIfNeeded(from window: NSWindow?) {
         guard let shield = mainWindowShield else { return }
         shield.removeFromSuperview()
@@ -605,7 +631,7 @@ final class AppController: NSObject, NSWindowDelegate {
         }
         mainWindowShield = nil
     }
-    
+
 }
 
 extension AppController: NotificationDispatcherDelegate {
@@ -630,15 +656,15 @@ extension AppController: NotificationDispatcherDelegate {
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarController: StatusBarController!
-    
+
     static var sharedSettingsWindow = SettingsWindow.shared
-    
+
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Clean up any stale mounts from previous crashed sessions
         unmountAllEncryptedVolumes()
-        
+
         NSApp.setActivationPolicy(.accessory)
-        
+
         if OnboardingWizard.needsOnboarding {
             OnboardingWizard.show { [weak self] in
                 self?.completeLaunch()
@@ -647,28 +673,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             completeLaunch()
         }
     }
-    
+
     private func completeLaunch() {
         statusBarController = StatusBarController()
-        
+
         NotificationDispatcher.shared.configure(delegate: statusBarController.appController)
-        
+
         createMainMenu()
-        
+
         statusBarController.install()
-        
+
         AppDelegate.sharedSettingsWindow.appController = statusBarController.appController
-        
+
         // Asynchronously scan and clean up orphaned persistent WebKit cache directories
         WebKitCacheCleaner.cleanOrphanedStores()
-        
+
         // Show the window if the user launched the app intentionally (double-click, Spotlight, etc.)
         // but stay hidden if launched automatically by a LaunchAgent at system boot (parent is launchd, pid 1)
         if !isAutoLaunch {
             statusBarController.appController.showWindow(nil)
         }
     }
-    
+
     private var isAutoLaunch: Bool {
         return CommandLine.arguments.contains("--autostart")
     }
@@ -676,52 +702,52 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showSettings(_ sender: Any?) {
         statusBarController?.appController.showSettings(sender)
     }
-    
+
     @objc func openDocumentation(_ sender: Any?) {
         statusBarController?.appController.openDocumentation(sender)
     }
-    
+
     private func createMainMenu() {
         let mainMenu = NSMenu(title: "Main Menu")
         NSApp.mainMenu = mainMenu
-        
+
         // Application Menu (Quiper)
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu(title: "Quiper")
         appMenuItem.submenu = appMenu
-        
+
         let aboutItem = NSMenuItem(title: "About Quiper", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(aboutItem)
-        
+
         appMenu.addItem(.separator())
-        
+
         let settingsItem = MenuFactory.createSettingsItem()
         appMenu.addItem(settingsItem)
-        
+
         appMenu.addItem(.separator())
-        
+
         // Services Menu (Standard)
         let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
         let servicesMenu = NSMenu(title: "Services")
         servicesItem.submenu = servicesMenu
         NSApp.servicesMenu = servicesMenu
         appMenu.addItem(servicesItem)
-        
+
         appMenu.addItem(.separator())
-        
+
         let hideAppItem = NSMenuItem(title: "Hide Quiper", action: #selector(AppController.closeSettingsOrHide(_:)), keyEquivalent: "h")
         appMenu.addItem(hideAppItem)
-        
+
         let hideOthersItem = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthersItem.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(hideOthersItem)
-        
+
         let showAllItem = NSMenuItem(title: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(showAllItem)
-        
+
         appMenu.addItem(.separator())
-        
+
         let quitItem = MenuFactory.createQuitItem()
         appMenu.addItem(quitItem)
 
@@ -744,7 +770,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Window Menu (Native)
         let windowMenuItem = NSMenuItem()
         mainMenu.addItem(windowMenuItem)
-        
+
         // For Native Menu, we often want system behavior for "Minimize"/"Zoom".
         // MenuFactory creates them with standard selectors.
         let windowMenu = MenuFactory.createWindowMenu()
@@ -760,7 +786,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Setting NSApp.helpMenu enables the system search field in the menu
         NSApp.helpMenu = helpMenu
     }
-    
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
@@ -799,10 +825,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 EncryptedVolumeManager.shared.markLocked(service.id)
             }
         }
-        
+
         // 2. Show the beautiful full-screen overlay in the main window
         statusBarController?.appController.window.showQuitOverlay()
-        
+
         // 3. Perform unmounting on a background thread, then reply from there.
         // Must use GCD here, not Swift Task — NSApp.terminate() blocks the main thread
         // in a nested run loop that does not drain the Swift concurrency queue, so
@@ -811,10 +837,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.unmountAllEncryptedVolumes()
             NSApp.reply(toApplicationShouldTerminate: true)
         }
-        
+
         return .terminateLater
     }
-    
+
     private func hasMountedEncryptedVolumes() -> Bool {
         let fileManager = FileManager.default
         let libraryURL = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first!
@@ -823,11 +849,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .appendingPathComponent("WebKit")
             .appendingPathComponent(bundleID)
             .appendingPathComponent("WebsiteDataStore")
-        
+
         guard let contents = try? fileManager.contentsOfDirectory(at: webKitBase, includingPropertiesForKeys: nil) else {
             return false
         }
-        
+
         for storeURL in contents {
             var statInfo = stat()
             if lstat(storeURL.path, &statInfo) == 0 {
@@ -848,7 +874,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Fallback synchronous unmount to be completely safe
         unmountAllEncryptedVolumes()
     }
-    
+
     nonisolated private func unmountAllEncryptedVolumes() {
         let fileManager = FileManager.default
         let libraryURL = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first!
@@ -857,7 +883,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .appendingPathComponent("WebKit")
             .appendingPathComponent(bundleID)
             .appendingPathComponent("WebsiteDataStore")
-        
+
         if let contents = try? fileManager.contentsOfDirectory(at: webKitBase, includingPropertiesForKeys: nil) {
             for storeURL in contents {
                 var statInfo = stat()
@@ -869,7 +895,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                            let isVol = values.isVolume {
                             isVolume = isVol
                         }
-                        
+
                         if isVolume {
                             let process = Process()
                             process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
@@ -880,7 +906,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             ]
                             try? process.run()
                             process.waitUntilExit()
-                            
+
                             try? fileManager.removeItem(at: storeURL)
                         }
                     }
@@ -893,4 +919,3 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 
 // StatusBar components extracted to StatusBar.swift
-

@@ -326,7 +326,8 @@ struct KeyBindingsSettingsView: View {
         guard let template = settings.defaultServiceTemplates.first(where: {
             $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == serviceName
         }),
-              let defaultScript = template.actionScripts[action.id]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let defaultID = settings.defaultActionID(matching: action.name),
+              let defaultScript = template.actionScripts[defaultID]?.trimmingCharacters(in: .whitespacesAndNewlines),
               !defaultScript.isEmpty else { return }
 
         let existing = settings.services[index].actionScripts[action.id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

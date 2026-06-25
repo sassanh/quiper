@@ -468,166 +468,303 @@ class Settings: ObservableObject {
         defaultEngines
     }
 
+    private static let defaultActionScriptHelpers = """
+    function waitFor(check, timeoutMs = 1000) {
+      return new Promise((resolve, reject) => {
+        const start = Date.now();
+        const step = () => {
+          try {
+            if (check()) { resolve(true); return; }
+          } catch (err) {
+            reject(err);
+            return;
+          }
+          if (Date.now() - start >= timeoutMs) {
+            reject(new Error(`waitFor timed out after ${timeoutMs}ms`));
+            return;
+          }
+          window.requestAnimationFrame(step);
+        };
+        step();
+      });
+    }
+
+    function quiperNormalize(value) {
+      return (value || "").replace(/\\s+/g, " ").trim();
+    }
+
+    function quiperElements(selectors) {
+      const found = [];
+      for (const selector of selectors) {
+        try {
+          found.push(...document.querySelectorAll(selector));
+        } catch {}
+      }
+      return [...new Set(found)];
+    }
+
+    function quiperIsVisible(element) {
+      if (!element) { return false; }
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) {
+        return false;
+      }
+      const rects = element.getClientRects();
+      return rects.length > 0 && [...rects].some((rect) => rect.width > 0 && rect.height > 0);
+    }
+
+    function quiperIsDisabled(element) {
+      return !element ||
+        element.disabled === true ||
+        element.getAttribute("aria-disabled") === "true" ||
+        element.closest("[aria-disabled='true']");
+    }
+
+    function quiperClickable(element) {
+      return element?.closest("button,a,[role='button'],[role='menuitem'],[tabindex]") || element;
+    }
+
+    function quiperUsable(element) {
+      const target = quiperClickable(element);
+      return target && quiperIsVisible(target) && !quiperIsDisabled(target) ? target : null;
+    }
+
+    function quiperText(element) {
+      return quiperNormalize([
+        element?.getAttribute("aria-label"),
+        element?.getAttribute("title"),
+        element?.innerText,
+        element?.textContent
+      ].filter(Boolean).join(" "));
+    }
+
+    function quiperFind(selectors, options = {}) {
+      const visible = options.visible !== false;
+      for (const element of quiperElements(selectors)) {
+        const target = quiperClickable(element);
+        if (!target || quiperIsDisabled(target)) { continue; }
+        if (visible && !quiperIsVisible(target)) { continue; }
+        return target;
+      }
+      return null;
+    }
+
+    function quiperFindByText(labels, options = {}) {
+      const visible = options.visible !== false;
+      const normalizedLabels = labels.map( quiperNormalize ).filter(Boolean);
+      const candidates = quiperElements([
+        "button",
+        "a",
+        "[role='button']",
+        "[role='menuitem']",
+        "[tabindex]",
+        "[aria-label]",
+        "[title]",
+        "span",
+        "div"
+      ]);
+
+      for (const mode of ["exact", "contains"]) {
+        for (const element of candidates) {
+          const target = quiperClickable(element);
+          if (!target || quiperIsDisabled(target)) { continue; }
+          if (visible && !quiperIsVisible(target)) { continue; }
+          const text = quiperText(element);
+          if (!text) { continue; }
+          const match = normalizedLabels.some((label) =>
+            mode === "exact" ? text === label : text.includes(label)
+          );
+          if (match) { return target; }
+        }
+      }
+      return null;
+    }
+
+    async function quiperClickElement(element, errorMessage = "Target not found") {
+      const target = quiperUsable(element);
+      if (!target) { throw new Error(errorMessage); }
+      target.scrollIntoView({ block: "center", inline: "center" });
+      target.click();
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      return target;
+    }
+
+    async function quiperClick(selectors, labels, errorMessage) {
+      const target = quiperFind(selectors) || quiperFindByText(labels || []);
+      return quiperClickElement(target, errorMessage);
+    }
+
+    async function quiperOpenDisclosure(disclosureSelectors, disclosureLabels, expectedSelectors, expectedLabels) {
+      if (quiperFind(expectedSelectors || []) || quiperFindByText(expectedLabels || [])) {
+        return;
+      }
+      const disclosure = quiperFind(disclosureSelectors || []) || quiperFindByText(disclosureLabels || []);
+      if (!disclosure) { return; }
+      await quiperClickElement(disclosure, "Disclosure button not found");
+      await waitFor(() => quiperFind(expectedSelectors || []) || quiperFindByText(expectedLabels || []), 1200);
+    }
+    """
+
     private let defaultEngines: [Service] = [
         Service(
             name: "Gemini",
             url: "https://gemini.google.com?referrer=https://github.io/sassanh/quiper",
-            focus_selector: ".textarea",
+            focus_selector: "rich-textarea .textarea, .textarea, div[contenteditable='true'], textarea",
             actionScripts: [
                 Settings.newSessionActionID: """
-                const newChat = document.querySelector('a[aria-label="New chat"]');
-                if (!newChat || newChat.disabled) { throw new Error("New chat button not found"); }
-                newChat.click();
+                \(Settings.defaultActionScriptHelpers)
+                const newChatSelectors = [
+                  "a[aria-label='New chat'].gem-nav-list-item",
+                  ".gds-sidenav-list a[aria-label='New chat']",
+                  "mat-nav-list a[aria-label='New chat']",
+                  "a[aria-label='New chat']:not(.side-nav-sparkle-button)",
+                  "button[aria-label='New chat']"
+                ];
+                const activeTemporarySelectors = [
+                  ".temp-chat-on button[aria-label='Temporary chat']",
+                  ".temp-chat-on [aria-label='Temporary chat']",
+                  "button[aria-label='Turn off temporary chat']",
+                  "[aria-label='Turn off temporary chat']",
+                  "button[aria-label='Temporary chat'].temp-chat-on",
+                  "button[aria-label='Temporary chat'][aria-pressed='true']",
+                  "[aria-label='Temporary chat'][aria-checked='true']"
+                ];
+
+                function geminiTemporaryActive() {
+                  return quiperFind(activeTemporarySelectors) || quiperFindByText(["Temporary Chat"]);
+                }
+
+                function geminiTemporaryToggle() {
+                  return quiperFind([
+                    ".temp-chat-on button[aria-label='Temporary chat']",
+                    ".temp-chat-on [aria-label='Temporary chat']",
+                    "button[aria-label='Turn off temporary chat']",
+                    "[aria-label='Turn off temporary chat']",
+                    "button[aria-label='Temporary chat']",
+                    "[aria-label='Temporary chat']"
+                  ]);
+                }
+
+                await quiperOpenDisclosure(
+                  ["button[aria-label='Open sidebar']", "button[aria-label='Main menu']", "button[aria-label='Open navigation menu']"],
+                  ["Open sidebar", "Main menu", "Open navigation menu", "Menu"],
+                  newChatSelectors,
+                  ["New chat", "New Chat"]
+                );
+
+                if (geminiTemporaryActive()) {
+                  const temporaryToggle = geminiTemporaryToggle();
+                  if (temporaryToggle) {
+                    await quiperClickElement(temporaryToggle, "Temporary chat button not found");
+                    await waitFor(() => !geminiTemporaryActive(), 1200);
+                  }
+                }
+
+                await quiperClick(
+                  newChatSelectors,
+                  ["New chat", "New Chat"],
+                  "New chat button not found"
+                );
                 """,
                 Settings.newTemporarySessionActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-
-                const mainMenuButton = document.querySelector('button[aria-label="Main menu"]');
-                if (!mainMenuButton) {
-                  throw new Error("Main menu button not found");
+                \(Settings.defaultActionScriptHelpers)
+                const temporarySelectors = [
+                  "button[aria-label='Temporary chat']",
+                  "[aria-label='Temporary chat']"
+                ];
+                const activeTemporarySelectors = [
+                  ".temp-chat-on button[aria-label='Temporary chat']",
+                  ".temp-chat-on [aria-label='Temporary chat']",
+                  "button[aria-label='Turn off temporary chat']",
+                  "[aria-label='Turn off temporary chat']",
+                  "button[aria-label='Temporary chat'].temp-chat-on",
+                  "button[aria-label='Temporary chat'][aria-pressed='true']",
+                  "[aria-label='Temporary chat'][aria-checked='true']"
+                ];
+                const newChatSelectors = [
+                  "a[aria-label='New chat'].gem-nav-list-item",
+                  ".gds-sidenav-list a[aria-label='New chat']",
+                  "mat-nav-list a[aria-label='New chat']",
+                  "a[aria-label='New chat']:not(.side-nav-sparkle-button)",
+                  "button[aria-label='New chat']"
+                ];
+                function geminiTemporaryActive() {
+                  return quiperFind(activeTemporarySelectors) || quiperFindByText(["Temporary Chat"]);
                 }
 
-                async function openMenu() {
-                  if (document.querySelector("mat-sidenav")) {
-                    if (document.querySelector("mat-sidenav.mat-drawer-opened")) {
-                      return;
-                    } else if (
-                      document.querySelector('button[aria-label="Temporary chat"]')?.offsetWidth
-                    ) {
-                      return;
-                    }
-                  }
-
-                  async function open() {
-                    mainMenuButton.click();
-                    if (document.querySelector("mat-sidenav")) {
-                      await waitFor(() =>
-                        document.querySelector("mat-sidenav.mat-drawer-opened"),
-                      );
-                    }
-                    await waitFor(
-                      () =>
-                        document.querySelector('button[aria-label="Temporary chat"]')
-                          ?.offsetWidth,
-                    );
-                  }
-
-                  for (let i = 0; i < 5; i++) {
-                    try {
-                      await open();
-                      await new Promise((resolve) => requestAnimationFrame(resolve));
-                      return;
-                    } catch {}
-                  }
-                  throw new Error("Failed to open menu");
+                if (!quiperFind(temporarySelectors) && (quiperFind(["button[aria-label='Sign in']"]) || quiperFindByText(["Sign in"]))) {
+                  throw new Error("Sign in to Gemini before creating a temporary chat");
                 }
 
-                async function closeMenu() {
-                  if (document.querySelector("mat-sidenav")) {
-                    if (
-                      document.querySelector(
-                        "mat-sidenav:not(.mat-drawer-opened,.mat-drawer-animating)",
-                      )
-                    ) {
-                      return;
-                    } else if (
-                      !document.querySelector('button[aria-label="Temporary chat"]')
-                        ?.offsetWidth
-                    ) {
-                      return;
-                    }
-                  }
-
-                  async function close() {
-                    if (document.querySelector("mat-sidenav")) {
-                      if (!document.querySelector("mat-sidenav.mat-drawer-animating")) {
-                        mainMenuButton.click();
-                      }
-                      await waitFor(() =>
-                        document.querySelector("mat-sidenav:not(.mat-drawer-opened)"),
-                      );
-                    } else {
-                      mainMenuButton.click();
-                    }
-                    await waitFor(
-                      () =>
-                        !document.querySelector('button[aria-label="Temporary chat"]')
-                          ?.offsetWidth,
-                      timeoutMs=300,
-                    );
-                  }
-
-                  for (let i = 0; i < 5; i++) {
-                    try {
-                      await close();
-                      await new Promise((resolve) => requestAnimationFrame(resolve));
-                      return;
-                    } catch {}
-                  }
-                  throw new Error("Failed to close menu");
-                }
-
-                async function newSession() {
-                  const newChatButton = document.querySelector('a[aria-label="New chat"]');
-                  if (!newChatButton) {
-                    mainMenuButton.click();
-                    throw new Error("New chat button not found");
-                  }
-                  if (newChatButton.disabled) {
-                    mainMenuButton.click();
-                    throw new Error("New chat button is disabled");
-                  }
-                  newChatButton.click();
-
-                  await closeMenu();
-                }
-
-                await openMenu();
-                if (
-                  document.querySelector('button[aria-label="Temporary chat"].temp-chat-on')
-                ) {
-                  await newSession();
-                  await openMenu();
-                }
-
-                await waitFor(
-                  () =>
-                    document.querySelector(
-                      'button[aria-label="Temporary chat"]:not(.temp-chat-on)',
-                    ).offsetWidth,
+                await quiperOpenDisclosure(
+                  ["button[aria-label='Open sidebar']", "button[aria-label='Main menu']", "button[aria-label='Open navigation menu']"],
+                  ["Open sidebar", "Main menu", "Open navigation menu", "Menu"],
+                  newChatSelectors,
+                  ["New chat", "New Chat"]
                 );
-                await new Promise((resolve) => requestAnimationFrame(resolve));
-                document
-                  .querySelector('button[aria-label="Temporary chat"]:not(.temp-chat-on)')
-                  .click();
-                if (!document.querySelector("mat-sidenav")) {
-                  await new Promise((resolve) => requestAnimationFrame(resolve));
-                  mainMenuButton.click();
+
+                await quiperClick(
+                  newChatSelectors,
+                  ["New chat", "New Chat"],
+                  "New chat button not found"
+                );
+                await waitFor(() => quiperFind(temporarySelectors) || quiperFindByText(["Temporary chat", "Temporary"]), 2500);
+
+                const temporaryButton = quiperFind(temporarySelectors) || quiperFindByText(["Temporary chat", "Temporary"]);
+                if (!temporaryButton) { throw new Error("Temporary chat button not found"); }
+                if (!geminiTemporaryActive()) {
+                  await quiperClickElement(temporaryButton, "Temporary chat button not found");
+                  await waitFor(() => geminiTemporaryActive(), 1500);
                 }
                 """,
                 Settings.shareActionID: """
-                const shareAndExportButtons = [...document.querySelectorAll('button[aria-label="Share & export"]')];
-                let shareButton = null;
-                if (shareAndExportButtons.length > 0) {
-                  shareAndExportButtons.at(-1).click();
-                  shareButton = document.querySelector('button[aria-label="Share conversation"]');
+                \(Settings.defaultActionScriptHelpers)
+                const shareDirect = quiperFind([
+                  "button[aria-label='Share conversation']",
+                  "[role='menuitem'][aria-label='Share conversation']",
+                  "button[data-test-id='share-button']"
+                ]) || quiperFindByText(["Share conversation"]);
+                if (shareDirect) {
+                  await quiperClickElement(shareDirect, "Share button not found");
+                } else {
+                  await quiperClick(
+                    [
+                      "button[aria-label='Open menu for conversation actions.']",
+                      "button[aria-label='Open menu for conversation actions']"
+                    ],
+                    ["Open menu for conversation actions"],
+                    "Conversation actions menu button not found"
+                  );
+                  await waitFor(() =>
+                    quiperFind([
+                      "button[aria-label='Share conversation']",
+                      "[role='menuitem'][aria-label='Share conversation']",
+                      "button[data-test-id='share-button']"
+                    ]) || quiperFindByText(["Share conversation"])
+                  );
+                  await quiperClick(
+                    [
+                      "button[aria-label='Share conversation']",
+                      "[role='menuitem'][aria-label='Share conversation']",
+                      "button[data-test-id='share-button']"
+                    ],
+                    ["Share conversation"],
+                    "Share button not found"
+                  );
                 }
-                else {
-                  const buttons = [...document.querySelectorAll('button[aria-label="Show more options"]')];
-                  const target = buttons.at(-1);
-                  if (!target) { throw new Error("Show more options button not found"); }
-                  target.click();
-                  shareButton = document.querySelector('button[data-test-id="share-button"]');
-                }
-                if (!shareButton) { throw new Error("Share button not found"); }
-                shareButton.click();
                 """,
                 Settings.historyActionID: """
-                const mainMenuButton = document.querySelector('button[aria-label="Main menu"]');
-                if (!mainMenuButton) {
-                  throw new Error("Main menu button not found");
+                \(Settings.defaultActionScriptHelpers)
+                const closeSidebar = quiperFind(["button[aria-label='Close sidebar']", "button[aria-label='Close navigation menu']"]);
+                if (closeSidebar) {
+                  await quiperClickElement(closeSidebar, "Close sidebar button not found");
+                  return;
                 }
-                mainMenuButton.click();
+                await quiperClick(
+                  ["button[aria-label='Open sidebar']", "button[aria-label='Main menu']", "button[aria-label='Open navigation menu']"],
+                  ["Open sidebar", "Main menu", "Open navigation menu", "Menu"],
+                  "Sidebar button not found"
+                );
                 """
             ],
             friendDomains: [
@@ -645,48 +782,110 @@ class Settings: ObservableObject {
         Service(
             name: "Claude",
             url: "https://claude.ai?referrer=https://github.io/sassanh/quiper",
-            focus_selector: "div[contenteditable='true']",
+            focus_selector: "[data-testid='chat-input'] div[contenteditable='true'], div[contenteditable='true'], textarea",
             actionScripts: [
                 Settings.newSessionActionID: """
-                const url = new URL(window.location.href);
-                if (url.searchParams.has('incognito')) {
-                  url.searchParams.delete('incognito');
-                  window.history.pushState(null, "", url.pathname + url.search + url.hash);
+                \(Settings.defaultActionScriptHelpers)
+                async function claudeClick(element, errorMessage) {
+                  const target = quiperUsable(element);
+                  if (!target) { throw new Error(errorMessage); }
+                  target.scrollIntoView({ block: "center", inline: "center" });
+                  target.click();
+                  await new Promise((resolve) => setTimeout(resolve, 350));
+                  return target;
                 }
-                const newChat = document.querySelector('a[href="/new"]');
+
+                const newChatSelectors = [
+                  "a[aria-label='New chat']",
+                  "button[aria-label='New chat']",
+                  "a[href='/new']"
+                ];
+                const exitIncognito = quiperFind(["button[aria-label='Exit incognito']"]);
+                if (exitIncognito) {
+                  await claudeClick(exitIncognito, "Exit incognito button not found");
+                }
+
+                const newChat = quiperFind(newChatSelectors) || quiperFindByText(["New chat"]);
                 if (newChat) {
-                  newChat.click();
+                  await claudeClick(newChat, "New chat button not found");
                 } else {
-                  window.location.href = '/new';
+                  const target = new URL("/new", window.location.origin);
+                  window.location.assign(target.href);
                 }
                 """,
                 Settings.newTemporarySessionActionID: """
-                const url = new URL(window.location.href);
-
-                function openIncognito() {
-                  console.log(location);
-                  window.history.pushState(null, "", window.location.pathname + "?incognito" + window.location.hash);
+                \(Settings.defaultActionScriptHelpers)
+                async function claudeClick(element, errorMessage) {
+                  const target = quiperUsable(element);
+                  if (!target) { throw new Error(errorMessage); }
+                  target.scrollIntoView({ block: "center", inline: "center" });
+                  target.click();
+                  await new Promise((resolve) => setTimeout(resolve, 350));
+                  return target;
                 }
 
-                if (url.search.includes('incognito')) {
-                  url.searchParams.delete('incognito');
-                  history.pushState(null, "", url.pathname + url.search + url.hash);
-                  const newChat = document.querySelector('a[href="/new"]');
-                  if (newChat) newChat.click();
-                  window.requestAnimationFrame(openIncognito);
-                } else {
-                  openIncognito();
+                const newChatSelectors = [
+                  "a[aria-label='New chat']",
+                  "button[aria-label='New chat']",
+                  "a[href='/new']"
+                ];
+                const incognitoActive = () => location.search.includes("incognito") ||
+                  Boolean(quiperFind(["button[aria-label='Exit incognito']"]));
+
+                const newChat = quiperFind(newChatSelectors) || quiperFindByText(["New chat"]);
+                if (newChat) {
+                  await claudeClick(newChat, "New chat button not found");
+                }
+
+                if (!incognitoActive()) {
+                  const incognitoButton = quiperFind(["button[aria-label='Use incognito']"]) ||
+                    quiperFindByText(["Use incognito", "Incognito"]);
+                  if (incognitoButton) {
+                    await claudeClick(incognitoButton, "Use incognito button not found");
+                  } else {
+                    const target = new URL("/new", window.location.origin);
+                    target.searchParams.set("incognito", "");
+                    window.location.assign(target.href.replace("incognito=", "incognito"));
+                  }
                 }
                 """,
                 Settings.shareActionID: """
-                const buttons = [...document.querySelectorAll('button')];
-                const shareButton = buttons.find(b => b.textContent.includes('Share'));
-                if (!shareButton) { throw new Error("Share button not found"); }
-                shareButton.click();
+                \(Settings.defaultActionScriptHelpers)
+                function claudeShareDialogVisible() {
+                  return quiperElements(["[role='dialog']"]).some((element) => {
+                    if (!quiperIsVisible(element)) { return false; }
+                    return /share chat|create public link|create share link/i.test(quiperText(element));
+                  });
+                }
+
+                const shareButton = quiperFind([
+                  "button[data-testid='wiggle-controls-actions-share']",
+                  "[data-testid='wiggle-controls-actions-share']",
+                  "button[aria-label='Share']"
+                ]) || Array.from(document.querySelectorAll("button")).find((button) => {
+                  if (!quiperIsVisible(button) || quiperIsDisabled(button)) { return false; }
+                  if (button.closest("[role='dialog'], [role='menu'], [data-testid*='action-bar']")) { return false; }
+                  const rect = button.getBoundingClientRect();
+                  return rect.top <= Math.max(120, window.innerHeight * 0.2) &&
+                    rect.left >= window.innerWidth * 0.45 &&
+                    quiperNormalize(button.innerText || button.textContent || button.getAttribute("aria-label")) === "Share";
+                });
+
+                await quiperClickElement(shareButton, "Share button not found");
+                await waitFor(() => claudeShareDialogVisible(), 1500);
                 """,
                 Settings.historyActionID: """
-                const sidebarButton = document.querySelector('button[aria-label="Open sidebar"]') || document.querySelector('button[aria-label="Close sidebar"]');
-                if (sidebarButton) { sidebarButton.click(); }
+                \(Settings.defaultActionScriptHelpers)
+                await quiperClick(
+                  [
+                    "button[data-testid='pin-sidebar-toggle']",
+                    "button[aria-label='Open sidebar']",
+                    "button[aria-label='Close sidebar']",
+                    "[data-testid='sidebar-toggle']"
+                  ],
+                  ["Open sidebar", "Close sidebar", "Sidebar", "Menu"],
+                  "Sidebar button not found"
+                );
                 """
             ],
             friendDomains: [
@@ -701,45 +900,116 @@ class Settings: ObservableObject {
         Service(
             name: "Grok",
             url: "https://grok.com?referrer=https://github.io/sassanh/quiper",
-            focus_selector: "textarea[aria-label='Ask Grok anything'],div[contenteditable=true]",
+            focus_selector: "textarea[aria-label='Ask Grok anything'], textarea, div[contenteditable='true']",
             actionScripts: [
                 Settings.newSessionActionID: """
-                const newChatButton = document
-                  .querySelector('[href="/"]:not([aria-label="Home page"])');
-                if (!newChatButton) {
-                  throw new Error("New Chat button not found");
+                \(Settings.defaultActionScriptHelpers)
+                const privateActiveSelectors = [
+                  "[aria-label='Switch to Default Chat']",
+                  "button[aria-label='Switch to Default Chat']"
+                ];
+                const privateInactiveSelectors = [
+                  "[aria-label='Switch to Private Chat']",
+                  "button[aria-label='Switch to Private Chat']",
+                  "button[aria-label='Private']"
+                ];
+                const newChat = quiperFind([
+                  "[data-testid='new-chat']",
+                  "a[href='/']:not([aria-label='Home page'])",
+                  "button[aria-label='New Chat']",
+                  "[aria-label='New Chat']"
+                ]) || quiperFindByText(["New Chat", "New chat"]);
+                const privateActive = quiperFind(privateActiveSelectors);
+                if (privateActive) {
+                  await quiperClickElement(privateActive, "Private chat toggle not found");
+                  await waitFor(() => quiperFind(privateInactiveSelectors), 1500);
                 }
-                newChatButton.click();
+                if (newChat) {
+                  await quiperClickElement(newChat, "New Chat button not found");
+                } else {
+                  window.location.assign("/");
+                }
+                await waitFor(() => !quiperFind(privateActiveSelectors), 1500);
                 """,
                 Settings.newTemporarySessionActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                document
-                  .querySelector('[href="/"]:not([aria-label="Home page"])')
-                  ?.click();
+                \(Settings.defaultActionScriptHelpers)
+                const privateActiveSelectors = [
+                  "[aria-label='Switch to Default Chat']",
+                  "button[aria-label='Switch to Default Chat']"
+                ];
+                const privateInactiveSelectors = [
+                  "[aria-label='Switch to Private Chat']",
+                  "button[aria-label='Switch to Private Chat']",
+                  "button[aria-label='Private']"
+                ];
+                const newChat = quiperFind([
+                  "[data-testid='new-chat']",
+                  "a[href='/']:not([aria-label='Home page'])",
+                  "button[aria-label='New Chat']",
+                  "[aria-label='New Chat']"
+                ]) || quiperFindByText(["New Chat", "New chat"]);
+                if (newChat) {
+                  await quiperClickElement(newChat, "New Chat button not found");
+                } else {
+                  window.history.pushState(null, "", "/");
+                }
 
-                await waitFor(() =>
-                  document.querySelector('[aria-label="Switch to Private Chat"]')
-                );
-                const button = document.querySelector(
-                  '[aria-label="Switch to Private Chat"]'
-                );
-                if (!button) { throw new Error("Switch to Private Chat button not found"); }
-                button.click();
+                await waitFor(() => quiperFind(privateActiveSelectors) || quiperFind(privateInactiveSelectors), 2000);
+                if (!quiperFind(privateActiveSelectors)) {
+                  await quiperClick(
+                    privateInactiveSelectors,
+                    ["Private", "Private Chat", "Switch to Private Chat"],
+                    "Private chat button not found"
+                  );
+                  await waitFor(() => quiperFind(privateActiveSelectors), 1500);
+                }
                 """,
                 Settings.shareActionID: """
-                const share = document.querySelector('button[aria-label="Create share link"]');
-                if (!share) { throw new Error("Create share link button not found"); }
-                share.click();
+                \(Settings.defaultActionScriptHelpers)
+                await quiperClick(
+                  ["button[aria-label='Create share link']", "button[aria-label='Share']", "[aria-label='Share']"],
+                  ["Create share link", "Share"],
+                  "Share button not found"
+                );
                 """,
                 Settings.historyActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                if (!document.querySelector('div[role="button"][aria-label="History"]')) {
-                  document.querySelector('button[aria-label="Toggle sidebar"]').click();
-                  await waitFor(() =>
-                    document.querySelector('div[role="button"][aria-label="History"]')
-                  );
+                \(Settings.defaultActionScriptHelpers)
+                if (window.innerWidth >= 700) {
+                  const historySelectors = ["button[aria-label='History']", "[aria-label='History']"];
+                  const historyVisible = () => quiperFind(historySelectors) || quiperFindByText(["History"]);
+                  const sidebarToggle = quiperFindByText(["Toggle Sidebar"]) ||
+                    quiperFind(["button[aria-label='Toggle sidebar']", "[aria-label='Toggle sidebar']"]);
+                  if (!sidebarToggle) { throw new Error("Sidebar toggle button not found"); }
+
+                  if (historyVisible()) {
+                    await quiperClickElement(sidebarToggle, "Sidebar toggle button not found");
+                    return;
+                  }
+
+                  await quiperClickElement(sidebarToggle, "Sidebar toggle button not found");
+                  await waitFor(() => historyVisible(), 1500);
+
+                  const historyHeader = quiperFind(historySelectors) || quiperFindByText(["History"]);
+                  const expanded = historyHeader?.getAttribute("aria-expanded") === "true" ||
+                    historyHeader?.getAttribute("data-state") === "open" ||
+                    historyHeader?.closest("[data-state='open'], [aria-expanded='true']");
+                  if (historyHeader && !expanded) {
+                    await quiperClickElement(historyHeader, "History button not found");
+                  }
+                  return;
                 }
-                document.querySelector('div[role="button"][aria-label="History"]').click();
+
+                await quiperOpenDisclosure(
+                  ["button[aria-label='Toggle sidebar']", "[aria-label='Toggle sidebar']"],
+                  ["Toggle sidebar", "Menu"],
+                  ["div[role='button'][aria-label='History']", "[aria-label='History']"],
+                  ["History"]
+                );
+                await quiperClick(
+                  ["div[role='button'][aria-label='History']", "[aria-label='History']"],
+                  ["History"],
+                  "History button not found"
+                );
                 """
             ],
             friendDomains: [
@@ -757,63 +1027,200 @@ class Settings: ObservableObject {
         ),
         Service(
             name: "ChatGPT",
-            url: "https://chat.openai.com?referrer=https://github.io/sassanh/quiper",
-            focus_selector: "#prompt-textarea",
+            url: "https://chatgpt.com?referrer=https://github.io/sassanh/quiper",
+            focus_selector: "#prompt-textarea, .ProseMirror[role='textbox'], [aria-label='Chat with ChatGPT'], textarea, div[contenteditable='true']",
             actionScripts: [
                 Settings.newSessionActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                if (!document.querySelector('[href="/"]')) {
-                  document.querySelector('button[data-testid="open-sidebar-button"]').click();
-                  await waitFor(() => document.querySelector('[href="/"]'), 300);
-                  document.querySelector('[href="/"]').click();
-                  document.querySelector('button[aria-label="Close sidebar"]').click();
-                } else {
-                  document.querySelector('[href="/"]').click();
+                \(Settings.defaultActionScriptHelpers)
+                function chatGPTButtonByText(label) {
+                  return Array.from(document.querySelectorAll("button")).find((button) =>
+                    quiperIsVisible(button) &&
+                    !quiperIsDisabled(button) &&
+                    quiperNormalize(button.innerText || button.textContent) === label
+                  );
                 }
 
+                await quiperOpenDisclosure(
+                  ["button[data-testid='open-sidebar-button']", "button[aria-label='Open sidebar']"],
+                  ["Open sidebar", "Menu"],
+                  ["[data-testid='create-new-chat-button']", "a[href='/']", "a[aria-label='New chat']"],
+                  ["New chat", "New Chat"]
+                );
+                await quiperClick(
+                  ["[data-testid='create-new-chat-button']", "a[href='/']", "a[aria-label='New chat']", "button[aria-label='New chat']"],
+                  ["New chat", "New Chat"],
+                  "New chat button not found"
+                );
+                const clearChat = chatGPTButtonByText("Clear chat");
+                if (clearChat) {
+                  await quiperClickElement(clearChat, "Clear chat button not found");
+                  await waitFor(() => !chatGPTButtonByText("Clear chat"), 2000);
+                }
                 """,
                 Settings.newTemporarySessionActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                if (!document.querySelector('[href="/"]')) {
-                  document.querySelector('button[data-testid="open-sidebar-button"]').click();
-                  await waitFor(() => document.querySelector('[href="/"]'), 300);
-                  document.querySelector('[href="/"]').click();
-                  document.querySelector('button[aria-label="Close sidebar"]').click();
-                } else {
-                  document.querySelector('[href="/"]').click();
-                }
-                
-                await waitFor(() =>
-                  document.querySelector('[aria-label="Turn on temporary chat"]')
-                );
-                const button = document.querySelector(
-                  '[aria-label="Turn on temporary chat"]'
-                );
-                if (!button) { throw new Error("Turn on temporary chat button not found"); }
-                button.click();
-                """,
-                Settings.shareActionID: """
-                const share = document.querySelector('[aria-label="Share"]');
-                if (!share) { throw new Error("Share button not found"); }
-                share.click();
-                """,
-                Settings.historyActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                function getHistoryButton() {
-                  return [
-                    ...document
-                      .querySelector('nav div[data-sidebar-item="true"]')
-                      ?.querySelectorAll("div") || [],
-                  ].find((div) => (div.textContent || "").trim() === "Search chats");
+                \(Settings.defaultActionScriptHelpers)
+                function chatGPTButtonByText(label) {
+                  return Array.from(document.querySelectorAll("button")).find((button) =>
+                    quiperIsVisible(button) &&
+                    !quiperIsDisabled(button) &&
+                    quiperNormalize(button.innerText || button.textContent) === label
+                  );
                 }
 
-                if (!getHistoryButton()) {
-                  document.querySelector('button[data-testid="open-sidebar-button"]').click();
-                  await waitFor(() => getHistoryButton(), 300);
-                  getHistoryButton().click();
-                } else {
-                  getHistoryButton().click();
+                const temporarySelectors = [
+                  "[aria-label='Turn on temporary chat']",
+                  "[data-testid='temporary-chat-button']"
+                ];
+                const activeTemporarySelectors = [
+                  "[aria-label='Turn off temporary chat']",
+                  "[data-testid='temporary-chat-button'][aria-pressed='true']"
+                ];
+                if (!quiperFind(temporarySelectors) && (quiperFind(["[data-testid='login-button']"]) || quiperFindByText(["Log in"]))) {
+                  throw new Error("Sign in to ChatGPT before creating a temporary chat");
                 }
+
+                if (quiperFind(activeTemporarySelectors)) {
+                  const clearChat = chatGPTButtonByText("Clear chat");
+                  if (clearChat) {
+                    await quiperClickElement(clearChat, "Clear chat button not found");
+                    await waitFor(() => !chatGPTButtonByText("Clear chat"), 2000);
+                  }
+                  return;
+                }
+
+                await quiperOpenDisclosure(
+                  ["button[data-testid='open-sidebar-button']", "button[aria-label='Open sidebar']"],
+                  ["Open sidebar", "Menu"],
+                  ["[data-testid='create-new-chat-button']", "a[href='/']", "a[aria-label='New chat']"],
+                  ["New chat", "New Chat"]
+                );
+                await quiperClick(
+                  ["[data-testid='create-new-chat-button']", "a[href='/']", "a[aria-label='New chat']", "button[aria-label='New chat']"],
+                  ["New chat", "New Chat"],
+                  "New chat button not found"
+                );
+
+                await waitFor(() =>
+                  quiperFind(temporarySelectors) ||
+                  quiperFindByText(["Temporary chat"])
+                );
+                await quiperClick(
+                  temporarySelectors,
+                  ["Temporary chat", "Turn on temporary chat"],
+                  "Temporary chat button not found"
+                );
+                await waitFor(() => quiperFind(activeTemporarySelectors), 1500);
+                """,
+                Settings.shareActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function chatGPTShareButton() {
+                  const candidates = quiperElements([
+                    "button[data-testid='share-chat-button']",
+                    "button[aria-label='Share'][data-testid='share-chat-button']",
+                    "header button[aria-label='Share']",
+                    "button[aria-label='Share'][aria-haspopup]",
+                    "button[aria-label='Share']"
+                  ]).map( quiperClickable ).filter((button) => {
+                    if (!button || !quiperIsVisible(button) || quiperIsDisabled(button)) { return false; }
+                    if (button.closest("[role='dialog'], [role='menu'], [data-radix-popper-content-wrapper]")) { return false; }
+                    const rect = button.getBoundingClientRect();
+                    return rect.top <= Math.max(160, window.innerHeight * 0.25) &&
+                      rect.left >= window.innerWidth * 0.35;
+                  });
+
+                  return candidates
+                    .sort((left, right) => {
+                      const a = left.getBoundingClientRect();
+                      const b = right.getBoundingClientRect();
+                      return (a.top - b.top) || (b.right - a.right);
+                    })[0] || null;
+                }
+
+                function chatGPTShareWidgetVisible() {
+                  return quiperElements([
+                    "[role='dialog']",
+                    "[role='menu']",
+                    "[data-radix-popper-content-wrapper]",
+                    "[data-testid='share-modal']",
+                    "[data-testid='share-dialog']"
+                  ]).some((element) => {
+                    if (!quiperIsVisible(element)) { return false; }
+                    const text = quiperText(element);
+                    return /share|copy link|create link/i.test(text);
+                  });
+                }
+
+                await quiperClickElement(chatGPTShareButton(), "Share button not found");
+                await waitFor(() => chatGPTShareWidgetVisible(), 1500);
+                """,
+                Settings.historyActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function chatGPTSearchInput() {
+                  return quiperElements([
+                    "input[placeholder*='Search chats']",
+                    "input[aria-label*='Search chats']",
+                    "input[type='search']"
+                  ]).find((input) => {
+                    if (!quiperIsVisible(input)) { return false; }
+                    const label = [
+                      input.getAttribute("placeholder"),
+                      input.getAttribute("aria-label"),
+                      input.getAttribute("type")
+                    ].filter(Boolean).join(" ");
+                    return /search chats|search chat history|search/i.test(label);
+                  }) || null;
+                }
+
+                function chatGPTSearchPanel() {
+                  const input = chatGPTSearchInput();
+                  if (!input) { return null; }
+                  return input.closest("[role='dialog'], [data-radix-popper-content-wrapper]") ||
+                    input.closest("form") ||
+                    input.parentElement;
+                }
+
+                const searchInput = chatGPTSearchInput();
+                if (searchInput) {
+                  const inputRect = searchInput.getBoundingClientRect();
+                  const searchPanel = chatGPTSearchPanel();
+                  const panelButtons = searchPanel ? Array.from(searchPanel.querySelectorAll("button")) : [];
+                  const closeButton = panelButtons.find((button) => {
+                    const text = quiperText(button);
+                    return quiperIsVisible(button) && !quiperIsDisabled(button) &&
+                      /^(close|cancel)$/i.test(text);
+                  }) || Array.from(document.querySelectorAll("button")).find((button) => {
+                    if (!quiperIsVisible(button) || quiperIsDisabled(button)) { return false; }
+                    const rect = button.getBoundingClientRect();
+                    const verticallyAligned = rect.top < inputRect.bottom + 24 && rect.bottom > inputRect.top - 24;
+                    const rightOfInput = rect.left > inputRect.right - 120;
+                    return verticallyAligned && rightOfInput;
+                  });
+                  if (closeButton) {
+                    await quiperClickElement(closeButton, "Close search button not found");
+                  } else {
+                    document.dispatchEvent(new KeyboardEvent("keydown", {
+                      key: "Escape",
+                      code: "Escape",
+                      keyCode: 27,
+                      which: 27,
+                      bubbles: true
+                    }));
+                  }
+                  await waitFor(() => !chatGPTSearchInput(), 1500);
+                  return;
+                }
+
+                await quiperOpenDisclosure(
+                  ["button[data-testid='open-sidebar-button']", "button[aria-label='Open sidebar']"],
+                  ["Open sidebar", "Menu"],
+                  ["button[aria-label='Search chats']", "[data-testid='sidebar-search-button']"],
+                  ["Search chats"]
+                );
+                await quiperClick(
+                  ["button[aria-label='Search chats']", "[data-testid='sidebar-search-button']"],
+                  ["Search chats"],
+                  "Search chats button not found"
+                );
                 """
             ],
             friendDomains: [
@@ -829,33 +1236,184 @@ class Settings: ObservableObject {
         Service(
             name: "X",
             url: "https://x.com/i/grok?referrer=https://github.io/sassanh/quiper",
-            focus_selector: "div[contenteditable='true']",
+            focus_selector: "div[contenteditable='true'], textarea",
             actionScripts: [
                 Settings.newSessionActionID: """
-                const newChatButton = document.querySelector('button[aria-label="New Chat"]');
-                if (!newChatButton) { throw new Error("New Chat button not found"); }
-                newChatButton.click();
+                \(Settings.defaultActionScriptHelpers)
+                async function xClick(element, errorMessage) {
+                  const target = quiperUsable(element);
+                  if (!target) { throw new Error(errorMessage); }
+                  target.scrollIntoView({ block: "center", inline: "center" });
+                  target.click();
+                  await new Promise((resolve) => setTimeout(resolve, 350));
+                  return target;
+                }
+
+                function xPrivateActive() {
+                  return /This chat won.t appear in your history/i.test(document.body.innerText || "") ||
+                    Boolean(quiperFind([
+                      "button[aria-label='Disable private']",
+                      "button[aria-label='Turn off private']",
+                      "button[aria-pressed='true'][aria-label*='Private']",
+                      "[aria-selected='true'][aria-label*='Private']"
+                    ]));
+                }
+
+                const privateButton = quiperFind(["button[aria-label='Private']", "[aria-label='Private']"]) ||
+                  quiperFindByText(["Private"]);
+                if (xPrivateActive() && privateButton) {
+                  await xClick(privateButton, "Private button not found");
+                }
+
+                const grokHome = quiperFind(["a[href='/i/grok']", "a[aria-label='Grok']"]) ||
+                  quiperFindByText(["Grok"]);
+                if (grokHome) {
+                  await xClick(grokHome, "Grok navigation button not found");
+                } else {
+                  window.history.pushState(null, "", "/i/grok");
+                  window.dispatchEvent(new PopStateEvent("popstate"));
+                }
                 """,
                 Settings.newTemporarySessionActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                document.querySelector('button[aria-label="New Chat"]')?.click();
+                \(Settings.defaultActionScriptHelpers)
+                async function xClick(element, errorMessage) {
+                  const target = quiperUsable(element);
+                  if (!target) { throw new Error(errorMessage); }
+                  target.scrollIntoView({ block: "center", inline: "center" });
+                  target.click();
+                  await new Promise((resolve) => setTimeout(resolve, 350));
+                  return target;
+                }
 
-                await waitFor(() =>
-                  document.querySelector('button[aria-label="Private"]')
-                );
-                const button = document.querySelector('button[aria-label="Private"]');
-                if (!button) { throw new Error("Private button not found"); }
-                button.click();
+                function xPrivateActive() {
+                  return /This chat won.t appear in your history/i.test(document.body.innerText || "") ||
+                    Boolean(quiperFind([
+                      "button[aria-label='Disable private']",
+                      "button[aria-label='Turn off private']",
+                      "button[aria-pressed='true'][aria-label*='Private']",
+                      "[aria-selected='true'][aria-label*='Private']"
+                    ]));
+                }
+
+                const grokHome = quiperFind(["a[href='/i/grok']", "a[aria-label='Grok']"]) ||
+                  quiperFindByText(["Grok"]);
+                if (grokHome) {
+                  await xClick(grokHome, "Grok navigation button not found");
+                } else {
+                  window.history.pushState(null, "", "/i/grok");
+                  window.dispatchEvent(new PopStateEvent("popstate"));
+                }
+
+                if (!xPrivateActive()) {
+                  const privateButton = quiperFind(["button[aria-label='Private']", "[aria-label='Private']"]) ||
+                    quiperFindByText(["Private"]);
+                  await xClick(privateButton, "Private button not found");
+                }
                 """,
                 Settings.shareActionID: """
-                const buttons = [...document.querySelectorAll('button[aria-label="Share"]')];
-                const target = buttons.at(-1);
-                if (!target) { throw new Error("Share button not found"); }
-                target.click();
+                \(Settings.defaultActionScriptHelpers)
+                await quiperClick(
+                  ["button[aria-label='Share']", "[aria-label='Share']"],
+                  ["Share"],
+                  "Share button not found"
+                );
                 """,
                 Settings.historyActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                document.querySelector('button[aria-label="Chat history"]').click();
+                \(Settings.defaultActionScriptHelpers)
+                function xVisible(element) {
+                  if (!element) { return false; }
+                  const style = window.getComputedStyle(element);
+                  const rect = element.getBoundingClientRect();
+                  return style.display !== "none" &&
+                    style.visibility !== "hidden" &&
+                    rect.width > 0 &&
+                    rect.height > 0;
+                }
+
+                function xText(element) {
+                  return [
+                    element?.getAttribute("aria-label"),
+                    element?.getAttribute("title"),
+                    element?.innerText,
+                    element?.textContent
+                  ].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+                }
+
+                function xTopHistoryButton() {
+                  return [...document.querySelectorAll("button,[role='button']")]
+                    .filter(xVisible)
+                    .find((element) => {
+                      const rect = element.getBoundingClientRect();
+                      return /chat history|history/i.test(xText(element)) &&
+                        rect.y < 140 &&
+                        rect.width >= 20 &&
+                        rect.height >= 20;
+                    });
+                }
+
+                function xHistoryPanelOpen() {
+                  const tablist = [...document.querySelectorAll("[role='tablist']")]
+                    .filter(xVisible)
+                    .find((element) => {
+                      const rect = element.getBoundingClientRect();
+                      const value = xText(element);
+                      return /chats/i.test(value) &&
+                        /bookmarks|images/i.test(value) &&
+                        rect.width > 180 &&
+                        rect.height > 30;
+                    });
+                  const searchInput = [...document.querySelectorAll("input,textarea,[contenteditable='true']")]
+                    .filter(xVisible)
+                    .find((element) => /search/i.test(xText(element) || element.getAttribute("placeholder") || ""));
+                  return Boolean(tablist || searchInput || xHistoryCloseButton());
+                }
+
+                function xHistoryCloseButton() {
+                  return [...document.querySelectorAll("button,[role='button']")]
+                    .filter(xVisible)
+                    .find((element) => {
+                      const rect = element.getBoundingClientRect();
+                      return /^(close|close history)$/i.test(xText(element)) &&
+                        rect.x > 70 &&
+                        rect.y < 80 &&
+                        rect.width >= 20 &&
+                        rect.height >= 20;
+                    });
+                }
+
+                async function xPressEscape() {
+                  const eventInit = {
+                    key: "Escape",
+                    code: "Escape",
+                    keyCode: 27,
+                    which: 27,
+                    bubbles: true,
+                    cancelable: true
+                  };
+                  (document.activeElement || document.body).dispatchEvent(new KeyboardEvent("keydown", eventInit));
+                  document.dispatchEvent(new KeyboardEvent("keydown", eventInit));
+                  window.dispatchEvent(new KeyboardEvent("keydown", eventInit));
+                  await new Promise((resolve) => setTimeout(resolve, 250));
+                }
+
+                const historyButton = xTopHistoryButton();
+                if (!historyButton) {
+                  throw new Error("Chat history button not found");
+                }
+
+                if (xHistoryPanelOpen()) {
+                  const closeButton = xHistoryCloseButton();
+                  await quiperClickElement(closeButton || historyButton, "History close button not found");
+                  try {
+                    await waitFor(() => !xHistoryPanelOpen(), 1600);
+                  } catch {
+                    await xPressEscape();
+                    await waitFor(() => !xHistoryPanelOpen(), 1600);
+                  }
+                } else {
+                  await quiperClickElement(historyButton, "Chat history button not found");
+                  await waitFor(() => xHistoryPanelOpen(), 1600);
+                }
                 """
             ],
             friendDomains: [
@@ -870,43 +1428,120 @@ class Settings: ObservableObject {
         Service(
             name: "Open WebUI",
             url: "http://localhost:8080",
-            focus_selector: "#chat-input[contenteditable='true']",
+            focus_selector: "#chat-input[contenteditable='true'], textarea, div[contenteditable='true']",
             actionScripts: [
                 Settings.newSessionActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                const home = document.querySelector('[href="/"]');
-                if (!home) { throw new Error("Home link not found"); }
-                home.click();
+                \(Settings.defaultActionScriptHelpers)
+                await quiperClick(
+                  ["a[href='/']", "button[aria-label='New Chat']", "[aria-label='New Chat']"],
+                  ["New Chat", "New chat"],
+                  "New chat button not found"
+                );
                 """,
                 Settings.newTemporarySessionActionID: """
-                \(MainWindowController.jsTools["waitFor"] ?? "undefined");
-                const home = document.querySelector('[href="/"]');
-                if (!home) { throw new Error("Home link not found"); }
-                home.click();
-
-                function clickOnTemporaryButton() {
-                  const isTemporary = [...document.querySelectorAll("div")].some((div) =>
-                    (div.textContent || "").trim().endsWith("Temporary Chat")
-                  );
-
-                  console.log(isTemporary);
-
-                  if (!isTemporary) {
-                    const temporaryButton = document.getElementById("temporary-chat-button");
-                    if (!temporaryButton) { throw new Error("Temporary button not found"); }
-                    temporaryButton.click();
-                  }
+                \(Settings.defaultActionScriptHelpers)
+                function openWebUIVisible(element) {
+                  if (!element) { return false; }
+                  const style = window.getComputedStyle(element);
+                  const rect = element.getBoundingClientRect();
+                  return style.display !== "none" &&
+                    style.visibility !== "hidden" &&
+                    rect.width > 0 &&
+                    rect.height > 0;
                 }
 
-                requestAnimationFrame(clickOnTemporaryButton);
+                function openWebUIText(element) {
+                  return [
+                    element?.getAttribute("aria-label"),
+                    element?.getAttribute("title"),
+                    element?.innerText,
+                    element?.textContent
+                  ].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+                }
+
+                function openWebUITemporaryActive() {
+                  return new URL(location.href).searchParams.get("temporary-chat") === "true";
+                }
+
+                function openWebUITemporaryButton() {
+                  const labelled = quiperFind([
+                    "#temporary-chat-button",
+                    "button[aria-label='Temporary Chat']",
+                    "[aria-label='Temporary Chat']"
+                  ]) || quiperFindByText(["Temporary Chat", "Temporary"]);
+                  if (labelled) { return labelled; }
+
+                  return [...document.querySelectorAll("button,[role='button']")]
+                    .filter(openWebUIVisible)
+                    .map((element) => ({ element, rect: element.getBoundingClientRect(), text: openWebUIText(element) }))
+                    .filter(({ rect, text }) =>
+                      rect.y < 64 &&
+                      rect.x > window.innerWidth - 180 &&
+                      rect.width >= 28 &&
+                      rect.width <= 44 &&
+                      rect.height >= 28 &&
+                      rect.height <= 44 &&
+                      !/Controls|Voice|Model|Add|Share|Menu/i.test(text)
+                    )
+                    .sort((a, b) => a.rect.x - b.rect.x)[0]?.element;
+                }
+
+                const newChat = quiperFind(["a[href='/']", "button[aria-label='New Chat']", "[aria-label='New Chat']"]) ||
+                  quiperFindByText(["New Chat", "New chat"]);
+                await quiperClickElement(newChat, "New chat button not found");
+                await new Promise((resolve) => setTimeout(resolve, 350));
+
+                if (!openWebUITemporaryActive()) {
+                  await quiperClickElement(openWebUITemporaryButton(), "Temporary button not found");
+                  await waitFor(() => openWebUITemporaryActive(), 1800);
+                }
                 """,
                 Settings.shareActionID: """
-                const shareButton = [...document.querySelectorAll('[aria-label="Copy"]')].at(-1).querySelector("button");
-                if (!shareButton) { throw new Error("Share button not found"); }
-                shareButton.click();
+                \(Settings.defaultActionScriptHelpers)
+                const copyButtons = quiperElements(["[aria-label='Copy']", "button[aria-label='Copy']"]).filter( quiperIsVisible );
+                const target = quiperClickable(copyButtons.at(-1));
+                await quiperClickElement(target, "Copy/share button not found");
                 """,
                 Settings.historyActionID: """
-                document.querySelector('[aria-label="Toggle Sidebar"]').click();
+                \(Settings.defaultActionScriptHelpers)
+                function openWebUIVisible(element) {
+                  if (!element) { return false; }
+                  const style = window.getComputedStyle(element);
+                  const rect = element.getBoundingClientRect();
+                  return style.display !== "none" &&
+                    style.visibility !== "hidden" &&
+                    rect.width > 0 &&
+                    rect.height > 0;
+                }
+
+                function openWebUIText(element) {
+                  return [
+                    element?.getAttribute("aria-label"),
+                    element?.getAttribute("title"),
+                    element?.innerText,
+                    element?.textContent
+                  ].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+                }
+
+                const labelledToggle = [...document.querySelectorAll("button,[role='button']")]
+                  .filter(openWebUIVisible)
+                  .find((element) => /^(Open|Close|Toggle) Sidebar$/i.test(openWebUIText(element)));
+
+                const chromeToggle = [...document.querySelectorAll("button,[role='button']")]
+                  .filter(openWebUIVisible)
+                  .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+                  .filter(({ rect }) =>
+                    rect.y < 64 &&
+                    rect.x < 280 &&
+                    rect.width >= 28 &&
+                    rect.width <= 44 &&
+                    rect.height >= 28 &&
+                    rect.height <= 44
+                  )
+                  .sort((a, b) => b.rect.x - a.rect.x)[0]?.element;
+
+                await quiperClickElement(labelledToggle || chromeToggle, "Sidebar/history button not found");
+                await new Promise((resolve) => setTimeout(resolve, 250));
                 """
             ],
             customCSS: """
@@ -916,9 +1551,307 @@ class Settings: ObservableObject {
             """,
         ),
         Service(
+            name: "Z.ai",
+            url: "https://chat.z.ai?referrer=https://github.io/sassanh/quiper",
+            focus_selector: "textarea, div[contenteditable='true'], [role='textbox']",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function zaiVisible(element) {
+                  if (!element) { return false; }
+                  const style = window.getComputedStyle(element);
+                  const rect = element.getBoundingClientRect();
+                  return style.display !== "none" &&
+                    style.visibility !== "hidden" &&
+                    rect.width > 0 &&
+                    rect.height > 0;
+                }
+
+                function zaiText(element) {
+                  return [
+                    element?.getAttribute("aria-label"),
+                    element?.getAttribute("title"),
+                    element?.innerText,
+                    element?.textContent
+                  ].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+                }
+
+                function zaiButtonByText(pattern) {
+                  return [...document.querySelectorAll("button,[role='button']")]
+                    .filter(zaiVisible)
+                    .find((element) => pattern.test(zaiText(element)));
+                }
+
+                function zaiSidebarExpanded() {
+                  return [...document.querySelectorAll("button,[role='button']")]
+                    .filter(zaiVisible)
+                    .some((element) => {
+                      const rect = element.getBoundingClientRect();
+                      return rect.x < 280 && rect.width > 120 && /New Chat|Chat/i.test(zaiText(element));
+                    });
+                }
+
+                async function zaiClick(element, errorMessage) {
+                  const target = quiperUsable(element);
+                  if (!target) { throw new Error(errorMessage); }
+                  target.scrollIntoView({ block: "center", inline: "center" });
+                  target.click();
+                  await new Promise((resolve) => setTimeout(resolve, 350));
+                  return target;
+                }
+
+                async function zaiEnsureSidebarOpen() {
+                  if (zaiSidebarExpanded()) { return; }
+                  const toggle = [...document.querySelectorAll("button,[role='button']")]
+                    .filter(zaiVisible)
+                    .find((element) => {
+                      const rect = element.getBoundingClientRect();
+                      return rect.x < 80 && rect.y < 60 && rect.width >= 20 && rect.height >= 20;
+                    });
+                  await zaiClick(toggle, "Sidebar toggle button not found");
+                  await waitFor(() => zaiSidebarExpanded(), 1800);
+                }
+
+                await zaiEnsureSidebarOpen();
+                const chatButton = zaiButtonByText(/^Chat\\s*Chat$|^Chat$/i);
+                if (chatButton) {
+                  await zaiClick(chatButton, "Chat button not found");
+                }
+                const newChat = zaiButtonByText(/New Chat/i);
+                await zaiClick(newChat, "New Chat button not found");
+                await waitFor(() => quiperFind(["textarea", "[role='textbox']", "div[contenteditable='true']"]), 1800);
+                """,
+                Settings.shareActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                await quiperClick(
+                  ["button[aria-label='Share']", "[aria-label='Share']", "[data-testid*='share']"],
+                  ["Share"],
+                  "Share button not found"
+                );
+                """,
+                Settings.historyActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function zaiVisible(element) {
+                  if (!element) { return false; }
+                  const style = window.getComputedStyle(element);
+                  const rect = element.getBoundingClientRect();
+                  return style.display !== "none" &&
+                    style.visibility !== "hidden" &&
+                    rect.width > 0 &&
+                    rect.height > 0;
+                }
+
+                function zaiText(element) {
+                  return [
+                    element?.getAttribute("aria-label"),
+                    element?.getAttribute("title"),
+                    element?.innerText,
+                    element?.textContent
+                  ].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+                }
+
+                function zaiSidebarExpanded() {
+                  return [...document.querySelectorAll("button,[role='button']")]
+                    .filter(zaiVisible)
+                    .some((element) => {
+                      const rect = element.getBoundingClientRect();
+                      return rect.x < 280 && rect.width > 120 && /New Chat|Chat/i.test(zaiText(element));
+                    });
+                }
+
+                const wasExpanded = zaiSidebarExpanded();
+                const toggle = [...document.querySelectorAll("button,[role='button']")]
+                  .filter(zaiVisible)
+                  .find((element) => {
+                    const rect = element.getBoundingClientRect();
+                    return rect.y < 60 &&
+                      rect.width >= 20 &&
+                      rect.height >= 20 &&
+                      (wasExpanded ? rect.x > 180 && rect.x < 280 : rect.x < 80);
+                  });
+                await quiperClickElement(toggle, "Sidebar toggle button not found");
+                await waitFor(() => zaiSidebarExpanded() !== wasExpanded, 1800);
+                """
+            ],
+            friendDomains: [
+                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
+            ],
+            customCSS: """
+            body, #app {
+              background-color: transparent !important;
+            }
+            """
+        ),
+        Service(
+            name: "DeepSeek",
+            url: "https://chat.deepseek.com?referrer=https://github.io/sassanh/quiper",
+            focus_selector: "textarea, div[contenteditable='true'], [role='textbox']",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function deepseekVisible(element) {
+                  if (!element) { return false; }
+                  const style = window.getComputedStyle(element);
+                  const rect = element.getBoundingClientRect();
+                  return style.display !== "none" &&
+                    style.visibility !== "hidden" &&
+                    rect.width > 0 &&
+                    rect.height > 0;
+                }
+
+                function deepseekComposerVisible() {
+                  return [...document.querySelectorAll("textarea,[role='textbox'],div[contenteditable='true']")]
+                    .some(deepseekVisible);
+                }
+
+                function deepseekAtHome() {
+                  return new URL(location.href).pathname === "/";
+                }
+
+                function deepseekTopControls() {
+                  return [...document.querySelectorAll("button,[role='button'],div[role='button']")]
+                    .filter(deepseekVisible)
+                    .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+                    .filter(({ rect }) => rect.y < 90 && rect.width >= 14 && rect.height >= 14)
+                    .sort((a, b) => a.rect.x - b.rect.x);
+                }
+
+                async function deepseekClick(element, errorMessage) {
+                  const target = quiperUsable(element);
+                  if (!target) { throw new Error(errorMessage); }
+                  target.click();
+                  await new Promise((resolve) => setTimeout(resolve, 450));
+                  return target;
+                }
+
+                const controls = deepseekTopControls();
+                const newChat = controls.find(({ rect }, index) =>
+                  index === 1 && rect.x < 180
+                )?.element || quiperFind([
+                  "a[href='/']",
+                  "button[aria-label='New chat']",
+                  "button[aria-label='New Chat']",
+                  "[aria-label='New chat']",
+                  "[aria-label='New Chat']"
+                ]) || quiperFindByText(["New chat", "New Chat"]);
+
+                if (newChat) {
+                  await deepseekClick(newChat, "New chat button not found");
+                  try {
+                    await waitFor(() => deepseekComposerVisible() && deepseekAtHome(), 1600);
+                  } catch {}
+                }
+
+                if (!deepseekComposerVisible() || !deepseekAtHome()) {
+                  location.assign("/");
+                }
+                """,
+                Settings.shareActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function deepseekVisible(element) {
+                  if (!element) { return false; }
+                  const style = window.getComputedStyle(element);
+                  const rect = element.getBoundingClientRect();
+                  return style.display !== "none" &&
+                    style.visibility !== "hidden" &&
+                    rect.width > 0 &&
+                    rect.height > 0;
+                }
+
+                const labelledShare = quiperFind([
+                  "button[aria-label='Share']",
+                  "[aria-label='Share']",
+                  "[data-testid*='share']"
+                ]) || quiperFindByText(["Share", "Share chat", "Share conversation"]);
+
+                const topRightShare = [...document.querySelectorAll("button,[role='button'],div[role='button']")]
+                  .filter(deepseekVisible)
+                  .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+                  .filter(({ rect }) =>
+                    rect.y < 80 &&
+                    rect.x > window.innerWidth - 90 &&
+                    rect.width >= 20 &&
+                    rect.height >= 20
+                  )
+                  .sort((a, b) => b.rect.x - a.rect.x)[0]?.element;
+
+                await quiperClickElement(labelledShare || topRightShare, "Share button not found");
+                """,
+                Settings.historyActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function deepseekVisible(element) {
+                  if (!element) { return false; }
+                  const style = window.getComputedStyle(element);
+                  const rect = element.getBoundingClientRect();
+                  return style.display !== "none" &&
+                    style.visibility !== "hidden" &&
+                    rect.width > 0 &&
+                    rect.height > 0;
+                }
+
+                function deepseekHistoryOpen() {
+                  const hasHistoryLinks = [...document.querySelectorAll("a[href*='/a/chat/s/']")]
+                    .filter(deepseekVisible)
+                    .some((element) => element.getBoundingClientRect().x < 80);
+                  const hasExpandedTopControls = [...document.querySelectorAll("button,[role='button'],div[role='button']")]
+                    .filter(deepseekVisible)
+                    .some((element) => {
+                      const rect = element.getBoundingClientRect();
+                      return rect.y < 90 && rect.x > 180 && rect.x < 280 && rect.width >= 14 && rect.height >= 14;
+                    });
+                  return hasHistoryLinks || hasExpandedTopControls;
+                }
+
+                const wasOpen = deepseekHistoryOpen();
+                const controls = [...document.querySelectorAll("button,[role='button'],div[role='button']")]
+                  .filter(deepseekVisible)
+                  .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+                  .filter(({ rect }) => rect.y < 90 && rect.width >= 14 && rect.height >= 14)
+                  .sort((a, b) => a.rect.x - b.rect.x);
+                const toggle = controls.find(({ rect }) =>
+                  wasOpen ? rect.x > 220 && rect.x < 280 : rect.x < 90
+                )?.element || quiperFind([
+                  "button[aria-label='Open sidebar']",
+                  "button[aria-label='Toggle sidebar']",
+                  "[aria-label='Open sidebar']",
+                  "[aria-label='Toggle sidebar']"
+                ]);
+
+                await quiperClickElement(toggle, "Sidebar/history button not found");
+                await new Promise((resolve) => setTimeout(resolve, 350));
+                """
+            ],
+            friendDomains: [
+                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)",
+                "^https?://([^/]*\\.)?appleid\\.apple\\.com(/|$)"
+            ],
+            customCSS: """
+            html, body {
+              background-color: transparent !important;
+            }
+            """
+        ),
+        Service(
             name: "llama.cpp",
             url: "http://localhost:8080",
-            focus_selector: "[data-slot='input-area'] textarea.text-md",
+            focus_selector: "[data-slot='input-area'] textarea.text-md, textarea",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                const newChat = quiperFind(
+                  ["button[aria-label='New chat']", "button[aria-label='New Chat']", "a[href*='new_chat=true']"]
+                ) || quiperFindByText(["New chat", "New Chat"]);
+                await quiperClickElement(newChat, "New chat button not found");
+                """,
+                Settings.historyActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                const sidebarButton = [...document.querySelectorAll("button")]
+                  .find((button) => quiperIsVisible(button) && /sidebar/i.test(quiperText(button)));
+                if (!sidebarButton) { throw new Error("Sidebar/history button not found"); }
+                sidebarButton.click();
+                await new Promise((resolve) => window.requestAnimationFrame(resolve));
+                """
+            ],
             customCSS: """
             body {
               background-color: transparent !important;
@@ -927,8 +1860,82 @@ class Settings: ObservableObject {
         ),
         Service(
             name: "oMLX",
-            url: "http://localhost:8000/admin/chat",
+            url: "http://localhost:8480/admin/chat",
             focus_selector: ".input-container textarea",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                const newChat = quiperFindByText(["New Chat", "New chat"]) ||
+                  quiperFind(["button[aria-label='New Chat']", "button[aria-label='New chat']"]);
+                if (newChat) {
+                  await quiperClickElement(newChat, "New chat button not found");
+                } else {
+                  window.location.assign("/admin/chat");
+                }
+                """,
+                Settings.historyActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function omlxViewportVisible(element) {
+                  if (!element) { return false; }
+                  const rect = element.getBoundingClientRect();
+                  const style = window.getComputedStyle(element);
+                  return rect.width > 0 &&
+                    rect.height > 0 &&
+                    rect.right > 0 &&
+                    rect.left < window.innerWidth &&
+                    rect.bottom > 0 &&
+                    rect.top < window.innerHeight &&
+                    style.display !== "none" &&
+                    style.visibility !== "hidden";
+                }
+
+                function omlxText(element) {
+                  return [
+                    element?.getAttribute("aria-label"),
+                    element?.getAttribute("title"),
+                    element?.innerText,
+                    element?.textContent
+                  ].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+                }
+
+                const visibleButtons = [...document.querySelectorAll("button,[role='button']")]
+                  .filter(omlxViewportVisible);
+                const explicitSidebarToggle = visibleButtons.find((element) =>
+                  /chat\\.(open|close)_sidebar/i.test(omlxText(element))
+                );
+                const expandedNewChat = visibleButtons.find((element) => {
+                  const rect = element.getBoundingClientRect();
+                  return /New Chat/i.test(omlxText(element)) &&
+                    rect.left >= 0 &&
+                    rect.width > 100;
+                });
+
+                const sidebarToggle = explicitSidebarToggle || (expandedNewChat
+                  ? visibleButtons
+                    .filter((element) => {
+                      const rect = element.getBoundingClientRect();
+                      return rect.top < 80 &&
+                        rect.left > 80 &&
+                        rect.left < 280 &&
+                        rect.width >= 18 &&
+                        rect.height >= 18;
+                    })
+                    .sort((a, b) => b.getBoundingClientRect().left - a.getBoundingClientRect().left)[0]
+                  : visibleButtons
+                    .filter((element) => {
+                      const rect = element.getBoundingClientRect();
+                      const text = omlxText(element);
+                      return rect.top < 80 &&
+                        rect.left >= 0 &&
+                        rect.left < 100 &&
+                        rect.width >= 24 &&
+                        rect.height >= 24 &&
+                        !/oMLX|GitHub|settings|MODEL|PROFILE/i.test(text);
+                    })
+                    .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)[0]);
+                await quiperClickElement(sidebarToggle, "Sidebar/history button not found");
+                """
+            ],
             customCSS: """
             html {
               --bg-primary: transparent !important;
@@ -942,10 +1949,26 @@ class Settings: ObservableObject {
         Service(
             name: "Google",
             url: "https://www.google.com?referrer=https://github.io/sassanh/quiper",
-            focus_selector: "textarea, input[type='search']",
+            focus_selector: "textarea[name='q'], input[name='q'], textarea[aria-label='Search'], input[aria-label='Search'], textarea[title='Search'], input[title='Search'], input[type='search']",
             actionScripts: [
                 Settings.newSessionActionID: """
-                window.location = "/";
+                const homeLink = [...document.querySelectorAll("a")].find((link) => {
+                  try {
+                    const rect = link.getBoundingClientRect();
+                    const href = new URL(link.href, location.href);
+                    return href.origin === location.origin &&
+                      href.pathname === "/webhp" &&
+                      rect.width > 0 &&
+                      rect.height > 0;
+                  } catch {
+                    return false;
+                  }
+                });
+                if (homeLink) {
+                  homeLink.click();
+                } else {
+                  window.location.assign("https://www.google.com?referrer=https://github.io/sassanh/quiper");
+                }
                 """,
             ],
             friendDomains: [

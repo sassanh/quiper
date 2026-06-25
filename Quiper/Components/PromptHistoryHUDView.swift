@@ -1279,10 +1279,10 @@ fileprivate final class PromptHistoryHUDFlippedStackView: NSStackView {
 // MARK: - NSView Color Helpers
 extension NSView {
     fileprivate func resolvedColor(_ color: NSColor) -> NSColor {
-        let oldAppearance = NSAppearance.current
-        NSAppearance.current = self.effectiveAppearance
-        let result = color
-        NSAppearance.current = oldAppearance
+        var result = color
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            result = color.usingColorSpace(.deviceRGB) ?? color
+        }
         return result
     }
     

@@ -41,7 +41,7 @@ struct CGSFuncs {
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     static let jsTools: [String: String] = [
         "waitFor": """
-        function waitFor(check, timeoutMs = 10) {
+        function waitFor(check, timeoutMs = 1000) {
           return new Promise((resolve, reject) => {
             const start = Date.now();
             const step = () => {
@@ -1502,4 +1502,3 @@ extension MainWindowController {
         window?.standardWindowButton(.zoomButton)?.isEnabled = false
     }
 }
-

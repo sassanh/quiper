@@ -444,6 +444,7 @@ struct ServicesSettingsView: View {
     @ObservedObject private var settings = Settings.shared
     @State private var selectedServiceID: Service.ID?
     @State private var pendingServiceDeletion: PendingServiceDeletion?
+    private let localTemplateNames: Set<String> = ["open webui", "llama.cpp", "omlx"]
     
     init(appController: AppController?, initialServiceURL: String?) {
         self.appController = appController
@@ -497,6 +498,14 @@ struct ServicesSettingsView: View {
         }
     }
 
+    private var onlineServiceTemplates: [Service] {
+        settings.defaultServiceTemplates.filter { !localTemplateNames.contains($0.name.lowercased()) }
+    }
+
+    private var localServiceTemplates: [Service] {
+        settings.defaultServiceTemplates.filter { localTemplateNames.contains($0.name.lowercased()) }
+    }
+
     private var serviceList: some View {
         List(selection: $selectedServiceID) {
             ForEach(settings.services) { service in
@@ -541,7 +550,15 @@ struct ServicesSettingsView: View {
                     }
                     if !settings.defaultServiceTemplates.isEmpty {
                         Divider()
-                        ForEach(settings.defaultServiceTemplates) { template in
+                        ForEach(onlineServiceTemplates) { template in
+                            Button(template.name) {
+                                addService(from: template)
+                            }
+                        }
+                        if !onlineServiceTemplates.isEmpty && !localServiceTemplates.isEmpty {
+                            Divider()
+                        }
+                        ForEach(localServiceTemplates) { template in
                             Button(template.name) {
                                 addService(from: template)
                             }
@@ -1863,4 +1880,3 @@ extension Bundle {
         }
     }
 }
-

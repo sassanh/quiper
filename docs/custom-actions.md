@@ -30,10 +30,10 @@ To handle dynamic web layouts that load items asynchronously, Quiper injects a c
 
 ### `waitFor` Function Signature
 ```javascript
-function waitFor(check, timeoutMs = 10)
+function waitFor(check, timeoutMs = 1000)
 ```
 *   **`check`:** A callback function returning `true` (when the condition is met) or `false`.
-*   **`timeoutMs`:** The time (in milliseconds) before the promise rejects with a timeout error (default is 10ms).
+*   **`timeoutMs`:** The time (in milliseconds) before the promise rejects with a timeout error (default is 1000ms).
 *   **Mechanism:** Uses `window.requestAnimationFrame` to loop efficiently without locking the browser thread.
 
 ### Example Usage of `waitFor`
@@ -51,6 +51,24 @@ document.querySelector('button[aria-label="Temporary chat"]').click();
 2.  Define a new Action template (e.g. "New Chat" or "Toggle Private Session") and assign it a global keyboard shortcut (e.g., `⌘ N`).
 3.  Go to the **Engines** tab, select an engine, and bind that Action template to a specific JavaScript snippet.
 4.  When you press the shortcut, Quiper will evaluate the script bound to the active service engine.
+
+---
+
+## Auditing Default Templates
+
+Default service templates and built-in action scripts change as provider web apps evolve. Use the local audit command before and after changing defaults:
+
+```bash
+node scripts/audit-default-templates.js
+```
+
+This reads `Quiper/Settings.swift`, lists every default service template, and validates the JavaScript syntax of each embedded default action. Add `--network` to perform anonymous header-only endpoint checks without using your Quiper WebKit profiles or browser cookies:
+
+```bash
+node scripts/audit-default-templates.js --network
+```
+
+Selector behavior still needs manual validation in a clean or test account when a provider only renders controls after login.
 
 ---
 

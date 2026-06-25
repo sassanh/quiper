@@ -1210,10 +1210,10 @@ final class FlippedStackView: NSStackView {
 
 extension NSView {
     fileprivate func resolvedCGColor(_ color: NSColor) -> CGColor {
-        let oldAppearance = NSAppearance.current
-        NSAppearance.current = self.effectiveAppearance
-        let result = color.cgColor
-        NSAppearance.current = oldAppearance
+        var result = color.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            result = color.cgColor
+        }
         return result
     }
 }

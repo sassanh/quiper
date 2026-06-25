@@ -283,7 +283,6 @@ final class WebViewManager: NSObject {
         let end = payload["end"] as? Int ?? 0
         let wasSent = payload["wasSent"] as? Bool ?? false
         let wasSentText = payload["wasSentText"] as? String ?? ""
-        let debug = payload["debug"] as? String ?? ""
 
         guard let webView = message.webView,
               let (service, sessionIndex) = findServiceAndSession(for: webView) else {
