@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Prompt History Limit ([Settings.swift](Quiper/Settings.swift), [SettingsView.swift](Quiper/SettingsView.swift), [WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Added a Prompt History setting that keeps only the most recent prompts per session, defaults to 10, and supports user-selected limits from 1 to 50.
 - **Default Engine Template Refresh ([Settings.swift](Quiper/Settings.swift), [default-template-validation.md](docs/default-template-validation.md))**: Updated built-in action scripts and focus selectors for current chatbot UIs, added Z.ai and DeepSeek templates, and documented the repeatable dev-only validation workflow.
 - **Unlock Status Delay ([WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Added a 1-second loading step with the status message "Loading secure session..." after mounting the secure engine volume to provide a smooth transition.
 - **Lazy Loading of Background Tabs ([WebViewManager.swift](Quiper/Components/WebViewManager.swift), [MainWindowController.swift](Quiper/MainWindowController.swift), [MainWindowController+Actions.swift](Quiper/MainWindowController+Actions.swift))**: Defer the `load()` operation of hidden background tabs on app launch or engine unlock. Background tabs are only loaded once the user switches to them, preventing concurrent process spawning and disk contention.
@@ -14,6 +15,7 @@
 
 ### Fixed
 
+- **Secure Prompt History Restore ([WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Restored recorded prompt history and per-session recording overrides when a secure engine is unlocked.
 - **Prompt History Backspace Recording ([WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Fixed prompt history recording after ordinary Backspace/Delete edits by making clear-type detection transaction-scoped instead of sticky across later submits. Also removed raw prompt text from diagnostic logs.
 - **Compact HUD Sizing ([PromptHistoryHUDView.swift](Quiper/Components/PromptHistoryHUDView.swift), [ModifierHUDView.swift](Quiper/Components/ModifierHUDView.swift))**: Updated the Prompt History and Control Center HUDs to fit inside smaller Quiper windows without expanding the window or clipping off-screen.
 - **Prompt Reset Overwrite Detection ([WebViewManager.swift](Quiper/Components/WebViewManager.swift), [MainWindowControllerTests.swift](QuiperTests/MainWindowControllerTests.swift))**: Refined WebKit selection tracking to use transaction-based state capture and whitespace-normalized comparison, ensuring that prompt overwrites following a select-all (`Cmd+A`) are correctly recorded and mapped to settings triggers. Added corresponding unit tests.

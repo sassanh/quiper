@@ -97,6 +97,24 @@ struct TabSurvivalTests {
         #expect(decoded.tabPromptHistoryEnabledOverrides["https://gemini.google.com"]?[2] == false)
     }
 
+    @Test func promptHistoryLimit_DefaultPersistenceAndClamping() throws {
+        let settings = Settings.shared
+        _ = settings.loadSettings()
+        #expect(settings.promptHistoryLimit == Settings.defaultPromptHistoryLimit)
+
+        settings.promptHistoryLimit = 24
+        let persisted = settings.makePersistedSettings()
+        let data = try JSONEncoder().encode(persisted)
+        let decoded = try JSONDecoder().decode(PersistedSettings.self, from: data)
+        #expect(decoded.promptHistoryLimit == 24)
+
+        settings.promptHistoryLimit = 99
+        #expect(settings.promptHistoryLimit == Settings.promptHistoryLimitRange.upperBound)
+
+        settings.promptHistoryLimit = 0
+        #expect(settings.promptHistoryLimit == Settings.promptHistoryLimitRange.lowerBound)
+    }
+
     @Test func settings_TabSurvivalPolicyPersistence() throws {
         let settings = Settings.shared
         _ = settings.loadSettings() // Ensure settings are loaded/initialized first
