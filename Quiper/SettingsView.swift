@@ -189,6 +189,17 @@ struct GeneralSettingsView: View {
                         SettingsDivider()
 
                         SettingsRow(
+                            title: "History Limit",
+                            message: "Keep only the most recent prompts per session.",
+                            icon: "number",
+                            iconColor: .blue.settingsResolved
+                        ) {
+                            PromptHistoryLimitPicker()
+                        }
+
+                        SettingsDivider()
+
+                        SettingsRow(
                             title: "Recording Triggers",
                             message: "Configure which actions record the prompt to history.",
                             icon: "arrow.right.doc.on.clipboard",

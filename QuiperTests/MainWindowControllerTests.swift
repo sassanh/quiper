@@ -91,6 +91,46 @@ final class MainWindowControllerTests: XCTestCase {
         XCTAssertTrue(controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).isEmpty)
     }
 
+    func testPromptHistoryLimitTrimsNewRestoredAndExistingEntries() {
+        let originalLimit = Settings.shared.promptHistoryLimit
+        defer {
+            Settings.shared.promptHistoryLimit = originalLimit
+        }
+
+        Settings.shared.promptHistoryLimit = 3
+        let service = Service(id: UUID(), name: "Service 1", url: "https://example.com/1", focus_selector: "", activationShortcut: nil)
+        let controller = MainWindowController(services: [service])
+
+        for index in 1...5 {
+            let entry = PromptHistoryEntry(text: "Prompt \(index)", timestamp: Date(timeIntervalSince1970: TimeInterval(index)))
+            controller.webViewManager.addPromptHistoryEntry(entry, for: service.url, sessionIndex: 0)
+        }
+
+        XCTAssertEqual(
+            controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).map(\.text),
+            ["Prompt 3", "Prompt 4", "Prompt 5"]
+        )
+
+        let restoredEntries = (1...5).map {
+            PromptHistoryEntry(text: "Restored \($0)", timestamp: Date(timeIntervalSince1970: TimeInterval($0)))
+        }
+        controller.webViewManager.restoreTabPromptHistories([service.url: [1: restoredEntries]])
+        XCTAssertEqual(
+            controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 1).map(\.text),
+            ["Restored 3", "Restored 4", "Restored 5"]
+        )
+
+        Settings.shared.promptHistoryLimit = 2
+        XCTAssertEqual(
+            controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).map(\.text),
+            ["Prompt 4", "Prompt 5"]
+        )
+        XCTAssertEqual(
+            controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 1).map(\.text),
+            ["Restored 4", "Restored 5"]
+        )
+    }
+
     func testEscapeKeySwallowsEventWhenLoading() {
         class MockWebView: WKWebView {
             var mockIsLoading = false

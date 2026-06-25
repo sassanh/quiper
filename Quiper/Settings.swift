@@ -269,6 +269,12 @@ class SettingsWindow: NSWindow {
 @MainActor
 class Settings: ObservableObject {
     static let shared = Settings()
+    static let defaultPromptHistoryLimit = 10
+    static let promptHistoryLimitRange = 1...50
+
+    static func clampedPromptHistoryLimit(_ value: Int) -> Int {
+        min(max(value, promptHistoryLimitRange.lowerBound), promptHistoryLimitRange.upperBound)
+    }
 
     @Published var services: [Service] = []
     @Published var hotkeyConfiguration: HotkeyManager.Configuration = HotkeyManager.defaultConfiguration
@@ -357,6 +363,17 @@ class Settings: ObservableObject {
             saveSettings()
         }
     }
+    @Published var promptHistoryLimit: Int = defaultPromptHistoryLimit {
+        didSet {
+            let clampedValue = Self.clampedPromptHistoryLimit(promptHistoryLimit)
+            if promptHistoryLimit != clampedValue {
+                promptHistoryLimit = clampedValue
+                return
+            }
+            NotificationCenter.default.post(name: .promptHistoryLimitChanged, object: nil)
+            saveSettings()
+        }
+    }
     @Published var persistedTabState: PersistedTabState? = nil {
         didSet {
             saveSettings()
@@ -391,6 +408,7 @@ class Settings: ObservableObject {
         promptHistoryRecordOnSubmit = true
         promptHistoryRecordOnCmdBackspace = true
         promptHistoryRecordOnSelectionClear = false
+        promptHistoryLimit = Self.defaultPromptHistoryLimit
         persistedTabState = nil
     }
 
@@ -2087,6 +2105,7 @@ class Settings: ObservableObject {
         promptHistoryRecordOnSubmit = persisted.promptHistoryRecordOnSubmit ?? true
         promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace ?? true
         promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear ?? false
+        promptHistoryLimit = Self.clampedPromptHistoryLimit(persisted.promptHistoryLimit ?? Self.defaultPromptHistoryLimit)
         persistedTabState = persisted.persistedTabState
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
@@ -2142,7 +2161,8 @@ class Settings: ObservableObject {
                                             enablePromptHistory: enablePromptHistory,
                                             promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
                                             promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
-                                            promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear)
+                                            promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
+                                            promptHistoryLimit: promptHistoryLimit)
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
@@ -2177,7 +2197,8 @@ class Settings: ObservableObject {
             enablePromptHistory: enablePromptHistory,
             promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
             promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
-            promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear
+            promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
+            promptHistoryLimit: promptHistoryLimit
         )
     }
 
@@ -2210,6 +2231,7 @@ class Settings: ObservableObject {
         promptHistoryRecordOnSubmit = persisted.promptHistoryRecordOnSubmit ?? true
         promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace ?? true
         promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear ?? false
+        promptHistoryLimit = Self.clampedPromptHistoryLimit(persisted.promptHistoryLimit ?? Self.defaultPromptHistoryLimit)
         persistedTabState = persisted.persistedTabState
         if let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey

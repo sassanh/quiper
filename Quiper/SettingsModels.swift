@@ -493,6 +493,7 @@ struct PersistedSettings: Codable {
     var promptHistoryRecordOnSubmit: Bool?
     var promptHistoryRecordOnCmdBackspace: Bool?
     var promptHistoryRecordOnSelectionClear: Bool?
+    var promptHistoryLimit: Int?
     var version: Int? = 1
 
     enum CodingKeys: String, CodingKey {
@@ -513,6 +514,7 @@ struct PersistedSettings: Codable {
         case promptHistoryRecordOnSubmit
         case promptHistoryRecordOnCmdBackspace
         case promptHistoryRecordOnSelectionClear
+        case promptHistoryLimit
     }
 
     init(services: [Service],
@@ -543,6 +545,7 @@ struct PersistedSettings: Codable {
          promptHistoryRecordOnSubmit: Bool? = nil,
          promptHistoryRecordOnCmdBackspace: Bool? = nil,
          promptHistoryRecordOnSelectionClear: Bool? = nil,
+         promptHistoryLimit: Int? = nil,
          version: Int? = 1) {
         self.services = services
         self.hotkey = hotkey
@@ -572,6 +575,7 @@ struct PersistedSettings: Codable {
         self.promptHistoryRecordOnSubmit = promptHistoryRecordOnSubmit
         self.promptHistoryRecordOnCmdBackspace = promptHistoryRecordOnCmdBackspace
         self.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear
+        self.promptHistoryLimit = promptHistoryLimit
         self.version = version
     }
 
@@ -605,6 +609,7 @@ struct PersistedSettings: Codable {
         promptHistoryRecordOnSubmit = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnSubmit)
         promptHistoryRecordOnCmdBackspace = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnCmdBackspace)
         promptHistoryRecordOnSelectionClear = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnSelectionClear)
+        promptHistoryLimit = try container.decodeIfPresent(Int.self, forKey: .promptHistoryLimit)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }
 }

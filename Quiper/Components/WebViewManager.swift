@@ -43,6 +43,7 @@ final class WebViewManager: NSObject {
         self.containerView = containerView
         super.init()
         NotificationCenter.default.addObserver(self, selector: #selector(webDataClearedNotification(_:)), name: .webDataCleared, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(promptHistoryLimitChangedNotification(_:)), name: .promptHistoryLimitChanged, object: nil)
     }
     
     func updateServices(_ newServices: [Service]) {
@@ -201,7 +202,7 @@ final class WebViewManager: NSObject {
                 self.tabPromptHistories[url] = [:]
             }
             for (idx, history) in sessionMap {
-                self.tabPromptHistories[url]?[idx] = history
+                self.tabPromptHistories[url]?[idx] = Self.trimmedPromptHistory(history)
             }
         }
     }
@@ -232,8 +233,26 @@ final class WebViewManager: NSObject {
         tabPromptHistories[serviceURL]?[sessionIndex]?.removeAll(where: { $0.text == entry.text })
         
         tabPromptHistories[serviceURL]?[sessionIndex]?.append(entry)
-        if let count = tabPromptHistories[serviceURL]?[sessionIndex]?.count, count > 50 {
-            tabPromptHistories[serviceURL]?[sessionIndex]?.removeFirst(count - 50)
+        trimPromptHistory(for: serviceURL, sessionIndex: sessionIndex)
+    }
+
+    private static func trimmedPromptHistory(_ history: [PromptHistoryEntry]) -> [PromptHistoryEntry] {
+        let limit = Settings.clampedPromptHistoryLimit(Settings.shared.promptHistoryLimit)
+        guard history.count > limit else { return history }
+        return Array(history.suffix(limit))
+    }
+
+    private func trimPromptHistory(for serviceURL: String, sessionIndex: Int) {
+        guard let history = tabPromptHistories[serviceURL]?[sessionIndex] else { return }
+        tabPromptHistories[serviceURL]?[sessionIndex] = Self.trimmedPromptHistory(history)
+    }
+
+    private func trimAllPromptHistories() {
+        for serviceURL in tabPromptHistories.keys {
+            guard let sessionMap = tabPromptHistories[serviceURL] else { continue }
+            for sessionIndex in sessionMap.keys {
+                trimPromptHistory(for: serviceURL, sessionIndex: sessionIndex)
+            }
         }
     }
 
@@ -380,6 +399,10 @@ final class WebViewManager: NSObject {
         setTabInputState(inputState, for: service.url, sessionIndex: sessionIndex)
     }
     #endif
+
+    @objc private func promptHistoryLimitChangedNotification(_ notification: Notification) {
+        trimAllPromptHistories()
+    }
 
     private func makeInputStartScript() -> WKUserScript {
         let source = """
@@ -976,6 +999,12 @@ final class WebViewManager: NSObject {
                                      }
                                      if let secureInputs = state.tabInputs {
                                          self.restoreTabInputStates([service.url: secureInputs])
+                                     }
+                                     if let secureHistories = state.tabPromptHistories {
+                                         self.restoreTabPromptHistories([service.url: secureHistories])
+                                     }
+                                     if let secureOverrides = state.tabPromptHistoryEnabledOverrides {
+                                         self.restoreTabPromptHistoryOverrides([service.url: secureOverrides])
                                      }
                                  }
                              }

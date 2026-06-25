@@ -890,3 +890,19 @@ struct PromptHistoryTriggerPicker: View {
         .frame(width: 260, alignment: .trailing)
     }
 }
+
+struct PromptHistoryLimitPicker: View {
+    @ObservedObject private var settings = Settings.shared
+
+    var body: some View {
+        Stepper(value: Binding(
+            get: { settings.promptHistoryLimit },
+            set: { settings.promptHistoryLimit = Settings.clampedPromptHistoryLimit($0) }
+        ), in: Settings.promptHistoryLimitRange) {
+            Text("\(settings.promptHistoryLimit)")
+                .font(.body.monospacedDigit())
+                .frame(minWidth: 34, alignment: .trailing)
+        }
+        .frame(width: 260, alignment: .trailing)
+    }
+}
