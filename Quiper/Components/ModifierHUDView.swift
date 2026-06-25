@@ -28,7 +28,7 @@ final class ModifierHUDView: NSView {
     init(frame frameRect: NSRect, windowController: MainWindowController) {
         self.wc = windowController
         
-        visualEffectView = NSVisualEffectView(frame: frameRect)
+        visualEffectView = NSVisualEffectView(frame: NSRect(origin: .zero, size: frameRect.size))
         containerView = NSView()
         
         super.init(frame: frameRect)
@@ -89,7 +89,7 @@ final class ModifierHUDView: NSView {
         containerView.layer?.shadowOpacity = 0.3
         containerView.layer?.shadowOffset = CGSize(width: 0, height: -4)
         containerView.layer?.shadowRadius = 16
-        containerView.translatesAutoresizingMaskIntoConstraints = false
+        containerView.autoresizingMask = []
         visualEffectView.addSubview(containerView)
         
         // Header Icon removed
@@ -343,11 +343,6 @@ final class ModifierHUDView: NSView {
         
         // Layout constraints
         NSLayoutConstraint.activate([
-            containerView.centerXAnchor.constraint(equalTo: visualEffectView.centerXAnchor),
-            containerView.centerYAnchor.constraint(equalTo: visualEffectView.centerYAnchor),
-            containerView.widthAnchor.constraint(equalToConstant: 492),
-            containerView.heightAnchor.constraint(equalToConstant: 465),
-            
             col1.widthAnchor.constraint(equalTo: col2.widthAnchor),
             
             headerTitle.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 18),
@@ -430,8 +425,9 @@ final class ModifierHUDView: NSView {
     override func scrollWheel(with event: NSEvent) {}
     
     func show(in view: NSView) {
-        self.frame = view.bounds
+        self.frame = NSRect(origin: .zero, size: view.bounds.size)
         self.autoresizingMask = [.width, .height]
+        self.visualEffectView.frame = self.bounds
         self.alphaValue = 0
         view.addSubview(self)
         
@@ -444,6 +440,26 @@ final class ModifierHUDView: NSView {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             self.animator().alphaValue = 1
         }
+    }
+
+    override func layout() {
+        super.layout()
+        visualEffectView.frame = bounds
+        layoutContainerCard(preferredSize: CGSize(width: 492, height: 465))
+    }
+
+    private func layoutContainerCard(preferredSize: CGSize) {
+        let margin: CGFloat = 16
+        let availableWidth = max(0, bounds.width - margin * 2)
+        let availableHeight = max(0, bounds.height - margin * 2)
+        let width = min(preferredSize.width, availableWidth)
+        let height = min(preferredSize.height, availableHeight)
+        containerView.frame = NSRect(
+            x: (bounds.width - width) / 2,
+            y: (bounds.height - height) / 2,
+            width: width,
+            height: height
+        )
     }
     
     func hide() {
