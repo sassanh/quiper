@@ -504,11 +504,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func performCustomAction(_ action: CustomAction) {
         guard let service = currentService(), let webView = currentWebView() else { return }
-        let storedScript = ActionScriptStorage.loadScript(
-            serviceID: service.id,
-            actionID: action.id,
-            fallback: service.actionScripts[action.id] ?? ""
-        )
+        let effectiveService = Settings.shared.services.first(where: { $0.id == service.id }) ?? service
+        let storedScript = Settings.shared.actionScript(for: effectiveService, action: action)
         let rawScript = storedScript.trimmingCharacters(in: .whitespacesAndNewlines)
         let script: String
         if rawScript.isEmpty {

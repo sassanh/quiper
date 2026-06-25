@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Template Action Script Sync ([Settings.swift](Quiper/Settings.swift), [SettingsView.swift](Quiper/SettingsView.swift), [ShortcutsSettingsView.swift](Quiper/ShortcutsSettingsView.swift))**: Added a per-engine action script switch for template-backed actions that runs Quiper's latest bundled default script automatically while in sync, with a read-only editor state and one-time migration prompt for older settings.
+- **Settings App Version Tracking ([SettingsModels.swift](Quiper/SettingsModels.swift))**: Persisted the writing Quiper version in settings JSON so future releases can apply version-aware migrations.
 - **Prompt History Limit ([Settings.swift](Quiper/Settings.swift), [SettingsView.swift](Quiper/SettingsView.swift), [WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Added a Prompt History setting that keeps only the most recent prompts per session, defaults to 10, and supports user-selected limits from 1 to 50.
 - **Default Engine Template Refresh ([Settings.swift](Quiper/Settings.swift), [default-template-validation.md](docs/default-template-validation.md))**: Updated built-in action scripts and focus selectors for current chatbot UIs, added Z.ai and DeepSeek templates, and documented the repeatable dev-only validation workflow.
 - **Unlock Status Delay ([WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Added a 1-second loading step with the status message "Loading secure session..." after mounting the secure engine volume to provide a smooth transition.

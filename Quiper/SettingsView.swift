@@ -651,8 +651,9 @@ struct ServicesSettingsView: View {
             guard let defaultID = settings.defaultActionID(matching: action.name),
                   let templateScript = template.actionScripts[defaultID],
                   !templateScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-            service.actionScripts[action.id] = templateScript
-            ActionScriptStorage.saveScript(templateScript, serviceID: service.id, actionID: action.id)
+            service.templateActionScriptSync[action.id] = true
+            service.actionScripts.removeValue(forKey: action.id)
+            ActionScriptStorage.deleteScript(serviceID: service.id, actionID: action.id)
         }
     }
     
@@ -756,7 +757,8 @@ struct ServiceDetailView: View {
     @Binding var service: Service
     var appController: AppController?
     @Binding var selectedServiceID: Service.ID?
-    @State private var detailSelection: DetailSelection? = .security
+    @State private var detailSelection: DetailSelection = .security
+    @State private var detailSelectionRefreshID = 0
     @ObservedObject private var settings = Settings.shared
     var requestDelete: (Service) -> Void
 
@@ -770,6 +772,19 @@ struct ServiceDetailView: View {
     @State private var targetNewValue = false
     @State private var isMigratingData = false
     @State private var migrationMessage = ""
+
+    private var detailSelectionBinding: Binding<DetailSelection?> {
+        Binding(
+            get: { detailSelection },
+            set: { newSelection in
+                guard let newSelection else {
+                    detailSelectionRefreshID += 1
+                    return
+                }
+                detailSelection = newSelection
+            }
+        )
+    }
 
     var body: some View {
         ZStack {
@@ -918,7 +933,7 @@ struct ServiceDetailView: View {
         }
         .navigationTitle(service.name)
         .onChange(of: settings.customActions) { _, newActions in
-            if case .action(let id)? = detailSelection,
+            if case .action(let id) = detailSelection,
                !newActions.contains(where: { $0.id == id }) {
                 detailSelection = .focus
             }
@@ -1042,7 +1057,7 @@ struct ServiceDetailView: View {
 
     private var advancedPane: some View {
         HStack(spacing: 0) {
-            List(selection: $detailSelection) {
+            List(selection: detailSelectionBinding) {
                 Section("Storage & Security") {
                     Label("Secure Storage", systemImage: "lock.shield.fill")
                         .tag(DetailSelection.security)
@@ -1071,11 +1086,12 @@ struct ServiceDetailView: View {
                     }
                 }
             }
+            .id(detailSelectionRefreshID)
             .frame(minWidth: 160, idealWidth: 165, maxWidth: 180)
             
             Divider()
             
-            switch detailSelection ?? .security {
+            switch detailSelection {
             case .focus:
                 focusSelectorForm
             case .friendDomains:
@@ -1090,18 +1106,26 @@ struct ServiceDetailView: View {
                 if let action = settings.customActions.first(where: { $0.id == id }) {
                     ActionScriptEditor(action: action,
                                        code: Binding(
-                                           get: { loadScript(actionID: id) },
+                                           get: { loadScript(action: action) },
                                            set: { newValue in
-                                               if let idx = settings.services.firstIndex(where: { $0.id == service.id }) {
-                                                   settings.services[idx].actionScripts[id] = newValue
+                                               guard !settings.isTemplateActionScriptInSync(serviceID: service.id, actionID: id) else {
+                                                   return
                                                }
+                                               settings.saveCustomActionScript(newValue, serviceID: service.id, actionID: id)
+                                               service.templateActionScriptSync[id] = false
                                                service.actionScripts[id] = newValue
-                                               
-                                               ActionScriptStorage.saveScript(newValue, serviceID: service.id, actionID: id)
-                                               settings.saveSettings()
                                                appController?.reloadServices()
                                            }
                                        ),
+                                       isTemplateBacked: settings.isTemplateActionScript(service, action: action),
+                                       isInSync: settings.isTemplateActionScriptInSync(serviceID: service.id, actionID: id),
+                                       setInSync: { isInSync in
+                                           settings.setTemplateActionScriptSync(isInSync, serviceID: service.id, actionID: id)
+                                           if let idx = settings.services.firstIndex(where: { $0.id == service.id }) {
+                                               service = settings.services[idx]
+                                           }
+                                           appController?.reloadServices()
+                                       },
                                        openInEditor: { openScriptInEditor(actionID: id) },
                                        revealInFinder: { revealScriptInFinder(actionID: id) },
                                        copyFilePath: { copyScriptFilePath(actionID: id) })
@@ -1769,6 +1793,10 @@ struct ServiceDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
+    private func loadScript(action: CustomAction) -> String {
+        settings.actionScript(for: service, action: action)
+    }
+
     private func loadScript(actionID: UUID) -> String {
         ActionScriptStorage.loadScript(
             serviceID: service.id,
@@ -1841,6 +1869,9 @@ private struct PendingServiceDeletion: Identifiable {
 private struct ActionScriptEditor: View {
     var action: CustomAction
     @Binding var code: String
+    var isTemplateBacked: Bool
+    var isInSync: Bool
+    var setInSync: (Bool) -> Void
     var openInEditor: () -> Void
     var revealInFinder: () -> Void
     var copyFilePath: () -> Void
@@ -1850,18 +1881,41 @@ private struct ActionScriptEditor: View {
             Text("JavaScript for \(action.name.isEmpty ? "Action" : action.name)")
                 .font(.body)
                 .foregroundColor(.secondary)
+
+            if isTemplateBacked {
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Use Latest Default")
+                            .font(.body)
+                        Text(isInSync ? "This action runs Quiper's bundled template script and updates automatically." : "This action uses a custom editable script.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Toggle("", isOn: Binding(
+                        get: { isInSync },
+                        set: { setInSync($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .frame(width: 112, height: 32, alignment: .topTrailing)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
             
             HighlightedCodeContainer(
                 code: $code,
                 language: "javascript",
                 fileName: "\(action.name.isEmpty ? "action" : action.name).js",
+                isReadOnly: isInSync,
                 openInEditor: openInEditor,
                 revealInFinder: revealInFinder,
                 copyFilePath: copyFilePath
             )
             .frame(maxHeight: .infinity)
             
-            Text("Leave blank to log the default 'Action not implemented' message.")
+            Text(isInSync ? "Disable latest default to edit this script." : "Leave blank to log the default 'Action not implemented' message.")
                 .font(.footnote)
                 .foregroundColor(.secondary)
         }

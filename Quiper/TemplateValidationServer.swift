@@ -353,8 +353,9 @@ final class TemplateValidationServer {
                   let defaultScript = template.actionScripts[defaultID]?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !defaultScript.isEmpty else { continue }
 
-            settings.services[serviceIndex].actionScripts[action.id] = defaultScript
-            ActionScriptStorage.saveScript(defaultScript, serviceID: service.id, actionID: action.id)
+            settings.services[serviceIndex].templateActionScriptSync[action.id] = true
+            settings.services[serviceIndex].actionScripts.removeValue(forKey: action.id)
+            ActionScriptStorage.deleteScript(serviceID: service.id, actionID: action.id)
             applied.append(action.name)
         }
 

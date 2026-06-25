@@ -331,10 +331,12 @@ struct KeyBindingsSettingsView: View {
               !defaultScript.isEmpty else { return }
 
         let existing = settings.services[index].actionScripts[action.id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard existing.isEmpty else { return }
+        guard existing.isEmpty,
+              settings.services[index].templateActionScriptSync[action.id] != false else { return }
 
-        settings.services[index].actionScripts[action.id] = defaultScript
-        ActionScriptStorage.saveScript(defaultScript, serviceID: settings.services[index].id, actionID: action.id)
+        settings.services[index].templateActionScriptSync[action.id] = true
+        settings.services[index].actionScripts.removeValue(forKey: action.id)
+        ActionScriptStorage.deleteScript(serviceID: settings.services[index].id, actionID: action.id)
     }
 
     private func recordAppShortcut(_ key: AppShortcutBindings.Key, slot: CaptureSlot) {

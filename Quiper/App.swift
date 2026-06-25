@@ -107,6 +107,29 @@ final class AppController: NSObject, NSWindowDelegate {
         registerOverlayHotkey()
         registerEngineHotkeys()
         UpdateManager.shared.handleLaunchIfNeeded()
+        presentTemplateActionSyncMigrationPromptIfNeeded()
+    }
+
+    private func presentTemplateActionSyncMigrationPromptIfNeeded() {
+        guard Settings.shared.needsTemplateActionSyncMigrationPrompt,
+              !Self.isRunningTests else {
+            return
+        }
+
+        DispatchQueue.main.async {
+            guard Settings.shared.needsTemplateActionSyncMigrationPrompt else { return }
+
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.messageText = "Update Default Action Scripts?"
+            alert.informativeText = "Quiper can reconnect actions that match built-in templates to the latest bundled scripts. Choose Update to keep those template scripts in sync automatically. Choose Keep Custom to leave existing scripts editable and unchanged."
+            alert.addButton(withTitle: "Update")
+            alert.addButton(withTitle: "Keep Custom")
+
+            let shouldUpdate = alert.runModal() == .alertFirstButtonReturn
+            Settings.shared.resolveTemplateActionSyncMigration(updateScripts: shouldUpdate)
+            self.reloadServices()
+        }
     }
 
     #if DEBUG

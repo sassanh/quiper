@@ -22,6 +22,7 @@ struct Service: Codable, Identifiable {
     var lockAfterInactivity: Bool = false
     var autoLockInactivityTimeout: Int = 5
     var preservePrompt: Bool = true
+    var templateActionScriptSync: [UUID: Bool] = [:]
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -40,6 +41,7 @@ struct Service: Codable, Identifiable {
         case autoLockInactivityTimeout
         case autoLockPolicy // Keep for decoding legacy settings
         case preservePrompt
+        case templateActionScriptSync
     }
 
     init(id: UUID = UUID(),
@@ -56,7 +58,8 @@ struct Service: Codable, Identifiable {
          lockOnSwitchAway: Bool = true,
          lockAfterInactivity: Bool = false,
          autoLockInactivityTimeout: Int = 5,
-         preservePrompt: Bool = true) {
+         preservePrompt: Bool = true,
+         templateActionScriptSync: [UUID: Bool] = [:]) {
         self.id = id
         self.name = name
         self.url = url
@@ -72,6 +75,7 @@ struct Service: Codable, Identifiable {
         self.lockAfterInactivity = lockAfterInactivity
         self.autoLockInactivityTimeout = autoLockInactivityTimeout
         self.preservePrompt = preservePrompt
+        self.templateActionScriptSync = templateActionScriptSync
     }
 
     init(from decoder: Decoder) throws {
@@ -104,6 +108,7 @@ struct Service: Codable, Identifiable {
         
         autoLockInactivityTimeout = try container.decodeIfPresent(Int.self, forKey: .autoLockInactivityTimeout) ?? 5
         preservePrompt = try container.decodeIfPresent(Bool.self, forKey: .preservePrompt) ?? true
+        templateActionScriptSync = try container.decodeIfPresent([UUID: Bool].self, forKey: .templateActionScriptSync) ?? [:]
     }
 
     func encode(to encoder: Encoder) throws {
@@ -135,6 +140,9 @@ struct Service: Codable, Identifiable {
         try container.encode(lockAfterInactivity, forKey: .lockAfterInactivity)
         try container.encode(autoLockInactivityTimeout, forKey: .autoLockInactivityTimeout)
         try container.encode(preservePrompt, forKey: .preservePrompt)
+        if !templateActionScriptSync.isEmpty {
+            try container.encode(templateActionScriptSync, forKey: .templateActionScriptSync)
+        }
     }
 }
 
@@ -410,6 +418,8 @@ class Settings: ObservableObject {
         promptHistoryRecordOnSelectionClear = false
         promptHistoryLimit = Self.defaultPromptHistoryLimit
         persistedTabState = nil
+        suppressQuiperVersionPersistence = false
+        needsTemplateActionSyncMigrationPrompt = false
     }
 
     private let settingsFile: URL = {
@@ -1695,7 +1705,7 @@ class Settings: ObservableObject {
                 "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
             ],
             customCSS: """
-            body, #app {
+            body, #app, .app>div, text-3d-flip-char>.backface-hidden  {
               background-color: transparent !important;
             }
             """
@@ -2001,6 +2011,8 @@ class Settings: ObservableObject {
     ]
 
     private var isPerformingWipe = false
+    private var suppressQuiperVersionPersistence = false
+    private(set) var needsTemplateActionSyncMigrationPrompt = false
 
     init() {
         _ = loadSettings()
@@ -2055,6 +2067,8 @@ class Settings: ObservableObject {
 
     func loadSettings() -> [Service] {
         let (persisted, loadedFromDisk) = readPersistedSettings()
+        let loadedWithoutQuiperVersion = loadedFromDisk && persisted.quiperVersion == nil
+        suppressQuiperVersionPersistence = loadedWithoutQuiperVersion
         
         services = persisted.services
         let useDefaultActions = !CommandLine.arguments.contains("--no-default-actions")
@@ -2107,6 +2121,8 @@ class Settings: ObservableObject {
         promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear ?? false
         promptHistoryLimit = Self.clampedPromptHistoryLimit(persisted.promptHistoryLimit ?? Self.defaultPromptHistoryLimit)
         persistedTabState = persisted.persistedTabState
+        needsTemplateActionSyncMigrationPrompt = loadedWithoutQuiperVersion && hasTemplateActionScriptMigrationCandidates()
+        suppressQuiperVersionPersistence = needsTemplateActionSyncMigrationPrompt
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         } else if loadedFromDisk, let legacy = loadLegacyHotkeyConfiguration() {
@@ -2114,6 +2130,9 @@ class Settings: ObservableObject {
             saveSettings()
         } else {
             hotkeyConfiguration = HotkeyManager.defaultConfiguration
+        }
+        if loadedWithoutQuiperVersion && !needsTemplateActionSyncMigrationPrompt {
+            saveSettings()
         }
         return services
     }
@@ -2162,7 +2181,8 @@ class Settings: ObservableObject {
                                             promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
                                             promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
                                             promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
-                                            promptHistoryLimit: promptHistoryLimit)
+                                            promptHistoryLimit: promptHistoryLimit,
+                                            quiperVersion: persistedQuiperVersionForSave())
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
         } catch {
@@ -2198,7 +2218,8 @@ class Settings: ObservableObject {
             promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
             promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
             promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
-            promptHistoryLimit: promptHistoryLimit
+            promptHistoryLimit: promptHistoryLimit,
+            quiperVersion: persistedQuiperVersionForSave()
         )
     }
 
@@ -2238,9 +2259,107 @@ class Settings: ObservableObject {
         }
     }
 
+    func defaultActionScript(for service: Service, action: CustomAction) -> String? {
+        let serviceName = service.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let template = defaultServiceTemplates.first(where: {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == serviceName
+        }),
+              let defaultID = defaultActionID(matching: action.name),
+              let script = template.actionScripts[defaultID]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !script.isEmpty else {
+            return nil
+        }
+        return script
+    }
+
+    func isTemplateActionScript(_ service: Service, action: CustomAction) -> Bool {
+        defaultActionScript(for: service, action: action) != nil
+    }
+
+    func isTemplateActionScriptInSync(serviceID: UUID, actionID: UUID) -> Bool {
+        services.first(where: { $0.id == serviceID })?.templateActionScriptSync[actionID] == true
+    }
+
+    func actionScript(for service: Service, action: CustomAction) -> String {
+        if service.templateActionScriptSync[action.id] == true,
+           let defaultScript = defaultActionScript(for: service, action: action) {
+            return defaultScript
+        }
+        return ActionScriptStorage.loadScript(
+            serviceID: service.id,
+            actionID: action.id,
+            fallback: service.actionScripts[action.id] ?? ""
+        )
+    }
+
+    func setTemplateActionScriptSync(_ isInSync: Bool, serviceID: UUID, actionID: UUID) {
+        guard let serviceIndex = services.firstIndex(where: { $0.id == serviceID }),
+              let action = customActions.first(where: { $0.id == actionID }),
+              let defaultScript = defaultActionScript(for: services[serviceIndex], action: action) else {
+            return
+        }
+
+        services[serviceIndex].templateActionScriptSync[actionID] = isInSync
+        if isInSync {
+            services[serviceIndex].actionScripts.removeValue(forKey: actionID)
+            ActionScriptStorage.deleteScript(serviceID: serviceID, actionID: actionID)
+        } else {
+            let existingScript = ActionScriptStorage.loadScript(
+                serviceID: serviceID,
+                actionID: actionID,
+                fallback: services[serviceIndex].actionScripts[actionID] ?? ""
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+            if existingScript.isEmpty {
+                services[serviceIndex].actionScripts[actionID] = defaultScript
+                ActionScriptStorage.saveScript(defaultScript, serviceID: serviceID, actionID: actionID)
+            }
+        }
+        saveSettings()
+    }
+
+    func saveCustomActionScript(_ script: String, serviceID: UUID, actionID: UUID) {
+        guard let serviceIndex = services.firstIndex(where: { $0.id == serviceID }) else { return }
+        services[serviceIndex].templateActionScriptSync[actionID] = false
+        services[serviceIndex].actionScripts[actionID] = script
+        ActionScriptStorage.saveScript(script, serviceID: serviceID, actionID: actionID)
+        saveSettings()
+    }
+
+    func resolveTemplateActionSyncMigration(updateScripts: Bool) {
+        for serviceIndex in services.indices {
+            for action in customActions where isTemplateActionScript(services[serviceIndex], action: action) {
+                if updateScripts {
+                    let serviceID = services[serviceIndex].id
+                    services[serviceIndex].templateActionScriptSync[action.id] = true
+                    services[serviceIndex].actionScripts.removeValue(forKey: action.id)
+                    ActionScriptStorage.deleteScript(serviceID: serviceID, actionID: action.id)
+                } else if services[serviceIndex].templateActionScriptSync[action.id] == nil {
+                    services[serviceIndex].templateActionScriptSync[action.id] = false
+                }
+            }
+        }
+        needsTemplateActionSyncMigrationPrompt = false
+        suppressQuiperVersionPersistence = false
+        saveSettings()
+    }
+
+    private func persistedQuiperVersionForSave() -> String? {
+        suppressQuiperVersionPersistence ? nil : Bundle.main.versionDisplayString
+    }
+
+    private func hasTemplateActionScriptMigrationCandidates() -> Bool {
+        for service in services {
+            if customActions.contains(where: { isTemplateActionScript(service, action: $0) }) {
+                return true
+            }
+        }
+        return false
+    }
+
     func deleteScripts(for actionID: UUID) {
         for index in services.indices {
             services[index].actionScripts.removeValue(forKey: actionID)
+            services[index].templateActionScriptSync.removeValue(forKey: actionID)
             ActionScriptStorage.deleteScript(serviceID: services[index].id, actionID: actionID)
         }
         saveSettings()
@@ -2268,6 +2387,8 @@ class Settings: ObservableObject {
         updatePreferences = UpdatePreferences()
         hotkeyConfiguration = HotkeyManager.defaultConfiguration
         serviceZoomLevels.removeAll()
+        suppressQuiperVersionPersistence = false
+        needsTemplateActionSyncMigrationPrompt = false
         try? FileManager.default.removeItem(at: settingsFile)
         ActionScriptStorage.deleteAllScripts()
         CustomCSSStorage.deleteAllCSS()

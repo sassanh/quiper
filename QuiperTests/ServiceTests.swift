@@ -85,6 +85,21 @@ final class ServiceTests: XCTestCase {
         XCTAssertEqual(decoded.actionScripts.count, 1)
         XCTAssertEqual(decoded.activationShortcut?.keyCode, shortcut.keyCode)
     }
+
+    func testServiceCodableWithTemplateActionScriptSync() throws {
+        let actionID = UUID()
+        let original = Service(
+            name: "Codable Test",
+            url: "https://test.com",
+            focus_selector: "#input",
+            templateActionScriptSync: [actionID: true]
+        )
+
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(Service.self, from: data)
+
+        XCTAssertEqual(decoded.templateActionScriptSync[actionID], true)
+    }
     
     func testServiceDecodesWithMissingOptionalFields() throws {
         // Test backward compatibility - old JSON without new fields
@@ -103,6 +118,7 @@ final class ServiceTests: XCTestCase {
         XCTAssertEqual(service.name, "Old Service")
         XCTAssertNotNil(service.id) // Should generate new ID
         XCTAssertTrue(service.actionScripts.isEmpty)
+        XCTAssertTrue(service.templateActionScriptSync.isEmpty)
         XCTAssertNil(service.activationShortcut)
     }
 }
