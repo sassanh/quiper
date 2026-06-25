@@ -6,10 +6,14 @@ final class ModifierHUDView: NSView {
     private weak var wc: MainWindowController?
     private let visualEffectView: NSVisualEffectView
     private let containerView: NSView
+    private(set) var isHiding = false
     
     private var searchField: NSTextField!
     private let enginesScrollView = NSScrollView()
     private let enginesStack = FlippedStackView()
+    
+    private let col1 = NSView()
+    private let col2 = NSView()
     
     private struct FilteredItem {
         enum ItemType {
@@ -24,11 +28,14 @@ final class ModifierHUDView: NSView {
     private var allItems: [FilteredItem] = []
     private var filteredItems: [FilteredItem] = []
     private var highlightedIndex: Int = -1
+    private var sessionButtons: [HUDSessionButton] = []
+
+    override var acceptsFirstResponder: Bool { true }
     
     init(frame frameRect: NSRect, windowController: MainWindowController) {
         self.wc = windowController
         
-        visualEffectView = NSVisualEffectView(frame: frameRect)
+        visualEffectView = NSVisualEffectView(frame: NSRect(origin: .zero, size: frameRect.size))
         containerView = NSView()
         
         super.init(frame: frameRect)
@@ -78,8 +85,6 @@ final class ModifierHUDView: NSView {
     }
     
     private func setupContainerCard() {
-        guard let wc = wc else { return }
-        
         containerView.wantsLayer = true
         containerView.layer?.cornerRadius = 16
         containerView.layer?.backgroundColor = NSColor(white: 0.12, alpha: 0.95).cgColor
@@ -89,10 +94,8 @@ final class ModifierHUDView: NSView {
         containerView.layer?.shadowOpacity = 0.3
         containerView.layer?.shadowOffset = CGSize(width: 0, height: -4)
         containerView.layer?.shadowRadius = 16
-        containerView.translatesAutoresizingMaskIntoConstraints = false
+        containerView.autoresizingMask = []
         visualEffectView.addSubview(containerView)
-        
-        // Header Icon removed
         
         // Header Title
         let headerTitle = NSTextField(labelWithString: "QUIPER CONTROL CENTER")
@@ -148,7 +151,6 @@ final class ModifierHUDView: NSView {
         containerView.addSubview(divider)
         
         // Column 1: Engines & Sessions
-        let col1 = NSView()
         col1.translatesAutoresizingMaskIntoConstraints = false
         
         let enginesTitle = NSTextField(labelWithString: "SELECT ENGINE")
@@ -174,74 +176,7 @@ final class ModifierHUDView: NSView {
         
         enginesScrollView.documentView = enginesStack
         
-        // Populate all items list
-        let currentSvcURL = wc.currentServiceURL
-        let activeSession = wc.activeIndicesByURL[currentSvcURL ?? ""] ?? 0
-        let appShortcuts = Settings.shared.appShortcutBindings
-        
-        allItems.removeAll()
-        
-        for (idx, service) in wc.services.enumerated() {
-            let shortcutStr = getShortcutString(for: service, index: idx, appShortcuts: appShortcuts)
-            let btn = HUDEngineButton(title: service.name, shortcut: shortcutStr)
-            btn.isSelected = (service.url == currentSvcURL)
-            btn.onClick = { [weak self, idx] in
-                self?.wc?.selectService(at: idx)
-                self?.hide()
-            }
-            btn.translatesAutoresizingMaskIntoConstraints = false
-            btn.heightAnchor.constraint(equalToConstant: 28).isActive = true
-            
-            allItems.append(FilteredItem(
-                type: .engine(service: service, index: idx, shortcut: shortcutStr),
-                view: btn,
-                button: btn
-            ))
-            
-            if let openSessions = wc.webViewManager?.getOpenSessions(for: service) {
-                for session in openSessions {
-                    let isTabSelected = (service.url == currentSvcURL && session.sessionIndex == activeSession)
-                    
-                    let sessionShortcutStr: String?
-                    if service.url == currentSvcURL {
-                        sessionShortcutStr = getSessionShortcutString(sessionIndex: session.sessionIndex, appShortcuts: appShortcuts)
-                    } else {
-                        sessionShortcutStr = nil
-                    }
-                    
-                    let tabBtn = HUDTabButton(title: session.title, isSelected: isTabSelected, shortcut: sessionShortcutStr)
-                    tabBtn.onClick = { [weak self, idx, sessionIdx = session.sessionIndex] in
-                        self?.wc?.selectService(at: idx)
-                        self?.wc?.switchSession(to: sessionIdx)
-                        self?.hide()
-                    }
-                    tabBtn.translatesAutoresizingMaskIntoConstraints = false
-                    
-                    let indentContainer = NSView()
-                    indentContainer.translatesAutoresizingMaskIntoConstraints = false
-                    indentContainer.addSubview(tabBtn)
-                    
-                    NSLayoutConstraint.activate([
-                        indentContainer.heightAnchor.constraint(equalToConstant: 24),
-                        tabBtn.leadingAnchor.constraint(equalTo: indentContainer.leadingAnchor, constant: 16),
-                        tabBtn.trailingAnchor.constraint(equalTo: indentContainer.trailingAnchor),
-                        tabBtn.topAnchor.constraint(equalTo: indentContainer.topAnchor),
-                        tabBtn.bottomAnchor.constraint(equalTo: indentContainer.bottomAnchor)
-                    ])
-                    
-                    allItems.append(FilteredItem(
-                        type: .tab(session: session, service: service, serviceIndex: idx, isSelected: isTabSelected, shortcut: sessionShortcutStr),
-                        view: indentContainer,
-                        button: tabBtn
-                    ))
-                }
-            }
-        }
-        
-        updateFilteredList(filter: "")
-        
         // Column 2: Shortcuts / Global Actions
-        let col2 = NSView()
         col2.translatesAutoresizingMaskIntoConstraints = false
         
         let shortcutsTitle = NSTextField(labelWithString: "QUICK SHORTCUTS")
@@ -302,11 +237,10 @@ final class ModifierHUDView: NSView {
         col2.addSubview(slotsGrid)
         
         var rowViews: [NSView] = []
-        var allButtons: [HUDSessionButton] = []
+        self.sessionButtons.removeAll()
         for i in 0..<10 {
             let sessionNum = i == 9 ? 0 : i + 1
             let btn = HUDSessionButton(number: sessionNum)
-            btn.isSelected = (i == activeSession)
             btn.onClick = { [weak self, i] in
                 self?.wc?.switchSession(to: i)
                 self?.hide()
@@ -314,7 +248,7 @@ final class ModifierHUDView: NSView {
             btn.translatesAutoresizingMaskIntoConstraints = false
             btn.heightAnchor.constraint(equalToConstant: 32).isActive = true
             rowViews.append(btn)
-            allButtons.append(btn)
+            self.sessionButtons.append(btn)
             
             if rowViews.count == 5 {
                 slotsGrid.addRow(with: rowViews)
@@ -326,9 +260,9 @@ final class ModifierHUDView: NSView {
         }
         
         // Activate width constraints once they all share the slotsGrid as their ancestor
-        if let first = allButtons.first {
+        if let first = self.sessionButtons.first {
             first.widthAnchor.constraint(equalTo: slotsGrid.widthAnchor, multiplier: 0.2, constant: -4.8).isActive = true
-            for btn in allButtons.dropFirst() {
+            for btn in self.sessionButtons.dropFirst() {
                 btn.widthAnchor.constraint(equalTo: first.widthAnchor).isActive = true
             }
         }
@@ -343,12 +277,6 @@ final class ModifierHUDView: NSView {
         
         // Layout constraints
         NSLayoutConstraint.activate([
-            containerView.centerXAnchor.constraint(equalTo: visualEffectView.centerXAnchor),
-            containerView.centerYAnchor.constraint(equalTo: visualEffectView.centerYAnchor),
-            containerView.widthAnchor.constraint(equalToConstant: 492),
-            containerView.heightAnchor.constraint(equalToConstant: 465),
-            
-            col1.widthAnchor.constraint(equalTo: col2.widthAnchor),
             
             headerTitle.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 18),
             headerTitle.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 18),
@@ -395,8 +323,7 @@ final class ModifierHUDView: NSView {
             
             enginesStack.topAnchor.constraint(equalTo: enginesScrollView.contentView.topAnchor),
             enginesStack.leadingAnchor.constraint(equalTo: enginesScrollView.contentView.leadingAnchor),
-            enginesStack.trailingAnchor.constraint(equalTo: enginesScrollView.contentView.trailingAnchor),
-            enginesStack.widthAnchor.constraint(equalTo: enginesScrollView.contentView.widthAnchor),
+            enginesStack.widthAnchor.constraint(equalTo: enginesScrollView.contentView.widthAnchor, constant: -18),
             
             // Col 2 Inner Constraints
             col2.bottomAnchor.constraint(equalTo: columnsStack.bottomAnchor),
@@ -416,6 +343,85 @@ final class ModifierHUDView: NSView {
             slotsGrid.topAnchor.constraint(equalTo: sessionsTitle.bottomAnchor, constant: 8),
             slotsGrid.bottomAnchor.constraint(lessThanOrEqualTo: col2.bottomAnchor)
         ])
+        
+        refreshData()
+    }
+    
+    func refreshData() {
+        guard let wc = wc else { return }
+        let currentSvcURL = wc.currentServiceURL
+        let activeSession = wc.activeIndicesByURL[currentSvcURL ?? ""] ?? 0
+        let appShortcuts = Settings.shared.appShortcutBindings
+        
+        for view in enginesStack.arrangedSubviews {
+            enginesStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        
+        allItems.removeAll()
+        
+        for (idx, service) in wc.services.enumerated() {
+            let shortcutStr = getShortcutString(for: service, index: idx, appShortcuts: appShortcuts)
+            let btn = HUDEngineButton(title: service.name, shortcut: shortcutStr)
+            btn.isSelected = (service.url == currentSvcURL)
+            btn.onClick = { [weak self, idx] in
+                self?.wc?.selectService(at: idx)
+                self?.hide()
+            }
+            btn.translatesAutoresizingMaskIntoConstraints = false
+            btn.heightAnchor.constraint(equalToConstant: 28).isActive = true
+            
+            allItems.append(FilteredItem(
+                type: .engine(service: service, index: idx, shortcut: shortcutStr),
+                view: btn,
+                button: btn
+            ))
+            
+            if let openSessions = wc.webViewManager?.getOpenSessions(for: service) {
+                for session in openSessions {
+                    let isTabSelected = (service.url == currentSvcURL && session.sessionIndex == activeSession)
+                    
+                    let sessionShortcutStr: String?
+                    if service.url == currentSvcURL {
+                        sessionShortcutStr = getSessionShortcutString(sessionIndex: session.sessionIndex, appShortcuts: appShortcuts)
+                    } else {
+                        sessionShortcutStr = nil
+                    }
+                    
+                    let tabBtn = HUDTabButton(title: session.title, isSelected: isTabSelected, shortcut: sessionShortcutStr)
+                    tabBtn.onClick = { [weak self, idx, sessionIdx = session.sessionIndex] in
+                        self?.wc?.selectService(at: idx)
+                        self?.wc?.switchSession(to: sessionIdx)
+                        self?.hide()
+                    }
+                    tabBtn.translatesAutoresizingMaskIntoConstraints = false
+                    
+                    let indentContainer = NSView()
+                    indentContainer.translatesAutoresizingMaskIntoConstraints = false
+                    indentContainer.addSubview(tabBtn)
+                    
+                    NSLayoutConstraint.activate([
+                        indentContainer.heightAnchor.constraint(equalToConstant: 24),
+                        tabBtn.leadingAnchor.constraint(equalTo: indentContainer.leadingAnchor, constant: 16),
+                        tabBtn.trailingAnchor.constraint(equalTo: indentContainer.trailingAnchor),
+                        tabBtn.topAnchor.constraint(equalTo: indentContainer.topAnchor),
+                        tabBtn.bottomAnchor.constraint(equalTo: indentContainer.bottomAnchor)
+                    ])
+                    
+                    allItems.append(FilteredItem(
+                        type: .tab(session: session, service: service, serviceIndex: idx, isSelected: isTabSelected, shortcut: sessionShortcutStr),
+                        view: indentContainer,
+                        button: tabBtn
+                    ))
+                }
+            }
+        }
+        
+        for (i, btn) in sessionButtons.enumerated() {
+            btn.isSelected = (i == activeSession)
+        }
+        
+        updateFilteredList(filter: searchField.stringValue)
     }
     
     // Swallow mouse clicks to prevent click-through to the webview
@@ -430,10 +436,17 @@ final class ModifierHUDView: NSView {
     override func scrollWheel(with event: NSEvent) {}
     
     func show(in view: NSView) {
-        self.frame = view.bounds
+        isHiding = false
+        isHidden = false
+        self.frame = NSRect(origin: .zero, size: view.bounds.size)
         self.autoresizingMask = [.width, .height]
+        self.visualEffectView.frame = self.bounds
         self.alphaValue = 0
-        view.addSubview(self)
+        
+        view.addSubview(self, positioned: .above, relativeTo: nil)
+        
+        self.searchField.stringValue = ""
+        self.refreshData()
         
         if let window = self.window {
             window.makeFirstResponder(self.searchField)
@@ -445,18 +458,71 @@ final class ModifierHUDView: NSView {
             self.animator().alphaValue = 1
         }
     }
+
+    override func layout() {
+        guard !isHidden && !isHiding else { return }
+        
+        let isNarrow = (bounds.width - 32) < 480
+        col2.isHidden = isNarrow
+        
+        super.layout()
+        visualEffectView.frame = bounds
+        layoutContainerCard(preferredSize: CGSize(width: 492, height: 465))
+    }
+
+    private func layoutContainerCard(preferredSize: CGSize) {
+        let margin: CGFloat = 16
+        let availableWidth = max(0, bounds.width - margin * 2)
+        let availableHeight = max(0, bounds.height - margin * 2)
+        let width = min(preferredSize.width, availableWidth)
+        let height = min(preferredSize.height, availableHeight)
+        containerView.frame = NSRect(
+            x: (bounds.width - width) / 2,
+            y: (bounds.height - height) / 2,
+            width: width,
+            height: height
+        )
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if isHiding || isHidden {
+            return nil
+        }
+        return super.hitTest(point)
+    }
     
     func hide() {
+        guard !isHiding else {
+            return
+        }
+        isHiding = true
+        window?.makeFirstResponder(self)
+        Self.removeTrackingAreasRecursively(from: self)
+
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             self.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                self.removeFromSuperview()
-                self.wc?.modifierHUDView = nil
+                guard let self = self else {
+                    return
+                }
+                if self.window?.firstResponder === self {
+                    self.window?.makeFirstResponder(self.window?.contentView)
+                }
+                self.isHidden = true
+                self.isHiding = false
             }
+        }
+    }
+
+    private static func removeTrackingAreasRecursively(from view: NSView) {
+        for trackingArea in view.trackingAreas {
+            view.removeTrackingArea(trackingArea)
+        }
+        for subview in view.subviews {
+            removeTrackingAreasRecursively(from: subview)
         }
     }
 }
@@ -576,6 +642,7 @@ final class HUDEngineButton: NSControl {
         titleField.cell?.lineBreakMode = .byTruncatingTail
         titleField.cell?.usesSingleLineMode = true
         titleField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleField.setContentHuggingPriority(.defaultLow - 10, for: .horizontal)
         titleField.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleField)
         
@@ -602,6 +669,8 @@ final class HUDEngineButton: NSControl {
             shortcutField.font = NSFont.systemFont(ofSize: 9, weight: .bold)
             shortcutField.textColor = .secondaryLabelColor
             shortcutField.alignment = .center
+            shortcutField.setContentHuggingPriority(.required, for: .horizontal)
+            shortcutField.setContentCompressionResistancePriority(.required, for: .horizontal)
             shortcutField.translatesAutoresizingMaskIntoConstraints = false
             shortcutContainer.addSubview(shortcutField)
             
@@ -947,6 +1016,7 @@ final class HUDTabButton: NSControl {
         titleField.cell?.lineBreakMode = .byTruncatingTail
         titleField.cell?.usesSingleLineMode = true
         titleField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleField.setContentHuggingPriority(.defaultLow - 10, for: .horizontal)
         titleField.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleField)
         
@@ -975,6 +1045,8 @@ final class HUDTabButton: NSControl {
             shortcutField.font = NSFont.systemFont(ofSize: 9, weight: .bold)
             shortcutField.textColor = .secondaryLabelColor
             shortcutField.alignment = .center
+            shortcutField.setContentHuggingPriority(.required, for: .horizontal)
+            shortcutField.setContentCompressionResistancePriority(.required, for: .horizontal)
             shortcutField.translatesAutoresizingMaskIntoConstraints = false
             shortcutContainer.addSubview(shortcutField)
             

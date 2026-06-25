@@ -38,11 +38,11 @@ extension MainWindowController {
             self.wasBothCmdsDown = false
             
             if event.keyCode == kVK_Escape {
-                if self.promptHistoryHUDView != nil {
+                if let hud = self.promptHistoryHUDView, !hud.isHidden {
                     self.hidePromptHistoryHUD()
                     return nil
                 }
-                if self.modifierHUDView != nil {
+                if let hud = self.modifierHUDView, !hud.isHidden {
                     self.hideModifierHUD()
                     return nil // Swallow escape so it doesn't hide the main window
                 }
@@ -51,7 +51,7 @@ extension MainWindowController {
                     return nil // Swallow escape so it stops loading
                 }
             }
-            if let hud = self.promptHistoryHUDView {
+            if let hud = self.promptHistoryHUDView, !hud.isHidden {
                 if hud.handleHUDShortcut(event) {
                     return nil
                 }
@@ -61,7 +61,7 @@ extension MainWindowController {
                     self.hidePromptHistoryHUD()
                 }
             }
-            if self.modifierHUDView != nil {
+            if let hud = self.modifierHUDView, !hud.isHidden {
                 let hasModifier = event.modifierFlags.contains(.command) || event.modifierFlags.contains(.option) || event.modifierFlags.contains(.control)
                 if hasModifier {
                     self.hideModifierHUD()
@@ -204,26 +204,27 @@ extension MainWindowController {
     private func showModifierHUD() {
         guard let contentView = window?.contentView else { return }
         hidePromptHistoryHUD()
-        NSLog("[QuiperDebug] showModifierHUD called, current HUD is \(modifierHUDView == nil ? "nil" : "not nil")")
         if modifierHUDView == nil {
             modifierHUDView = ModifierHUDView(frame: contentView.bounds, windowController: self)
         }
-        if let hud = modifierHUDView, hud.superview == nil {
+        if let hud = modifierHUDView, hud.isHiding {
+            return
+        }
+        if let hud = modifierHUDView {
             hud.show(in: contentView)
         }
     }
     
     func hideModifierHUD() {
-        NSLog("[QuiperDebug] hideModifierHUD called")
-        if let hud = modifierHUDView, hud.superview != nil {
+        if let hud = modifierHUDView, !hud.isHidden, !hud.isHiding {
             hud.hide()
-            modifierHUDView = nil
         }
     }
     
     func toggleModifierHUD() {
-        NSLog("[QuiperDebug] toggleModifierHUD called, HUD is \(modifierHUDView == nil ? "nil" : "not nil"), superview is \(modifierHUDView?.superview == nil ? "nil" : "not nil")")
-        if modifierHUDView != nil && modifierHUDView?.superview != nil {
+        if let hud = modifierHUDView, hud.isHiding {
+            return
+        } else if let hud = modifierHUDView, !hud.isHidden {
             hideModifierHUD()
         } else {
             showModifierHUD()

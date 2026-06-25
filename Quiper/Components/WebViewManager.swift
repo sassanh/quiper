@@ -294,14 +294,15 @@ final class WebViewManager: NSObject {
             return
         }
 
-        NSLog("[Quiper] [Payload] Received raw input state payload: \(payload)")
-
         let text = payload["text"] as? String ?? ""
         let isContentEditable = payload["isContentEditable"] as? Bool ?? false
         let start = payload["start"] as? Int ?? 0
         let end = payload["end"] as? Int ?? 0
         let wasSent = payload["wasSent"] as? Bool ?? false
         let wasSentText = payload["wasSentText"] as? String ?? ""
+        let clearTypeForLog = payload["clearType"] as? String ?? "submit"
+
+        NSLog("[Quiper] [Payload] Received input state payload: textLength=\(text.count), wasSent=\(wasSent), sentTextLength=\(wasSentText.count), clearType=\(clearTypeForLog)")
 
         guard let webView = message.webView,
               let (service, sessionIndex) = findServiceAndSession(for: webView) else {
@@ -326,7 +327,7 @@ final class WebViewManager: NSObject {
                 shouldRecord = Settings.shared.promptHistoryRecordOnSelectionClear
             }
             
-            NSLog("[Quiper] [History] wasSent is true. Text to record: '\(wasSentText)', clearType: \(clearType), shouldRecord: \(shouldRecord)")
+            NSLog("[Quiper] [History] wasSent is true. Text length: \(wasSentText.count), clearType: \(clearType), shouldRecord: \(shouldRecord)")
             
             if shouldRecord {
                 let trimmed = wasSentText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -569,6 +570,20 @@ final class WebViewManager: NSObject {
             let lastSentStart = null;
             let lastSentEnd = null;
 
+            function setPendingClearType(clearType) {
+                window.__quiperLastClearType = clearType;
+            }
+
+            function clearPendingClearType() {
+                window.__quiperLastClearType = null;
+            }
+
+            function consumePendingClearType(defaultClearType) {
+                const clearType = window.__quiperLastClearType || defaultClearType;
+                clearPendingClearType();
+                return clearType;
+            }
+
             function sendState(immediate) {
                 if (window.__quiperInputTrackerActive === false) return;
                 const el = getTargetElement();
@@ -596,22 +611,16 @@ final class WebViewManager: NSObject {
                 if (window.__quiperForceRecordPrompt && window.__quiperLatestTypedText && window.__quiperLatestTypedText.trim() !== "") {
                     wasSent = true;
                     wasSentText = window.__quiperLatestTypedText;
-                    if (window.__quiperLastClearType) {
-                        clearType = window.__quiperLastClearType;
-                    }
+                    clearType = consumePendingClearType("submit");
                     window.__quiperForceRecordPrompt = false;
                     window.__quiperLatestTypedText = "";
-                    window.__quiperLastClearType = null;
                 } else {
                     const isTextEmpty = !state.text || state.text.trim() === "";
                     if (isTextEmpty && window.__quiperLatestTypedText && window.__quiperLatestTypedText.trim() !== "") {
                         wasSent = true;
                         wasSentText = window.__quiperLatestTypedText;
-                        if (window.__quiperLastClearType) {
-                            clearType = window.__quiperLastClearType;
-                        }
+                        clearType = consumePendingClearType("submit");
                         window.__quiperLatestTypedText = "";
-                        window.__quiperLastClearType = null;
                     }
                 }
 
@@ -654,6 +663,7 @@ final class WebViewManager: NSObject {
             let textBeforeInput = "";
             let selectedTextBeforeInput = "";
             let hasCapturedBeforeState = false;
+            let inputOccurredSinceLastKeydown = false;
             window.__quiperLastClearType = null;
             window.__quiperForceRecordPrompt = false;
             
@@ -687,6 +697,7 @@ final class WebViewManager: NSObject {
 
             document.addEventListener('keydown', (e) => {
                 updateInteractionTime(e);
+                inputOccurredSinceLastKeydown = false;
                 captureBeforeState();
                 const el = getTargetElement();
                 if (el && e.isTrusted) {
@@ -695,19 +706,23 @@ final class WebViewManager: NSObject {
                     
                     if (isDeleteKey) {
                         if (isCmd) {
-                            window.__quiperLastClearType = "cmdBackspace";
+                            setPendingClearType("cmdBackspace");
                         } else if (selectionLengthBeforeInput > 0) {
-                            window.__quiperLastClearType = "selectionClear";
+                            setPendingClearType("selectionClear");
                         } else {
-                            window.__quiperLastClearType = "normalDelete";
+                            setPendingClearType("normalDelete");
                         }
                     } else if ((e.key === 'x' || e.key === 'X') && isCmd) {
-                        window.__quiperLastClearType = "selectionClear";
+                        setPendingClearType("selectionClear");
                     }
                 }
             }, true);
 
             document.addEventListener('keyup', (e) => {
+                if (!inputOccurredSinceLastKeydown) {
+                    clearPendingClearType();
+                }
+                inputOccurredSinceLastKeydown = false;
                 hasCapturedBeforeState = false;
             }, true);
 
@@ -717,7 +732,7 @@ final class WebViewManager: NSObject {
 
             document.addEventListener('cut', (e) => {
                 if (e && e.isTrusted) {
-                    window.__quiperLastClearType = "selectionClear";
+                    setPendingClearType("selectionClear");
                 }
             }, true);
 
@@ -726,7 +741,7 @@ final class WebViewManager: NSObject {
                     captureBeforeState();
                     if (e.inputType && e.inputType.startsWith('delete')) {
                         if (window.__quiperLastClearType === null) {
-                            window.__quiperLastClearType = "selectionClear";
+                            setPendingClearType(selectionLengthBeforeInput > 0 ? "selectionClear" : "normalDelete");
                         }
                     }
                 }
@@ -735,6 +750,7 @@ final class WebViewManager: NSObject {
             document.addEventListener('input', (e) => {
                 const el = getTargetElement();
                 if (el && (el === e.target || el.contains(e.target))) {
+                    inputOccurredSinceLastKeydown = true;
                     const state = getElementState(el);
                     if (state) {
                         const normSel = selectedTextBeforeInput.replace(/\\s/g, '');
@@ -742,7 +758,7 @@ final class WebViewManager: NSObject {
                         const wasSelectAll = normSel.length > 0 && (normSel === normFull || (normFull.length > 0 && normSel.length / normFull.length >= 0.95));
                         
                         if (wasSelectAll && textBeforeInput && textBeforeInput.trim() !== "") {
-                            window.__quiperLastClearType = "selectionClear";
+                            setPendingClearType("selectionClear");
                             window.__quiperLatestTypedText = textBeforeInput;
                             window.__quiperForceRecordPrompt = true;
                             sendState(true);
@@ -753,6 +769,7 @@ final class WebViewManager: NSObject {
                         
                         if (state.text && state.text.trim() !== "") {
                             window.__quiperLatestTypedText = state.text;
+                            clearPendingClearType();
                         }
                         
                         const isTextEmpty = !state.text || state.text.trim() === "";

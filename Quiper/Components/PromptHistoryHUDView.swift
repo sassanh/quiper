@@ -2,7 +2,7 @@ import AppKit
 
 @MainActor
 final class PromptHistoryHUDView: NSView {
-    var isHiding: Bool = false
+    private(set) var isHiding: Bool = false
     
     private weak var wc: MainWindowController?
     private let visualEffectView: NSVisualEffectView
@@ -24,11 +24,13 @@ final class PromptHistoryHUDView: NSView {
     private var allItems: [FilteredItem] = []
     private var filteredItems: [FilteredItem] = []
     private var highlightedIndex: Int = -1
+
+    override var acceptsFirstResponder: Bool { true }
     
     init(frame frameRect: NSRect, windowController: MainWindowController) {
         self.wc = windowController
         
-        visualEffectView = NSVisualEffectView(frame: frameRect)
+        visualEffectView = NSVisualEffectView(frame: NSRect(origin: .zero, size: frameRect.size))
         containerView = NSView()
         
         super.init(frame: frameRect)
@@ -69,7 +71,7 @@ final class PromptHistoryHUDView: NSView {
         containerView.layer?.shadowOpacity = 0.35
         containerView.layer?.shadowOffset = CGSize(width: 0, height: -4)
         containerView.layer?.shadowRadius = 16
-        containerView.translatesAutoresizingMaskIntoConstraints = false
+        containerView.autoresizingMask = []
         visualEffectView.addSubview(containerView)
         
         // Header Title
@@ -180,11 +182,6 @@ final class PromptHistoryHUDView: NSView {
         
         // Layout constraints
         NSLayoutConstraint.activate([
-            containerView.centerXAnchor.constraint(equalTo: visualEffectView.centerXAnchor),
-            containerView.centerYAnchor.constraint(equalTo: visualEffectView.centerYAnchor),
-            containerView.widthAnchor.constraint(equalToConstant: 520),
-            containerView.heightAnchor.constraint(equalToConstant: 480),
-            
             headerTitle.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 18),
             headerTitle.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 18),
             
@@ -215,12 +212,13 @@ final class PromptHistoryHUDView: NSView {
             recordSwitch.leadingAnchor.constraint(equalTo: controlBar.leadingAnchor),
             recordSwitch.centerYAnchor.constraint(equalTo: controlBar.centerYAnchor),
             recordSwitch.heightAnchor.constraint(equalToConstant: 30),
-            recordSwitch.widthAnchor.constraint(equalToConstant: 200),
+            recordSwitch.widthAnchor.constraint(greaterThanOrEqualToConstant: 156),
             
+            recordSwitch.trailingAnchor.constraint(lessThanOrEqualTo: clearAllButton.leadingAnchor, constant: -8),
             clearAllButton.trailingAnchor.constraint(equalTo: controlBar.trailingAnchor),
             clearAllButton.centerYAnchor.constraint(equalTo: controlBar.centerYAnchor),
             clearAllButton.heightAnchor.constraint(equalToConstant: 28),
-            clearAllButton.widthAnchor.constraint(equalToConstant: 130),
+            clearAllButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 104),
             
             divider.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
             divider.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
@@ -234,8 +232,7 @@ final class PromptHistoryHUDView: NSView {
             
             stackView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
             stackView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-            stackView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
-            stackView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            stackView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor, constant: -18),
             
             emptyLabel.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
             emptyLabel.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor)
@@ -459,10 +456,37 @@ final class PromptHistoryHUDView: NSView {
 
     func show(in view: NSView) {
         self.isHiding = false
-        self.frame = view.bounds
+        self.isHidden = false
+        self.frame = NSRect(origin: .zero, size: view.bounds.size)
         self.autoresizingMask = [.width, .height]
+        self.visualEffectView.frame = self.bounds
         self.alphaValue = 0
-        view.addSubview(self)
+        
+        view.addSubview(self, positioned: .above, relativeTo: nil)
+        
+        // Refresh dynamic configuration/data
+        if let wc = wc, let service = wc.currentService() {
+            let sessionIdx = wc.activeIndicesByURL[service.url] ?? 0
+            
+            let isRecordEnabled = wc.webViewManager?.isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIdx) ?? true
+            recordSwitch.isOn = isRecordEnabled
+            
+            recordSwitch.onToggle = { [weak self, service, sessionIdx] isOn in
+                guard let self = self else { return }
+                self.wc?.webViewManager?.setPromptHistoryEnabled(isOn, for: service.url, sessionIndex: sessionIdx)
+                self.wc?.saveTabsState()
+            }
+            
+            clearAllButton.onClick = { [weak self, service, sessionIdx] in
+                guard let self = self else { return }
+                self.wc?.webViewManager?.clearPromptHistory(for: service.url, sessionIndex: sessionIdx)
+                self.wc?.saveTabsState()
+                self.reloadEntries()
+            }
+        }
+        
+        self.searchField.stringValue = ""
+        self.reloadEntries()
         
         if let window = self.window {
             window.makeFirstResponder(self.searchField)
@@ -474,21 +498,67 @@ final class PromptHistoryHUDView: NSView {
             self.animator().alphaValue = 1
         }
     }
+
+    override func layout() {
+        guard !isHidden && !isHiding else { return }
+        super.layout()
+        visualEffectView.frame = bounds
+        layoutContainerCard(preferredSize: CGSize(width: 520, height: 480))
+    }
+
+    private func layoutContainerCard(preferredSize: CGSize) {
+        let margin: CGFloat = 16
+        let availableWidth = max(0, bounds.width - margin * 2)
+        let availableHeight = max(0, bounds.height - margin * 2)
+        let width = min(preferredSize.width, availableWidth)
+        let height = min(preferredSize.height, availableHeight)
+        containerView.frame = NSRect(
+            x: (bounds.width - width) / 2,
+            y: (bounds.height - height) / 2,
+            width: width,
+            height: height
+        )
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if isHiding || isHidden {
+            return nil
+        }
+        return super.hitTest(point)
+    }
     
     func hide() {
+        guard !isHiding else {
+            return
+        }
         self.isHiding = true
+        window?.makeFirstResponder(self)
+        Self.removeTrackingAreasRecursively(from: self)
+
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             self.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                self.removeFromSuperview()
-                if self.wc?.promptHistoryHUDView === self {
-                    self.wc?.promptHistoryHUDView = nil
+                guard let self = self else {
+                    return
                 }
+                if self.window?.firstResponder === self {
+                    self.window?.makeFirstResponder(self.window?.contentView)
+                }
+                self.isHidden = true
+                self.isHiding = false
             }
+        }
+    }
+
+    private static func removeTrackingAreasRecursively(from view: NSView) {
+        for trackingArea in view.trackingAreas {
+            view.removeTrackingArea(trackingArea)
+        }
+        for subview in view.subviews {
+            removeTrackingAreasRecursively(from: subview)
         }
     }
 }

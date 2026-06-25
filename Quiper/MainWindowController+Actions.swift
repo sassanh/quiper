@@ -22,9 +22,9 @@ extension MainWindowController {
         hideModifierHUD()
         if let hud = promptHistoryHUDView {
             if hud.isHiding {
-                hud.isHiding = false
-                hud.show(in: contentView)
+                return
             }
+            hud.show(in: contentView)
             return
         }
         let hud = PromptHistoryHUDView(frame: contentView.bounds, windowController: self)
@@ -33,13 +33,15 @@ extension MainWindowController {
     }
 
     func hidePromptHistoryHUD() {
-        if let hud = promptHistoryHUDView, !hud.isHiding {
+        if let hud = promptHistoryHUDView, !hud.isHidden, !hud.isHiding {
             hud.hide()
         }
     }
 
     func togglePromptHistoryHUD() {
-        if let hud = promptHistoryHUDView, !hud.isHiding {
+        if let hud = promptHistoryHUDView, hud.isHiding {
+            return
+        } else if let hud = promptHistoryHUDView, !hud.isHidden {
             hidePromptHistoryHUD()
         } else {
             showPromptHistoryHUD()
