@@ -29,7 +29,7 @@ Unlike standard web browsers or heavy desktop apps, Quiper is designed to be inv
 
 Explore our guides to configure and customize Quiper:
 
-*   [Getting Started](getting-started.md): Installation steps, launching, Gatekeeper workarounds, and update settings.
+*   [Getting Started](getting-started.md): System requirements, installation steps, and launching.
 *   [Daily Workflow](daily-workflow.md): Hotkeys, shortcuts tables, and session/engine switching.
 *   [Managing Engines](engines.md): Adding AI providers, setting up custom URLs, and configuring auto-focus selectors.
 *   [Application Settings](settings.md): Reference for behavior preferences, configuration backups, updates, and the danger zone.

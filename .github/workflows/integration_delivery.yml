@@ -37,7 +37,7 @@ jobs:
           xcodebuild -version
 
       - name: Run tests with coverage
-        run: ./tests-with-coverage.sh -retry-tests-on-failure -test-iterations 2
+        run: ./tests-with-coverage.sh CODE_SIGN_IDENTITY="-" DEVELOPMENT_TEAM="" -retry-tests-on-failure -test-iterations 2
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6
@@ -79,8 +79,95 @@ jobs:
             CLEAN_BASE="0.0.0"
           fi
           echo "APP_VERSION=${CLEAN_BASE}-${SUFFIX}-nonproduction" >>"$GITHUB_ENV"
+      - name: Install Apple Certificate
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE }}
+          P12_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: "temporary-keychain-password"
+        run: |
+          if [ -z "$BUILD_CERTIFICATE_BASE64" ]; then
+            echo "⚠️ No certificate found. Skipping Apple Certificate installation and falling back to ad-hoc signing."
+            exit 0
+          fi
+
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          # Decode the certificate cleanly
+          echo "$BUILD_CERTIFICATE_BASE64" | tr -d '\r\n ' | base64 --decode -o "$CERTIFICATE_PATH"
+
+          # Create and unlock temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          # Import certificate to keychain
+          security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Dynamically resolve and set the signing identity
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -E 'Apple Development|Mac Developer|Developer ID Application' | head -n 1 | grep -oE '"[^"]+"' | tr -d '"')
+          echo "RESOLVED_IDENTITY=$IDENTITY" >> $GITHUB_ENV
+          
+          # Extract actual Team ID from the certificate's Organizational Unit (OU) metadata
+          TEAM_ID=$(security find-certificate -c "$IDENTITY" -p "$KEYCHAIN_PATH" | openssl x509 -text -noout | grep -i 'Subject: ' | grep -oE 'OU=[A-Z0-9]+' | cut -d= -f2 | head -n 1)
+          echo "RESOLVED_TEAM=$TEAM_ID" >> $GITHUB_ENV
+          
+          echo "🎉 Successfully imported certificate: $IDENTITY (Team: $TEAM_ID)"
+
       - name: Build Swift App
+        env:
+          SIGNING_IDENTITY: ${{ env.RESOLVED_IDENTITY || '-' }}
+          DEVELOPMENT_TEAM: ${{ env.RESOLVED_TEAM }}
         run: ./build-app.sh
+      - name: Notarize and Staple App
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          DEVELOPMENT_TEAM: ${{ env.RESOLVED_TEAM }}
+        run: |
+          if [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_PASSWORD:-}" ] || [ -z "${DEVELOPMENT_TEAM:-}" ]; then
+            echo "⚠️ Skipping Apple Notarization: Missing APPLE_ID, APPLE_PASSWORD, or RESOLVED_TEAM secret/env."
+            exit 0
+          fi
+
+          echo "📦 Preparing Quiper.app for Apple Notarization..."
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent Quiper.app Quiper-notarize.zip
+
+          echo "🚀 Submitting to Apple Notarization Service..."
+          xcrun notarytool submit Quiper-notarize.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$DEVELOPMENT_TEAM" \
+            --wait | tee notary_output.log
+
+          # Extract submission ID from output
+          SUBMISSION_ID=$(grep -E 'id: [a-f0-9-]{36}' notary_output.log | head -n 1 | awk '{print $2}')
+
+          if grep -q "status: Accepted" notary_output.log; then
+            echo "🎉 Notarization succeeded!"
+          else
+            echo "❌ Notarization failed! Apple's diagnostic log:"
+            if [ -n "$SUBMISSION_ID" ]; then
+              xcrun notarytool log "$SUBMISSION_ID" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_PASSWORD" \
+                --team-id "$DEVELOPMENT_TEAM"
+            else
+              echo "Could not parse Submission ID from output."
+            fi
+            exit 1
+          fi
+
+          echo "📎 Stapling Notarization ticket to Quiper.app..."
+          xcrun stapler staple Quiper.app
+
+          echo "🧹 Cleaning up temporary zip..."
+          rm Quiper-notarize.zip notary_output.log
+          echo "🎉 Successfully Notarized and Stapled!"
       - name: Create DMG Disk Image
         run: |
           mkdir -p build/dmgstaging
@@ -90,14 +177,31 @@ jobs:
       - name: Create ZIP Archive
         run: |
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent Quiper.app Quiper.app.zip
-      - name: Upload App
+      - name: Upload DMG Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: app
-          path: |
-            Quiper.dmg
-            Quiper.app.zip
+          name: Quiper.dmg
+          path: Quiper.dmg
+          archive: false
           if-no-files-found: error
+      - name: Upload ZIP Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Quiper.app.zip
+          path: Quiper.app.zip
+          archive: false
+          if-no-files-found: error
+
+      - name: Clean up Keychain
+        if: always()
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            echo "Cleaning up temporary keychain..."
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          else
+            echo "No temporary keychain to clean up."
+          fi
 
   nightly-release:
     if: github.event_name == 'schedule'
@@ -111,8 +215,13 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
-          name: app
+          name: Quiper.dmg
           path: artifacts
+      - uses: actions/download-artifact@v8
+        with:
+          name: Quiper.app.zip
+          path: artifacts
+          skip-decompress: true
       - name: Generate unique tag
         id: tag
         run: |
@@ -155,8 +264,13 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
-          name: app
+          name: Quiper.dmg
           path: artifacts
+      - uses: actions/download-artifact@v8
+        with:
+          name: Quiper.app.zip
+          path: artifacts
+          skip-decompress: true
       - name: Generate unique tag
         id: tag
         run: |
@@ -199,8 +313,13 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
-          name: app
+          name: Quiper.dmg
           path: artifacts
+      - uses: actions/download-artifact@v8
+        with:
+          name: Quiper.app.zip
+          path: artifacts
+          skip-decompress: true
       - name: Determine Release Version
         id: release_version
         run: echo "value=${GITHUB_REF_NAME#v}" >>"$GITHUB_OUTPUT"

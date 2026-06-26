@@ -51,9 +51,7 @@ Quiper unifies all your AI chat services into a single, instant-access macOS ove
 
 1. Download the latest disk image from the [Releases](https://github.com/sassanh/quiper/releases/latest) page — direct download: [`Quiper.dmg`](https://github.com/sassanh/quiper/releases/latest/download/Quiper.dmg).
 2. Double-click the `.dmg` and drag `Quiper.app` to `/Applications`.
-3. Because this project isn't signed or notarized with a paid Apple Developer ID, Gatekeeper will block the first launch. Open **Settings → Privacy & Security** and click **Open Anyway** next to Quiper.
-4. Relaunch `Quiper.app`, click **Open** on the follow-up dialog, and macOS will remember that exception for this bundle path.
-5. Approve the notification prompt if you plan to use browser banners.
+3. Launch `Quiper.app` and approve the notification prompt if you plan to use browser banners.
 
 <details>
 <summary>🛡️ <strong>Verifiable Safety & Supply Chain Attestation</strong></summary>

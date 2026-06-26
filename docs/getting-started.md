@@ -24,21 +24,6 @@ Quiper is compatible with:
 
 ---
 
-## Bypassing macOS Gatekeeper
-
-Because Quiper is open-source and compiled transparently in the cloud via GitHub Actions, it is not signed with a paid Apple Developer ID. When you launch it for the first time, macOS Gatekeeper will block execution and show an alert: *"Quiper cannot be opened because the developer cannot be verified."*
-
-To bypass this check safely:
-1.  Close the Gatekeeper alert dialogue.
-2.  Navigate to **System Settings ➔ Privacy & Security**.
-3.  Scroll down to the **Security** section.
-4.  You will see a note saying: *"Quiper was blocked from use because it is not from an identified developer."*
-5.  Click the **Open Anyway** button.
-6.  Enter your macOS user password or verify via Touch ID.
-7.  Relaunch Quiper. In the final confirmation dialog, click **Open**. macOS will remember this exception for the app bundle.
-
----
-
 ## Initial Setup & Launching
 
 When you launch Quiper, it will run as a status bar application:
