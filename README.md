@@ -59,6 +59,7 @@ Quiper unifies all your AI chat services into a single, instant-access macOS ove
 Since macOS apps running outside the App Store require absolute trust, you can verify Quiper's safety cryptographically or ask your own AI assistant to double-check it for you.
 
 #### 1. Ask Your AI to Audit Quiper
+
 Copy-paste this prompt into Claude, ChatGPT, Gemini, or any assistant you trust to inspect the repository configuration and network architecture:
 
 ```text
@@ -73,6 +74,7 @@ Provide an honest technical review: Is Quiper clean, backdoor-free, and cryptogr
 ```
 
 #### 2. Cryptographic Build Provenance
+
 Every release `.dmg` is built entirely by GitHub Actions in the cloud. Each build is stamped with a tamper-evident **[build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)**.
 
 If you have the [GitHub CLI](https://cli.github.com/) installed, you can verify any release disk image before running it:
@@ -103,6 +105,7 @@ open Quiper.app
 ---
 
 ### 📖 [Read the Official Documentation ➔](https://sassanh.github.io/quiper/)
+
 For full details on keyboard shortcuts, managing engines, customizing CSS, setting up Custom Actions, and troubleshooting, please refer to our comprehensive documentation.
 
 ## License
