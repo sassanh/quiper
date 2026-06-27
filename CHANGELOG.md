@@ -4,6 +4,14 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [4.3.0] - 2026-06-27
+
+### Added
+
 - **Template Action Script Sync ([Settings.swift](Quiper/Settings.swift), [SettingsView.swift](Quiper/SettingsView.swift), [ShortcutsSettingsView.swift](Quiper/ShortcutsSettingsView.swift))**: Added a per-engine action script switch for template-backed actions that runs Quiper's latest bundled default script automatically while in sync, with a read-only editor state and one-time migration prompt for older settings.
 - **Settings App Version Tracking ([SettingsModels.swift](Quiper/SettingsModels.swift))**: Persisted the writing Quiper version in settings JSON so future releases can apply version-aware migrations.
 - **Prompt History Limit ([Settings.swift](Quiper/Settings.swift), [SettingsView.swift](Quiper/SettingsView.swift), [WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Added a Prompt History setting that keeps only the most recent prompts per session, defaults to 10, and supports user-selected limits from 1 to 50.

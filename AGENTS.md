@@ -45,4 +45,4 @@
 ## Agent Behavior Rules
 
 - **BUILD WARNINGS ARE NOT ACCEPTABLE**: When implementing or refactoring code, always aim for zero compiler warnings. Code must be written cleanly, following the strict concurrency guidelines of Swift 6, and avoiding deprecated APIs. Any warnings introduced during changes must be resolved immediately before completing the task.
-- **DO NOT RUN ALL TESTS BLINDLY**: When executing tests, target the specific test classes or methods relevant to your changes (e.g., using `-only-testing:QuiperTests/SecureStorageManagerTests` or `--filter SecureStorageManagerTests`) rather than running entire targets or suites unconditionally. UI and integration tests may trigger biometric or LocalAuthentication prompts that require active user approval, leading to timeouts or failures in unattended/headless environments.
+- **DO NOT RUN TESTS WITHOUT EXPLICIT APPROVAL**: Never execute any test suites, unit tests, integration tests, or UI test commands (e.g., `xcodebuild test`, `swift test`, or helper test scripts) unless explicitly requested and approved by the user in the current message context.

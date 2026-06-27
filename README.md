@@ -105,6 +105,10 @@ open Quiper.app
 ### 📖 [Read the Official Documentation ➔](https://sassanh.github.io/quiper/)
 For full details on keyboard shortcuts, managing engines, customizing CSS, setting up Custom Actions, and troubleshooting, please refer to our comprehensive documentation.
 
+## Acknowledgments
+
+- Special thanks to [Ubo Pod](https://github.com/ubopod/) for providing the Apple Developer code signing certificate used for official releases.
+
 ## License
 
 Quiper is released under the [MIT License](LICENSE).
