@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [4.3.1] - 2026-07-01
+
 ### Fixed
 
 - **About Panel Rendering in Front of Overlay ([App.swift](Quiper/App.swift))**: Fixed the About panel appearing behind Quiper's floating overlay window. The "About Quiper" menu item now triggers a custom action that activates the app and raises the About panel's window level to `.modalPanel`, which is above the `.floating` level used by Quiper's overlay.
