@@ -441,6 +441,8 @@ final class ModifierHUDView: NSView {
         self.frame = NSRect(origin: .zero, size: view.bounds.size)
         self.autoresizingMask = [.width, .height]
         self.visualEffectView.frame = self.bounds
+        col2.isHidden = (bounds.width - 32) < 480
+        layoutContainerCard(preferredSize: CGSize(width: 492, height: 465))
         self.alphaValue = 0
         
         view.addSubview(self, positioned: .above, relativeTo: nil)

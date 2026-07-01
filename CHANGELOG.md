@@ -2,11 +2,9 @@
 
 ## [Unreleased]
 
-### Added
-
-### Changed
-
 ### Fixed
+
+- **HUD Layout After Hidden Resize ([PromptHistoryHUDView.swift](Quiper/Components/PromptHistoryHUDView.swift), [ModifierHUDView.swift](Quiper/Components/ModifierHUDView.swift))**: Fixed the Prompt History and Control Center HUDs not adjusting their layout when the window was resized while they were hidden. Calling `layoutContainerCard` explicitly in `show()` ensures the container is correctly positioned against the updated bounds the moment either HUD reappears.
 
 ## [4.3.0] - 2026-06-27
 

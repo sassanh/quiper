@@ -29,7 +29,9 @@ Quiper divides your workspaces into two hierarchical layers:
 
 ## Prompt History HUD
 
-Quiper includes a native Prompt History Heads-Up Display (HUD) overlay that tracks your past prompts. You can search, copy, restore, or delete old prompts instantly.
+It happens to the best of us: you write a masterpiece of a prompt, hit submit, and it vanishes into thin air because of a network error or connection timeout. Quiper has your back.
+
+Through its native Prompt History Heads-Up Display (HUD) overlay, Quiper preserves your prompts in real-time. You can quickly search, copy, restore, or delete your previous prompts in a flash.
 
 *   **To Open/Close HUD:** Press **`⌘ Y`** (Command + Y) while the overlay is visible.
 *   **Search:** Simply type into the search bar at the top to filter past prompts in real-time.

@@ -460,6 +460,7 @@ final class PromptHistoryHUDView: NSView {
         self.frame = NSRect(origin: .zero, size: view.bounds.size)
         self.autoresizingMask = [.width, .height]
         self.visualEffectView.frame = self.bounds
+        layoutContainerCard(preferredSize: CGSize(width: 520, height: 480))
         self.alphaValue = 0
         
         view.addSubview(self, positioned: .above, relativeTo: nil)
