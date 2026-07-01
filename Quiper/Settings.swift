@@ -1056,7 +1056,7 @@ class Settings: ObservableObject {
         Service(
             name: "ChatGPT",
             url: "https://chatgpt.com?referrer=https://github.io/sassanh/quiper",
-            focus_selector: "#prompt-textarea, .ProseMirror[role='textbox'], [aria-label='Chat with ChatGPT'], textarea, div[contenteditable='true']",
+            focus_selector: "#prompt-textarea, .ProseMirror[role='textbox']",
             actionScripts: [
                 Settings.newSessionActionID: """
                 \(Settings.defaultActionScriptHelpers)
