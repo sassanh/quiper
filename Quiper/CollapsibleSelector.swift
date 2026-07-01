@@ -240,7 +240,11 @@ class CollapsibleSelector: NSView {
     /// Refresh the display to update instantiation state styling
     func refreshInstantiationState() {
         collapsedControl.needsDisplay = true
-        expandedControl?.needsDisplay = true
+        if let expandedControl = expandedControl {
+            expandedControl.customInstantiatedStates = items.indices.map { delegate?.selector(self, isInstantiated: $0) == true }
+            expandedControl.customLockedStates = items.indices.map { delegate?.selector(self, isLocked: $0) == true }
+            expandedControl.needsDisplay = true
+        }
     }
     
     // MARK: - Internal Logic
