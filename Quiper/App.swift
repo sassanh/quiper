@@ -730,6 +730,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController?.appController.openDocumentation(sender)
     }
 
+    @objc func showAboutPanel(_ sender: Any?) {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(sender)
+        NSApp.keyWindow?.level = .modalPanel
+    }
+
     private func createMainMenu() {
         let mainMenu = NSMenu(title: "Main Menu")
         NSApp.mainMenu = mainMenu
@@ -740,7 +746,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu(title: "Quiper")
         appMenuItem.submenu = appMenu
 
-        let aboutItem = NSMenuItem(title: "About Quiper", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let aboutItem = NSMenuItem(title: "About Quiper", action: #selector(showAboutPanel), keyEquivalent: "")
         appMenu.addItem(aboutItem)
 
         appMenu.addItem(.separator())
