@@ -67,8 +67,10 @@ extension MainWindowController {
                     self.hideModifierHUD()
                 }
             }
-            if self.handleCommandShortcut(event: event) == true {
-                return nil
+            if skipModalCheck || !hasModalWindow {
+                if self.handleCommandShortcut(event: event) == true {
+                    return nil
+                }
             }
         } else if event.type == .flagsChanged {
             self.handleFlagsChanged(event: event)
