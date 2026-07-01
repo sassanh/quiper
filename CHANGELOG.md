@@ -5,6 +5,8 @@
 ### Fixed
 
 - **HUD Layout After Hidden Resize ([PromptHistoryHUDView.swift](Quiper/Components/PromptHistoryHUDView.swift), [ModifierHUDView.swift](Quiper/Components/ModifierHUDView.swift))**: Fixed the Prompt History and Control Center HUDs not adjusting their layout when the window was resized while they were hidden. Calling `layoutContainerCard` explicitly in `show()` ensures the container is correctly positioned against the updated bounds the moment either HUD reappears.
+- **Window Drag Titlebar Auto-Hide ([DraggableView.swift](Quiper/DraggableView.swift), [EmptyStateView.swift](Quiper/Components/EmptyStateView.swift), [MainWindowController.swift](Quiper/MainWindowController.swift), [MainWindowController+HeaderVisibility.swift](Quiper/MainWindowController+HeaderVisibility.swift))**: Fixed the titlebar hiding mid-drag when in auto-hide mode. Added `isWindowBeingDragged` tracking via `onWindowDragBegan`/`onWindowDragEnded` callbacks on `DraggableView` and `EmptyStateView`, and included the flag in the `shouldShowHeaderIfHidden` condition so the header stays visible for the entire drag.
+- **Window Drag Position Drift ([DraggableView.swift](Quiper/DraggableView.swift), [EmptyStateView.swift](Quiper/Components/EmptyStateView.swift))**: Fixed the window drifting away from its initial grab point during rapid mouse movement. Replaced `NSWindow.performDrag(with:)` with manual drag tracking: `mouseDown` records the initial screen-space cursor position and window origin; `mouseDragged` recomputes the window position from that fixed anchor on every event, so any mid-drag `setFrame` calls from layout code cannot accumulate into drift.
 
 ## [4.3.0] - 2026-06-27
 

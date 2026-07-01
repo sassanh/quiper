@@ -4,6 +4,12 @@ public class DraggableView: NSView {
     // Prevent focus from being stolen from webview
     public override var acceptsFirstResponder: Bool { false }
 
+    var onWindowDragBegan: (() -> Void)?
+    var onWindowDragEnded: (() -> Void)?
+
+    private var dragAnchorPoint: NSPoint?
+    private var dragWindowOrigin: NSPoint?
+
     /// When true the view background is clear; the WindowFrameView border fill acts as background.
     var isTransparentBackground: Bool = false {
         didSet { updateBackgroundColor() }
@@ -42,6 +48,24 @@ public class DraggableView: NSView {
     }
 
     public override func mouseDown(with event: NSEvent) {
-        window?.performDrag(with: event)
+        dragAnchorPoint = NSEvent.mouseLocation
+        dragWindowOrigin = window?.frame.origin
+        onWindowDragBegan?()
+    }
+
+    public override func mouseDragged(with event: NSEvent) {
+        guard let anchor = dragAnchorPoint, let origin = dragWindowOrigin,
+              let window = window else { return }
+        let current = NSEvent.mouseLocation
+        window.setFrameOrigin(NSPoint(
+            x: origin.x + (current.x - anchor.x),
+            y: origin.y + (current.y - anchor.y)
+        ))
+    }
+
+    public override func mouseUp(with event: NSEvent) {
+        dragAnchorPoint = nil
+        dragWindowOrigin = nil
+        onWindowDragEnded?()
     }
 }

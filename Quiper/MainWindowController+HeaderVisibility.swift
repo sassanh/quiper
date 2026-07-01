@@ -34,6 +34,7 @@ extension MainWindowController {
                                        isModifiersForHeaderDown ||
                                        isHeaderForcedVisibleForAction ||
                                        isAnySelectorExpanded ||
+                                       isWindowBeingDragged ||
                                        GhostOnboardingManager.shared.isActive
 
         let temporaryRevealAllowed = skipModalCheck || !hasModalWindow

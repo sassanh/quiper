@@ -115,6 +115,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var isModifiersForHeaderDown = false
     var isHeaderForcedVisibleForAction = false
     var isUpdatingHeaderVisibility = false
+    var isWindowBeingDragged = false
     var selectorCursorMonitor: Timer?
     var lastCommandPressedTime: TimeInterval = 0
     var lastCommandReleasedTime: TimeInterval = 0
@@ -203,6 +204,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             let service = self.services[svcIndex]
             self.activeIndicesByURL[service.url] = sessionIndex
             self.selectService(at: svcIndex)
+        }
+        emptyStateView.onWindowDragBegan = { [weak self] in
+            self?.isWindowBeingDragged = true
+        }
+        emptyStateView.onWindowDragEnded = { [weak self] in
+            self?.isWindowBeingDragged = false
+            self?.updateHeaderVisibility()
         }
         emptyStateView.isHidden = true
         contentView.addSubview(emptyStateView)
@@ -1065,6 +1073,13 @@ struct SecureTabState: Codable {
         let drag = DraggableView(frame: initialFrame)
         drag.autoresizingMask = isHiddenMode ? [] : (isBottom ? [.width, .maxYMargin] : [.width, .minYMargin])
         drag.alphaValue = isHiddenMode ? 0.0 : 1.0
+        drag.onWindowDragBegan = { [weak self] in
+            self?.isWindowBeingDragged = true
+        }
+        drag.onWindowDragEnded = { [weak self] in
+            self?.isWindowBeingDragged = false
+            self?.updateHeaderVisibility()
+        }
         contentView.addSubview(drag)
         dragArea = drag
 

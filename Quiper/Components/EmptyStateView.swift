@@ -36,6 +36,12 @@ final class EmptyStateView: NSView {
 
     var onEngineSelected: ((Int) -> Void)?
     var onSessionSelected: ((Int, Int) -> Void)?
+    var onWindowDragBegan: (() -> Void)?
+    var onWindowDragEnded: (() -> Void)?
+
+    private var isDragArea = false
+    private var dragAnchorPoint: NSPoint?
+    private var dragWindowOrigin: NSPoint?
 
     private let headerContainer = FlippedView()
     private let iconView = NSImageView()
@@ -159,13 +165,34 @@ final class EmptyStateView: NSView {
         // If we are on an engine row, let it handle its own click
         // hitTest already ensures we only get here if nothing important was hit.
         
-        // Pass drag events if in the drag area
+        // Begin manual window drag if in the drag area
         let localPoint = convert(event.locationInWindow, from: nil)
         if localPoint.y < 32 { // Constants.DRAGGABLE_AREA_HEIGHT
-             window?.performDrag(with: event)
+            isDragArea = true
+            dragAnchorPoint = NSEvent.mouseLocation
+            dragWindowOrigin = window?.frame.origin
+            onWindowDragBegan?()
         }
     }
-    override func mouseUp(with event: NSEvent) {}
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isDragArea, let anchor = dragAnchorPoint, let origin = dragWindowOrigin,
+              let window = window else { return }
+        let current = NSEvent.mouseLocation
+        window.setFrameOrigin(NSPoint(
+            x: origin.x + (current.x - anchor.x),
+            y: origin.y + (current.y - anchor.y)
+        ))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if isDragArea {
+            isDragArea = false
+            dragAnchorPoint = nil
+            dragWindowOrigin = nil
+            onWindowDragEnded?()
+        }
+    }
     
     // MARK: - Accessibility
     
