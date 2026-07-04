@@ -258,6 +258,60 @@ final class QuickTooltip: NSPanel {
         }
     }
     
+    /// Hide the tooltip immediately without any debounce or animation
+    func hideImmediately() {
+        hideTimer?.invalidate()
+        hideTimer = nil
+        currentTarget = nil
+        alphaValue = 0
+        orderOut(nil)
+    }
+    
+    /// Show tooltip on the right of the given alignment view, matching its height
+    func showOnRight(of alignmentView: NSView, text: String, width: CGFloat = 300) {
+        hideTimer?.invalidate()
+        hideTimer = nil
+        
+        currentTarget = alignmentView
+        
+        label.stringValue = text
+        loadingBorderView.stopAnimating()
+        
+        guard let window = alignmentView.window else { return }
+        
+        let rectInWindow = alignmentView.convert(alignmentView.bounds, to: nil)
+        
+        let containerRectInWindow: NSRect
+        if let parent = alignmentView.superview {
+            containerRectInWindow = parent.convert(parent.bounds, to: nil)
+        } else {
+            containerRectInWindow = rectInWindow
+        }
+        
+        let windowFrame = window.frame
+        let screenOrigin = windowFrame.origin
+        
+        let height = rectInWindow.height
+        let xPos = screenOrigin.x + containerRectInWindow.maxX + 8
+        let yPos = screenOrigin.y + rectInWindow.minY
+        
+        let tooltipFrame = NSRect(
+            x: xPos,
+            y: yPos,
+            width: width,
+            height: height
+        )
+        
+        label.preferredMaxLayoutWidth = width - 16
+        
+        setFrame(tooltipFrame, display: true)
+        
+        if alphaValue < 1 {
+            orderFront(nil)
+            animator().alphaValue = 1
+        }
+    }
+    
     private func rectForSegment(_ segment: Int, in control: NSSegmentedControl) -> NSRect? {
         guard segment >= 0 && segment < control.segmentCount else { return nil }
         

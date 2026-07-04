@@ -293,6 +293,7 @@ final class PromptHistoryHUDView: NSView {
     }
     
     private func deleteEntry(_ entry: PromptHistoryEntry) {
+        QuickTooltip.shared.hideImmediately()
         guard let wc = wc, let service = wc.currentService() else { return }
         let sessionIdx = wc.activeIndicesByURL[service.url] ?? 0
         
@@ -529,6 +530,7 @@ final class PromptHistoryHUDView: NSView {
     }
     
     func hide() {
+        QuickTooltip.shared.hideImmediately()
         guard !isHiding else {
             return
         }
@@ -1197,8 +1199,12 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
     }
     private var trackingArea: NSTrackingArea?
     
+    private let entry: PromptHistoryEntry
+    private var isClipped = false
+    
     private let textLabel = NSTextField()
     private let timeLabel = NSTextField()
+    private let clippingIndicator = NSImageView()
     private let deletePill = PromptHistoryHUDActionPill(iconName: "trash", shortcut: "⌘⌫", isDestructive: true)
     private let copyPill = PromptHistoryHUDActionPill(iconName: "doc.on.doc", shortcut: "⌘C")
     
@@ -1209,6 +1215,7 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
     }()
     
     init(entry: PromptHistoryEntry) {
+        self.entry = entry
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 6
@@ -1216,15 +1223,15 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         
         let singleLine = entry.text.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
         textLabel.stringValue = singleLine
-        textLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        textLabel.font = NSFont.systemFont(ofSize: 14.4, weight: .medium)
         textLabel.textColor = .labelColor
         textLabel.drawsBackground = false
         textLabel.isBordered = false
         textLabel.isEditable = false
         textLabel.isSelectable = false
         textLabel.cell?.lineBreakMode = .byTruncatingTail
-        textLabel.cell?.usesSingleLineMode = false
-        textLabel.cell?.wraps = true
+        textLabel.cell?.usesSingleLineMode = true
+        textLabel.cell?.wraps = false
         textLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(textLabel)
         
@@ -1240,7 +1247,17 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         timeLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(timeLabel)
         
+        if let image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "Clipped") {
+            image.isTemplate = true
+            clippingIndicator.image = image
+        }
+        clippingIndicator.contentTintColor = .tertiaryLabelColor
+        clippingIndicator.translatesAutoresizingMaskIntoConstraints = false
+        clippingIndicator.isHidden = true
+        addSubview(clippingIndicator)
+        
         deletePill.onClick = { [weak self] in
+            QuickTooltip.shared.hideImmediately()
             self?.onDelete?()
         }
         deletePill.translatesAutoresizingMaskIntoConstraints = false
@@ -1248,6 +1265,7 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         addSubview(deletePill)
         
         copyPill.onClick = { [weak self] in
+            QuickTooltip.shared.hideImmediately()
             self?.onCopy?()
         }
         copyPill.translatesAutoresizingMaskIntoConstraints = false
@@ -1262,8 +1280,13 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
             
             timeLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             timeLabel.topAnchor.constraint(equalTo: textLabel.bottomAnchor, constant: 2),
-            timeLabel.trailingAnchor.constraint(equalTo: copyPill.leadingAnchor, constant: -12),
             timeLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            
+            clippingIndicator.leadingAnchor.constraint(equalTo: timeLabel.trailingAnchor, constant: 6),
+            clippingIndicator.centerYAnchor.constraint(equalTo: timeLabel.centerYAnchor),
+            clippingIndicator.widthAnchor.constraint(equalToConstant: 10),
+            clippingIndicator.heightAnchor.constraint(equalToConstant: 10),
+            clippingIndicator.trailingAnchor.constraint(lessThanOrEqualTo: copyPill.leadingAnchor, constant: -12),
             
             deletePill.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             deletePill.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -1281,6 +1304,19 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         fatalError("init(coder:) has not been implemented")
     }
     
+    override func layout() {
+        super.layout()
+        
+        let font = textLabel.font ?? NSFont.systemFont(ofSize: 14.4, weight: .medium)
+        let textWidth = (textLabel.stringValue as NSString).size(withAttributes: [.font: font]).width
+        
+        let hasNewlines = entry.text.contains("\n") || entry.text.contains("\r")
+        let textClipped = textWidth > textLabel.bounds.width
+        
+        isClipped = hasNewlines || textClipped
+        clippingIndicator.isHidden = !isClipped
+    }
+    
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let existing = trackingArea {
@@ -1293,13 +1329,20 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
     
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
+        if isClipped {
+            if let scrollView = findScrollView() {
+                QuickTooltip.shared.showOnRight(of: scrollView, text: entry.text)
+            }
+        }
     }
     
     override func mouseExited(with event: NSEvent) {
         isHovered = false
+        QuickTooltip.shared.hide()
     }
     
     override func mouseDown(with event: NSEvent) {
+        QuickTooltip.shared.hideImmediately()
         let point = convert(event.locationInWindow, from: nil)
         if deletePill.frame.contains(point) || copyPill.frame.contains(point) {
             return
@@ -1316,6 +1359,17 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         if bounds.contains(point) {
             onClick?()
         }
+    }
+    
+    private func findScrollView() -> NSScrollView? {
+        var view: NSView? = self
+        while let current = view {
+            if let scrollView = current as? NSScrollView {
+                return scrollView
+            }
+            view = current.superview
+        }
+        return nil
     }
     
     private func updateAppearance() {
