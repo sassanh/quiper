@@ -1099,28 +1099,38 @@ fileprivate final class PromptHistoryHUDActionPill: NSControl {
         iconView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(iconView)
         
-        shortcutLabel.font = NSFont.systemFont(ofSize: 9, weight: .bold)
-        shortcutLabel.textColor = .secondaryLabelColor
-        shortcutLabel.stringValue = shortcut
-        shortcutLabel.drawsBackground = false
-        shortcutLabel.isBordered = false
-        shortcutLabel.isEditable = false
-        shortcutLabel.isSelectable = false
-        shortcutLabel.cell?.usesSingleLineMode = true
-        shortcutLabel.cell?.lineBreakMode = .byClipping
-        shortcutLabel.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(shortcutLabel)
-        
-        NSLayoutConstraint.activate([
-            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 11),
-            iconView.heightAnchor.constraint(equalToConstant: 11),
+        if shortcut.isEmpty {
+            NSLayoutConstraint.activate([
+                iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
+                iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+                iconView.widthAnchor.constraint(equalToConstant: 11),
+                iconView.heightAnchor.constraint(equalToConstant: 11),
+                widthAnchor.constraint(equalToConstant: 22)
+            ])
+        } else {
+            shortcutLabel.font = NSFont.systemFont(ofSize: 9, weight: .bold)
+            shortcutLabel.textColor = .secondaryLabelColor
+            shortcutLabel.stringValue = shortcut
+            shortcutLabel.drawsBackground = false
+            shortcutLabel.isBordered = false
+            shortcutLabel.isEditable = false
+            shortcutLabel.isSelectable = false
+            shortcutLabel.cell?.usesSingleLineMode = true
+            shortcutLabel.cell?.lineBreakMode = .byClipping
+            shortcutLabel.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(shortcutLabel)
             
-            shortcutLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 4),
-            shortcutLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            shortcutLabel.centerYAnchor.constraint(equalTo: centerYAnchor)
-        ])
+            NSLayoutConstraint.activate([
+                iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+                iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+                iconView.widthAnchor.constraint(equalToConstant: 11),
+                iconView.heightAnchor.constraint(equalToConstant: 11),
+                
+                shortcutLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 4),
+                shortcutLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+                shortcutLabel.centerYAnchor.constraint(equalTo: centerYAnchor)
+            ])
+        }
         
         updateAppearance()
     }
@@ -1207,6 +1217,7 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
     private let clippingIndicator = NSImageView()
     private let deletePill = PromptHistoryHUDActionPill(iconName: "trash", shortcut: "⌘⌫", isDestructive: true)
     private let copyPill = PromptHistoryHUDActionPill(iconName: "doc.on.doc", shortcut: "⌘C")
+    private let selectPill = PromptHistoryHUDActionPill(iconName: "arrow.right.to.line", shortcut: "↩")
     
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -1272,6 +1283,14 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         copyPill.isHidden = true
         addSubview(copyPill)
         
+        selectPill.onClick = { [weak self] in
+            QuickTooltip.shared.hideImmediately()
+            self?.onClick?()
+        }
+        selectPill.translatesAutoresizingMaskIntoConstraints = false
+        selectPill.isHidden = true
+        addSubview(selectPill)
+        
         NSLayoutConstraint.activate([
             textLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             textLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
@@ -1288,7 +1307,11 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
             clippingIndicator.heightAnchor.constraint(equalToConstant: 10),
             clippingIndicator.trailingAnchor.constraint(lessThanOrEqualTo: copyPill.leadingAnchor, constant: -12),
             
-            deletePill.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            selectPill.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            selectPill.centerYAnchor.constraint(equalTo: centerYAnchor),
+            selectPill.heightAnchor.constraint(equalToConstant: 22),
+            
+            deletePill.trailingAnchor.constraint(equalTo: selectPill.leadingAnchor, constant: -8),
             deletePill.centerYAnchor.constraint(equalTo: centerYAnchor),
             deletePill.heightAnchor.constraint(equalToConstant: 22),
             
@@ -1344,7 +1367,7 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
     override func mouseDown(with event: NSEvent) {
         QuickTooltip.shared.hideImmediately()
         let point = convert(event.locationInWindow, from: nil)
-        if deletePill.frame.contains(point) || copyPill.frame.contains(point) {
+        if deletePill.frame.contains(point) || copyPill.frame.contains(point) || selectPill.frame.contains(point) {
             return
         }
         layer?.backgroundColor = resolvedCGColor(NSColor.controlAccentColor.withAlphaComponent(0.3))
@@ -1353,7 +1376,7 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
     override func mouseUp(with event: NSEvent) {
         updateAppearance()
         let point = convert(event.locationInWindow, from: nil)
-        if deletePill.frame.contains(point) || copyPill.frame.contains(point) {
+        if deletePill.frame.contains(point) || copyPill.frame.contains(point) || selectPill.frame.contains(point) {
             return
         }
         if bounds.contains(point) {
@@ -1376,6 +1399,7 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         let showControls = isHovered || isKeyboardHighlighted
         copyPill.isHidden = !showControls
         deletePill.isHidden = !showControls
+        selectPill.isHidden = !showControls
         
         if isKeyboardHighlighted {
             layer?.backgroundColor = NSColor.white.withAlphaComponent(0.08).cgColor
