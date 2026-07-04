@@ -29,17 +29,15 @@ final class SettingsIntegrationTests: XCTestCase {
         XCTAssertTrue(nextService.modifierFlags & NSEvent.ModifierFlags.control.rawValue != 0)
     }
     
-    func testAlternateVimStyleShortcutsExist() {
-        // Verify vim-style H/L alternates are configured
+    func testAlternateShortcutsAreNilByDefault() {
+        // Verify alternates are nil by default
         let defaults = AppShortcutBindings.defaults
         
         let altNext = defaults.alternateConfiguration(for: .nextSession)
-        XCTAssertNotNil(altNext)
-        XCTAssertEqual(altNext?.keyCode, UInt32(kVK_ANSI_L))
+        XCTAssertNil(altNext)
         
         let altPrev = defaults.alternateConfiguration(for: .previousSession)
-        XCTAssertNotNil(altPrev)
-        XCTAssertEqual(altPrev?.keyCode, UInt32(kVK_ANSI_H))
+        XCTAssertNil(altPrev)
     }
     
     func testSessionDigitModifiersHaveDefaults() {

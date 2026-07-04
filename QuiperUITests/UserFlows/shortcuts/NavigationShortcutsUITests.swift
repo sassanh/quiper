@@ -268,16 +268,5 @@ final class NavigationShortcutsUITests: BaseUITest {
         // Default Prev Engine: Cmd+Ctrl+Left
         app.typeKey(.leftArrow, modifierFlags: [.command, .control])
         verifyState(session: 1, engine: "Engine 1")
-        
-        // Default Alt Next Session: Cmd+L
-        app.typeKey("l", modifierFlags: [.command])
-        verifyState(session: 2, engine: "Engine 1")
-        
-        // Default Alt Prev Session: Cmd+H (Might Hide App? skip if risky, or try)
-        // Cmd+H is system-wide Hide. Often hard to override or test.
-        // Let's Skip Cmd+H verification to avoid test flakiness, or assume it works if L works.
-        // Instead test Alt Next Engine: Cmd+Ctrl+L
-        app.typeKey("l", modifierFlags: [.command, .control])
-        verifyState(session: 1, engine: "Engine 2")
     }
 }

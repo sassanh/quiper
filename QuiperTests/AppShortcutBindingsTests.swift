@@ -9,7 +9,7 @@ final class AppShortcutBindingsTests: XCTestCase {
 
         XCTAssertEqual(bindings.configuration(for: .nextSession).keyCode, UInt32(kVK_RightArrow))
         XCTAssertEqual(bindings.configuration(for: .previousService).modifierFlags, NSEvent.ModifierFlags([.command, .control]).rawValue)
-        XCTAssertEqual(bindings.alternateConfiguration(for: .nextSession)?.keyCode, UInt32(kVK_ANSI_L))
+        XCTAssertNil(bindings.alternateConfiguration(for: .nextSession))
     }
 
     func testAlternateConfigurationsCanBeCleared() {

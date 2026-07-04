@@ -374,28 +374,16 @@ struct AppShortcutBindings: Codable, Equatable {
             keyCode: UInt32(kVK_ANSI_L),
             modifierFlags: NSEvent.ModifierFlags([.command, .option]).rawValue
         ),
-        alternateNextSession: HotkeyManager.Configuration(
-            keyCode: UInt32(kVK_ANSI_L),
-            modifierFlags: NSEvent.ModifierFlags.command.rawValue
-        ),
-        alternatePreviousSession: HotkeyManager.Configuration(
-            keyCode: UInt32(kVK_ANSI_H),
-            modifierFlags: NSEvent.ModifierFlags.command.rawValue
-        ),
-        alternateNextService: HotkeyManager.Configuration(
-            keyCode: UInt32(kVK_ANSI_L),
-            modifierFlags: NSEvent.ModifierFlags([.command, .control]).rawValue
-        ),
-        alternatePreviousService: HotkeyManager.Configuration(
-            keyCode: UInt32(kVK_ANSI_H),
-            modifierFlags: NSEvent.ModifierFlags([.command, .control]).rawValue
-        ),
+        alternateNextSession: nil,
+        alternatePreviousSession: nil,
+        alternateNextService: nil,
+        alternatePreviousService: nil,
         alternateLockCurrentEngine: nil,
         sessionDigitsModifiers: NSEvent.ModifierFlags.command.rawValue,
         sessionDigitsAlternateModifiers: nil,
         serviceDigitsModifiers: nil,
         serviceDigitsPrimaryModifiers: NSEvent.ModifierFlags([.command, .control]).rawValue,
-        serviceDigitsSecondaryModifiers: NSEvent.ModifierFlags([.command, .option]).rawValue
+        serviceDigitsSecondaryModifiers: nil
     )
 
     func configuration(for key: Key) -> HotkeyManager.Configuration {
