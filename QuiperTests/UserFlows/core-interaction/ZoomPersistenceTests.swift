@@ -63,4 +63,32 @@ final class ZoomPersistenceTests: XCTestCase {
         // Verify zoom persisted (allow small float diff)
         XCTAssertEqual(persistedZoom, 1.2, accuracy: 0.01, "Service1 should persist zoom level")
     }
+
+    func testResetZoomLevelClearsPersistedZoom() async throws {
+        let testService = Service(
+            name: "LocalTest",
+            url: TestServer.shared.baseURL.absoluteString,
+            focus_selector: "#prompt-textarea"
+        )
+        
+        Settings.shared.services = [testService]
+        windowController.reloadServices([testService])
+        windowController.show()
+        
+        try await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+        
+        // Zoom in once
+        windowController.zoom(by: 0.2)
+        XCTAssertEqual(Double(Settings.shared.serviceZoomLevels[testService.url] ?? 0.0), 1.2, accuracy: 0.01)
+        
+        // Reset zoom
+        windowController.performMenuResetZoom(nil)
+        
+        // Verify persisted zoom is cleared (or nil)
+        XCTAssertNil(Settings.shared.serviceZoomLevels[testService.url])
+        
+        // Zoom in again should start from 1.0 -> 1.2
+        windowController.zoom(by: 0.2)
+        XCTAssertEqual(Double(Settings.shared.serviceZoomLevels[testService.url] ?? 0.0), 1.2, accuracy: 0.01)
+    }
 }

@@ -200,6 +200,7 @@ extension MainWindowController {
     @objc func performMenuResetZoom(_ sender: Any?) {
         guard let service = currentService() else { return }
         webViewManager.applyZoom(Zoom.default, for: service.url)
+        Settings.shared.clearZoomLevel(for: service.url)
     }
 
     func zoom(by delta: CGFloat) {
