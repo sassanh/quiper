@@ -408,6 +408,16 @@ class Settings: ObservableObject {
             saveSettings()
         }
     }
+    @Published var tabNavigationRingSize: Int = 2 {
+        didSet {
+            let clamped = max(2, min(10, tabNavigationRingSize))
+            if tabNavigationRingSize != clamped {
+                tabNavigationRingSize = clamped
+                return
+            }
+            saveSettings()
+        }
+    }
     @Published var enablePromptHistory: Bool = true {
         didSet {
             saveSettings()
@@ -469,6 +479,7 @@ class Settings: ObservableObject {
         showOnAllSpaces = false
         settingsColorStyle = .colorful
         tabSurvivalPolicy = .always
+        tabNavigationRingSize = 2
         enablePromptHistory = true
         promptHistoryRecordOnSubmit = true
         promptHistoryRecordOnCmdBackspace = true
@@ -2178,6 +2189,7 @@ class Settings: ObservableObject {
         promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear ?? false
         promptHistoryLimit = Self.clampedPromptHistoryLimit(persisted.promptHistoryLimit ?? Self.defaultPromptHistoryLimit)
         persistedTabState = persisted.persistedTabState
+        tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2
         needsTemplateActionSyncMigrationPrompt = loadedWithoutQuiperVersion && hasTemplateActionScriptMigrationCandidates()
         suppressQuiperVersionPersistence = needsTemplateActionSyncMigrationPrompt
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
@@ -2239,6 +2251,7 @@ class Settings: ObservableObject {
                                             promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
                                             promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
                                             promptHistoryLimit: promptHistoryLimit,
+                                            tabNavigationRingSize: tabNavigationRingSize,
                                             quiperVersion: persistedQuiperVersionForSave())
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
@@ -2276,6 +2289,7 @@ class Settings: ObservableObject {
             promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
             promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
             promptHistoryLimit: promptHistoryLimit,
+            tabNavigationRingSize: tabNavigationRingSize,
             quiperVersion: persistedQuiperVersionForSave()
         )
     }
@@ -2305,6 +2319,7 @@ class Settings: ObservableObject {
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         settingsColorStyle = persisted.settingsColorStyle ?? .colorful
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
+        tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2
         enablePromptHistory = persisted.enablePromptHistory ?? true
         promptHistoryRecordOnSubmit = persisted.promptHistoryRecordOnSubmit ?? true
         promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace ?? true

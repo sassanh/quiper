@@ -177,6 +177,17 @@ struct GeneralSettingsView: View {
 
                     SettingsDivider()
 
+                    SettingsRow(
+                        title: "Tab Navigation Ring Size",
+                        message: "Maximum number of recently active tabs kept in navigation history (2-10).",
+                        icon: "arrow.counterclockwise.circle",
+                        iconColor: .blue.settingsResolved
+                    ) {
+                        TabNavigationRingSizePicker()
+                    }
+
+                    SettingsDivider()
+
                     SettingsToggleRow(
                         title: "Prompt History",
                         message: "Keep a history of sent prompts per session.",

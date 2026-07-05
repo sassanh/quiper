@@ -97,6 +97,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var findBarViewController: FindBarViewController!
     var draggingServiceIndex: Int?
     var activeIndicesByURL: [String: Int] = [:]
+    
+    // MARK: - Tab History & MRU Navigation
+    var tabHistory: [TabIdentifier] = []
+    var lastActiveTab: TabIdentifier?
+    var isCyclingHistory = false
+    var cyclingHistoryIndex = 0
+    var cyclingStartTab: TabIdentifier?
+    var historyCyclingTimer: Timer?
+    var historyDebounceTimer: Timer?
+    var highlightedTab: TabIdentifier?
+    var lastHistorySwitchTime: Date?
+    var isGraveKeyHeld = false
+    var isCyclingForward = true
+    var historyRepeatTimer: Timer?
+    var isExecutingHistoryNavigation = false
+    var tabHistoryHUDView: TabHistoryHUDView?
+    var tabHistoryHUDWindow: NSWindow?
+    var promptHistoryHUDWindow: NSWindow?
+    var modifierHUDWindow: NSWindow?
+    var tabPreviews: [TabIdentifier: NSImage] = [:]
+
     var keyDownEventMonitor: Any?
     var skipSafeAreaCheck = false
     var skipModalCheck = false
@@ -149,6 +170,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 win?.removeChildWindow(bw)
                 bw.orderOut(nil)
                 bw.close()
+            }
+            if let hw = tabHistoryHUDWindow {
+                win?.removeChildWindow(hw)
+                hw.orderOut(nil)
+                hw.close()
+            }
+            if let phw = promptHistoryHUDWindow {
+                win?.removeChildWindow(phw)
+                phw.orderOut(nil)
+                phw.close()
+            }
+            if let mhw = modifierHUDWindow {
+                win?.removeChildWindow(mhw)
+                mhw.orderOut(nil)
+                mhw.close()
             }
             removeObserver(self, forKeyPath: "window")
             win?.removeObserver(self, forKeyPath: "effectiveAppearance")
@@ -946,6 +982,7 @@ struct SecureTabState: Codable {
             unencryptedIndices.removeValue(forKey: svc.url)
         }
         state.activeIndicesByURL = unencryptedIndices
+        state.tabHistory = tabHistory
 
         if let manager = webViewManager {
             var allOpenTabs = manager.getOpenSessionsState()
@@ -1002,6 +1039,13 @@ struct SecureTabState: Codable {
         guard Settings.shared.tabSurvivalPolicy != .never,
               let savedState = Settings.shared.persistedTabState else {
             return
+        }
+
+        if let history = savedState.tabHistory {
+            tabHistory = history
+            if let last = history.first {
+                lastActiveTab = last
+            }
         }
 
         // Restore activeIndicesByURL
@@ -1421,6 +1465,23 @@ struct SecureTabState: Codable {
         updateWindowMarginAndLayout()
         layoutSelectors()
         updateHeaderTrackingArea()
+        repositionVisibleHUDs()
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        repositionVisibleHUDs()
+    }
+
+    func repositionVisibleHUDs() {
+        if let tabHW = tabHistoryHUDWindow, tabHW.isVisible {
+            updateHUDWindowFrame()
+        }
+        if let phw = promptHistoryHUDWindow, phw.isVisible {
+            alignHUDWindow(phw, width: 520, height: 480)
+        }
+        if let mhw = modifierHUDWindow, mhw.isVisible {
+            alignHUDWindow(mhw, width: 492, height: 465)
+        }
     }
 
     func windowShouldBecomeKey(_ sender: NSWindow) -> Bool {
@@ -1434,6 +1495,16 @@ struct SecureTabState: Codable {
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
+        PreviousTabHotkeyManager.shared.register { [weak self] in
+            self?.handleGraveKeyDown()
+        } onReleaseForward: { [weak self] in
+            self?.handleGraveKeyUp()
+        } onPressBackward: { [weak self] in
+            self?.handleGraveBackwardKeyDown()
+        } onReleaseBackward: { [weak self] in
+            self?.handleGraveKeyUp()
+        }
+
         let settingsWindow = AppDelegate.sharedSettingsWindow
         if settingsWindow.isVisible {
             settingsWindow.makeKeyAndOrderFront(nil)
@@ -1461,6 +1532,7 @@ struct SecureTabState: Codable {
     }
     
     func windowDidResignKey(_ notification: Notification) {
+        PreviousTabHotkeyManager.shared.unregister()
         if let keyWindow = NSApp.keyWindow,
            window?.childWindows?.contains(keyWindow) == true {
             return

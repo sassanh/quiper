@@ -359,6 +359,121 @@ final class EngineHotkeyManager {
     }
 }
 
+@MainActor
+final class PreviousTabHotkeyManager {
+    private var eventHandler: EventHandlerRef?
+    private var hotKeyRefForward: EventHotKeyRef?
+    private var hotKeyRefBackward: EventHotKeyRef?
+    private let hotKeySignature = OSType(UInt32(truncatingIfNeeded: 0x51505442)) // 'QPTB'
+    private var onPressForward: (() -> Void)?
+    private var onReleaseForward: (() -> Void)?
+    private var onPressBackward: (() -> Void)?
+    private var onReleaseBackward: (() -> Void)?
+    
+    static let shared = PreviousTabHotkeyManager()
+    
+    private init() {}
+    
+    func register(onPressForward: @escaping () -> Void,
+                  onReleaseForward: @escaping () -> Void,
+                  onPressBackward: @escaping () -> Void,
+                  onReleaseBackward: @escaping () -> Void) {
+        unregister()
+        
+        self.onPressForward = onPressForward
+        self.onReleaseForward = onReleaseForward
+        self.onPressBackward = onPressBackward
+        self.onReleaseBackward = onReleaseBackward
+        installHandlerIfNeeded()
+        
+        // Register Forward (Cmd + Grave, KeyCode 50)
+        let hotKeyID1 = EventHotKeyID(signature: hotKeySignature, id: 1)
+        var refForward: EventHotKeyRef?
+        var status = RegisterEventHotKey(
+            50, // kVK_ANSI_Grave
+            UInt32(cmdKey),
+            hotKeyID1,
+            GetEventDispatcherTarget(),
+            0,
+            &refForward
+        )
+        if status == noErr {
+            hotKeyRefForward = refForward
+        }
+        
+        // Register Backward (Cmd + Shift + Grave, KeyCode 50)
+        let hotKeyID2 = EventHotKeyID(signature: hotKeySignature, id: 2)
+        var refBackward: EventHotKeyRef?
+        status = RegisterEventHotKey(
+            50, // kVK_ANSI_Grave
+            UInt32(cmdKey | shiftKey),
+            hotKeyID2,
+            GetEventDispatcherTarget(),
+            0,
+            &refBackward
+        )
+        if status == noErr {
+            hotKeyRefBackward = refBackward
+        }
+    }
+    
+    func unregister() {
+        if let ref = hotKeyRefForward {
+            UnregisterEventHotKey(ref)
+            hotKeyRefForward = nil
+        }
+        if let ref = hotKeyRefBackward {
+            UnregisterEventHotKey(ref)
+            hotKeyRefBackward = nil
+        }
+        onPressForward = nil
+        onReleaseForward = nil
+        onPressBackward = nil
+        onReleaseBackward = nil
+    }
+    
+    private func installHandlerIfNeeded() {
+        guard eventHandler == nil else { return }
+        var eventTypes = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))
+        ]
+        InstallEventHandler(GetApplicationEventTarget(), { (_, event, userData) -> OSStatus in
+            let manager = PreviousTabHotkeyManager.shared
+            var hotKeyID = EventHotKeyID()
+            let status = GetEventParameter(event,
+                                           EventParamName(kEventParamDirectObject),
+                                           EventParamType(typeEventHotKeyID),
+                                           nil,
+                                           MemoryLayout<EventHotKeyID>.size,
+                                           nil,
+                                           &hotKeyID)
+            
+            if status == noErr && hotKeyID.signature == manager.hotKeySignature {
+                let eventKind = GetEventKind(event)
+                Task { @MainActor in
+                    if hotKeyID.id == 1 {
+                        if eventKind == UInt32(kEventHotKeyPressed) {
+                            manager.onPressForward?()
+                        } else if eventKind == UInt32(kEventHotKeyReleased) {
+                            manager.onReleaseForward?()
+                        }
+                    } else if hotKeyID.id == 2 {
+                        if eventKind == UInt32(kEventHotKeyPressed) {
+                            manager.onPressBackward?()
+                        } else if eventKind == UInt32(kEventHotKeyReleased) {
+                            manager.onReleaseBackward?()
+                        }
+                    }
+                }
+                return noErr
+            }
+            return OSStatus(eventNotHandledErr)
+        }, 2, &eventTypes, nil, &eventHandler)
+    }
+}
+
+
 #if DEBUG
 private enum DevEnvironment {
     static let isRunningInXcode: Bool = {

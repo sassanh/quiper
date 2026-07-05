@@ -43,7 +43,22 @@ final class ModifierHUDView: NSView {
         self.appearance = NSAppearance(named: .vibrantDark)
         self.autoresizingMask = [.width, .height]
         
+        // Base view shadow styling
+        self.wantsLayer = true
+        self.layer?.cornerRadius = 16
+        self.layer?.shadowColor = NSColor.black.cgColor
+        self.layer?.shadowOpacity = 0.5
+        self.layer?.shadowOffset = CGSize(width: 0, height: -6)
+        self.layer?.shadowRadius = 16
+        self.layer?.backgroundColor = NSColor.clear.cgColor
+        
+        // Visual Effect backdrop with rounded mask and border
         visualEffectView.autoresizingMask = [.width, .height]
+        visualEffectView.wantsLayer = true
+        visualEffectView.layer?.cornerRadius = 16
+        visualEffectView.layer?.masksToBounds = true
+        visualEffectView.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
+        visualEffectView.layer?.borderWidth = 1
         visualEffectView.material = .hudWindow
         visualEffectView.state = .active
         visualEffectView.blendingMode = .withinWindow
@@ -86,15 +101,9 @@ final class ModifierHUDView: NSView {
     
     private func setupContainerCard() {
         containerView.wantsLayer = true
-        containerView.layer?.cornerRadius = 16
-        containerView.layer?.backgroundColor = NSColor(white: 0.12, alpha: 0.95).cgColor
-        containerView.layer?.borderColor = NSColor.white.withAlphaComponent(0.08).cgColor
-        containerView.layer?.borderWidth = 1
-        containerView.layer?.shadowColor = NSColor.black.cgColor
-        containerView.layer?.shadowOpacity = 0.3
-        containerView.layer?.shadowOffset = CGSize(width: 0, height: -4)
-        containerView.layer?.shadowRadius = 16
-        containerView.autoresizingMask = []
+        containerView.layer?.backgroundColor = NSColor.clear.cgColor
+        containerView.autoresizingMask = [.width, .height]
+        containerView.frame = visualEffectView.bounds
         visualEffectView.addSubview(containerView)
         
         // Header Title
@@ -435,17 +444,14 @@ final class ModifierHUDView: NSView {
     override func mouseMoved(with event: NSEvent) {}
     override func scrollWheel(with event: NSEvent) {}
     
-    func show(in view: NSView) {
+    func show() {
         isHiding = false
         isHidden = false
-        self.frame = NSRect(origin: .zero, size: view.bounds.size)
-        self.autoresizingMask = [.width, .height]
-        self.visualEffectView.frame = self.bounds
-        col2.isHidden = (bounds.width - 32) < 480
-        layoutContainerCard(preferredSize: CGSize(width: 492, height: 465))
+        self.frame = bounds
+        self.visualEffectView.frame = bounds
+        self.containerView.frame = bounds
+        col2.isHidden = bounds.width < 480
         self.alphaValue = 0
-        
-        view.addSubview(self, positioned: .above, relativeTo: nil)
         
         self.searchField.stringValue = ""
         self.refreshData()
@@ -459,31 +465,6 @@ final class ModifierHUDView: NSView {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             self.animator().alphaValue = 1
         }
-    }
-
-    override func layout() {
-        guard !isHidden && !isHiding else { return }
-        
-        let isNarrow = (bounds.width - 32) < 480
-        col2.isHidden = isNarrow
-        
-        super.layout()
-        visualEffectView.frame = bounds
-        layoutContainerCard(preferredSize: CGSize(width: 492, height: 465))
-    }
-
-    private func layoutContainerCard(preferredSize: CGSize) {
-        let margin: CGFloat = 16
-        let availableWidth = max(0, bounds.width - margin * 2)
-        let availableHeight = max(0, bounds.height - margin * 2)
-        let width = min(preferredSize.width, availableWidth)
-        let height = min(preferredSize.height, availableHeight)
-        containerView.frame = NSRect(
-            x: (bounds.width - width) / 2,
-            y: (bounds.height - height) / 2,
-            width: width,
-            height: height
-        )
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -515,6 +496,7 @@ final class ModifierHUDView: NSView {
                 }
                 self.isHidden = true
                 self.isHiding = false
+                self.wc?.hideModifierHUD()
             }
         }
     }

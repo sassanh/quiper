@@ -38,6 +38,10 @@ extension MainWindowController {
             self.wasBothCmdsDown = false
             
             if event.keyCode == kVK_Escape {
+                if self.isCyclingHistory {
+                    self.cancelHistoryCycling()
+                    return nil
+                }
                 if let hud = self.promptHistoryHUDView, !hud.isHidden {
                     self.hidePromptHistoryHUD()
                     return nil
@@ -102,6 +106,14 @@ extension MainWindowController {
         
         if GhostOnboardingManager.shared.isActive {
             return
+        }
+
+        if isCyclingHistory {
+            let requiredFlags = NSEvent.ModifierFlags.command.rawValue
+            let currentFlags = event.modifierFlags.rawValue
+            if (currentFlags & requiredFlags) != requiredFlags {
+                endHistoryCycling()
+            }
         }
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -204,23 +216,43 @@ extension MainWindowController {
     }
     
     private func showModifierHUD() {
-        guard let contentView = window?.contentView else { return }
+        guard let parentWindow = window else { return }
         hidePromptHistoryHUD()
-        if modifierHUDView == nil {
-            modifierHUDView = ModifierHUDView(frame: contentView.bounds, windowController: self)
+        cancelHistoryCycling()
+        
+        if modifierHUDWindow == nil {
+            let panel = NSPanel(
+                contentRect: NSRect(x: 0, y: 0, width: 492, height: 465),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+            panel.level = .floating
+            
+            let hud = ModifierHUDView(frame: panel.contentView?.bounds ?? .zero, windowController: self)
+            hud.autoresizingMask = [.width, .height]
+            panel.contentView = hud
+            
+            modifierHUDView = hud
+            modifierHUDWindow = panel
+            
+            parentWindow.addChildWindow(panel, ordered: .above)
         }
-        if let hud = modifierHUDView, hud.isHiding {
-            return
-        }
-        if let hud = modifierHUDView {
-            hud.show(in: contentView)
-        }
+        
+        alignHUDWindow(modifierHUDWindow, width: 492, height: 465)
+        modifierHUDWindow?.orderFront(nil)
+        modifierHUDView?.show()
     }
     
     func hideModifierHUD() {
         if let hud = modifierHUDView, !hud.isHidden, !hud.isHiding {
             hud.hide()
+            return
         }
+        modifierHUDWindow?.orderOut(nil)
     }
     
     func toggleModifierHUD() {
@@ -244,6 +276,7 @@ extension MainWindowController {
     func handleCommandShortcut(event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         let keyCode = UInt16(event.keyCode)
+        NSLog("[TabHistory] keydown keyCode: %d, modifiers: %lu, Grave is: %d", keyCode, modifiers.rawValue, kVK_ANSI_Grave)
         let appShortcuts = Settings.shared.appShortcutBindings
         let config = HotkeyManager.Configuration(keyCode: UInt32(keyCode), modifierFlags: modifiers.rawValue)
 
@@ -367,6 +400,7 @@ extension MainWindowController {
             stepSession(by: -1)
             return true
         }
+
         if matches(config, appShortcuts.configuration(for: .nextService)) || matches(config, appShortcuts.alternateConfiguration(for: .nextService)) {
             stepService(by: 1)
             return true
@@ -541,5 +575,312 @@ extension MainWindowController {
     private func matches(_ lhs: HotkeyManager.Configuration, _ rhs: HotkeyManager.Configuration?) -> Bool {
         guard let rhs = rhs, !rhs.isDisabled else { return false }
         return lhs.keyCode == rhs.keyCode && lhs.modifierFlags == rhs.modifierFlags
+    }
+    
+    // MARK: - Tab History Cycling & HUD Methods
+    
+    func showTabHistoryHUD() {
+        guard let parentWindow = window else { return }
+        hidePromptHistoryHUD()
+        hideModifierHUD()
+        
+        if tabHistoryHUDWindow == nil {
+            let panel = NSPanel(
+                contentRect: NSRect(x: 0, y: 0, width: 500, height: 200),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+            panel.level = .floating
+            
+            let hud = TabHistoryHUDView(frame: panel.contentView?.bounds ?? .zero, windowController: self)
+            hud.autoresizingMask = [.width, .height]
+            panel.contentView = hud
+            
+            tabHistoryHUDView = hud
+            tabHistoryHUDWindow = panel
+            
+            parentWindow.addChildWindow(panel, ordered: .above)
+        }
+        
+        tabHistoryHUDView?.updateSelection()
+        updateHUDWindowFrame()
+        
+        tabHistoryHUDWindow?.orderFront(nil)
+        tabHistoryHUDView?.isHidden = false
+    }
+    
+    func hideTabHistoryHUD() {
+        tabHistoryHUDView?.isHidden = true
+        tabHistoryHUDWindow?.orderOut(nil)
+    }
+    func updateHUDWindowFrame() {
+        guard let hudView = tabHistoryHUDView else { return }
+              
+        let itemsCount = hudView.currentItemsCount
+        let maxItemsPerRow = hudView.currentMaxItemsPerRow
+        let rowCount = max(1, (itemsCount + maxItemsPerRow - 1) / max(1, maxItemsPerRow))
+        
+        let hudWidth: CGFloat = 32 + CGFloat(maxItemsPerRow) * 148 + CGFloat(maxItemsPerRow - 1) * 12
+        let hudHeight: CGFloat = 32 + CGFloat(rowCount) * 130 + CGFloat(max(0, rowCount - 1)) * 12
+        
+        alignHUDWindow(tabHistoryHUDWindow, width: hudWidth, height: hudHeight)
+    }
+    
+    func performPendingHistorySwitch() {
+        guard isCyclingHistory, let targetTab = highlightedTab else { return }
+        
+        let service = currentService()
+        let activeIndex = service.map { activeIndicesByURL[$0.url] ?? 0 } ?? 0
+        let currentTab = TabIdentifier(serviceURL: currentServiceURL ?? "", sessionIndex: activeIndex)
+        if currentTab == targetTab { return }
+        
+        isExecutingHistoryNavigation = true
+        if currentServiceURL != targetTab.serviceURL {
+            _ = selectService(withURL: targetTab.serviceURL)
+        }
+        switchSession(to: targetTab.sessionIndex)
+        isExecutingHistoryNavigation = false
+        
+        lastHistorySwitchTime = Date()
+    }
+    
+    func handleGraveKeyDown() {
+        guard !tabHistory.isEmpty else { return }
+        
+        let effectiveRingSize = tabHistory.count + 1
+        
+        if effectiveRingSize == 2 {
+            let targetTab = tabHistory[0]
+            isExecutingHistoryNavigation = true
+            if currentServiceURL != targetTab.serviceURL {
+                _ = selectService(withURL: targetTab.serviceURL)
+            }
+            switchSession(to: targetTab.sessionIndex)
+            isExecutingHistoryNavigation = false
+            
+            if let startTab = lastActiveTab, startTab != targetTab {
+                tabHistory.removeAll { $0 == startTab }
+                tabHistory.insert(startTab, at: 0)
+                tabHistory.removeAll { $0 == targetTab }
+                if tabHistory.count > 1 {
+                    tabHistory = Array(tabHistory.prefix(1))
+                }
+                lastActiveTab = targetTab
+            }
+            return
+        }
+        
+        if isGraveKeyHeld { return }
+        isGraveKeyHeld = true
+        
+        let directionChanged = isCyclingHistory && !isCyclingForward
+        isCyclingForward = true
+        
+        if !isCyclingHistory {
+            isCyclingHistory = true
+            cyclingHistoryIndex = 0
+            if let service = currentService() {
+                let activeIndex = activeIndicesByURL[service.url] ?? 0
+                cyclingStartTab = TabIdentifier(serviceURL: service.url, sessionIndex: activeIndex)
+            }
+            highlightedTab = cyclingStartTab
+            showTabHistoryHUD()
+        } else if directionChanged {
+            var cycleTabs = tabHistory
+            if let start = cyclingStartTab {
+                cycleTabs.append(start)
+            }
+            if let currIdx = cycleTabs.firstIndex(where: { $0 == highlightedTab }) {
+                cyclingHistoryIndex = (currIdx + 1) % cycleTabs.count
+            }
+        }
+        
+        advanceHistoryCycling(allowRotation: true)
+        
+        // Start keyboard repeat delay timer (400ms)
+        historyRepeatTimer?.invalidate()
+        historyRepeatTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.startRapidHistoryRepeat()
+            }
+        }
+    }
+    
+    func handleGraveBackwardKeyDown() {
+        guard !tabHistory.isEmpty else { return }
+        
+        let effectiveRingSize = tabHistory.count + 1
+        
+        if effectiveRingSize == 2 {
+            let targetTab = tabHistory[0]
+            isExecutingHistoryNavigation = true
+            if currentServiceURL != targetTab.serviceURL {
+                _ = selectService(withURL: targetTab.serviceURL)
+            }
+            switchSession(to: targetTab.sessionIndex)
+            isExecutingHistoryNavigation = false
+            
+            if let startTab = lastActiveTab, startTab != targetTab {
+                tabHistory.removeAll { $0 == startTab }
+                tabHistory.insert(startTab, at: 0)
+                tabHistory.removeAll { $0 == targetTab }
+                if tabHistory.count > 1 {
+                    tabHistory = Array(tabHistory.prefix(1))
+                }
+                lastActiveTab = targetTab
+            }
+            return
+        }
+        
+        if isGraveKeyHeld { return }
+        isGraveKeyHeld = true
+        
+        let directionChanged = isCyclingHistory && isCyclingForward
+        isCyclingForward = false
+        
+        if !isCyclingHistory {
+            isCyclingHistory = true
+            if let service = currentService() {
+                let activeIndex = activeIndicesByURL[service.url] ?? 0
+                cyclingStartTab = TabIdentifier(serviceURL: service.url, sessionIndex: activeIndex)
+            }
+            
+            var cycleTabs = tabHistory
+            if let start = cyclingStartTab {
+                cycleTabs.append(start)
+            }
+            cyclingHistoryIndex = max(0, cycleTabs.count - 2)
+            highlightedTab = cyclingStartTab
+            showTabHistoryHUD()
+        } else if directionChanged {
+            var cycleTabs = tabHistory
+            if let start = cyclingStartTab {
+                cycleTabs.append(start)
+            }
+            if let currIdx = cycleTabs.firstIndex(where: { $0 == highlightedTab }) {
+                cyclingHistoryIndex = (currIdx - 1 + cycleTabs.count) % cycleTabs.count
+            }
+        }
+        
+        advanceHistoryCycling(allowRotation: true)
+        
+        // Start keyboard repeat delay timer (400ms)
+        historyRepeatTimer?.invalidate()
+        historyRepeatTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.startRapidHistoryRepeat()
+            }
+        }
+    }
+    
+    private func startRapidHistoryRepeat() {
+        guard isGraveKeyHeld && isCyclingHistory else { return }
+        
+        historyRepeatTimer?.invalidate()
+        historyRepeatTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.advanceHistoryCycling(allowRotation: false)
+            }
+        }
+    }
+    
+    func handleGraveKeyUp() {
+        isGraveKeyHeld = false
+        historyRepeatTimer?.invalidate()
+        historyRepeatTimer = nil
+    }
+    
+    func advanceHistoryCycling(allowRotation: Bool) {
+        guard isCyclingHistory else { return }
+        
+        var cycleTabs = tabHistory
+        if let start = cyclingStartTab {
+            cycleTabs.append(start)
+        }
+        guard !cycleTabs.isEmpty else { return }
+        
+        let currentHighlightedIndex = (cyclingHistoryIndex - (isCyclingForward ? 1 : -1) + cycleTabs.count) % cycleTabs.count
+        
+        if !allowRotation {
+            if isCyclingForward {
+                if currentHighlightedIndex == cycleTabs.count - 2 {
+                    return
+                }
+            } else {
+                if currentHighlightedIndex == cycleTabs.count - 1 {
+                    return
+                }
+            }
+        }
+        
+        let nextIndex = cyclingHistoryIndex
+        let targetTab = cycleTabs[nextIndex]
+        highlightedTab = targetTab
+        
+        tabHistoryHUDView?.updateSelection()
+        
+        if isCyclingForward {
+            cyclingHistoryIndex = (cyclingHistoryIndex + 1) % cycleTabs.count
+        } else {
+            cyclingHistoryIndex = (cyclingHistoryIndex - 1 + cycleTabs.count) % cycleTabs.count
+        }
+    }
+    
+    func cancelHistoryCycling() {
+        historyRepeatTimer?.invalidate()
+        historyRepeatTimer = nil
+        historyDebounceTimer?.invalidate()
+        historyDebounceTimer = nil
+        
+        hideTabHistoryHUD()
+        
+        isCyclingHistory = false
+        highlightedTab = nil
+        cyclingStartTab = nil
+        isGraveKeyHeld = false
+    }
+    
+    func endHistoryCycling() {
+        historyRepeatTimer?.invalidate()
+        historyRepeatTimer = nil
+        historyDebounceTimer?.invalidate()
+        historyDebounceTimer = nil
+        
+        performPendingHistorySwitch()
+        
+        hideTabHistoryHUD()
+        
+        guard isCyclingHistory else { return }
+        isCyclingHistory = false
+        highlightedTab = nil
+        lastHistorySwitchTime = nil
+        
+        guard let startTab = cyclingStartTab, let service = currentService() else {
+            cyclingStartTab = nil
+            return
+        }
+        
+        let activeIndex = activeIndicesByURL[service.url] ?? 0
+        let currentTab = TabIdentifier(serviceURL: service.url, sessionIndex: activeIndex)
+        
+        if startTab != currentTab {
+            tabHistory.removeAll { $0 == startTab }
+            tabHistory.insert(startTab, at: 0)
+            
+            tabHistory.removeAll { $0 == currentTab }
+            
+            let ringSize = Settings.shared.tabNavigationRingSize
+            if tabHistory.count > ringSize - 1 {
+                tabHistory = Array(tabHistory.prefix(ringSize - 1))
+            }
+            
+            lastActiveTab = currentTab
+        }
+        
+        cyclingStartTab = nil
     }
 }

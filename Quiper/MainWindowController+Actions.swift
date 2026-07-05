@@ -18,24 +18,68 @@ extension MainWindowController {
     }
 
     func showPromptHistoryHUD() {
-        guard let contentView = window?.contentView else { return }
+        guard let parentWindow = window else { return }
         hideModifierHUD()
-        if let hud = promptHistoryHUDView {
-            if hud.isHiding {
-                return
-            }
-            hud.show(in: contentView)
-            return
+        cancelHistoryCycling()
+        
+        if promptHistoryHUDWindow == nil {
+            let panel = NSPanel(
+                contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+            panel.level = .floating
+            
+            let hud = PromptHistoryHUDView(frame: panel.contentView?.bounds ?? .zero, windowController: self)
+            hud.autoresizingMask = [.width, .height]
+            panel.contentView = hud
+            
+            promptHistoryHUDView = hud
+            promptHistoryHUDWindow = panel
+            
+            parentWindow.addChildWindow(panel, ordered: .above)
         }
-        let hud = PromptHistoryHUDView(frame: contentView.bounds, windowController: self)
-        promptHistoryHUDView = hud
-        hud.show(in: contentView)
+        
+        alignHUDWindow(promptHistoryHUDWindow, width: 520, height: 480)
+        promptHistoryHUDWindow?.orderFront(nil)
+        promptHistoryHUDView?.show()
     }
 
     func hidePromptHistoryHUD() {
         if let hud = promptHistoryHUDView, !hud.isHidden, !hud.isHiding {
             hud.hide()
+            return
         }
+        promptHistoryHUDWindow?.orderOut(nil)
+    }
+
+    func alignHUDWindow(_ hudWindow: NSWindow?, width: CGFloat, height: CGFloat, offsetY: CGFloat = -50) {
+        guard let parentWindow = window, let hudWindow = hudWindow else { return }
+        
+        let parentFrame = parentWindow.frame
+        let screenFrame = (parentWindow.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        
+        var targetX = parentFrame.midX - (width / 2)
+        var targetY = parentFrame.midY - (height / 2) + offsetY
+        
+        // Clamp to screen bounds
+        if targetX < screenFrame.minX {
+            targetX = screenFrame.minX
+        } else if targetX + width > screenFrame.maxX {
+            targetX = screenFrame.maxX - width
+        }
+        
+        if targetY < screenFrame.minY {
+            targetY = screenFrame.minY
+        } else if targetY + height > screenFrame.maxY {
+            targetY = screenFrame.maxY - height
+        }
+        
+        hudWindow.setFrame(NSRect(x: targetX, y: targetY, width: width, height: height), display: true, animate: false)
     }
 
     func togglePromptHistoryHUD() {

@@ -639,6 +639,7 @@ struct PersistedTabState: Codable {
     var tabInputs: [String: [Int: TabInputState]] = [:] // serviceURL -> [sessionIndex: TabInputState]
     var tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:] // serviceURL -> [sessionIndex: [PromptHistoryEntry]]
     var tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:] // serviceURL -> [sessionIndex: Bool]
+    var tabHistory: [TabIdentifier]?
 
     enum CodingKeys: String, CodingKey {
         case activeServiceURL
@@ -647,15 +648,17 @@ struct PersistedTabState: Codable {
         case tabInputs
         case tabPromptHistories
         case tabPromptHistoryEnabledOverrides
+        case tabHistory
     }
 
-    init(activeServiceURL: String? = nil, activeIndicesByURL: [String: Int] = [:], openTabs: [String: [Int: String]] = [:], tabInputs: [String: [Int: TabInputState]] = [:], tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:], tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:]) {
+    init(activeServiceURL: String? = nil, activeIndicesByURL: [String: Int] = [:], openTabs: [String: [Int: String]] = [:], tabInputs: [String: [Int: TabInputState]] = [:], tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:], tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:], tabHistory: [TabIdentifier]? = nil) {
         self.activeServiceURL = activeServiceURL
         self.activeIndicesByURL = activeIndicesByURL
         self.openTabs = openTabs
         self.tabInputs = tabInputs
         self.tabPromptHistories = tabPromptHistories
         self.tabPromptHistoryEnabledOverrides = tabPromptHistoryEnabledOverrides
+        self.tabHistory = tabHistory
     }
 
     init(from decoder: Decoder) throws {
@@ -666,5 +669,6 @@ struct PersistedTabState: Codable {
         tabInputs = try container.decodeIfPresent([String: [Int: TabInputState]].self, forKey: .tabInputs) ?? [:]
         tabPromptHistories = try container.decodeIfPresent([String: [Int: [PromptHistoryEntry]]].self, forKey: .tabPromptHistories) ?? [:]
         tabPromptHistoryEnabledOverrides = try container.decodeIfPresent([String: [Int: Bool]].self, forKey: .tabPromptHistoryEnabledOverrides) ?? [:]
+        tabHistory = try container.decodeIfPresent([TabIdentifier].self, forKey: .tabHistory)
     }
 }

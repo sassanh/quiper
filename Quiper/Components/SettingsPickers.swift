@@ -906,3 +906,19 @@ struct PromptHistoryLimitPicker: View {
         .frame(width: 260, alignment: .trailing)
     }
 }
+
+struct TabNavigationRingSizePicker: View {
+    @ObservedObject private var settings = Settings.shared
+
+    var body: some View {
+        Stepper(value: Binding(
+            get: { settings.tabNavigationRingSize },
+            set: { settings.tabNavigationRingSize = max(2, min(10, $0)) }
+        ), in: 2...10) {
+            Text("\(settings.tabNavigationRingSize)")
+                .font(.body.monospacedDigit())
+                .frame(minWidth: 34, alignment: .trailing)
+        }
+        .frame(width: 260, alignment: .trailing)
+    }
+}

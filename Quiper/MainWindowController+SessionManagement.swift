@@ -1,6 +1,11 @@
 import AppKit
 import WebKit
 
+struct TabIdentifier: Equatable, Codable, Hashable {
+    let serviceURL: String
+    let sessionIndex: Int
+}
+
 extension MainWindowController {
     
     // MARK: - Session & Service Management
@@ -16,6 +21,9 @@ extension MainWindowController {
     }
 
     func selectService(at index: Int, focusWebView: Bool = true) {
+        if isCyclingHistory && !isExecutingHistoryNavigation {
+            endHistoryCycling()
+        }
         guard services.indices.contains(index) else { return }
         
         if let previousService = currentService() {
@@ -51,6 +59,9 @@ extension MainWindowController {
     }
 
     func switchSession(to index: Int, forceCreate: Bool) {
+        if isCyclingHistory && !isExecutingHistoryNavigation {
+            endHistoryCycling()
+        }
         guard let service = currentService() else { return }
         
         if service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
@@ -157,7 +168,39 @@ extension MainWindowController {
     func updateActiveWebview(focusWebView: Bool = true, forceCreate: Bool = false) {
         guard let service = currentService(), webViewManager != nil else { return }
         
+        if let oldTab = lastActiveTab,
+           let oldService = services.first(where: { $0.url == oldTab.serviceURL }),
+           let oldWV = webViewManager.getWebView(for: oldService, sessionIndex: oldTab.sessionIndex) {
+            oldWV.takeSnapshot(with: nil) { [weak self] image, error in
+                guard let img = image, error == nil else { return }
+                DispatchQueue.main.async {
+                    self?.tabPreviews[oldTab] = img
+                }
+            }
+        }
+        
+        tabHistory = tabHistory.filter { tab in
+            guard let svc = services.first(where: { $0.url == tab.serviceURL }) else { return false }
+            return webViewManager.getWebView(for: svc, sessionIndex: tab.sessionIndex) != nil
+        }
+        
         let activeIndex = activeIndicesByURL[service.url] ?? 0
+        
+        let currentTab = TabIdentifier(serviceURL: service.url, sessionIndex: activeIndex)
+        if lastActiveTab != currentTab {
+            if !isCyclingHistory {
+                tabHistory.removeAll { $0 == currentTab }
+                if let oldTab = lastActiveTab {
+                    tabHistory.removeAll { $0 == oldTab }
+                    tabHistory.insert(oldTab, at: 0)
+                    let ringSize = Settings.shared.tabNavigationRingSize
+                    if tabHistory.count > ringSize - 1 {
+                        tabHistory = Array(tabHistory.prefix(ringSize - 1))
+                    }
+                }
+            }
+            lastActiveTab = currentTab
+        }
         
         let hasAnySession = (0..<10).contains { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }
         if !hasAnySession && !Settings.shared.autoCreateSessionOnEmptyEngineActivation && !forceCreate {
@@ -208,6 +251,12 @@ extension MainWindowController {
         guard let service = currentService() else { return }
         let currentSession = activeIndicesByURL[service.url] ?? 0
         let currentServiceIndex = services.firstIndex(where: { $0.url == service.url }) ?? 0
+
+        let closedTab = TabIdentifier(serviceURL: service.url, sessionIndex: currentSession)
+        tabHistory.removeAll { $0 == closedTab }
+        if lastActiveTab == closedTab {
+            lastActiveTab = nil
+        }
 
         removeWebViewAndCleanObserver(for: service, sessionIndex: currentSession)
 
