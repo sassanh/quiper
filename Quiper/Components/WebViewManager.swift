@@ -38,6 +38,7 @@ final class WebViewManager: NSObject {
     private var tabInputStates: [String: [Int: TabInputState]] = [:]
     private var tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:]
     private var tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:]
+    private var approvedURLs = Set<URL>()
 
     init(containerView: NSView) {
         self.containerView = containerView
@@ -1341,34 +1342,148 @@ final class WebViewManager: NSObject {
         notificationBridges.removeValue(forKey: identifier)
     }
     
-    private func isInternalLink(target: URL, service: URL, friendPatterns: [String]) -> Bool {
-        let targetHost = target.host?.lowercased()
-        let serviceHost = service.host?.lowercased()
-        
+    enum DomainRoutingAction {
+        case openHere
+        case openNewWindow
+        case openExternal
+        case showPrompt
+        case cancel
+    }
+
+    private func matchesPattern(targetString: String, pattern: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return false }
+        let range = NSRange(location: 0, length: targetString.utf16.count)
+        return regex.firstMatch(in: targetString, options: [], range: range) != nil
+    }
+
+    private func determineRouting(for url: URL, service: Service, serviceURL: URL) -> DomainRoutingAction {
+        // 1. Same-origin check (Absolute priority: always open here)
+        let targetHost = url.host?.lowercased()
+        let serviceHost = serviceURL.host?.lowercased()
         if let tHost = targetHost, let sHost = serviceHost {
-            if tHost == sHost { return true }
-            
+            if tHost == sHost {
+                return .openHere
+            }
             let rootServiceHost = sHost.hasPrefix("www.") ? String(sHost.dropFirst(4)) : sHost
             if tHost == rootServiceHost || tHost.hasSuffix("." + rootServiceHost) {
-                return true
+                return .openHere
             }
-        } else if target.scheme == service.scheme && (target.isFileURL || target.scheme == "data") {
-            // For file:// and data: URLs, consider them internal if schemes match (common in tests)
-            return true
-        } else if target.isFileURL && ProcessInfo.processInfo.arguments.contains("--uitesting") {
-            // During UI testing, permit all local file popups to avoid Safari redirection
-            return true
+        } else if url.scheme?.lowercased() == serviceURL.scheme?.lowercased() && (url.isFileURL || url.scheme == "data") {
+            return .openHere
+        } else if url.isFileURL && ProcessInfo.processInfo.arguments.contains("--uitesting") {
+            return .openHere
         }
+        
+        let targetString = url.absoluteString
+        
+        // 2. Evaluate top-to-bottom routing rules
+        for rule in service.routingRules {
+            let pattern = rule.pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !pattern.isEmpty && matchesPattern(targetString: targetString, pattern: pattern) {
+                switch rule.action {
+                case .internalStay:
+                    return .openHere
+                case .popup:
+                    return .openNewWindow
+                case .prompt:
+                    return .showPrompt
+                case .external:
+                    return .openExternal
+                }
+            }
+        }
+        
+        return .openExternal
+    }
 
-        let targetString = target.absoluteString
-        for pattern in friendPatterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
-            let range = NSRange(location: 0, length: targetString.utf16.count)
-            if regex.firstMatch(in: targetString, options: [], range: range) != nil {
-                return true
-            }
+    @MainActor
+    private func openInPopup(url: URL, service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow) {
+        let popupWindow = ModalPopupWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
+            parentWindow: parentWindow
+        )
+        popupWindow.center()
+        
+        let popupWebView = WKWebView(frame: popupWindow.contentView!.bounds, configuration: configuration)
+        popupWebView.autoresizingMask = [.width, .height]
+        popupWebView.uiDelegate = PopupUIDelegate.shared
+        
+        popupWindow.observeWebViewTitle(popupWebView, fallbackTitle: service.name)
+        
+        popupWindow.contentView?.addSubview(popupWebView)
+        popupWindow.makeKeyAndOrderFront(nil)
+        
+        popupWebView.load(URLRequest(url: url))
+    }
+
+    @MainActor
+    private func presentRoutingPrompt(for url: URL, service: Service, webView: WKWebView, completion: @escaping @MainActor @Sendable (DomainRoutingAction, Bool) -> Void) {
+        guard let window = webView.window else {
+            completion(.openExternal, false)
+            return
         }
-        return false
+        
+        let alert = NSAlert()
+        alert.messageText = "Security & Routing"
+        alert.informativeText = "How would you like to open this link?\n\(url.absoluteString)"
+        
+        alert.addButton(withTitle: "Open Here")
+        alert.addButton(withTitle: "Open in New Window")
+        alert.addButton(withTitle: "Open Externally")
+        let cancelBtn = alert.addButton(withTitle: "Cancel")
+        cancelBtn.keyEquivalent = "\u{1b}" // Escape key
+        
+        let checkbox = NSButton(checkboxWithTitle: "Remember my choice for this domain", target: nil, action: nil)
+        checkbox.font = .systemFont(ofSize: 11)
+        alert.accessoryView = checkbox
+        
+        alert.beginSheetModal(for: window) { response in
+            let action: DomainRoutingAction
+            switch response {
+            case .alertFirstButtonReturn:
+                action = .openHere
+            case .alertSecondButtonReturn:
+                action = .openNewWindow
+            case .alertThirdButtonReturn:
+                action = .openExternal
+            default:
+                action = .cancel
+            }
+            let remember = checkbox.state == .on
+            completion(action, remember)
+        }
+    }
+
+    @MainActor
+    private func rememberDecision(for host: String, action: DomainRoutingAction, service: Service) {
+        guard !host.isEmpty else { return }
+        
+        guard let index = Settings.shared.services.firstIndex(where: { $0.id == service.id }) else { return }
+        
+        var updated = Settings.shared.services[index]
+        
+        // Remove any existing rule matching this exact host (case-insensitive)
+        updated.routingRules.removeAll { rule in
+            rule.pattern.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == host.lowercased()
+        }
+        
+        let routingAction: RoutingAction
+        switch action {
+        case .openHere:
+            routingAction = .internalStay
+        case .openNewWindow:
+            routingAction = .popup
+        case .openExternal:
+            routingAction = .external
+        default:
+            return
+        }
+        
+        let newRule = RoutingRule(pattern: host, action: routingAction)
+        updated.routingRules.insert(newRule, at: 0) // Insert at top of list
+        
+        Settings.shared.services[index] = updated
+        Settings.shared.saveSettings()
     }
     
     func tearDownAllWebViews(for service: Service) {
@@ -1590,12 +1705,15 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             return nil
         }
         
-        let isFriend = isInternalLink(target: url, service: serviceURL, friendPatterns: service.friendDomains)
+        let optionPressed = navigationAction.modifierFlags.contains(.option)
+        var action = determineRouting(for: url, service: service, serviceURL: serviceURL)
+        if action == .openExternal && optionPressed {
+            action = .showPrompt
+        }
         
-        if isFriend {
+        switch action {
+        case .openHere, .openNewWindow:
             guard let parentWindow = webView.window else { return nil }
-            
-            // Create a modal-like window for popups (like Google Login)
             let popupWindow = ModalPopupWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
                 parentWindow: parentWindow
@@ -1607,15 +1725,39 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             popupWebView.uiDelegate = PopupUIDelegate.shared
             
             popupWindow.observeWebViewTitle(popupWebView, fallbackTitle: service.name)
-            
             popupWindow.contentView?.addSubview(popupWebView)
             popupWindow.makeKeyAndOrderFront(nil)
             
             return popupWebView
-        } else {
+        case .openExternal:
             NSWorkspace.shared.open(url)
+            return nil
+        case .showPrompt:
+            presentRoutingPrompt(for: url, service: service, webView: webView) { [weak self] chosenAction, remember in
+                guard let self = self else { return }
+                if remember {
+                    let host = url.host ?? ""
+                    self.rememberDecision(for: host, action: chosenAction, service: service)
+                }
+                
+                switch chosenAction {
+                case .openHere:
+                    self.approvedURLs.insert(url)
+                    webView.load(URLRequest(url: url))
+                case .openNewWindow:
+                    if let parentWindow = webView.window {
+                        self.openInPopup(url: url, service: service, configuration: configuration, parentWindow: parentWindow)
+                    }
+                case .openExternal:
+                    NSWorkspace.shared.open(url)
+                case .showPrompt, .cancel:
+                    break
+                }
+            }
+            return nil
+        case .cancel:
+            return nil
         }
-        return nil
     }
 
     @MainActor
@@ -1662,24 +1804,68 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             return
         }
 
-        let allowInApp = isInternalLink(target: url, service: serviceURL, friendPatterns: service.friendDomains)
-        
-        if allowInApp {
+        // Loop prevention check
+        if approvedURLs.contains(url) {
+            approvedURLs.remove(url)
             let allowWithoutAppLink = WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow
             decisionHandler(allowWithoutAppLink)
             return
         }
-        
-        if navigationAction.navigationType == .linkActivated {
-            let targetFrameIsMain = navigationAction.targetFrame?.isMainFrame ?? true
-            if targetFrameIsMain {
-                NSWorkspace.shared.open(url)
-                decisionHandler(.cancel)
-                return
-            }
-        }
 
-        decisionHandler(.allow)
+        let optionPressed = navigationAction.modifierFlags.contains(.option)
+        var action = determineRouting(for: url, service: service, serviceURL: serviceURL)
+        if action == .openExternal && optionPressed {
+            action = .showPrompt
+        }
+        
+        switch action {
+        case .openHere:
+            let allowWithoutAppLink = WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow
+            decisionHandler(allowWithoutAppLink)
+            
+        case .openNewWindow:
+            if let parentWindow = webView.window {
+                openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow)
+            }
+            decisionHandler(.cancel)
+            
+        case .openExternal:
+            if navigationAction.navigationType == .linkActivated {
+                let targetFrameIsMain = navigationAction.targetFrame?.isMainFrame ?? true
+                if targetFrameIsMain {
+                    NSWorkspace.shared.open(url)
+                    decisionHandler(.cancel)
+                    return
+                }
+            }
+            decisionHandler(.allow)
+            
+        case .showPrompt:
+            decisionHandler(.cancel)
+            presentRoutingPrompt(for: url, service: service, webView: webView) { [weak self] chosenAction, remember in
+                guard let self = self else { return }
+                if remember {
+                    let host = url.host ?? ""
+                    self.rememberDecision(for: host, action: chosenAction, service: service)
+                }
+                
+                switch chosenAction {
+                case .openHere:
+                    self.approvedURLs.insert(url)
+                    webView.load(URLRequest(url: url))
+                case .openNewWindow:
+                    if let parentWindow = webView.window {
+                        self.openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow)
+                    }
+                case .openExternal:
+                    NSWorkspace.shared.open(url)
+                case .showPrompt, .cancel:
+                    break
+                }
+            }
+        case .cancel:
+            decisionHandler(.cancel)
+        }
     }
 
     @MainActor

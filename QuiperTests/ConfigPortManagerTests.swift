@@ -19,7 +19,7 @@ final class ConfigPortManagerTests {
             url: "https://example.com/export",
             focus_selector: ".focus",
             actionScripts: [testAction.id: "console.log('test');"],
-            friendDomains: ["example.com"],
+            routingRules: [RoutingRule(pattern: "example.com", action: .internalStay)],
             customCSS: "body { background: black; }"
         )
         

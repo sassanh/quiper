@@ -482,6 +482,7 @@ struct PersistedSettings: Codable {
     var promptHistoryRecordOnCmdBackspace: Bool?
     var promptHistoryRecordOnSelectionClear: Bool?
     var promptHistoryLimit: Int?
+    var tabNavigationRingSize: Int?
     var quiperVersion: String?
     var version: Int? = 1
 
@@ -504,6 +505,7 @@ struct PersistedSettings: Codable {
         case promptHistoryRecordOnCmdBackspace
         case promptHistoryRecordOnSelectionClear
         case promptHistoryLimit
+        case tabNavigationRingSize
         case quiperVersion
     }
 
@@ -536,6 +538,7 @@ struct PersistedSettings: Codable {
          promptHistoryRecordOnCmdBackspace: Bool? = nil,
          promptHistoryRecordOnSelectionClear: Bool? = nil,
          promptHistoryLimit: Int? = nil,
+         tabNavigationRingSize: Int? = nil,
          quiperVersion: String? = nil,
          version: Int? = 1) {
         self.services = services
@@ -567,6 +570,7 @@ struct PersistedSettings: Codable {
         self.promptHistoryRecordOnCmdBackspace = promptHistoryRecordOnCmdBackspace
         self.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear
         self.promptHistoryLimit = promptHistoryLimit
+        self.tabNavigationRingSize = tabNavigationRingSize
         self.quiperVersion = quiperVersion
         self.version = version
     }
@@ -602,6 +606,7 @@ struct PersistedSettings: Codable {
         promptHistoryRecordOnCmdBackspace = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnCmdBackspace)
         promptHistoryRecordOnSelectionClear = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnSelectionClear)
         promptHistoryLimit = try container.decodeIfPresent(Int.self, forKey: .promptHistoryLimit)
+        tabNavigationRingSize = try container.decodeIfPresent(Int.self, forKey: .tabNavigationRingSize)
         quiperVersion = try container.decodeIfPresent(String.self, forKey: .quiperVersion)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }

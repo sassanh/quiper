@@ -1066,7 +1066,7 @@ struct ServiceDetailView: View {
                 }
 
                 Section("Routing") {
-                    Label("Friend Domains", systemImage: "link")
+                    Label("Domain Routing", systemImage: "link")
                         .tag(DetailSelection.friendDomains)
                 }
                 
@@ -1264,48 +1264,187 @@ struct ServiceDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     
+    private func ruleBinding(at index: Int) -> Binding<RoutingRule> {
+        Binding(
+            get: {
+                if index < service.routingRules.count {
+                    return service.routingRules[index]
+                }
+                return RoutingRule(pattern: "", action: .internalStay)
+            },
+            set: { newValue in
+                if index < service.routingRules.count {
+                    service.routingRules[index] = newValue
+                    settings.saveSettings()
+                }
+            }
+        )
+    }
+    
+    private func moveRule(from: Int, to: Int) {
+        guard from >= 0, from < service.routingRules.count,
+              to >= 0, to < service.routingRules.count else { return }
+        
+        service.routingRules.swapAt(from, to)
+        settings.saveSettings()
+    }
+    
+    @ViewBuilder
+    private func domainRow(index: Int, rule: Binding<RoutingRule>, onDelete: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            // Reordering chevrons
+            VStack(spacing: 2) {
+                Button {
+                    moveRule(from: index, to: index - 1)
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 8, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .disabled(index == 0)
+                
+                Button {
+                    moveRule(from: index, to: index + 1)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .disabled(index == service.routingRules.count - 1)
+            }
+            .frame(width: 14)
+            
+            // Pattern TextField
+            TextField("e.g. ^https?://([^/]*\\.)?google\\.com", text: rule.pattern)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: .infinity)
+            
+            // Action Picker
+            Picker("", selection: rule.action) {
+                ForEach(RoutingAction.allCases) { act in
+                    Text(act.rawValue).tag(act)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 90)
+            
+            // Delete button
+            Button(role: .destructive, action: onDelete) {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .help("Remove routing rule")
+        }
+    }
+    
     private var friendDomainsForm: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: "link")
                     .font(.title2)
-                    .foregroundColor(.accentColor)
-                Text("Friend Domains")
+                    .foregroundColor(.accentColor.settingsResolved)
+                Text("Domain Routing")
                     .font(.title3)
                     .fontWeight(.bold)
             }
             
             ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Define regular expression patterns to allow link clicks, popups, and OAuth login flows matching these domains to stay inside this engine instead of routing to external apps.")
-                        .font(.body)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    
+                VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 12) {
-                        ForEach(Array(service.friendDomains.indices), id: \.self) { index in
-                            HStack(spacing: 8) {
-                                TextField("e.g. ^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", text: $service.friendDomains[index])
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(maxWidth: .infinity)
-                                Button(role: .destructive) {
-                                    service.friendDomains.remove(at: index)
-                                    settings.saveSettings()
-                                } label: {
-                                    Image(systemName: "trash")
+                        HStack(spacing: 6) {
+                            Image(systemName: "list.bullet.indent")
+                                .foregroundColor(.accentColor.settingsResolved)
+                            Text("Routing Rules")
+                                .font(.headline)
+                            Spacer()
+                        }
+                        
+                        Text("Rules are evaluated from top to bottom. The first matching pattern determines the action. Reorder rules to adjust their priority.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            if service.routingRules.isEmpty {
+                                Text("No routing rules defined. Links will open externally by default.")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .padding(.vertical, 8)
+                            } else {
+                                ForEach(Array(service.routingRules.indices), id: \.self) { index in
+                                    domainRow(index: index, rule: ruleBinding(at: index), onDelete: {
+                                        service.routingRules.remove(at: index)
+                                        settings.saveSettings()
+                                    })
                                 }
-                                .buttonStyle(.borderless)
-                                .help("Remove domain pattern")
+                            }
+                            
+                            Button {
+                                service.routingRules.append(RoutingRule(pattern: "", action: .internalStay))
+                                settings.saveSettings()
+                            } label: {
+                                Label("Add Routing Rule", systemImage: "plus")
+                            }
+                            .buttonStyle(.bordered)
+                            .padding(.top, 4)
+                        }
+                        .padding(.leading, 8)
+                    }
+                    .padding()
+                    .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                    .cornerRadius(8)
+                    
+                    // Legend / Guide for routing behavior
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Routing Action Guide")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .top, spacing: 6) {
+                                Text("Internal")
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.green)
+                                    .frame(width: 60, alignment: .leading)
+                                Text("Loads the URL inside the current Quiper tab.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            HStack(alignment: .top, spacing: 6) {
+                                Text("Popup")
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.blue)
+                                    .frame(width: 60, alignment: .leading)
+                                Text("Opens the URL in a native floating popup window.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            HStack(alignment: .top, spacing: 6) {
+                                Text("Prompt")
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.orange)
+                                    .frame(width: 60, alignment: .leading)
+                                Text("Asks where to route the link (Internal, Popup, or Safari).")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            HStack(alignment: .top, spacing: 6) {
+                                Text("Safari")
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.red)
+                                    .frame(width: 60, alignment: .leading)
+                                Text("Opens the link externally in your default system browser.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
                         }
-                        Button {
-                            service.friendDomains.append("")
-                        } label: {
-                            Label("Add Friend Domain", systemImage: "plus")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.top, 4)
                     }
+                    .padding(.horizontal, 4)
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }

@@ -6,6 +6,27 @@ import Carbon
 
 // Models extracted to SettingsModels.swift
 
+enum RoutingAction: String, Codable, CaseIterable, Identifiable {
+    case internalStay = "Internal"
+    case popup = "Popup"
+    case prompt = "Prompt"
+    case external = "Safari"
+    
+    var id: String { rawValue }
+}
+
+struct RoutingRule: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var pattern: String
+    var action: RoutingAction
+    
+    init(id: UUID = UUID(), pattern: String, action: RoutingAction) {
+        self.id = id
+        self.pattern = pattern
+        self.action = action
+    }
+}
+
 struct Service: Codable, Identifiable {
     var id = UUID()
     var name: String
@@ -14,7 +35,7 @@ struct Service: Codable, Identifiable {
     var actionScripts: [UUID: String] = [:]
     var activationShortcut: HotkeyManager.Configuration?
     var customCSS: String?
-    var friendDomains: [String] = []
+    var routingRules: [RoutingRule] = []
     var iconBase64: String?
     var iconManuallyUnset: Bool?
     var isEncrypted: Bool = false
@@ -31,7 +52,9 @@ struct Service: Codable, Identifiable {
         case focus_selector
         case actionScripts
         case activationShortcut
-        case friendDomains
+        case routingRules
+        case associatedDomains // legacy
+        case friendDomains // legacy
         case customCSS
         case iconBase64
         case iconManuallyUnset
@@ -50,7 +73,7 @@ struct Service: Codable, Identifiable {
          focus_selector: String,
          actionScripts: [UUID: String] = [:],
          activationShortcut: HotkeyManager.Configuration? = nil,
-         friendDomains: [String] = [],
+         routingRules: [RoutingRule] = [],
          customCSS: String? = nil,
          iconBase64: String? = nil,
          iconManuallyUnset: Bool? = nil,
@@ -66,7 +89,7 @@ struct Service: Codable, Identifiable {
         self.focus_selector = focus_selector
         self.actionScripts = actionScripts
         self.activationShortcut = activationShortcut
-        self.friendDomains = friendDomains
+        self.routingRules = routingRules
         self.customCSS = customCSS
         self.iconBase64 = iconBase64
         self.iconManuallyUnset = iconManuallyUnset
@@ -86,7 +109,41 @@ struct Service: Codable, Identifiable {
         focus_selector = try container.decodeIfPresent(String.self, forKey: .focus_selector) ?? ""
         actionScripts = try container.decodeIfPresent([UUID: String].self, forKey: .actionScripts) ?? [:]
         activationShortcut = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .activationShortcut)
-        friendDomains = try container.decodeIfPresent([String].self, forKey: .friendDomains) ?? []
+        
+        if let decodedRules = try container.decodeIfPresent([RoutingRule].self, forKey: .routingRules) {
+            self.routingRules = decodedRules
+        } else {
+            let associated = try container.decodeIfPresent([String].self, forKey: .associatedDomains) ?? []
+            let friend = try container.decodeIfPresent([String].self, forKey: .friendDomains) ?? []
+            
+            if !associated.isEmpty || !friend.isEmpty {
+                var rules: [RoutingRule] = []
+                for pat in associated {
+                    let trimmed = pat.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.hasPrefix("!") {
+                        rules.append(RoutingRule(pattern: String(trimmed.dropFirst()), action: .external))
+                    } else if trimmed.hasPrefix("+") {
+                        rules.append(RoutingRule(pattern: String(trimmed.dropFirst()), action: .popup))
+                    } else {
+                        rules.append(RoutingRule(pattern: trimmed, action: .internalStay))
+                    }
+                }
+                for pat in friend {
+                    let trimmed = pat.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.hasPrefix("!") {
+                        rules.append(RoutingRule(pattern: String(trimmed.dropFirst()), action: .external))
+                    } else if trimmed.hasPrefix("+") {
+                        rules.append(RoutingRule(pattern: String(trimmed.dropFirst()), action: .popup))
+                    } else {
+                        rules.append(RoutingRule(pattern: trimmed, action: .prompt))
+                    }
+                }
+                self.routingRules = rules
+            } else {
+                self.routingRules = []
+            }
+        }
+        
         customCSS = try container.decodeIfPresent(String.self, forKey: .customCSS)
         iconBase64 = try container.decodeIfPresent(String.self, forKey: .iconBase64)
         iconManuallyUnset = try container.decodeIfPresent(Bool.self, forKey: .iconManuallyUnset)
@@ -123,8 +180,8 @@ struct Service: Codable, Identifiable {
         if let activationShortcut {
             try container.encode(activationShortcut, forKey: .activationShortcut)
         }
-        if !friendDomains.isEmpty {
-            try container.encode(friendDomains, forKey: .friendDomains)
+        if !routingRules.isEmpty {
+            try container.encode(routingRules, forKey: .routingRules)
         }
         if let customCSS, !customCSS.isEmpty {
             try container.encode(customCSS, forKey: .customCSS)
@@ -795,8 +852,8 @@ class Settings: ObservableObject {
                 );
                 """
             ],
-            friendDomains: [
-                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
+            routingRules: [
+                RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay)
             ],
             customCSS: """
             body, mat-sidenav-container, response-container>* {
@@ -916,8 +973,8 @@ class Settings: ObservableObject {
                 );
                 """
             ],
-            friendDomains: [
-                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
+            routingRules: [
+                RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay)
             ],
             customCSS: """
             body, .bg-bg-500, .bg-bg-400, .bg-bg-300 {
@@ -1040,9 +1097,9 @@ class Settings: ObservableObject {
                 );
                 """
             ],
-            friendDomains: [
-                "^https?://([^/]*\\.)?x\\.com(/|$)",
-                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
+            routingRules: [
+                RoutingRule(pattern: "^https?://([^/]*\\.)?x\\.com(/|$)", action: .internalStay),
+                RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay)
             ],
             customCSS: """
             body {
@@ -1251,9 +1308,9 @@ class Settings: ObservableObject {
                 );
                 """
             ],
-            friendDomains: [
-                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)",
-                "^https?://([^/]*\\.)?appleid\\.apple\\.com(/|$)"
+            routingRules: [
+                RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay),
+                RoutingRule(pattern: "^https?://([^/]*\\.)?appleid\\.apple\\.com(/|$)", action: .internalStay)
             ],
             customCSS: """
             html, body {
@@ -1444,8 +1501,8 @@ class Settings: ObservableObject {
                 }
                 """
             ],
-            friendDomains: [
-                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
+            routingRules: [
+                RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay)
             ],
             customCSS: """
             body, div[data-testid="primaryColumn"] {
@@ -1701,8 +1758,8 @@ class Settings: ObservableObject {
                 await waitFor(() => zaiSidebarExpanded() !== wasExpanded, 1800);
                 """
             ],
-            friendDomains: [
-                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)"
+            routingRules: [
+                RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay)
             ],
             customCSS: """
             body, #app, .app>div, text-3d-flip-char>.backface-hidden  {
@@ -1849,9 +1906,9 @@ class Settings: ObservableObject {
                 await new Promise((resolve) => setTimeout(resolve, 350));
                 """
             ],
-            friendDomains: [
-                "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)",
-                "^https?://([^/]*\\.)?appleid\\.apple\\.com(/|$)"
+            routingRules: [
+                RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay),
+                RoutingRule(pattern: "^https?://([^/]*\\.)?appleid\\.apple\\.com(/|$)", action: .internalStay)
             ],
             customCSS: """
             html, body {
@@ -1999,8 +2056,8 @@ class Settings: ObservableObject {
                 }
                 """,
             ],
-            friendDomains: [
-                ".*"
+            routingRules: [
+                RoutingRule(pattern: ".*", action: .internalStay)
             ],
             customCSS: """
             body, div[style*="max-width:100%;"] {
