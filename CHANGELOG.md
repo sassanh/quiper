@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Iframe Content Routing Prompts ([WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Fixed an issue where embedded subframes (like the Google Sign-In button iframe) would match routing patterns (e.g. `accounts.google.com`) and trigger a "Security & Routing" dialog. Added a check to enforce that routing rules only evaluate on main frame navigations, permitting standard cross-origin widgets inside iframes to render natively.
+
 ## [4.4.0] - 2026-07-05
 
 ### Added

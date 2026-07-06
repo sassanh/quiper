@@ -1804,6 +1804,13 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             return
         }
 
+        // Only route main frame navigations (including new windows where targetFrame is nil)
+        let targetFrameIsMain = navigationAction.targetFrame?.isMainFrame ?? true
+        if !targetFrameIsMain {
+            decisionHandler(.allow)
+            return
+        }
+
         // Loop prevention check
         if approvedURLs.contains(url) {
             approvedURLs.remove(url)
