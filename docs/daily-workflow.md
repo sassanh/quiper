@@ -42,7 +42,19 @@ Through its native Prompt History Heads-Up Display (HUD) overlay, Quiper preserv
 
 ---
 
-## Complete Keyboard Shortcuts Reference
+## Tab History Switcher (MRU HUD)
+
+Quiper tracks a configurable ring of your most-recently-used tabs. You can cycle backwards through them at any time without leaving your keyboard.
+
+*   **To Cycle Forward:** Press **`⌘ \``** (Command + Backtick). Hold to keep advancing through older tabs.
+*   **To Cycle Backward:** Press **`⌘ ⇧ \``** (Command + Shift + Backtick). Hold to rewind toward the most-recent tab.
+*   **Commit Switch:** Release the `⌘` key to immediately switch to the currently highlighted tab.
+*   **Cancel:** Press **`⌘ ⎋`** to dismiss the HUD with no tab switch.
+
+See [Tab History Switcher](tab-history.md) for the full reference including HUD layout, card contents, and ring size configuration.
+
+---
+
 
 Below is the exhaustive reference of Quiper's keyboard shortcuts, grouped by category.
 
@@ -54,6 +66,8 @@ Below is the exhaustive reference of Quiper's keyboard shortcuts, grouped by cat
 | **Toggle Window Size** | `⌘ M` | In-App | Switches between a centered Standard layout and a top-right Compact layout. |
 | **Open Settings** | `⌘ ,` | In-App | Opens the native SwiftUI Settings panel. |
 | **Toggle Prompt History HUD** | `⌘ Y` | In-App | Toggles the native Prompt History HUD overlay. |
+| **Cycle Tab History Forward** | `⌘ \`` | In-App | Opens the Tab History HUD and advances to the next most-recently-used tab. |
+| **Cycle Tab History Backward** | `⌘ ⇧ \`` | In-App | Moves the Tab History HUD selection back toward the most-recent tab. |
 | **Quit Quiper** | `⌘ ⌃ ⇧ Q` | In-App | Completely shuts down the Quiper application. |
 
 *Note: When running under Xcode debugger, standard `⌘ Q` will quit the application directly.*

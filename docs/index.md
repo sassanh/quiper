@@ -31,6 +31,7 @@ Explore our guides to configure and customize Quiper:
 
 *   [Getting Started](getting-started.md): System requirements, installation steps, and launching.
 *   [Daily Workflow](daily-workflow.md): Hotkeys, shortcuts tables, and session/engine switching.
+*   [Tab History Switcher](tab-history.md): MRU tab cycling HUD, ring size configuration, and keyboard reference.
 *   [Managing Engines](engines.md): Adding AI providers, setting up custom URLs, and configuring auto-focus selectors.
 *   [Application Settings](settings.md): Reference for behavior preferences, configuration backups, updates, and the danger zone.
 *   [Appearance Settings](appearance.md): Tweaking transparency styles, blur levels, and outline configurations.

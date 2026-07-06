@@ -41,6 +41,7 @@ export default defineConfig({
           { text: 'Daily Workflow & Shortcuts', link: '/daily-workflow' },
           { text: 'Managing Engines', link: '/engines' },
           { text: 'Application Settings', link: '/settings' },
+          { text: 'Tab History Switcher', link: '/tab-history' },
         ],
       },
       {
@@ -55,6 +56,13 @@ export default defineConfig({
         items: [
           { text: 'Touch ID & Security', link: '/security' },
           { text: 'Troubleshooting', link: '/troubleshooting' },
+        ],
+      },
+      {
+        text: 'Contributing',
+        items: [
+          { text: 'Settings Styling Standards', link: '/settings-styling' },
+          { text: 'Default Template Validation', link: '/default-template-validation' },
         ],
       },
     ],

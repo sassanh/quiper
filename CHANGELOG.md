@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Tab History Switcher Documentation ([tab-history.md](docs/tab-history.md))**: Added a dedicated documentation page covering the MRU Tab History HUD switcher, and linked it from the daily workflow guide and docs sidebar.
+
 ### Fixed
 
 - **Iframe Content Routing Prompts ([WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Fixed an issue where embedded subframes (like the Google Sign-In button iframe) would match routing patterns (e.g. `accounts.google.com`) and trigger a "Security & Routing" dialog. Added a check to enforce that routing rules only evaluate on main frame navigations, permitting standard cross-origin widgets inside iframes to render natively.
@@ -10,7 +14,7 @@
 
 ### Added
 
-- **MRU Tab History HUD Switcher**: Added the `Cmd + \`` (forward) and `Cmd + Shift + \`` (backward) MRU tab history navigation ring, with a configurable history ring size (2-10) in settings.
+- **MRU Tab History HUD Switcher**: Added the `Cmd + \`` (forward) and`Cmd + Shift + \`` (backward) MRU tab history navigation ring, with a configurable history ring size (2-10) in settings.
 - **Child Window Overlay HUDs**: Transitioned the Tab History, Prompt History, and Control Center HUDs into borderless child overlay panels (`NSPanel`). The HUDs can now overflow parent window bounds without cropping, center dynamically, and automatically clamp to screen monitor boundaries.
 - **Dynamic HUD Window Tracking**: Automatically reposition and realign visible HUD windows in real-time as the parent window is moved or resized.
 - **Reciprocal HUD Dismissal**: Mutual dismissal logic between all three HUD panels to automatically close other active overlays when a new one is opened.
