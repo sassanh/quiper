@@ -5,6 +5,7 @@
 ### Added
 
 - **Tab History Switcher Documentation ([tab-history.md](docs/tab-history.md))**: Added a dedicated documentation page covering the MRU Tab History HUD switcher, and linked it from the daily workflow guide and docs sidebar.
+- **Domain Routing Rules Documentation ([engines.md](docs/engines.md))**: Documented the unified, ordered Domain Routing Rules editor that replaced the legacy Friend Domains and Associated Domains lists, covering same-origin priority, top-to-bottom rule matching, the Internal/Popup/Prompt/Safari actions, and the "Remember my choice for this domain" prompt behavior.
 
 ### Fixed
 

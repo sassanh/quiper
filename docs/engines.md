@@ -14,7 +14,7 @@ To add or configure an engine:
     *   **URL:** The target web address (e.g., `https://chatgpt.com`).
     *   **Focus Selector:** The CSS selector identifying the prompt input field.
     *   **Custom CSS:** Overrides to style the web elements (see the Custom CSS Injection section below).
-    *   **Friend Domains:** Auxiliary URLs required for authentication.
+    *   **Domain Routing Rules:** An ordered list of regex patterns that decide how outbound links from this engine are handled (see below).
     *   **Activation Shortcut:** A dedicated hotkey that summons the window and immediately opens this engine.
 
 ---
@@ -166,16 +166,39 @@ You can easily point Quiper to local web applications running LLM interfaces:
 
 ---
 
-## Friend Domains & Authentication
+## Domain Routing Rules
 
-Many AI services use third-party OAuth providers for logins (e.g., signing in to Claude or ChatGPT using a Google or Apple account).
+Every engine has its own **Domain Routing** editor (**Settings ➔ Engines ➔ [Select Engine] ➔ Routing**) that decides what happens when a link inside that engine points somewhere other than the engine's own site — for example, an OAuth login redirect, a citation link, or an external documentation page.
 
-*   **The Sandboxing Isolation:** By default, WebKit restricts cookies and scripts to the engine’s main domain to protect security. If you click "Sign in with Google," WebKit might block the authentication flow.
-*   **The Solution:** Add authentication domains to the **Friend Domains** list in the engine settings.
+### How a Link Is Routed
+
+1.  **Same-Origin Priority:** Links to the engine's own domain (or its subdomains) always open inline, regardless of any rule — this guarantees normal in-app navigation is never intercepted.
+2.  **Ordered Rule Matching:** For every other link, Quiper walks the **Routing Rules** list from top to bottom and applies the action of the **first rule whose regex pattern matches** the URL. Reorder rules with the chevrons next to each row to control priority.
+3.  **Default Fallback:** If no rule matches, the link opens externally in your default system browser.
+
+### Routing Actions
+
+| Action | Behavior |
+| :--- | :--- |
+| **Internal** | Loads the URL inside the current Quiper tab. |
+| **Popup** | Opens the URL in a native floating popup window. |
+| **Prompt** | Shows a "Security & Routing" dialog asking you to choose Internal, Popup, or Safari for that link. |
+| **Safari** | Opens the link externally in your default system browser. |
+
+### Authentication Domains (OAuth Sign-In)
+
+Many AI services use third-party OAuth providers for logins (e.g., signing in to Claude or ChatGPT using a Google or Apple account). By default, WebKit restricts cookies and scripts to the engine's main domain, so clicking "Sign in with Google" can otherwise get blocked or bounced externally.
+
+*   **The Solution:** Add an **Internal** routing rule for the authentication domain so the login flow stays inside Quiper.
 *   **Default Authenticator Expressions:**
-    *   To allow Google Sign-In, add: `^https?://([^/]*\.)?accounts\.google\.com(/|$)`
-    *   To allow Apple ID logins, add: `^https?://([^/]*\.)?appleid\.apple\.com(/|$)`
-    *   These regular expressions tell Quiper to trust these domains for cookie sharing and script execution during the login process.
+    *   To allow Google Sign-In, add: `^https?://([^/]*\.)?accounts\.google\.com(/|$)` → **Internal**
+    *   To allow Apple ID logins, add: `^https?://([^/]*\.)?appleid\.apple\.com(/|$)` → **Internal**
+
+### Remembering Prompt Decisions
+
+When a link triggers the **Security & Routing** prompt, you can check **"Remember my choice for this domain"** before choosing Internal, Popup, or Safari. Quiper then automatically inserts a new rule for that exact host at the top of the list so you won't be asked again. Press **Escape** or click **Cancel** to dismiss the prompt without navigating.
+
+> **Migrating from older versions:** Settings from versions prior to the unified routing editor (which used separate "Friend Domains" and "Associated Domains" lists) are automatically converted into equivalent Routing Rules the first time Quiper loads them.
 
 ---
 
