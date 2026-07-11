@@ -927,10 +927,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                         if isVolume {
                             let process = Process()
-                            process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+                            process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
                             process.arguments = [
-                                "detach",
-                                "-force",
+                                "eject",
+                                "force",
                                 storeURL.path
                             ]
                             try? process.run()

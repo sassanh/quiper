@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Encrypted Volume Management ([EncryptedVolumeManager.swift](Quiper/Components/EncryptedVolumeManager.swift), [App.swift](Quiper/App.swift))**: Migrated secure volume attach and eject operations from `hdiutil` to `diskutil` for improved compatibility and reliability.
+
+### Fixed
+
+- **Safe Volume Mounting and Unmounting ([EncryptedVolumeManager.swift](Quiper/Components/EncryptedVolumeManager.swift))**: Added tracking of active mount/unmount operations to prevent concurrent races, and implemented automatic cleanup/retry logic when a mount point reports "resource busy".
+- **Lock Overlay Double-click Safeguards ([LockOverlayView.swift](Quiper/Components/LockOverlayView.swift))**: Added state checks to prevent spawning duplicate biometric or password fallback authentication prompts when clicking the unlock action multiple times.
+
+
 ## [4.4.1] - 2026-07-06
 
 ### Added

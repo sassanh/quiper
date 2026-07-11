@@ -196,6 +196,7 @@ final class LockOverlayView: NSView {
     private var activeFallbackContext: LAContext?
     private var consoleView: BiometricDiskConsoleView?
     private var isBiometricsInitialized = false
+    private var isUnlockInProgress = false
 
     private let containerStack = NSStackView()
     private let statusLabel = NSTextField(labelWithString: "")
@@ -388,6 +389,7 @@ final class LockOverlayView: NSView {
     }
 
     func startLoading() {
+        isUnlockInProgress = true
         statusLabel.stringValue = "Preparing..."
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.isHidden = true
@@ -417,12 +419,15 @@ final class LockOverlayView: NSView {
     }
 
     func showError(_ error: String) {
+        isUnlockInProgress = false
         stopLoading()
         errorDetailsLabel.stringValue = error
         errorContainer.isHidden = false
     }
 
     @objc private func usePasswordClicked() {
+        guard !isUnlockInProgress else { return }
+        isUnlockInProgress = true
         NSLog("[LockOverlay] usePasswordClicked fired - spawning dedicated fallback context")
         let fallbackContext = LAContext()
         self.activeFallbackContext = fallbackContext
@@ -441,6 +446,7 @@ final class LockOverlayView: NSView {
                     }
                 }
             } catch {
+                self.isUnlockInProgress = false
                 self.activeFallbackContext = nil
                 NSLog("[LockOverlay] Fallback password authentication failed: %@", error.localizedDescription)
                 let errString = error.localizedDescription
@@ -464,6 +470,8 @@ final class LockOverlayView: NSView {
     }
 
     @objc private func unlockClicked() {
+        guard !isUnlockInProgress else { return }
+        isUnlockInProgress = true
         NSLog(
             "[LockOverlay] unlockClicked fired, onUnlock is \(onUnlock == nil ? "nil" : "set")")
 
@@ -480,6 +488,7 @@ final class LockOverlayView: NSView {
                     }
                 }
             } catch {
+                self.isUnlockInProgress = false
                 NSLog(
                     "[LockOverlay] LAContext evaluation failed: %@", error.localizedDescription)
                 let errString = error.localizedDescription
