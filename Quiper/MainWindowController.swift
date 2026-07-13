@@ -1516,6 +1516,8 @@ struct SecureTabState: Codable {
             return
         }
 
+        raiseVisibleHUDs()
+
         let otherChildWindows = window?.childWindows?.filter {
             $0 != settingsWindow &&
             $0 != UpdatePromptWindowController.shared.window &&

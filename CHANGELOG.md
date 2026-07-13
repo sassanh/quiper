@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- **HUD Overlay Behavior ([PromptHistoryHUDView.swift](Quiper/Components/PromptHistoryHUDView.swift), [MainWindowController+Actions.swift](Quiper/MainWindowController+Actions.swift), [MainWindowController+InputHandling.swift](Quiper/MainWindowController+InputHandling.swift), [MainWindowController.swift](Quiper/MainWindowController.swift))**: Fixed long prompt history entries widening the Prompt History HUD instead of truncating, and kept Prompt History, Control Center, and Tab History HUDs ordered above the main window when it is clicked.
 - **Safe Volume Mounting and Unmounting ([EncryptedVolumeManager.swift](Quiper/Components/EncryptedVolumeManager.swift))**: Added tracking of active mount/unmount operations to prevent concurrent races, and implemented automatic cleanup/retry logic when a mount point reports "resource busy".
 - **Lock Overlay Double-click Safeguards ([LockOverlayView.swift](Quiper/Components/LockOverlayView.swift))**: Added state checks to prevent spawning duplicate biometric or password fallback authentication prompts when clicking the unlock action multiple times.
 

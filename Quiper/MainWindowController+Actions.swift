@@ -4,6 +4,28 @@ import WebKit
 extension MainWindowController {
     
     // MARK: - Actions & Menus
+
+    func configureHUDPanel(_ panel: NSPanel, parentWindow: NSWindow) {
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = parentWindow.level
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+    }
+
+    func raiseHUDWindow(_ hudWindow: NSWindow?) {
+        guard let parentWindow = window, let hudWindow = hudWindow, hudWindow.isVisible else { return }
+        hudWindow.level = parentWindow.level
+        parentWindow.addChildWindow(hudWindow, ordered: .above)
+        hudWindow.orderFront(nil)
+    }
+
+    func raiseVisibleHUDs() {
+        raiseHUDWindow(tabHistoryHUDWindow)
+        raiseHUDWindow(promptHistoryHUDWindow)
+        raiseHUDWindow(modifierHUDWindow)
+    }
     
     @objc func sessionActionsButtonTapped(_ sender: NSButton) {
         GhostOnboardingManager.shared.advanceFromMenuClick()
@@ -29,10 +51,7 @@ extension MainWindowController {
                 backing: .buffered,
                 defer: false
             )
-            panel.isOpaque = false
-            panel.backgroundColor = .clear
-            panel.hasShadow = true
-            panel.level = .floating
+            configureHUDPanel(panel, parentWindow: parentWindow)
             
             let hud = PromptHistoryHUDView(frame: panel.contentView?.bounds ?? .zero, windowController: self)
             hud.autoresizingMask = [.width, .height]
@@ -46,6 +65,7 @@ extension MainWindowController {
         
         alignHUDWindow(promptHistoryHUDWindow, width: 520, height: 480)
         promptHistoryHUDWindow?.orderFront(nil)
+        raiseHUDWindow(promptHistoryHUDWindow)
         promptHistoryHUDView?.show()
     }
 
@@ -325,6 +345,12 @@ extension MainWindowController {
             .scrollWheel, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged
         ]) { [weak self] event in
             self?.lastActivityTime = Date()
+            if event.type == .leftMouseDown || event.type == .rightMouseDown {
+                Task { @MainActor [weak self] in
+                    guard let self = self, event.window === self.window else { return }
+                    self.raiseVisibleHUDs()
+                }
+            }
             return event
         }
         

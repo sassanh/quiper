@@ -171,13 +171,15 @@ final class PromptHistoryHUDView: NSView {
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
+        scrollView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(scrollView)
         
         stackView.orientation = .vertical
         stackView.spacing = 6
-        stackView.alignment = .leading
+        stackView.alignment = .width
         stackView.distribution = .fill
+        stackView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         stackView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = stackView
         
@@ -275,6 +277,7 @@ final class PromptHistoryHUDView: NSView {
             row.onCopy = { [weak self, entry] in
                 self?.copyEntryText(entry)
             }
+            row.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             row.translatesAutoresizingMaskIntoConstraints = false
             row.heightAnchor.constraint(equalToConstant: 52).isActive = true
             
@@ -1229,6 +1232,8 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         textLabel.cell?.lineBreakMode = .byTruncatingTail
         textLabel.cell?.usesSingleLineMode = true
         textLabel.cell?.wraps = false
+        textLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        textLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(textLabel)
         
@@ -1241,6 +1246,8 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         timeLabel.isSelectable = false
         timeLabel.cell?.lineBreakMode = .byTruncatingTail
         timeLabel.cell?.usesSingleLineMode = true
+        timeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        timeLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         timeLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(timeLabel)
         

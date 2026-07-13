@@ -227,10 +227,7 @@ extension MainWindowController {
                 backing: .buffered,
                 defer: false
             )
-            panel.isOpaque = false
-            panel.backgroundColor = .clear
-            panel.hasShadow = true
-            panel.level = .floating
+            configureHUDPanel(panel, parentWindow: parentWindow)
             
             let hud = ModifierHUDView(frame: panel.contentView?.bounds ?? .zero, windowController: self)
             hud.autoresizingMask = [.width, .height]
@@ -244,6 +241,7 @@ extension MainWindowController {
         
         alignHUDWindow(modifierHUDWindow, width: 492, height: 465)
         modifierHUDWindow?.orderFront(nil)
+        raiseHUDWindow(modifierHUDWindow)
         modifierHUDView?.show()
     }
     
@@ -591,10 +589,7 @@ extension MainWindowController {
                 backing: .buffered,
                 defer: false
             )
-            panel.isOpaque = false
-            panel.backgroundColor = .clear
-            panel.hasShadow = true
-            panel.level = .floating
+            configureHUDPanel(panel, parentWindow: parentWindow)
             
             let hud = TabHistoryHUDView(frame: panel.contentView?.bounds ?? .zero, windowController: self)
             hud.autoresizingMask = [.width, .height]
@@ -610,6 +605,7 @@ extension MainWindowController {
         updateHUDWindowFrame()
         
         tabHistoryHUDWindow?.orderFront(nil)
+        raiseHUDWindow(tabHistoryHUDWindow)
         tabHistoryHUDView?.isHidden = false
     }
     
