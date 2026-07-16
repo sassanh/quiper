@@ -18,8 +18,72 @@ permissions:
   attestations: write
 
 jobs:
+  nightly-preflight:
+    name: Nightly Preflight
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Check if nightly build is needed
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "Non-scheduled workflow (${{ github.event_name }}). Proceeding with build."
+            echo "should_run=true" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LATEST=$(gh release list --limit 50 --json tagName,publishedAt,body \
+            --jq '[.[] | select(.tagName | startswith("nightly-"))][0]')
+
+          if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
+            echo "No previous nightly release found. Proceeding with build."
+            echo "should_run=true" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BODY=$(echo "$LATEST" | jq -r '.body // ""')
+          PUBLISHED_AT=$(echo "$LATEST" | jq -r '.publishedAt')
+          TAG=$(echo "$LATEST" | jq -r '.tagName')
+
+          LAST_SHA=$(echo "$BODY" | grep -oE '<!-- Commit: [a-f0-9]+ -->' | head -1 | sed 's/<!-- Commit: //;s/ -->//' || true)
+          if [ -z "$LAST_SHA" ]; then
+            LAST_SHA=$(echo "$BODY" | grep -oE 'Commit: [a-f0-9]+' | head -1 | sed 's/Commit: //' || true)
+          fi
+
+          PUBLISHED_EPOCH=$(date -d "$PUBLISHED_AT" +%s)
+          NOW_EPOCH=$(date +%s)
+          AGE_HOURS=$(( (NOW_EPOCH - PUBLISHED_EPOCH) / 3600 ))
+
+          HAS_CHANGES=true
+          if [ -n "$LAST_SHA" ] && [ "$LAST_SHA" = "$CURRENT_SHA" ]; then
+            HAS_CHANGES=false
+          fi
+
+          if [ "$HAS_CHANGES" = "true" ]; then
+            echo "Changes detected since last nightly ($TAG). Proceeding."
+            echo "should_run=true" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$AGE_HOURS" -lt 72 ]; then
+            echo "No changes since last nightly ($TAG @ $LAST_SHA) and last release was ${AGE_HOURS}h ago (< 72h). Skipping."
+            echo "should_run=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "No changes since last nightly, but last release was ${AGE_HOURS}h ago (>= 72h). Proceeding with periodic rebuild."
+          echo "should_run=true" >>"$GITHUB_OUTPUT"
+
   tests:
     name: Tests
+    needs: nightly-preflight
+    if: needs.nightly-preflight.outputs.should_run == 'true'
     runs-on: macos-26
     environment:
       name: test
@@ -68,10 +132,15 @@ jobs:
     needs: tests
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-tags: true
       - name: Set release app version
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
-          VERSION_BASE=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+          VERSION_BASE=$(git tag -l 'v*' --sort=-v:refname | head -1 | sed 's/^v//')
+          if [ -z "$VERSION_BASE" ]; then
+            VERSION_BASE=$(grep -m1 'MARKETING_VERSION = ' Quiper.xcodeproj/project.pbxproj | sed -E 's/.*MARKETING_VERSION = ([^;]+);/\1/' | tr -d ' ')
+          fi
           SUFFIX=$(if [ "${{ github.event_name }}" == "schedule" ]; then echo "nightly"; else echo "beta"; fi)
           # Clean version base to prevent duplicate suffixes (e.g. beta-beta or nightly-nightly)
           CLEAN_BASE=$(echo "$VERSION_BASE" | sed "s/-$SUFFIX//g; s/$SUFFIX//g")
@@ -241,6 +310,7 @@ jobs:
           Commit: $SHA
 
           ⚠️ This is a pre-release build for testing purposes only.
+          <!-- Commit: $SHA -->
           <!-- BuildNumber: $RUN_NUMBER -->
           EOF
       - name: Create Nightly Pre-release
@@ -251,6 +321,19 @@ jobs:
             --title "Quiper Nightly Build (${{ steps.tag.outputs.tag }})" \
             --notes-file release_notes.md \
             --prerelease
+      - name: Delete previous nightly releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          gh release list --limit 200 --json tagName \
+            --jq '.[].tagName | select(startswith("nightly-"))' \
+          | while IFS= read -r tag; do
+              [ -z "$tag" ] && continue
+              [ "$tag" = "$CURRENT_TAG" ] && continue
+              echo "Deleting old nightly release: $tag"
+              gh release delete "$tag" --yes --cleanup-tag
+            done
 
   beta-release:
     if: github.event_name == 'workflow_dispatch'

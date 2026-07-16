@@ -19,6 +19,22 @@ detect_version() {
         return
     fi
 
+    local latest_tag
+    latest_tag=$(git tag -l 'v*' --sort=-v:refname | head -1 | sed 's/^v//')
+    if [ -n "$latest_tag" ]; then
+        echo "$latest_tag"
+        return
+    fi
+
+    if [ -f Quiper.xcodeproj/project.pbxproj ]; then
+        local marketing_version
+        marketing_version=$(grep -m1 'MARKETING_VERSION = ' Quiper.xcodeproj/project.pbxproj | sed -E 's/.*MARKETING_VERSION = ([^;]+);/\1/' | tr -d ' ')
+        if [ -n "$marketing_version" ]; then
+            echo "$marketing_version"
+            return
+        fi
+    fi
+
     echo "0.0.0"
 }
 
