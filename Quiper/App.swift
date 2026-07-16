@@ -1,9 +1,10 @@
 import AppKit
+import Carbon
 import Foundation
-import WebKit
+import LocalAuthentication
 import SwiftUI
 import UserNotifications
-import Carbon
+import WebKit
 
 extension Notification.Name {
     static let inspectorVisibilityChanged = Notification.Name("InspectorVisibilityChanged")
@@ -108,6 +109,7 @@ final class AppController: NSObject, NSWindowDelegate {
         registerEngineHotkeys()
         UpdateManager.shared.handleLaunchIfNeeded()
         presentTemplateActionSyncMigrationPromptIfNeeded()
+        presentSparseBundleMigrationPromptIfNeeded()
     }
 
     private func presentTemplateActionSyncMigrationPromptIfNeeded() {
@@ -130,6 +132,80 @@ final class AppController: NSObject, NSWindowDelegate {
             Settings.shared.resolveTemplateActionSyncMigration(updateScripts: shouldUpdate)
             self.reloadServices()
         }
+    }
+    
+    private func presentSparseBundleMigrationPromptIfNeeded() {
+        guard Settings.shared.needsSparseBundleMigrationPrompt,
+              !Self.isRunningTests else {
+            return
+        }
+        
+        DispatchQueue.main.async {
+            guard Settings.shared.needsSparseBundleMigrationPrompt else { return }
+            
+            let legacyCount = Settings.shared.services.filter {
+                $0.isEncrypted
+                    && EncryptedVolumeManager.shared.bundleExists(for: $0.id)
+                    && !$0.usesDiskutilSparseBundle
+            }.count
+            
+            guard legacyCount > 0 else { return }
+            
+            NSApp.activate(ignoringOtherApps: true)
+            
+            let alert = MigrationAlertPresenter.launchUpgradePrompt(legacyCount: legacyCount)
+            guard MigrationAlertPresenter.runPrimaryAction(alert) else { return }
+            
+            Task { @MainActor in
+                await self.runSparseBundleMigrationForAllLegacyEngines()
+            }
+        }
+    }
+    
+    @MainActor
+    private func runSparseBundleMigrationForAllLegacyEngines() async {
+        SecureDataMigrationManager.shared.isMigrationPending = true
+        let progressPanel = MigrationProgressPanel()
+        progressPanel.show()
+        progressPanel.updateStatus("Authenticating...")
+        
+        defer {
+            progressPanel.close()
+            SecureDataMigrationManager.shared.isMigrationPending = false
+        }
+        
+        let authContext = LAContext()
+        do {
+            try await authContext.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: "Authorize upgrading secure engine storage"
+            )
+        } catch {
+            MigrationAlertPresenter.authenticationRequired(message: error.localizedDescription).runModal()
+            return
+        }
+        
+        let legacyServices = Settings.shared.services.filter {
+            $0.isEncrypted
+                && EncryptedVolumeManager.shared.bundleExists(for: $0.id)
+                && !$0.usesDiskutilSparseBundle
+        }
+        
+        var result = SparseBundleMigrationResult()
+        for service in legacyServices {
+            progressPanel.updateStatus("Upgrading \(service.name)...")
+            do {
+                let passphrase = try await SecureStorageManager.shared.retrieveKeyFromKeychain(for: service.id, context: authContext)
+                try await SparseBundleMigrationManager.shared.migrateEngine(serviceID: service.id, passphrase: passphrase, context: authContext)
+                result.migrated.append(service.id)
+            } catch {
+                result.failed.append((service.id, error.localizedDescription))
+            }
+        }
+        
+        reloadServices()
+        
+        MigrationAlertPresenter.batchCompletion(result: result).runModal()
     }
 
     #if DEBUG

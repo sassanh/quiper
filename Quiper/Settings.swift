@@ -39,6 +39,8 @@ struct Service: Codable, Identifiable {
     var iconBase64: String?
     var iconManuallyUnset: Bool?
     var isEncrypted: Bool = false
+    /// True once this engine's sparsebundle was created or migrated with diskutil.
+    var usesDiskutilSparseBundle: Bool = false
     var lockOnSwitchAway: Bool = true
     var lockAfterInactivity: Bool = false
     var autoLockInactivityTimeout: Int = 5
@@ -59,6 +61,7 @@ struct Service: Codable, Identifiable {
         case iconBase64
         case iconManuallyUnset
         case isEncrypted
+        case usesDiskutilSparseBundle
         case lockOnSwitchAway
         case lockAfterInactivity
         case autoLockInactivityTimeout
@@ -78,6 +81,7 @@ struct Service: Codable, Identifiable {
          iconBase64: String? = nil,
          iconManuallyUnset: Bool? = nil,
          isEncrypted: Bool = false,
+         usesDiskutilSparseBundle: Bool = false,
          lockOnSwitchAway: Bool = true,
          lockAfterInactivity: Bool = false,
          autoLockInactivityTimeout: Int = 5,
@@ -94,6 +98,7 @@ struct Service: Codable, Identifiable {
         self.iconBase64 = iconBase64
         self.iconManuallyUnset = iconManuallyUnset
         self.isEncrypted = isEncrypted
+        self.usesDiskutilSparseBundle = usesDiskutilSparseBundle
         self.lockOnSwitchAway = lockOnSwitchAway
         self.lockAfterInactivity = lockAfterInactivity
         self.autoLockInactivityTimeout = autoLockInactivityTimeout
@@ -148,6 +153,7 @@ struct Service: Codable, Identifiable {
         iconBase64 = try container.decodeIfPresent(String.self, forKey: .iconBase64)
         iconManuallyUnset = try container.decodeIfPresent(Bool.self, forKey: .iconManuallyUnset)
         isEncrypted = try container.decodeIfPresent(Bool.self, forKey: .isEncrypted) ?? false
+        usesDiskutilSparseBundle = try container.decodeIfPresent(Bool.self, forKey: .usesDiskutilSparseBundle) ?? false
         
         let switchAway = try container.decodeIfPresent(Bool.self, forKey: .lockOnSwitchAway)
         let inactivity = try container.decodeIfPresent(Bool.self, forKey: .lockAfterInactivity)
@@ -193,6 +199,9 @@ struct Service: Codable, Identifiable {
             try container.encode(iconManuallyUnset, forKey: .iconManuallyUnset)
         }
         try container.encode(isEncrypted, forKey: .isEncrypted)
+        if usesDiskutilSparseBundle {
+            try container.encode(usesDiskutilSparseBundle, forKey: .usesDiskutilSparseBundle)
+        }
         try container.encode(lockOnSwitchAway, forKey: .lockOnSwitchAway)
         try container.encode(lockAfterInactivity, forKey: .lockAfterInactivity)
         try container.encode(autoLockInactivityTimeout, forKey: .autoLockInactivityTimeout)
@@ -2081,6 +2090,7 @@ class Settings: ObservableObject {
     private var isPerformingWipe = false
     private var suppressQuiperVersionPersistence = false
     private(set) var needsTemplateActionSyncMigrationPrompt = false
+    private(set) var needsSparseBundleMigrationPrompt = false
 
     init() {
         _ = loadSettings()
@@ -2191,6 +2201,9 @@ class Settings: ObservableObject {
         persistedTabState = persisted.persistedTabState
         tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2
         needsTemplateActionSyncMigrationPrompt = loadedWithoutQuiperVersion && hasTemplateActionScriptMigrationCandidates()
+        needsSparseBundleMigrationPrompt =
+            services.contains(where: { $0.isEncrypted })
+            && EncryptedVolumeManager.shared.hasAnyLegacyBundles(in: services)
         suppressQuiperVersionPersistence = needsTemplateActionSyncMigrationPrompt
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
@@ -2418,7 +2431,7 @@ class Settings: ObservableObject {
     private func persistedQuiperVersionForSave() -> String? {
         suppressQuiperVersionPersistence ? nil : Bundle.main.versionDisplayString
     }
-
+    
     private func hasTemplateActionScriptMigrationCandidates() -> Bool {
         for service in services {
             if customActions.contains(where: { isTemplateActionScript(service, action: $0) }) {

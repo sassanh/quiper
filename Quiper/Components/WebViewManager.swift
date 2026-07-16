@@ -964,12 +964,30 @@ final class WebViewManager: NSObject {
                     overlay.startLoading()
                     
                     NSLog("[LockOverlay] All references valid, starting Task")
-                    Task {
+                    Task { @MainActor in
                         do {
                             overlay.updateStatus("Authenticating...")
                             NSLog("[LockOverlay] Retrieving key from Keychain for service %@", serviceId.uuidString)
                             let key = try await SecureStorageManager.shared.retrieveKeyFromKeychain(for: serviceId, context: context)
                             NSLog("[LockOverlay] Key retrieved successfully")
+                            
+                            let needsMigration = service.isEncrypted
+                                && EncryptedVolumeManager.shared.bundleExists(for: serviceId)
+                                && !service.usesDiskutilSparseBundle
+                            if needsMigration {
+                                let shouldMigrate = await SparseBundleMigrationManager.shared.presentPerEngineMigrationPrompt(
+                                    engineName: service.name,
+                                    relativeTo: wrapperView.window
+                                )
+                                if shouldMigrate {
+                                    overlay.updateStatus("Upgrading secure storage...")
+                                    try await SparseBundleMigrationManager.shared.migrateEngine(
+                                        serviceID: serviceId,
+                                        passphrase: key,
+                                        context: context
+                                    )
+                                }
+                            }
                             
                             overlay.updateStatus("Mounting encrypted volume...")
                             if !EncryptedVolumeManager.shared.bundleExists(for: serviceId) {
