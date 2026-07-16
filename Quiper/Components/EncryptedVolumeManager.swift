@@ -167,6 +167,8 @@ final class EncryptedVolumeManager {
         if markAsDiskutilFormat {
             markUsesDiskutilSparseBundle(serviceID)
         }
+
+        ensureSpotlightExclusion(for: serviceID, includeMountPoint: false)
     }
     
     /// Mounts the encrypted sparsebundle using the passphrase.
@@ -266,7 +268,29 @@ final class EncryptedVolumeManager {
             try? fileManager.removeItem(at: tempBackupURL)
         }
         
+        ensureSpotlightExclusion(for: serviceID, includeMountPoint: true)
         markUnlocked(serviceID)
+    }
+
+    /// Applies Spotlight indexing exclusions to all engines that already use secure storage.
+    func applySpotlightExclusionToAllSecuredEngines() {
+        for service in Settings.shared.services where service.isEncrypted {
+            ensureSpotlightExclusion(for: service.id, includeMountPoint: isMounted(for: service.id))
+        }
+    }
+
+    private func ensureSpotlightExclusion(for serviceID: UUID, includeMountPoint: Bool) {
+        let bundleURL = getBundleURL(for: serviceID)
+        SpotlightExclusion.ensureExcluded(at: bundleURL.deletingLastPathComponent())
+
+        if bundleExists(for: serviceID) {
+            SpotlightExclusion.ensureExcluded(at: bundleURL)
+        }
+
+        guard includeMountPoint else { return }
+
+        let mountPointURL = getMountPointURL(for: serviceID)
+        SpotlightExclusion.ensureExcluded(at: mountPointURL)
     }
     
     /// Unmounts the volume

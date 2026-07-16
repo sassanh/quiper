@@ -787,6 +787,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Asynchronously scan and clean up orphaned persistent WebKit cache directories
         WebKitCacheCleaner.cleanOrphanedStores()
 
+        EncryptedVolumeManager.shared.applySpotlightExclusionToAllSecuredEngines()
+
         // Show the window if the user launched the app intentionally (double-click, Spotlight, etc.)
         // but stay hidden if launched automatically by a LaunchAgent at system boot (parent is launchd, pid 1)
         if !isAutoLaunch {
