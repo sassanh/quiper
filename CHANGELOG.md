@@ -2,15 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Secure Storage Format Migration ([SparseBundleMigrationManager.swift](Quiper/Components/SparseBundleMigrationManager.swift), [App.swift](Quiper/App.swift), [WebViewManager.swift](Quiper/Components/WebViewManager.swift))**: Added a one-time upgrade path from legacy `hdiutil` sparse bundles to modern `diskutil` storage. Users with legacy secured engines see a launch prompt to upgrade all of them; unlocking a legacy engine also offers a per-engine upgrade. Migration backs up session data, recreates the encrypted volume with the same Keychain passphrase, restores data, verifies the result, and rolls back on failure.
+
 ### Changed
 
-- **Encrypted Volume Management ([EncryptedVolumeManager.swift](Quiper/Components/EncryptedVolumeManager.swift), [App.swift](Quiper/App.swift))**: Migrated secure volume attach and eject operations from `hdiutil` to `diskutil` for improved compatibility and reliability.
+- **Encrypted Volume Management ([EncryptedVolumeManager.swift](Quiper/Components/EncryptedVolumeManager.swift))**: New secure volumes are created with `diskutil image create`. Mount operations route by bundle format: legacy bundles use `hdiutil attach` until migrated; modern bundles use `diskutil image attach`. Volume eject continues to use `diskutil eject`.
 
 ### Fixed
 
 - **HUD Overlay Behavior ([PromptHistoryHUDView.swift](Quiper/Components/PromptHistoryHUDView.swift), [MainWindowController+Actions.swift](Quiper/MainWindowController+Actions.swift), [MainWindowController+InputHandling.swift](Quiper/MainWindowController+InputHandling.swift), [MainWindowController.swift](Quiper/MainWindowController.swift))**: Fixed long prompt history entries widening the Prompt History HUD instead of truncating, and kept Prompt History, Control Center, and Tab History HUDs ordered above the main window when it is clicked.
 - **Safe Volume Mounting and Unmounting ([EncryptedVolumeManager.swift](Quiper/Components/EncryptedVolumeManager.swift))**: Added tracking of active mount/unmount operations to prevent concurrent races, and implemented automatic cleanup/retry logic when a mount point reports "resource busy".
 - **Lock Overlay Double-click Safeguards ([LockOverlayView.swift](Quiper/Components/LockOverlayView.swift))**: Added state checks to prevent spawning duplicate biometric or password fallback authentication prompts when clicking the unlock action multiple times.
+- **Secure Storage Unlock Regression ([EncryptedVolumeManager.swift](Quiper/Components/EncryptedVolumeManager.swift), [LockOverlayView.swift](Quiper/Components/LockOverlayView.swift))**: Fixed false "Incorrect passphrase" errors after successful Touch ID authentication by routing legacy and modern sparse bundles to the correct mount tool. The lock overlay now clears the biometric success state when mount or migration fails.
 
 
 ## [4.4.1] - 2026-07-06

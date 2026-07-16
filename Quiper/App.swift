@@ -1,9 +1,10 @@
 import AppKit
+import Carbon
 import Foundation
-import WebKit
+import LocalAuthentication
 import SwiftUI
 import UserNotifications
-import Carbon
+import WebKit
 
 extension Notification.Name {
     static let inspectorVisibilityChanged = Notification.Name("InspectorVisibilityChanged")
@@ -108,6 +109,7 @@ final class AppController: NSObject, NSWindowDelegate {
         registerEngineHotkeys()
         UpdateManager.shared.handleLaunchIfNeeded()
         presentTemplateActionSyncMigrationPromptIfNeeded()
+        presentSparseBundleMigrationPromptIfNeeded()
     }
 
     private func presentTemplateActionSyncMigrationPromptIfNeeded() {
@@ -130,6 +132,112 @@ final class AppController: NSObject, NSWindowDelegate {
             Settings.shared.resolveTemplateActionSyncMigration(updateScripts: shouldUpdate)
             self.reloadServices()
         }
+    }
+    
+    private func presentSparseBundleMigrationPromptIfNeeded() {
+        guard Settings.shared.needsSparseBundleMigrationPrompt,
+              !Self.isRunningTests else {
+            return
+        }
+        
+        DispatchQueue.main.async {
+            guard Settings.shared.needsSparseBundleMigrationPrompt else { return }
+            
+            let legacyCount = Settings.shared.services.filter {
+                $0.isEncrypted
+                    && EncryptedVolumeManager.shared.bundleExists(for: $0.id)
+                    && !$0.usesDiskutilSparseBundle
+            }.count
+            
+            guard legacyCount > 0 else { return }
+            
+            NSApp.activate(ignoringOtherApps: true)
+            
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.messageText = "Upgrade Secure Storage?"
+            alert.informativeText = "Quiper is updating how encrypted engine data is stored. Your login sessions and cookies will be preserved. This one-time upgrade takes a moment for each secured engine (\(legacyCount) total)."
+            alert.addButton(withTitle: "Upgrade Now")
+            alert.addButton(withTitle: "Later")
+            
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            
+            Task { @MainActor in
+                await self.runSparseBundleMigrationForAllLegacyEngines()
+            }
+        }
+    }
+    
+    @MainActor
+    private func runSparseBundleMigrationForAllLegacyEngines() async {
+        SecureDataMigrationManager.shared.isMigrationPending = true
+        let progressPanel = MigrationProgressPanel()
+        progressPanel.show()
+        progressPanel.updateStatus("Authenticating...")
+        
+        defer {
+            progressPanel.close()
+            SecureDataMigrationManager.shared.isMigrationPending = false
+        }
+        
+        let authContext = LAContext()
+        do {
+            try await authContext.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: "Authorize upgrading secure engine storage"
+            )
+        } catch {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Authentication Required"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+            return
+        }
+        
+        let legacyServices = Settings.shared.services.filter {
+            $0.isEncrypted
+                && EncryptedVolumeManager.shared.bundleExists(for: $0.id)
+                && !$0.usesDiskutilSparseBundle
+        }
+        
+        var result = SparseBundleMigrationResult()
+        for service in legacyServices {
+            progressPanel.updateStatus("Upgrading \(service.name)...")
+            do {
+                let passphrase = try await SecureStorageManager.shared.retrieveKeyFromKeychain(for: service.id, context: authContext)
+                try await SparseBundleMigrationManager.shared.migrateEngine(serviceID: service.id, passphrase: passphrase, context: authContext)
+                result.migrated.append(service.id)
+            } catch {
+                result.failed.append((service.id, error.localizedDescription))
+            }
+        }
+        
+        reloadServices()
+        
+        let completionAlert = NSAlert()
+        if result.failed.isEmpty {
+            completionAlert.alertStyle = .informational
+            completionAlert.messageText = "Secure Storage Upgraded"
+            completionAlert.informativeText = "All secured engines were upgraded successfully."
+        } else if result.migrated.isEmpty {
+            completionAlert.alertStyle = .critical
+            completionAlert.messageText = "Upgrade Failed"
+            let details = result.failed.compactMap { id, message -> String? in
+                guard let name = Settings.shared.services.first(where: { $0.id == id })?.name else { return nil }
+                return "\(name): \(message)"
+            }.joined(separator: "\n")
+            completionAlert.informativeText = details.isEmpty ? "No engines could be upgraded." : details
+        } else {
+            completionAlert.alertStyle = .warning
+            completionAlert.messageText = "Upgrade Partially Completed"
+            let failedNames = result.failed.compactMap { id, message -> String? in
+                guard let name = Settings.shared.services.first(where: { $0.id == id })?.name else { return nil }
+                return "\(name): \(message)"
+            }.joined(separator: "\n")
+            completionAlert.informativeText = "Some engines were upgraded. These still need attention:\n\(failedNames)"
+        }
+        completionAlert.runModal()
     }
 
     #if DEBUG

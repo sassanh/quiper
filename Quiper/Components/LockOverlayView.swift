@@ -421,6 +421,7 @@ final class LockOverlayView: NSView {
     func showError(_ error: String) {
         isUnlockInProgress = false
         stopLoading()
+        releaseBiometrics()
         errorDetailsLabel.stringValue = error
         errorContainer.isHidden = false
     }
@@ -428,6 +429,7 @@ final class LockOverlayView: NSView {
     @objc private func usePasswordClicked() {
         guard !isUnlockInProgress else { return }
         isUnlockInProgress = true
+        errorContainer.isHidden = true
         NSLog("[LockOverlay] usePasswordClicked fired - spawning dedicated fallback context")
         let fallbackContext = LAContext()
         self.activeFallbackContext = fallbackContext
