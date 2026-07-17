@@ -1133,7 +1133,8 @@ class Settings: ObservableObject {
         Service(
             name: "ChatGPT",
             url: "https://chatgpt.com?referrer=https://github.io/sassanh/quiper",
-            focus_selector: ".ProseMirror[role='textbox']",
+            // Prefer the stable prompt id; keep ProseMirror/role fallbacks for older markup.
+            focus_selector: "#prompt-textarea, .ProseMirror[role='textbox'], div[contenteditable='true'][role='textbox']",
             actionScripts: [
                 Settings.newSessionActionID: """
                 \(Settings.defaultActionScriptHelpers)
@@ -1260,13 +1261,25 @@ class Settings: ObservableObject {
                 """,
                 Settings.historyActionID: """
                 \(Settings.defaultActionScriptHelpers)
+                function chatGPTInViewport(element) {
+                  if (!element || !quiperIsVisible(element)) { return false; }
+                  const rect = element.getBoundingClientRect();
+                  return rect.width > 0 &&
+                    rect.height > 0 &&
+                    rect.bottom > 0 &&
+                    rect.top < window.innerHeight &&
+                    rect.right > 0 &&
+                    rect.left < window.innerWidth;
+                }
+
                 function chatGPTSearchInput() {
                   return quiperElements([
                     "input[placeholder*='Search chats']",
                     "input[aria-label*='Search chats']",
-                    "input[type='search']"
+                    "input[type='search']",
+                    "input[placeholder*='Search']"
                   ]).find((input) => {
-                    if (!quiperIsVisible(input)) { return false; }
+                    if (!chatGPTInViewport(input)) { return false; }
                     const label = [
                       input.getAttribute("placeholder"),
                       input.getAttribute("aria-label"),
@@ -1284,6 +1297,60 @@ class Settings: ObservableObject {
                     input.parentElement;
                 }
 
+                function chatGPTSearchLoginWallOpen() {
+                  // Logged-out search opens a "Search your chat history" panel instead of an input.
+                  // ChatGPT sometimes mounts this dialog off-screen in constrained windows, so do not
+                  // require in-viewport geometry — data-state/open + copy is the reliable signal.
+                  return quiperElements([
+                    "[role='dialog']",
+                    "[data-radix-popper-content-wrapper]",
+                    "[class*='popover']",
+                    "[class*='modal']"
+                  ]).some((panel) => {
+                    const state = panel.getAttribute("data-state");
+                    if (state && state !== "open") { return false; }
+                    if (!quiperIsVisible(panel) && state !== "open") { return false; }
+                    return /search your chat history|log in to save conversations/i.test(quiperText(panel));
+                  });
+                }
+
+                function chatGPTIsLoggedOut() {
+                  return !!(
+                    quiperFind(["[data-testid='login-button']", "[data-testid='unsupported-nav-login']"]) ||
+                    quiperFindByText(["Log in"])
+                  );
+                }
+
+                async function chatGPTSleep(ms) {
+                  await new Promise((resolve) => setTimeout(resolve, ms));
+                }
+
+                async function chatGPTDismissOverlay() {
+                  document.dispatchEvent(new KeyboardEvent("keydown", {
+                    key: "Escape",
+                    code: "Escape",
+                    keyCode: 27,
+                    which: 27,
+                    bubbles: true
+                  }));
+                  await chatGPTSleep(350);
+                }
+
+                async function chatGPTOpenSearch() {
+                  await quiperOpenDisclosure(
+                    ["button[data-testid='open-sidebar-button']", "button[aria-label='Open sidebar']"],
+                    ["Open sidebar", "Menu"],
+                    ["button[aria-label='Search chats']", "[data-testid='sidebar-search-button']"],
+                    ["Search chats"]
+                  );
+                  await quiperClick(
+                    ["button[aria-label='Search chats']", "[data-testid='sidebar-search-button']"],
+                    ["Search chats"],
+                    "Search chats button not found"
+                  );
+                  await chatGPTSleep(450);
+                }
+
                 const searchInput = chatGPTSearchInput();
                 if (searchInput) {
                   const inputRect = searchInput.getBoundingClientRect();
@@ -1291,10 +1358,10 @@ class Settings: ObservableObject {
                   const panelButtons = searchPanel ? Array.from(searchPanel.querySelectorAll("button")) : [];
                   const closeButton = panelButtons.find((button) => {
                     const text = quiperText(button);
-                    return quiperIsVisible(button) && !quiperIsDisabled(button) &&
+                    return chatGPTInViewport(button) && !quiperIsDisabled(button) &&
                       /^(close|cancel)$/i.test(text);
                   }) || Array.from(document.querySelectorAll("button")).find((button) => {
-                    if (!quiperIsVisible(button) || quiperIsDisabled(button)) { return false; }
+                    if (!chatGPTInViewport(button) || quiperIsDisabled(button)) { return false; }
                     const rect = button.getBoundingClientRect();
                     const verticallyAligned = rect.top < inputRect.bottom + 24 && rect.bottom > inputRect.top - 24;
                     const rightOfInput = rect.left > inputRect.right - 120;
@@ -1303,29 +1370,23 @@ class Settings: ObservableObject {
                   if (closeButton) {
                     await quiperClickElement(closeButton, "Close search button not found");
                   } else {
-                    document.dispatchEvent(new KeyboardEvent("keydown", {
-                      key: "Escape",
-                      code: "Escape",
-                      keyCode: 27,
-                      which: 27,
-                      bubbles: true
-                    }));
+                    await chatGPTDismissOverlay();
                   }
-                  await waitFor(() => !chatGPTSearchInput(), 1500);
+                  await chatGPTSleep(200);
                   return;
                 }
 
-                await quiperOpenDisclosure(
-                  ["button[data-testid='open-sidebar-button']", "button[aria-label='Open sidebar']"],
-                  ["Open sidebar", "Menu"],
-                  ["button[aria-label='Search chats']", "[data-testid='sidebar-search-button']"],
-                  ["Search chats"]
-                );
-                await quiperClick(
-                  ["button[aria-label='Search chats']", "[data-testid='sidebar-search-button']"],
-                  ["Search chats"],
-                  "Search chats button not found"
-                );
+                // Logged-out ChatGPT search is a login wall panel (no search input). Toggle that panel.
+                if (chatGPTIsLoggedOut()) {
+                  if (chatGPTSearchLoginWallOpen()) {
+                    await chatGPTDismissOverlay();
+                    return;
+                  }
+                  await chatGPTOpenSearch();
+                  return;
+                }
+
+                await chatGPTOpenSearch();
                 """
             ],
             routingRules: [

@@ -6,7 +6,7 @@ import WebKit
 #if DEBUG
 @MainActor
 final class TemplateValidationServer {
-    nonisolated static let launchFlag = "--template-validation-server"
+    nonisolated static let launchFlag = Constants.LaunchMode.templateValidationServerFlag
 
     nonisolated private static let validationBundleID = "app.sassanh.quiper.QuiperDev"
     nonisolated private static let portFilename = "quiper-template-validation-port.json"

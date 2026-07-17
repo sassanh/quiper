@@ -95,10 +95,9 @@ final class UpdateManager: NSObject, ObservableObject {
     
     func handleLaunchIfNeeded() {
         let isRunningTests = NSClassFromString("XCTestCase") != nil
-        let isUITesting = CommandLine.arguments.contains("--uitesting")
         
-        // If testing and disabled, return
-        if (isRunningTests || isUITesting) && shouldDisableAutomaticChecksInTests {
+        // If testing / template-validation and disabled, return
+        if (isRunningTests || Constants.LaunchMode.shouldSuppressInterferenceUI) && shouldDisableAutomaticChecksInTests {
             return
         }
         
@@ -445,10 +444,9 @@ final class UpdateManager: NSObject, ObservableObject {
         // If explicitly enabled for testing, always show prompt
         if !shouldDisableAutomaticChecksInTests { return true }
 
-        // If running checks in tests (and not explicitly enabled above), BLOCK prompt
+        // If running checks in tests / template-validation (and not explicitly enabled above), BLOCK prompt
         let isRunningTests = NSClassFromString("XCTestCase") != nil
-        let isUITesting = CommandLine.arguments.contains("--uitesting")
-        if (isRunningTests || isUITesting) {
+        if isRunningTests || Constants.LaunchMode.shouldSuppressInterferenceUI {
             return false
         }
 

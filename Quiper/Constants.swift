@@ -27,6 +27,31 @@ struct Constants {
 
     static let STATUS_ITEM_OBSERVER_CONTEXT = 1
 
+    /// Launch flags and mode checks shared across app entry points.
+    struct LaunchMode {
+        nonisolated static let uiTestingFlag = "--uitesting"
+        nonisolated static let templateValidationServerFlag = "--template-validation-server"
+
+        nonisolated static var arguments: [String] {
+            ProcessInfo.processInfo.arguments
+        }
+
+        nonisolated static var isUITesting: Bool {
+            arguments.contains(uiTestingFlag)
+        }
+
+        nonisolated static var isTemplateValidationServer: Bool {
+            arguments.contains(templateValidationServerFlag)
+        }
+
+        /// Suppress first-run wizard, ghost onboarding tips, automatic update prompts,
+        /// and similar chrome that interferes with automation/lab sessions.
+        /// Does **not** redirect storage paths (that remains `--uitesting`-only).
+        nonisolated static var shouldSuppressInterferenceUI: Bool {
+            isUITesting || isTemplateValidationServer
+        }
+    }
+
     struct Updates {
         static let latestReleaseAPI = URL(string: "https://api.github.com/repos/sassanh/quiper/releases/latest")!
         static let allReleasesAPI = URL(string: "https://api.github.com/repos/sassanh/quiper/releases")!

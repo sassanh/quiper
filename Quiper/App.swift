@@ -114,7 +114,8 @@ final class AppController: NSObject, NSWindowDelegate {
 
     private func presentTemplateActionSyncMigrationPromptIfNeeded() {
         guard Settings.shared.needsTemplateActionSyncMigrationPrompt,
-              !Self.isRunningTests else {
+              !Self.isRunningTests,
+              !Constants.LaunchMode.shouldSuppressInterferenceUI else {
             return
         }
 
@@ -136,7 +137,8 @@ final class AppController: NSObject, NSWindowDelegate {
     
     private func presentSparseBundleMigrationPromptIfNeeded() {
         guard Settings.shared.needsSparseBundleMigrationPrompt,
-              !Self.isRunningTests else {
+              !Self.isRunningTests,
+              !Constants.LaunchMode.shouldSuppressInterferenceUI else {
             return
         }
         
@@ -621,8 +623,9 @@ final class AppController: NSObject, NSWindowDelegate {
     private func registerEngineHotkeys() {
         let overlayHotkey = Settings.shared.hotkeyConfiguration
         var blockedHotkeys: [HotkeyManager.Configuration] = [overlayHotkey]
-        if AppController.isRunningInXcode, HotkeyManager.defaultConfiguration == overlayHotkey {
-            // Xcode fallback registers Ctrl+Space; keep engine hotkeys off it.
+        if (AppController.isRunningInXcode || Constants.LaunchMode.isTemplateValidationServer),
+           HotkeyManager.defaultConfiguration == overlayHotkey {
+            // Dev / template-validation fallback registers Ctrl+Space; keep engine hotkeys off it.
             blockedHotkeys.append(
                 HotkeyManager.Configuration(
                     keyCode: UInt32(kVK_Space),

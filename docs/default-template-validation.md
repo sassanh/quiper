@@ -12,6 +12,21 @@ The bridge starts only when all of these are true:
 
 Production Quiper refuses to start the bridge even if the flag is passed. The bridge has no endpoint for cookies, local storage, full DOM dumps, screenshots, or filesystem access. DOM probes return only bounded metadata such as counts, visibility, short accessible labels/text snippets, URL, title, and focused-element metadata.
 
+## Interference UI suppression
+
+Launching with `--template-validation-server` also suppresses chrome that would block lab work. This reuses `Constants.LaunchMode.shouldSuppressInterferenceUI` and does **not** redirect storage paths (unlike `--uitesting`):
+
+- First-run onboarding wizard
+- Ghost onboarding tip HUD
+- Automatic update checks / update prompt windows
+- Template-action-sync and sparse-bundle migration alerts at launch
+
+You only need the validation flag; do not combine with `--uitesting` unless you intentionally want test storage isolation.
+
+## Overlay hotkey fallback
+
+While the primary global hotkey is still the default **Option+Space**, bridge mode also registers **Control+Space** as a show/hide fallback (same behavior as Xcode/DerivedData debug runs). Engine launch shortcuts are blocked from using Control+Space in that case so they do not collide.
+
 ## Run
 
 Build and launch the Debug app with the validation flag:

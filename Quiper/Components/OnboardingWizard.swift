@@ -52,7 +52,7 @@ public struct OnboardingWizard {
     
     private static var isTesting: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-            || ProcessInfo.processInfo.arguments.contains("--uitesting")
+            || Constants.LaunchMode.shouldSuppressInterferenceUI
     }
     
     @MainActor

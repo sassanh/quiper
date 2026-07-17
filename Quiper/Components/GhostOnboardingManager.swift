@@ -15,11 +15,10 @@ final class GhostOnboardingManager {
     
     func start(in windowController: MainWindowController) {
         let isRunningTests = NSClassFromString("XCTestCase") != nil
-        let isUITesting = CommandLine.arguments.contains("--uitesting")
         let shouldForceOnboarding = CommandLine.arguments.contains("--test-onboarding")
         
-        guard (!isRunningTests && !isUITesting) || shouldForceOnboarding else {
-            NSLog("[GhostOnboardingManager] start ignored: running in test environment")
+        guard (!isRunningTests && !Constants.LaunchMode.shouldSuppressInterferenceUI) || shouldForceOnboarding else {
+            NSLog("[GhostOnboardingManager] start ignored: running in test/validation environment")
             return
         }
         

@@ -148,7 +148,9 @@ final class HotkeyManager {
     }
 
     private func registerDevFallbackHotkeyIfNeeded(for configuration: Configuration) {
-        guard DevEnvironment.isRunningInXcode else {
+        // Ctrl+Space mirrors the overlay toggle while primary is still Option+Space.
+        // Active under Xcode/DerivedData runs and template-validation bridge sessions.
+        guard DevEnvironment.isRunningInXcode || Constants.LaunchMode.isTemplateValidationServer else {
             unregisterDevFallbackHotkey()
             return
         }
@@ -170,6 +172,7 @@ final class HotkeyManager {
         )
         if status == noErr {
             devHotKeyRef = fallbackRef
+            NSLog("[Quiper] Registered Ctrl+Space overlay fallback hotkey")
         }
     }
 
