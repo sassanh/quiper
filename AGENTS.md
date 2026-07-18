@@ -34,6 +34,7 @@
 - Follow the Conventional Commits-style prefixes: `feat:`, `fix:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:`, `build:`, `ci:`, `chore:`, `revert:` (see recent history).
 - Keep subject lines imperative, lowercase, and concise: `feat(ui): add session actions menu`.
 - **Do not pollute commit messages or changelogs with irrelevant technical details. Write clearly and focus strictly on the value delivered to the reader.**
+- **Treat changelog updates as release bookkeeping: include the file when appropriate, but never mention changelog maintenance in a commit subject or body. Describe the user-facing change instead.**
 - Use a bulleted list (`- Details...`) in the body for multiple changes, starting each bullet with a capital letter. **CRITICAL: Do NOT use multiple `-m` flags for bullet points (e.g. `git commit -m "sub" -m "- 1" -m "- 2"`), as this inserts a blank line between every single bullet. Instead, pass the body as a single multiline string or use a temporary file to keep bullet points adjacent.**
 - PRs should summarize behavior change, list manual tests, and note platform (macOS version, Intel/Apple Silicon). Add screenshots or short screen recordings for UI-facing edits and mention if settings schema changes.
 

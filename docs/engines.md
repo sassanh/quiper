@@ -12,7 +12,7 @@ To add or configure an engine:
 3.  Each engine exposes the following properties:
     *   **Name:** The label displayed in the switcher tab (e.g., "ChatGPT").
     *   **URL:** The target web address (e.g., `https://chatgpt.com`).
-    *   **Focus Selector:** The CSS selector identifying the prompt input field.
+    *   **Prompt Input:** The CSS selector identifying the editable prompt field.
     *   **Custom CSS:** Overrides to style the web elements (see the Custom CSS Injection section below).
     *   **Domain Routing Rules:** An ordered list of regex patterns that decide how outbound links from this engine are handled (see below).
     *   **Activation Shortcut:** A dedicated hotkey that summons the window and immediately opens this engine.
@@ -37,7 +37,7 @@ Every engine in your selector bar displays an icon. Quiper provides three ways t
 
 ---
 
-## Focus Selectors Explained
+## Prompt Input Selectors Explained
 
 One of the key usability features in Quiper is **auto-focus**. When you summon the overlay or switch to an engine, Quiper automatically places your keyboard focus inside the text input box so you can start typing immediately without using your mouse.
 
@@ -46,7 +46,7 @@ To do this, Quiper evaluates a short script:
 document.querySelector("[your-focus-selector]")?.focus();
 ```
 
-### Finding the Correct Focus Selector
+### Finding the Correct Prompt Input Selector
 If you add a custom web service and notice that your keyboard focus doesn't land in the input box, you need to find the element's CSS selector:
 1.  Summon the engine inside Quiper.
 2.  Press **`⌘ ⌥ I`** to open the **Web Inspector**.
@@ -54,11 +54,13 @@ If you add a custom web service and notice that your keyboard focus doesn't land
 4.  Hover over the input area on the page and click it.
 5.  In the inspector's HTML structure pane, right-click the highlighted input element (usually a `textarea` or a `div` with `contenteditable="true"`).
 6.  Select **Copy ➔ SelectorPath** (or **Copy ➔ CSS Selector**).
-7.  Paste this string into the **Focus Selector** field in settings.
+7.  Paste this string into the **Prompt Input** field in settings.
+
+For built-in engine templates, enable **Use Latest Default** to follow selector updates bundled with future Quiper versions. Disable it whenever you want to keep an editable custom selector.
 
 ### Default Selectors for Common Services
 
-| Service | Focus Selector |
+| Service | Prompt Input Selector |
 | :--- | :--- |
 | **Gemini** | `rich-textarea .textarea, .textarea, div[contenteditable='true'], textarea` |
 | **Claude** | `[data-testid='chat-input'] div[contenteditable='true'], div[contenteditable='true'], textarea` |
@@ -81,6 +83,8 @@ Since Quiper runs AI interfaces inside `WKWebView` wrappers, you can inject cust
 3.  Scroll down to the **Custom CSS** text box.
 4.  Paste your CSS rules and click **Save**.
 5.  Press **`⌘ R`** to reload the active web view and see your styles applied live.
+
+For built-in engine templates, enable **Use Latest Default** to follow stylesheet updates bundled with future Quiper versions. Disable it to materialize the current default as editable custom CSS.
 
 ### Custom CSS Templates
 Below are ready-to-use CSS configurations to make the backgrounds transparent for the default engines:
@@ -159,7 +163,7 @@ You can easily point Quiper to local web applications running LLM interfaces:
 1.  Ensure your Docker container is running (`http://localhost:8080`).
 2.  Create a new engine in settings.
 3.  Set the URL to: `http://localhost:8080`.
-4.  Set the Focus Selector to: `#chat-input[contenteditable='true']` (or `#chat-input`).
+4.  Set the Prompt Input selector to: `#chat-input[contenteditable='true']` (or `#chat-input`).
 
 ### Ollama / Llama.cpp Web Servers
 *   If you run custom GUI interfaces for Ollama or Llama.cpp (like `llama.cpp/examples/server`), simply set the URL to your local port (e.g. `http://127.0.0.1:8080`) and input the target text input's CSS class or ID.

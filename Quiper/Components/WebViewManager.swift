@@ -461,7 +461,7 @@ final class WebViewManager: NSObject {
     }
 
     private func makeInputStateTrackerScript(for service: Service) -> WKUserScript {
-        let selector = FocusSelectorStorage.loadSelector(serviceID: service.id, fallback: service.focus_selector)
+        let selector = Settings.shared.promptInputSelector(for: service)
         let escapedSelector = selector
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
@@ -1152,7 +1152,7 @@ final class WebViewManager: NSObject {
             config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
         }
 
-        let cssToInject = CustomCSSStorage.loadCSS(serviceID: service.id, fallback: service.customCSS ?? "")
+        let cssToInject = Settings.shared.customCSS(for: service)
         if !cssToInject.isEmpty {
             let cssScript = """
             const style = document.createElement('style');

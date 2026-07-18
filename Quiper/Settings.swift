@@ -46,6 +46,8 @@ struct Service: Codable, Identifiable {
     var autoLockInactivityTimeout: Int = 5
     var preservePrompt: Bool = true
     var templateActionScriptSync: [UUID: Bool] = [:]
+    var templatePromptInputSelectorSync: Bool = false
+    var templateCustomCSSSync: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -68,6 +70,8 @@ struct Service: Codable, Identifiable {
         case autoLockPolicy // Keep for decoding legacy settings
         case preservePrompt
         case templateActionScriptSync
+        case templatePromptInputSelectorSync
+        case templateCustomCSSSync
     }
 
     init(id: UUID = UUID(),
@@ -86,7 +90,9 @@ struct Service: Codable, Identifiable {
          lockAfterInactivity: Bool = false,
          autoLockInactivityTimeout: Int = 5,
          preservePrompt: Bool = true,
-         templateActionScriptSync: [UUID: Bool] = [:]) {
+         templateActionScriptSync: [UUID: Bool] = [:],
+         templatePromptInputSelectorSync: Bool = false,
+         templateCustomCSSSync: Bool = false) {
         self.id = id
         self.name = name
         self.url = url
@@ -104,6 +110,8 @@ struct Service: Codable, Identifiable {
         self.autoLockInactivityTimeout = autoLockInactivityTimeout
         self.preservePrompt = preservePrompt
         self.templateActionScriptSync = templateActionScriptSync
+        self.templatePromptInputSelectorSync = templatePromptInputSelectorSync
+        self.templateCustomCSSSync = templateCustomCSSSync
     }
 
     init(from decoder: Decoder) throws {
@@ -172,6 +180,8 @@ struct Service: Codable, Identifiable {
         autoLockInactivityTimeout = try container.decodeIfPresent(Int.self, forKey: .autoLockInactivityTimeout) ?? 5
         preservePrompt = try container.decodeIfPresent(Bool.self, forKey: .preservePrompt) ?? true
         templateActionScriptSync = try container.decodeIfPresent([UUID: Bool].self, forKey: .templateActionScriptSync) ?? [:]
+        templatePromptInputSelectorSync = try container.decodeIfPresent(Bool.self, forKey: .templatePromptInputSelectorSync) ?? false
+        templateCustomCSSSync = try container.decodeIfPresent(Bool.self, forKey: .templateCustomCSSSync) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -208,6 +218,12 @@ struct Service: Codable, Identifiable {
         try container.encode(preservePrompt, forKey: .preservePrompt)
         if !templateActionScriptSync.isEmpty {
             try container.encode(templateActionScriptSync, forKey: .templateActionScriptSync)
+        }
+        if templatePromptInputSelectorSync {
+            try container.encode(templatePromptInputSelectorSync, forKey: .templatePromptInputSelectorSync)
+        }
+        if templateCustomCSSSync {
+            try container.encode(templateCustomCSSSync, forKey: .templateCustomCSSSync)
         }
     }
 }
@@ -2210,6 +2226,9 @@ class Settings: ObservableObject {
         suppressQuiperVersionPersistence = loadedWithoutQuiperVersion
         
         services = persisted.services
+        if !loadedFromDisk {
+            enableTemplateResourceSyncForBundledServices()
+        }
         let useDefaultActions = !CommandLine.arguments.contains("--no-default-actions")
         customActions = loadedFromDisk ? (persisted.customActions ?? []) : (useDefaultActions ? defaultActions : [])
         updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
@@ -2406,16 +2425,121 @@ class Settings: ObservableObject {
     }
 
     func defaultActionScript(for service: Service, action: CustomAction) -> String? {
-        let serviceName = service.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard let template = defaultServiceTemplates.first(where: {
-            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == serviceName
-        }),
+        guard let template = defaultServiceTemplate(for: service),
               let defaultID = defaultActionID(matching: action.name),
               let script = template.actionScripts[defaultID]?.trimmingCharacters(in: .whitespacesAndNewlines),
               !script.isEmpty else {
             return nil
         }
         return script
+    }
+
+    func defaultPromptInputSelector(for service: Service) -> String? {
+        guard let template = defaultServiceTemplate(for: service) else {
+            return nil
+        }
+        let selector = template.focus_selector.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selector.isEmpty else { return nil }
+        return selector
+    }
+
+    func defaultCustomCSS(for service: Service) -> String? {
+        guard let template = defaultServiceTemplate(for: service),
+              let css = template.customCSS?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !css.isEmpty else {
+            return nil
+        }
+        return css
+    }
+
+    func isTemplatePromptInputSelector(_ service: Service) -> Bool {
+        defaultPromptInputSelector(for: service) != nil
+    }
+
+    func isTemplateCustomCSS(_ service: Service) -> Bool {
+        defaultCustomCSS(for: service) != nil
+    }
+
+    func isTemplatePromptInputSelectorInSync(serviceID: UUID) -> Bool {
+        guard let service = services.first(where: { $0.id == serviceID }) else { return false }
+        return service.templatePromptInputSelectorSync && isTemplatePromptInputSelector(service)
+    }
+
+    func isTemplateCustomCSSInSync(serviceID: UUID) -> Bool {
+        guard let service = services.first(where: { $0.id == serviceID }) else { return false }
+        return service.templateCustomCSSSync && isTemplateCustomCSS(service)
+    }
+
+    func promptInputSelector(for service: Service) -> String {
+        if service.templatePromptInputSelectorSync,
+           let defaultSelector = defaultPromptInputSelector(for: service) {
+            return defaultSelector
+        }
+        return FocusSelectorStorage.loadSelector(
+            serviceID: service.id,
+            fallback: service.focus_selector
+        )
+    }
+
+    func customCSS(for service: Service) -> String {
+        if service.templateCustomCSSSync,
+           let defaultCSS = defaultCustomCSS(for: service) {
+            return defaultCSS
+        }
+        return CustomCSSStorage.loadCSS(
+            serviceID: service.id,
+            fallback: service.customCSS ?? ""
+        )
+    }
+
+    func setTemplatePromptInputSelectorSync(_ isInSync: Bool, serviceID: UUID) {
+        guard let serviceIndex = services.firstIndex(where: { $0.id == serviceID }),
+              let defaultSelector = defaultPromptInputSelector(for: services[serviceIndex]) else {
+            return
+        }
+
+        services[serviceIndex].templatePromptInputSelectorSync = isInSync
+        if isInSync {
+            services[serviceIndex].focus_selector = ""
+            FocusSelectorStorage.deleteSelector(for: serviceID)
+        } else {
+            services[serviceIndex].focus_selector = defaultSelector
+            FocusSelectorStorage.saveSelector(defaultSelector, serviceID: serviceID)
+        }
+        saveSettings()
+    }
+
+    func setTemplateCustomCSSSync(_ isInSync: Bool, serviceID: UUID) {
+        guard let serviceIndex = services.firstIndex(where: { $0.id == serviceID }),
+              let defaultCSS = defaultCustomCSS(for: services[serviceIndex]) else {
+            return
+        }
+
+        services[serviceIndex].templateCustomCSSSync = isInSync
+        if isInSync {
+            services[serviceIndex].customCSS = nil
+            CustomCSSStorage.deleteCSS(for: serviceID)
+        } else {
+            services[serviceIndex].customCSS = defaultCSS
+            CustomCSSStorage.saveCSS(defaultCSS, serviceID: serviceID)
+        }
+        saveSettings()
+    }
+
+    func savePromptInputSelector(_ selector: String, serviceID: UUID) {
+        guard let serviceIndex = services.firstIndex(where: { $0.id == serviceID }) else { return }
+        services[serviceIndex].templatePromptInputSelectorSync = false
+        services[serviceIndex].focus_selector = selector
+        FocusSelectorStorage.saveSelector(selector, serviceID: serviceID)
+        saveSettings()
+    }
+
+    func saveCustomCSS(_ css: String, serviceID: UUID) {
+        guard let serviceIndex = services.firstIndex(where: { $0.id == serviceID }) else { return }
+        services[serviceIndex].templateCustomCSSSync = false
+        services[serviceIndex].customCSS = css
+        CustomCSSStorage.saveCSS(css, serviceID: serviceID)
+        saveSettings()
     }
 
     func isTemplateActionScript(_ service: Service, action: CustomAction) -> Bool {
@@ -2500,6 +2624,29 @@ class Settings: ObservableObject {
             }
         }
         return false
+    }
+
+    private func defaultServiceTemplate(for service: Service) -> Service? {
+        let serviceName = service.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return defaultServiceTemplates.first {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == serviceName
+        }
+    }
+
+    private func enableTemplateResourceSyncForBundledServices() {
+        for serviceIndex in services.indices {
+            let serviceID = services[serviceIndex].id
+            if isTemplatePromptInputSelector(services[serviceIndex]) {
+                services[serviceIndex].templatePromptInputSelectorSync = true
+                services[serviceIndex].focus_selector = ""
+                FocusSelectorStorage.deleteSelector(for: serviceID)
+            }
+            if isTemplateCustomCSS(services[serviceIndex]) {
+                services[serviceIndex].templateCustomCSSSync = true
+                services[serviceIndex].customCSS = nil
+                CustomCSSStorage.deleteCSS(for: serviceID)
+            }
+        }
     }
 
     func deleteScripts(for actionID: UUID) {

@@ -317,7 +317,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func focusInputInActiveWebview() {
         guard !GhostOnboardingManager.shared.isActive else { return }
         guard let service = currentService() else { return }
-        let selector = FocusSelectorStorage.loadSelector(serviceID: service.id, fallback: service.focus_selector)
+        let selector = Settings.shared.promptInputSelector(for: service)
         guard !selector.isEmpty else { return }
         guard let webView = currentWebView() else { return }
         let escapedSelector = escapeForJavaScript(selector)

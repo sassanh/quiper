@@ -632,6 +632,14 @@ struct ServicesSettingsView: View {
         var service = template
         service.id = UUID()
         service.actionScripts = [:]
+        if settings.isTemplatePromptInputSelector(service) {
+            service.templatePromptInputSelectorSync = true
+            service.focus_selector = ""
+        }
+        if settings.isTemplateCustomCSS(service) {
+            service.templateCustomCSSSync = true
+            service.customCSS = nil
+        }
         applyDefaultScripts(from: template, to: &service)
         settings.services.append(service)
         selectedServiceID = service.id
@@ -1082,7 +1090,7 @@ struct ServiceDetailView: View {
                 }
                 
                 Section("Customization") {
-                    Label("Prompt Element", systemImage: "eye.fill")
+                    Label("Prompt Input", systemImage: "character.cursor.ibeam")
                         .tag(DetailSelection.focus)
                     Label("Custom CSS", systemImage: "paintpalette.fill")
                         .tag(DetailSelection.css)
@@ -1150,38 +1158,60 @@ struct ServiceDetailView: View {
     private var focusSelectorForm: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
-                Image(systemName: "eye.fill")
+                Image(systemName: "character.cursor.ibeam")
                     .font(.title2)
-                    .foregroundColor(.accentColor)
-                Text("Prompt Element")
+                    .foregroundColor(.accentColor.settingsResolved)
+                Text("Prompt Input")
                     .font(.title3)
                     .fontWeight(.bold)
             }
             
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("Specify a CSS selector (e.g. input[type='text']) to automatically target and focus a text input whenever this engine launches or gains activation.")
+                    Text("Specify a CSS selector (e.g. input[type='text']) to automatically target and focus the prompt input whenever this engine launches or gains activation.")
                         .font(.body)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if settings.isTemplatePromptInputSelector(service) {
+                        LatestDefaultToggle(
+                            isInSync: settings.isTemplatePromptInputSelectorInSync(serviceID: service.id),
+                            syncedDescription: "This selector follows Quiper's bundled engine template and updates automatically.",
+                            customDescription: "This engine uses a custom editable selector.",
+                            setInSync: { isInSync in
+                                settings.setTemplatePromptInputSelectorSync(isInSync, serviceID: service.id)
+                                refreshServiceBinding()
+                                appController?.reloadServices()
+                            }
+                        )
+                    }
                     
                     HighlightedCodeContainer(
                         code: Binding(
                             get: { loadFocusSelector() },
                             set: { newValue in
-                                service.focus_selector = newValue
-                                FocusSelectorStorage.saveSelector(newValue, serviceID: service.id)
-                                settings.saveSettings()
+                                guard !settings.isTemplatePromptInputSelectorInSync(serviceID: service.id) else {
+                                    return
+                                }
+                                settings.savePromptInputSelector(newValue, serviceID: service.id)
+                                refreshServiceBinding()
                                 appController?.reloadServices()
                             }
                         ),
                         language: "css",
-                        fileName: "focus.txt",
+                        fileName: "prompt-input-selector.txt",
+                        isReadOnly: settings.isTemplatePromptInputSelectorInSync(serviceID: service.id),
                         openInEditor: { openFocusSelectorInEditor() },
                         revealInFinder: { revealFocusSelectorInFinder() },
                         copyFilePath: { copyFocusSelectorFilePath() }
                     )
                     .frame(height: 200)
+
+                    if settings.isTemplatePromptInputSelectorInSync(serviceID: service.id) {
+                        Text("Disable latest default to edit this selector.")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
                     
                     Divider()
                         .padding(.vertical, 8)
@@ -1470,7 +1500,7 @@ struct ServiceDetailView: View {
             HStack(spacing: 8) {
                 Image(systemName: "paintpalette.fill")
                     .font(.title2)
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(.accentColor.settingsResolved)
                 Text("Custom CSS Stylesheet")
                     .font(.title3)
                     .fontWeight(.bold)
@@ -1481,24 +1511,46 @@ struct ServiceDetailView: View {
                     .font(.body)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if settings.isTemplateCustomCSS(service) {
+                    LatestDefaultToggle(
+                        isInSync: settings.isTemplateCustomCSSInSync(serviceID: service.id),
+                        syncedDescription: "This stylesheet follows Quiper's bundled engine template and updates automatically.",
+                        customDescription: "This engine uses a custom editable stylesheet.",
+                        setInSync: { isInSync in
+                            settings.setTemplateCustomCSSSync(isInSync, serviceID: service.id)
+                            refreshServiceBinding()
+                            appController?.reloadServices()
+                        }
+                    )
+                }
                 
                 HighlightedCodeContainer(
                     code: Binding(
                         get: { loadCSS() },
                         set: { newValue in
-                            service.customCSS = newValue
-                            CustomCSSStorage.saveCSS(newValue, serviceID: service.id)
-                            settings.saveSettings()
+                            guard !settings.isTemplateCustomCSSInSync(serviceID: service.id) else {
+                                return
+                            }
+                            settings.saveCustomCSS(newValue, serviceID: service.id)
+                            refreshServiceBinding()
                             appController?.reloadServices()
                         }
                     ),
                     language: "css",
                     fileName: "custom.css",
+                    isReadOnly: settings.isTemplateCustomCSSInSync(serviceID: service.id),
                     openInEditor: { openCSSInEditor() },
                     revealInFinder: { revealCSSInFinder() },
                     copyFilePath: { copyCSSFilePath() }
                 )
                 .frame(maxHeight: .infinity)
+
+                if settings.isTemplateCustomCSSInSync(serviceID: service.id) {
+                    Text("Disable latest default to edit this stylesheet.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
             }
         }
         .padding()
@@ -1971,7 +2023,7 @@ struct ServiceDetailView: View {
     }
 
     private func loadCSS() -> String {
-        CustomCSSStorage.loadCSS(serviceID: service.id, fallback: service.customCSS ?? "")
+        settings.customCSS(for: service)
     }
 
     private func openCSSInEditor() {
@@ -1990,7 +2042,7 @@ struct ServiceDetailView: View {
     }
 
     private func loadFocusSelector() -> String {
-        FocusSelectorStorage.loadSelector(serviceID: service.id, fallback: service.focus_selector)
+        settings.promptInputSelector(for: service)
     }
 
     private func openFocusSelectorInEditor() {
@@ -2008,12 +2060,46 @@ struct ServiceDetailView: View {
         FocusSelectorStorage.copyPath(serviceID: service.id, contents: contents)
     }
 
+    private func refreshServiceBinding() {
+        guard let serviceIndex = settings.services.firstIndex(where: { $0.id == service.id }) else { return }
+        service = settings.services[serviceIndex]
+    }
+
 }
 
 private struct PendingServiceDeletion: Identifiable {
     let id = UUID()
     let ids: [Service.ID]
     let title: String
+}
+
+private struct LatestDefaultToggle: View {
+    var isInSync: Bool
+    var syncedDescription: String
+    var customDescription: String
+    var setInSync: (Bool) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Use Latest Default")
+                    .font(.body)
+                Text(isInSync ? syncedDescription : customDescription)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Toggle("", isOn: Binding(
+                get: { isInSync },
+                set: { setInSync($0) }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .frame(width: 112, height: 32, alignment: .topTrailing)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 }
 
 private struct ActionScriptEditor: View {
@@ -2033,25 +2119,12 @@ private struct ActionScriptEditor: View {
                 .foregroundColor(.secondary)
 
             if isTemplateBacked {
-                HStack(alignment: .top, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Use Latest Default")
-                            .font(.body)
-                        Text(isInSync ? "This action runs Quiper's bundled template script and updates automatically." : "This action uses a custom editable script.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Toggle("", isOn: Binding(
-                        get: { isInSync },
-                        set: { setInSync($0) }
-                    ))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .frame(width: 112, height: 32, alignment: .topTrailing)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                LatestDefaultToggle(
+                    isInSync: isInSync,
+                    syncedDescription: "This action runs Quiper's bundled template script and updates automatically.",
+                    customDescription: "This action uses a custom editable script.",
+                    setInSync: setInSync
+                )
             }
             
             HighlightedCodeContainer(

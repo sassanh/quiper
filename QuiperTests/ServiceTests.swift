@@ -100,6 +100,22 @@ final class ServiceTests: XCTestCase {
 
         XCTAssertEqual(decoded.templateActionScriptSync[actionID], true)
     }
+
+    func testServiceCodableWithTemplateResourceSync() throws {
+        let original = Service(
+            name: "Codable Test",
+            url: "https://test.com",
+            focus_selector: "#input",
+            templatePromptInputSelectorSync: true,
+            templateCustomCSSSync: true
+        )
+
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(Service.self, from: data)
+
+        XCTAssertTrue(decoded.templatePromptInputSelectorSync)
+        XCTAssertTrue(decoded.templateCustomCSSSync)
+    }
     
     func testServiceDecodesWithMissingOptionalFields() throws {
         // Test backward compatibility - old JSON without new fields
@@ -119,6 +135,8 @@ final class ServiceTests: XCTestCase {
         XCTAssertNotNil(service.id) // Should generate new ID
         XCTAssertTrue(service.actionScripts.isEmpty)
         XCTAssertTrue(service.templateActionScriptSync.isEmpty)
+        XCTAssertFalse(service.templatePromptInputSelectorSync)
+        XCTAssertFalse(service.templateCustomCSSSync)
         XCTAssertNil(service.activationShortcut)
     }
 }

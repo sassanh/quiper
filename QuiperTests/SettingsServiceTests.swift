@@ -111,6 +111,60 @@ struct SettingsServiceTests {
         #expect(customService.actionScripts[keepAction.id] == "console.log('old');")
     }
 
+    @Test func templateResources_UseBundledDefaultsAndCustomEditsOptOut() throws {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        guard var selectorService = Settings.shared.defaultServiceTemplates.first(where: {
+            Settings.shared.defaultPromptInputSelector(for: $0) != nil
+        }),
+              let defaultSelector = Settings.shared.defaultPromptInputSelector(for: selectorService) else {
+            Issue.record("Expected a default prompt input selector")
+            return
+        }
+
+        selectorService.id = UUID()
+        selectorService.focus_selector = "#custom-input"
+        selectorService.templatePromptInputSelectorSync = false
+        Settings.shared.services = [selectorService]
+
+        Settings.shared.setTemplatePromptInputSelectorSync(true, serviceID: selectorService.id)
+        let syncedSelectorService = Settings.shared.services[0]
+        #expect(syncedSelectorService.templatePromptInputSelectorSync)
+        #expect(syncedSelectorService.focus_selector.isEmpty)
+        #expect(Settings.shared.promptInputSelector(for: syncedSelectorService) == defaultSelector)
+
+        Settings.shared.savePromptInputSelector("#custom-input", serviceID: selectorService.id)
+        let customSelectorService = Settings.shared.services[0]
+        #expect(!customSelectorService.templatePromptInputSelectorSync)
+        #expect(Settings.shared.promptInputSelector(for: customSelectorService) == "#custom-input")
+
+        guard var cssService = Settings.shared.defaultServiceTemplates.first(where: {
+            Settings.shared.defaultCustomCSS(for: $0) != nil
+        }),
+              let defaultCSS = Settings.shared.defaultCustomCSS(for: cssService) else {
+            Issue.record("Expected default custom CSS")
+            return
+        }
+
+        cssService.id = UUID()
+        cssService.customCSS = "body { color: red; }"
+        cssService.templateCustomCSSSync = false
+        Settings.shared.services = [cssService]
+
+        Settings.shared.setTemplateCustomCSSSync(true, serviceID: cssService.id)
+        let syncedCSSService = Settings.shared.services[0]
+        #expect(syncedCSSService.templateCustomCSSSync)
+        #expect(syncedCSSService.customCSS == nil)
+        #expect(Settings.shared.customCSS(for: syncedCSSService) == defaultCSS)
+
+        Settings.shared.saveCustomCSS("body { color: red; }", serviceID: cssService.id)
+        let customCSSService = Settings.shared.services[0]
+        #expect(!customCSSService.templateCustomCSSSync)
+        #expect(Settings.shared.customCSS(for: customCSSService) == "body { color: red; }")
+    }
+
     private func defaultTemplatePair() -> (service: Service, action: CustomAction, defaultScript: String)? {
         for service in Settings.shared.defaultServiceTemplates {
             for action in Settings.shared.defaultActionTemplates {
