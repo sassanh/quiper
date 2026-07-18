@@ -1,6 +1,10 @@
 import AppKit
 import WebKit
 
+final class InteractiveHUDPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
 extension MainWindowController {
     
     // MARK: - Actions & Menus
@@ -45,7 +49,7 @@ extension MainWindowController {
         cancelHistoryCycling()
         
         if promptHistoryHUDWindow == nil {
-            let panel = NSPanel(
+            let panel = InteractiveHUDPanel(
                 contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
@@ -64,7 +68,7 @@ extension MainWindowController {
         }
         
         alignHUDWindow(promptHistoryHUDWindow, width: 520, height: 480)
-        promptHistoryHUDWindow?.orderFront(nil)
+        promptHistoryHUDWindow?.makeKeyAndOrderFront(nil)
         raiseHUDWindow(promptHistoryHUDWindow)
         promptHistoryHUDView?.show()
     }

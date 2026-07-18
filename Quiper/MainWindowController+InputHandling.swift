@@ -98,7 +98,13 @@ extension MainWindowController {
     var hasModalWindow: Bool {
         let mainWindow = window
         return mainWindow?.attachedSheet != nil
-            || NSApp.windows.contains { $0 !== mainWindow && $0.isVisible && $0.isKeyWindow && !($0 is ActivePanel) }
+            || NSApp.windows.contains {
+                $0 !== mainWindow
+                    && $0.isVisible
+                    && $0.isKeyWindow
+                    && !($0 is ActivePanel)
+                    && !($0 is InteractiveHUDPanel)
+            }
     }
 
     func handleFlagsChanged(event: NSEvent) {
@@ -152,6 +158,14 @@ extension MainWindowController {
                         lastCommandReleasedTime = now
                     } else {
                         lastCommandReleasedTime = 0
+                    }
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self,
+                              let hud = self.modifierHUDView,
+                              !hud.isHidden,
+                              !hud.isHiding else { return }
+                        self.modifierHUDWindow?.makeKey()
+                        hud.focusSearchField()
                     }
                 } else {
                     lastCommandPressedTime = 0
@@ -221,7 +235,7 @@ extension MainWindowController {
         cancelHistoryCycling()
         
         if modifierHUDWindow == nil {
-            let panel = NSPanel(
+            let panel = InteractiveHUDPanel(
                 contentRect: NSRect(x: 0, y: 0, width: 492, height: 465),
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
@@ -240,7 +254,7 @@ extension MainWindowController {
         }
         
         alignHUDWindow(modifierHUDWindow, width: 492, height: 465)
-        modifierHUDWindow?.orderFront(nil)
+        modifierHUDWindow?.makeKeyAndOrderFront(nil)
         raiseHUDWindow(modifierHUDWindow)
         modifierHUDView?.show()
     }

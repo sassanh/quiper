@@ -443,6 +443,10 @@ final class ModifierHUDView: NSView {
     override func mouseUp(with event: NSEvent) {}
     override func mouseMoved(with event: NSEvent) {}
     override func scrollWheel(with event: NSEvent) {}
+
+    func focusSearchField() {
+        window?.makeFirstResponder(searchField)
+    }
     
     func show() {
         isHiding = false
@@ -456,9 +460,7 @@ final class ModifierHUDView: NSView {
         self.searchField.stringValue = ""
         self.refreshData()
         
-        if let window = self.window {
-            window.makeFirstResponder(self.searchField)
-        }
+        focusSearchField()
         
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.25
