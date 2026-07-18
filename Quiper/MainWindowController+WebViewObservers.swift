@@ -60,16 +60,12 @@ extension MainWindowController {
         
         if let service = currentService() {
             let activeIndex = activeIndicesByURL[service.url] ?? 0
-            let segIdx = segmentIndex(forSession: activeIndex)
-            sessionSelector?.setToolTip(title, forSegment: segIdx)
-            collapsibleSessionSelector?.setToolTip(title, forSegment: segIdx)
-            
-            if let selector = sessionSelector {
-                QuickTooltip.shared.updateIfVisible(with: title, for: (selector, segIdx), isLoading: isLoading)
-            }
-            if let collapsible = collapsibleSessionSelector {
-                collapsible.setToolTip(title, forSegment: segIdx)
-            }
+            updateSessionTooltip(
+                for: service,
+                sessionIndex: activeIndex,
+                preferredTitle: title,
+                isLoading: isLoading
+            )
         }
         
         updateLoadingIndicator(for: webView)
@@ -89,22 +85,22 @@ extension MainWindowController {
               let service = services.first(where: { $0.url == serviceUrlStr }),
               let sessionIndex = (0...9).first(where: { webViewManager.getWebView(for: service, sessionIndex: $0) == webView }) else { return }
         
-        let segIdx = segmentIndex(forSession: sessionIndex)
-        var title = webView.title ?? ""
-        
+        let preferredTitle: String?
         if let labelTitle = titleLabel?.stringValue, labelTitle.isEmpty,
            let currentUrl = currentServiceURL,
            let activeIdx = activeIndicesByURL[currentUrl],
            activeIdx == sessionIndex {
-            title = ""
+            preferredTitle = ""
+        } else {
+            preferredTitle = webView.title
         }
-        
-        if let selector = sessionSelector {
-            QuickTooltip.shared.updateIfVisible(with: title, for: (selector, segIdx), isLoading: isLoading)
-        }
-        if let collapsible = collapsibleSessionSelector {
-            collapsible.setToolTip(title, forSegment: segIdx)
-        }
+
+        updateSessionTooltip(
+            for: service,
+            sessionIndex: sessionIndex,
+            preferredTitle: preferredTitle,
+            isLoading: isLoading
+        )
     }
     
     func updateTitleLabel(withFallback fallback: String) {
@@ -120,14 +116,11 @@ extension MainWindowController {
         
         if let service = currentService() {
             let activeIndex = activeIndicesByURL[service.url] ?? 0
-            let segIdx = segmentIndex(forSession: activeIndex)
-            
-            sessionSelector?.setToolTip(fallback, forSegment: segIdx)
-            collapsibleSessionSelector?.setToolTip(fallback, forSegment: segIdx)
-            
-            if let selector = sessionSelector {
-                QuickTooltip.shared.updateIfVisible(with: fallback, for: (selector, segIdx), isLoading: false)
-            }
+            updateSessionTooltip(
+                for: service,
+                sessionIndex: activeIndex,
+                isLoading: false
+            )
         }
         
         loadingBorderView?.stopAnimating()

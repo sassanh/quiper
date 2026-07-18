@@ -369,24 +369,54 @@ extension MainWindowController {
         currentServiceURL = services.first?.url
     }
 
+    static func sessionTooltipTitle(pageTitle: String?, fallbackTitle: String? = nil, sessionIndex: Int) -> String {
+        for title in [pageTitle, fallbackTitle] {
+            let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !trimmedTitle.isEmpty {
+                return trimmedTitle
+            }
+        }
+        return "Session \(sessionIndex == 9 ? 0 : sessionIndex + 1)"
+    }
+
+    func updateSessionTooltip(
+        for service: Service,
+        sessionIndex: Int,
+        preferredTitle: String? = nil,
+        isLoading: Bool? = nil
+    ) {
+        guard service.url == currentServiceURL else { return }
+
+        let webView = webViewManager.getWebView(for: service, sessionIndex: sessionIndex)
+        let toolTip = webView.map {
+            Self.sessionTooltipTitle(
+                pageTitle: preferredTitle ?? $0.title,
+                fallbackTitle: webViewManager.sessionTitle(for: service, sessionIndex: sessionIndex),
+                sessionIndex: sessionIndex
+            )
+        }
+        let segment = segmentIndex(forSession: sessionIndex)
+
+        sessionSelector?.setToolTip(toolTip, forSegment: segment)
+        collapsibleSessionSelector?.setToolTip(toolTip, forSegment: segment)
+
+        if let toolTip, let selector = sessionSelector {
+            QuickTooltip.shared.updateIfVisible(
+                with: toolTip,
+                for: selector,
+                segment: segment,
+                isLoading: isLoading ?? webView?.isLoading ?? false
+            )
+        }
+    }
+
     func updateSessionSelector() {
         guard let service = currentService() else { return }
         let index = activeIndicesByURL[service.url] ?? 0
         let segmentIdx = segmentIndex(forSession: index)
-        
-        if let selector = sessionSelector {
-            for sessionIdx in 0..<10 {
-                let segIdx = segmentIndex(forSession: sessionIdx)
-                let title = webViewManager.getWebView(for: service, sessionIndex: sessionIdx)?.title ?? "Session \(sessionIdx == 9 ? 0 : sessionIdx + 1)"
-                selector.setToolTip(title, forSegment: segIdx)
-                collapsibleSessionSelector?.setToolTip(title, forSegment: segIdx)
-            }
-        } else if let collapsible = collapsibleSessionSelector {
-             for sessionIdx in 0..<10 {
-                let segIdx = segmentIndex(forSession: sessionIdx)
-                let title = webViewManager.getWebView(for: service, sessionIndex: sessionIdx)?.title ?? "Session \(sessionIdx == 9 ? 0 : sessionIdx + 1)"
-                collapsible.setToolTip(title, forSegment: segIdx)
-            }
+
+        for sessionIndex in 0..<10 {
+            updateSessionTooltip(for: service, sessionIndex: sessionIndex)
         }
 
         if isEmptyStateActive {

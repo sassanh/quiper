@@ -932,6 +932,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 struct SecureTabState: Codable {
     var activeIndex: Int
     var openTabs: [Int: String]
+    var tabTitles: [Int: String]?
     var tabInputs: [Int: TabInputState]?
     var tabPromptHistories: [Int: [PromptHistoryEntry]]?
     var tabPromptHistoryEnabledOverrides: [Int: Bool]?
@@ -939,14 +940,16 @@ struct SecureTabState: Codable {
     enum CodingKeys: String, CodingKey {
         case activeIndex
         case openTabs
+        case tabTitles
         case tabInputs
         case tabPromptHistories
         case tabPromptHistoryEnabledOverrides
     }
 
-    init(activeIndex: Int, openTabs: [Int: String], tabInputs: [Int: TabInputState]?, tabPromptHistories: [Int: [PromptHistoryEntry]]?, tabPromptHistoryEnabledOverrides: [Int: Bool]?) {
+    init(activeIndex: Int, openTabs: [Int: String], tabTitles: [Int: String]?, tabInputs: [Int: TabInputState]?, tabPromptHistories: [Int: [PromptHistoryEntry]]?, tabPromptHistoryEnabledOverrides: [Int: Bool]?) {
         self.activeIndex = activeIndex
         self.openTabs = openTabs
+        self.tabTitles = tabTitles
         self.tabInputs = tabInputs
         self.tabPromptHistories = tabPromptHistories
         self.tabPromptHistoryEnabledOverrides = tabPromptHistoryEnabledOverrides
@@ -956,6 +959,7 @@ struct SecureTabState: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         activeIndex = try container.decode(Int.self, forKey: .activeIndex)
         openTabs = try container.decode([Int: String].self, forKey: .openTabs)
+        tabTitles = try container.decodeIfPresent([Int: String].self, forKey: .tabTitles)
         tabInputs = try container.decodeIfPresent([Int: TabInputState].self, forKey: .tabInputs)
         tabPromptHistories = try container.decodeIfPresent([Int: [PromptHistoryEntry]].self, forKey: .tabPromptHistories)
         tabPromptHistoryEnabledOverrides = try container.decodeIfPresent([Int: Bool].self, forKey: .tabPromptHistoryEnabledOverrides)
@@ -986,6 +990,7 @@ struct SecureTabState: Codable {
 
         if let manager = webViewManager {
             var allOpenTabs = manager.getOpenSessionsState()
+            var allTabTitles = manager.getOpenSessionTitlesState()
             var allTabInputs = manager.getOpenSessionsInputState()
             var allPromptHistories = manager.getOpenSessionsPromptHistories()
             var allPromptHistoryOverrides = manager.getOpenSessionsPromptHistoryOverrides()
@@ -1003,12 +1008,14 @@ struct SecureTabState: Codable {
                     // Only save to secure storage if it's currently unlocked
                     if EncryptedVolumeManager.shared.isUnlocked(for: svc.id) {
                         let activeIdx = activeIndicesByURL[svc.url] ?? 0
+                        let secureTitles = allTabTitles[svc.url]
                         let secureInputs = allTabInputs[svc.url]
                         let secureHistories = allPromptHistories[svc.url]
                         let secureOverrides = allPromptHistoryOverrides[svc.url]
                         let secureState = SecureTabState(
                             activeIndex: activeIdx,
                             openTabs: sessions,
+                            tabTitles: secureTitles,
                             tabInputs: secureInputs,
                             tabPromptHistories: secureHistories,
                             tabPromptHistoryEnabledOverrides: secureOverrides
@@ -1021,11 +1028,13 @@ struct SecureTabState: Codable {
                 }
                 // Remove from the global unencrypted state
                 allOpenTabs.removeValue(forKey: svc.url)
+                allTabTitles.removeValue(forKey: svc.url)
                 allTabInputs.removeValue(forKey: svc.url)
                 allPromptHistories.removeValue(forKey: svc.url)
                 allPromptHistoryOverrides.removeValue(forKey: svc.url)
             }
             state.openTabs = allOpenTabs
+            state.tabTitles = allTabTitles
             state.tabInputs = allTabInputs
             state.tabPromptHistories = allPromptHistories
             state.tabPromptHistoryEnabledOverrides = allPromptHistoryOverrides
@@ -1065,11 +1074,13 @@ struct SecureTabState: Codable {
             guard let service = services.first(where: { $0.url == svcURL }) else { continue }
             
             var secureSessions = sessions
+            var restoredTitles = savedState.tabTitles[svcURL] ?? [:]
             if service.isEncrypted && EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
                 let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: service.id).appendingPathComponent("quiper_tabs.json")
                 if let data = try? Data(contentsOf: stateURL),
                    let secureState = try? JSONDecoder().decode(SecureTabState.self, from: data) {
                     secureSessions = secureState.openTabs
+                    restoredTitles = secureState.tabTitles ?? [:]
                     if let secureInputs = secureState.tabInputs {
                         webViewManager.restoreTabInputStates([service.url: secureInputs])
                     }
@@ -1085,7 +1096,7 @@ struct SecureTabState: Codable {
             let activeIndex = activeIndicesByURL[service.url] ?? 0
             for (sessionIndex, urlString) in secureSessions {
                 // Pre-instantiate the webview with its restored URL
-                _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString, loadImmediately: (sessionIndex == activeIndex))
+                _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString, restoredTitle: restoredTitles[sessionIndex], loadImmediately: (sessionIndex == activeIndex))
 
                 // Set up observers
                 if let webView = webViewManager.getWebView(for: service, sessionIndex: sessionIndex) {
@@ -1104,6 +1115,7 @@ struct SecureTabState: Codable {
         }
 
         refreshInstantiationState()
+        updateSessionSelector()
     }
 
     private func createDragArea(in contentView: NSView) {
@@ -1198,6 +1210,7 @@ struct SecureTabState: Codable {
         sessionSel.action = #selector(sessionChanged(_:))
         sessionSel.selectorDelegate = self
         sessionSel.showInstantiationState = true
+        sessionSel.requiresInstantiatedSegmentForTooltip = true
         sessionSel.middleClickHandler = { [weak self] segmentIndex in
             self?.handleSessionMiddleClick(at: segmentIndex)
         }
@@ -1215,6 +1228,7 @@ struct SecureTabState: Codable {
         collapsibleSessionSel.emptyStateAlignment = .left
         collapsibleSessionSel.delegate = self
         collapsibleSessionSel.showInstantiationState = true
+        collapsibleSessionSel.requiresInstantiatedSegmentForTooltip = true
         collapsibleSessionSel.middleClickHandler = { [weak self] segmentIndex in
             self?.handleSessionMiddleClick(at: segmentIndex)
         }
@@ -1271,7 +1285,8 @@ struct SecureTabState: Codable {
         let historyImage = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: "Prompt History")!
             .withSymbolConfiguration(buttonIconConfig)!
         let historyBtn = HoverIconButton(image: historyImage, target: self, action: #selector(promptHistoryButtonTapped(_:)))
-        historyBtn.toolTip = "Prompt History"
+        historyBtn.tooltipText = "Prompt History"
+        historyBtn.tooltipShortcut = "⌘Y"
         drag.addSubview(historyBtn)
         promptHistoryButton = historyBtn
         
@@ -1285,7 +1300,8 @@ struct SecureTabState: Codable {
         // Trash Button
         let trashImage = NSImage(systemSymbolName: "trash", accessibilityDescription: "Close Current Session")!.withSymbolConfiguration(buttonIconConfig)!
         let trashBtn = HoverIconButton(image: trashImage, target: self, action: #selector(closeSessionTapped(_:)))
-        trashBtn.toolTip = "Close Current Session"
+        trashBtn.tooltipText = "Close Current Session"
+        trashBtn.tooltipShortcut = "⌘W"
         drag.addSubview(trashBtn)
         trashSessionButton = trashBtn
 
@@ -1317,16 +1333,16 @@ struct SecureTabState: Codable {
         let iconConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
         let actionsImage = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Session Actions")!.withSymbolConfiguration(iconConfig)!
         let actionsBtn = HoverIconButton(image: actionsImage, target: self, action: #selector(sessionActionsButtonTapped(_:)))
-        actionsBtn.toolTip = "Session Actions"
+        actionsBtn.tooltipText = "Session Actions"
         drag.addSubview(actionsBtn)
         sessionActionsButton = actionsBtn
 
         // Manual Lock Button
         let lockImage = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Lock Engine")!.withSymbolConfiguration(iconConfig)!
         let lockBtn = HoverIconButton(image: lockImage, target: self, action: #selector(manualLockTapped(_:)))
-        lockBtn.toolTip = "Lock Engine"
         drag.addSubview(lockBtn)
         manualLockButton = lockBtn
+        updateLockButtonToolTip()
 
         layoutSelectors()
         NotificationCenter.default.addObserver(self, selector: #selector(handleDockVisibilityChanged), name: .dockVisibilityChanged, object: nil)
@@ -1422,6 +1438,14 @@ struct SecureTabState: Codable {
     @objc private func handleCloseSettings(_ notification: Notification) {
         isHeaderHovered = isMouseInHeaderTrackingArea
         updateHeaderVisibility(animated: true)
+        updateLockButtonToolTip()
+    }
+
+    private func updateLockButtonToolTip() {
+        guard let lockBtn = manualLockButton as? HoverIconButton else { return }
+        let lockShortcut = Settings.shared.appShortcutBindings.lockCurrentEngine
+        lockBtn.tooltipText = "Lock Engine"
+        lockBtn.tooltipShortcut = lockShortcut.isDisabled ? nil : ShortcutFormatter.string(for: lockShortcut)
     }
 
     @objc func handleServiceDragBegan(from sourceIndex: Int) {

@@ -38,7 +38,7 @@ jobs:
             exit 0
           fi
 
-          LATEST=$(gh release list --limit 50 --json tagName,publishedAt,body \
+          LATEST=$(gh release list --limit 50 --json tagName,publishedAt \
             --jq '[.[] | select(.tagName | startswith("nightly-"))][0]')
 
           if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
@@ -47,9 +47,9 @@ jobs:
             exit 0
           fi
 
-          BODY=$(echo "$LATEST" | jq -r '.body // ""')
           PUBLISHED_AT=$(echo "$LATEST" | jq -r '.publishedAt')
           TAG=$(echo "$LATEST" | jq -r '.tagName')
+          BODY=$(gh release view "$TAG" --json body --jq '.body // ""')
 
           LAST_SHA=$(echo "$BODY" | grep -oE '<!-- Commit: [a-f0-9]+ -->' | head -1 | sed 's/<!-- Commit: //;s/ -->//' || true)
           if [ -z "$LAST_SHA" ]; then
@@ -179,11 +179,11 @@ jobs:
           # Dynamically resolve and set the signing identity
           IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -E 'Apple Development|Mac Developer|Developer ID Application' | head -n 1 | grep -oE '"[^"]+"' | tr -d '"')
           echo "RESOLVED_IDENTITY=$IDENTITY" >> $GITHUB_ENV
-          
+
           # Extract actual Team ID from the certificate's Organizational Unit (OU) metadata
           TEAM_ID=$(security find-certificate -c "$IDENTITY" -p "$KEYCHAIN_PATH" | openssl x509 -text -noout | grep -i 'Subject: ' | grep -oE 'OU=[A-Z0-9]+' | cut -d= -f2 | head -n 1)
           echo "RESOLVED_TEAM=$TEAM_ID" >> $GITHUB_ENV
-          
+
           echo "🎉 Successfully imported certificate: $IDENTITY (Team: $TEAM_ID)"
 
       - name: Build Swift App

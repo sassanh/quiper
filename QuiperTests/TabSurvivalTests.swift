@@ -32,6 +32,7 @@ struct TabSurvivalTests {
         state.activeServiceURL = "https://gemini.google.com"
         state.activeIndicesByURL = ["https://gemini.google.com": 2]
         state.openTabs = ["https://gemini.google.com": [0: "https://gemini.google.com/app", 2: "https://gemini.google.com/chat"]]
+        state.tabTitles = ["https://gemini.google.com": [0: "Gemini", 2: "Restored chat"]]
 
         let data = try JSONEncoder().encode(state)
         let decoded = try JSONDecoder().decode(PersistedTabState.self, from: data)
@@ -40,6 +41,8 @@ struct TabSurvivalTests {
         #expect(decoded.activeIndicesByURL["https://gemini.google.com"] == 2)
         #expect(decoded.openTabs["https://gemini.google.com"]?[0] == "https://gemini.google.com/app")
         #expect(decoded.openTabs["https://gemini.google.com"]?[2] == "https://gemini.google.com/chat")
+        #expect(decoded.tabTitles["https://gemini.google.com"]?[0] == "Gemini")
+        #expect(decoded.tabTitles["https://gemini.google.com"]?[2] == "Restored chat")
     }
 
     @Test func persistedTabState_Codable_WithInputs() throws {
@@ -74,9 +77,37 @@ struct TabSurvivalTests {
         #expect(decoded.activeServiceURL == "https://gemini.google.com")
         #expect(decoded.activeIndicesByURL["https://gemini.google.com"] == 2)
         #expect(decoded.openTabs["https://gemini.google.com"]?[2] == "https://gemini.google.com/chat")
+        #expect(decoded.tabTitles.isEmpty)
         #expect(decoded.tabInputs.isEmpty)
         #expect(decoded.tabPromptHistories.isEmpty)
         #expect(decoded.tabPromptHistoryEnabledOverrides.isEmpty)
+    }
+
+    @Test func secureTabState_TitlePersistenceAndBackwardCompatibility() throws {
+        let state = MainWindowController.SecureTabState(
+            activeIndex: 2,
+            openTabs: [2: "https://secure.example/chat"],
+            tabTitles: [2: "Secure chat"],
+            tabInputs: nil,
+            tabPromptHistories: nil,
+            tabPromptHistoryEnabledOverrides: nil
+        )
+        let data = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data)
+
+        #expect(decoded.tabTitles?[2] == "Secure chat")
+
+        let legacyData = try #require(
+            """
+            {
+                "activeIndex": 2,
+                "openTabs": {"2": "https://secure.example/chat"}
+            }
+            """.data(using: .utf8)
+        )
+        let legacyState = try JSONDecoder().decode(MainWindowController.SecureTabState.self, from: legacyData)
+
+        #expect(legacyState.tabTitles == nil)
     }
 
     @Test func persistedTabState_Codable_WithPromptHistories() throws {

@@ -1347,14 +1347,14 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         isHovered = true
         if isClipped {
             if let scrollView = findScrollView() {
-                QuickTooltip.shared.showOnRight(of: scrollView, text: entry.text)
+                QuickTooltip.shared.showOnRight(of: scrollView, text: entry.text, for: self)
             }
         }
     }
     
     override func mouseExited(with event: NSEvent) {
         isHovered = false
-        QuickTooltip.shared.hide()
+        QuickTooltip.shared.hide(for: self)
     }
     
     override func mouseDown(with event: NSEvent) {

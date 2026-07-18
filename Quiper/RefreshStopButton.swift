@@ -17,13 +17,15 @@ final class RefreshStopButton: HoverIconButton {
     var isLoadingState = false {
         didSet {
             image = isLoadingState ? Self.stopImage : Self.refreshImage
-            toolTip = isLoadingState ? "Stop" : "Reload"
+            tooltipText = isLoadingState ? "Stop" : "Reload"
+            tooltipShortcut = isLoadingState ? "⎋" : "⌘R"
         }
     }
     
     init() {
         super.init(image: Self.refreshImage, target: nil, action: nil)
-        toolTip = "Reload"
+        tooltipText = "Reload"
+        tooltipShortcut = "⌘R"
         setAccessibilityIdentifier("RefreshStopButton")
     }
     

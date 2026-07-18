@@ -521,6 +521,7 @@ extension MainWindowController {
 
     func removeWebViewAndCleanObserver(for service: Service, sessionIndex: Int) {
         webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
+        updateSessionTooltip(for: service, sessionIndex: sessionIndex)
         let key = "\(service.url)_\(sessionIndex)"
         sessionTitleObservations[key] = nil
         saveTabsState()

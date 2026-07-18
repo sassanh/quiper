@@ -66,6 +66,14 @@ class SegmentedControl: NSSegmentedControl {
     private var segmentToolTips: [Int: String] = [:]
     private(set) var lastHoveredSegment: Int?
     var alwaysShowTooltips: Bool = true
+    var requiresInstantiatedSegmentForTooltip: Bool = false {
+        didSet {
+            guard requiresInstantiatedSegmentForTooltip,
+                  let segment = lastHoveredSegment,
+                  !isSegmentInstantiated(segment) else { return }
+            QuickTooltip.shared.hide(for: self)
+        }
+    }
 
     var forceHighlight: Bool = false
 
@@ -304,7 +312,17 @@ class SegmentedControl: NSSegmentedControl {
     }
     
     override func setToolTip(_ toolTip: String?, forSegment segment: Int) {
-        segmentToolTips[segment] = toolTip
+        let trimmedToolTip = toolTip?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedToolTip = trimmedToolTip?.isEmpty == false ? trimmedToolTip : nil
+        segmentToolTips[segment] = normalizedToolTip
+
+        if normalizedToolTip == nil, lastHoveredSegment == segment {
+            QuickTooltip.shared.hide(for: self)
+        }
+    }
+
+    override func toolTip(forSegment segment: Int) -> String? {
+        segmentToolTips[segment]
     }
     
     // MARK: - Event Handling
@@ -319,7 +337,7 @@ class SegmentedControl: NSSegmentedControl {
     
     override func mouseExited(with event: NSEvent) {
         lastHoveredSegment = nil
-        QuickTooltip.shared.hide()
+        QuickTooltip.shared.hide(for: self)
     }
     
     override func mouseDown(with event: NSEvent) {
@@ -405,27 +423,44 @@ class SegmentedControl: NSSegmentedControl {
         
         if segment != -1 {
             let isLoading = selectorDelegate?.isLoading(index: segment) ?? false
+            let toolTip = toolTip(forSegment: segment)
+            let shouldShowToolTip = toolTip != nil && shouldShowTooltip(forSegment: segment)
             
             if segment != lastHoveredSegment {
                 lastHoveredSegment = segment
-                if let toolTip = segmentToolTips[segment], alwaysShowTooltips || isTextTruncated(segment: segment) {
+                if let toolTip, shouldShowToolTip {
                     let controlRect = bounds
                     let rectInWindow = convert(controlRect, to: nil)
                     QuickTooltip.shared.show(toolTip, for: self, segment: segment, margin: 4, forcedWidth: controlRect.width, forcedX: rectInWindow.minX, isLoading: isLoading)
                 } else {
-                    QuickTooltip.shared.hide()
+                    QuickTooltip.shared.hide(for: self)
                 }
             } else {
-                if let toolTip = segmentToolTips[segment], alwaysShowTooltips || isTextTruncated(segment: segment) {
-                    QuickTooltip.shared.updateIfVisible(with: toolTip, for: (self, segment), isLoading: isLoading)
+                if let toolTip, shouldShowToolTip {
+                    QuickTooltip.shared.updateIfVisible(with: toolTip, for: self, segment: segment, isLoading: isLoading)
                 } else {
-                    QuickTooltip.shared.hide()
+                    QuickTooltip.shared.hide(for: self)
                 }
             }
         } else {
             lastHoveredSegment = nil
-            QuickTooltip.shared.hide()
+            QuickTooltip.shared.hide(for: self)
         }
+    }
+
+    func shouldShowTooltip(forSegment segment: Int) -> Bool {
+        guard toolTip(forSegment: segment) != nil else { return false }
+        if requiresInstantiatedSegmentForTooltip, !isSegmentInstantiated(segment) {
+            return false
+        }
+        return alwaysShowTooltips || isTextTruncated(segment: segment)
+    }
+
+    private func isSegmentInstantiated(_ segment: Int) -> Bool {
+        if let parentSelector {
+            return selectorDelegate?.selector(parentSelector, isInstantiated: segment) ?? true
+        }
+        return selectorDelegate?.segmentedControl(self, isInstantiated: segment) ?? true
     }
     
     private func isTextTruncated(segment: Int) -> Bool {
@@ -480,4 +515,3 @@ class SegmentedControl: NSSegmentedControl {
         return NSRect(x: currentX, y: 0, width: segW, height: bounds.height)
     }
 }
-

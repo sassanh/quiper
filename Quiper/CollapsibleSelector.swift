@@ -117,6 +117,13 @@ class CollapsibleSelector: NSView {
             expandedControl?.alwaysShowTooltips = alwaysShowTooltips
         }
     }
+
+    var requiresInstantiatedSegmentForTooltip: Bool = false {
+        didSet {
+            collapsedControl.requiresInstantiatedSegmentForTooltip = requiresInstantiatedSegmentForTooltip
+            expandedControl?.requiresInstantiatedSegmentForTooltip = requiresInstantiatedSegmentForTooltip
+        }
+    }
     
     // Data
     var items: [String] = [] {
@@ -196,13 +203,15 @@ class CollapsibleSelector: NSView {
     // MARK: - API
     
     func setToolTip(_ toolTip: String?, forSegment segment: Int) {
-        tooltips[segment] = toolTip
-        expandedControl?.setToolTip(toolTip, forSegment: segment)
+        let trimmedToolTip = toolTip?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedToolTip = trimmedToolTip?.isEmpty == false ? trimmedToolTip : nil
+        tooltips[segment] = normalizedToolTip
+        expandedControl?.setToolTip(normalizedToolTip, forSegment: segment)
         
         // Dynamic update: if tooltip is visible for this segment, update the content
-        if let tip = toolTip, let expanded = expandedControl {
+        if let tip = normalizedToolTip, let expanded = expandedControl {
             let isLoading = delegate?.isLoading(index: segment) ?? false
-            QuickTooltip.shared.updateIfVisible(with: tip, for: (expanded, segment), isLoading: isLoading)
+            QuickTooltip.shared.updateIfVisible(with: tip, for: expanded, segment: segment, isLoading: isLoading)
         }
     }
     
@@ -223,7 +232,7 @@ class CollapsibleSelector: NSView {
             for (i, item) in newItems.enumerated() {
                 control.setLabel(item, forSegment: i)
                 control.setImage(nil, forSegment: i)
-                if let tip = tooltips[i] { control.setToolTip(tip, forSegment: i) }
+                control.setToolTip(tooltips[i], forSegment: i)
             }
             // Update panel frame if needed? 
             // For pure reorder total width is same, but for change it might differ.
@@ -341,6 +350,7 @@ class CollapsibleSelector: NSView {
         }
         control.selectorDelegate = delegate
         control.showInstantiationState = showInstantiationState
+        control.requiresInstantiatedSegmentForTooltip = requiresInstantiatedSegmentForTooltip
         control.parentSelector = self
         
         // 2. Configure Items & Events

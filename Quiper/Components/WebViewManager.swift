@@ -20,6 +20,7 @@ final class WebViewManager: NSObject {
     private var wrappersByID: [UUID: [Int: NSView]] = [:]
     private var urlsByWebView: [ObjectIdentifier: String] = [:]
     private var pendingLazyLoadURLs: [ObjectIdentifier: String] = [:]
+    private var lastKnownTitlesByWebView: [ObjectIdentifier: String] = [:]
     private var activeDownloads: [Any] = []
     
     // State needed for logic
@@ -119,12 +120,17 @@ final class WebViewManager: NSObject {
     func getWebView(for service: Service, sessionIndex: Int) -> WKWebView? {
         webviewsByID[service.id]?[sessionIndex]
     }
+
+    func sessionTitle(for service: Service, sessionIndex: Int) -> String? {
+        guard let webView = getWebView(for: service, sessionIndex: sessionIndex) else { return nil }
+        let token = ObjectIdentifier(webView)
+        return Self.normalizedTitle(webView.title) ?? lastKnownTitlesByWebView[token]
+    }
     
     func getOpenSessions(for service: Service) -> [(sessionIndex: Int, title: String)] {
         guard let sessionMap = webviewsByID[service.id] else { return [] }
-        return sessionMap.map { (idx, webView) in
-            let title = webView.title?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let displayTitle = (title == nil || title!.isEmpty) ? "Session \(idx + 1)" : title!
+        return sessionMap.map { (idx, _) in
+            let displayTitle = sessionTitle(for: service, sessionIndex: idx) ?? "Session \(idx + 1)"
             return (sessionIndex: idx, title: displayTitle)
         }
         .sorted { $0.sessionIndex < $1.sessionIndex }
@@ -138,6 +144,24 @@ final class WebViewManager: NSObject {
         tabInputStates[service.url]?.removeValue(forKey: sessionIndex)
         tabPromptHistories[service.url]?.removeValue(forKey: sessionIndex)
         tabPromptHistoryEnabledOverrides[service.url]?.removeValue(forKey: sessionIndex)
+    }
+
+    func getOpenSessionTitlesState() -> [String: [Int: String]] {
+        var state: [String: [Int: String]] = [:]
+
+        for service in services {
+            guard let sessionIndices = webviewsByID[service.id]?.keys else { continue }
+            let titles = sessionIndices.reduce(into: [Int: String]()) { result, sessionIndex in
+                if let title = sessionTitle(for: service, sessionIndex: sessionIndex) {
+                    result[sessionIndex] = title
+                }
+            }
+            if !titles.isEmpty {
+                state[service.url] = titles
+            }
+        }
+
+        return state
     }
 
     func getOpenSessionsState() -> [String: [Int: String]] {
@@ -849,12 +873,13 @@ final class WebViewManager: NSObject {
         return WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
     }
     
-    func getOrCreateWebView(for service: Service, sessionIndex: Int, dragArea: NSView?, targetURL: String? = nil, loadImmediately: Bool = true) -> WKWebView {
+    func getOrCreateWebView(for service: Service, sessionIndex: Int, dragArea: NSView?, targetURL: String? = nil, restoredTitle: String? = nil, loadImmediately: Bool = true) -> WKWebView {
         if let dragArea = dragArea {
             self.dragArea = dragArea
         }
         
         if let existing = webviewsByID[service.id]?[sessionIndex] {
+            retainTitle(restoredTitle, for: existing)
             return existing
         }
         
@@ -914,6 +939,7 @@ final class WebViewManager: NSObject {
         urlsByWebView[ObjectIdentifier(webview)] = service.url
         
         let token = ObjectIdentifier(webview)
+        retainTitle(restoredTitle, for: webview)
         initialLoadAwaitingFocus.insert(token)
         
         // Clean up any existing LockOverlayView from previous states
@@ -1303,6 +1329,7 @@ final class WebViewManager: NSObject {
         
         MainActor.assumeIsolated {
             if keyPath == "title" {
+                retainTitle(webView.title, for: webView)
                 delegate?.webViewDidUpdateTitle(webView.title ?? "", for: webView)
             } else if keyPath == "loading" {
                 delegate?.webViewDidUpdateLoading(webView.isLoading, for: webView)
@@ -1331,6 +1358,7 @@ final class WebViewManager: NSObject {
         initialLoadAwaitingFocus.remove(token)
         urlsByWebView.removeValue(forKey: token)
         pendingLazyLoadURLs.removeValue(forKey: token)
+        lastKnownTitlesByWebView.removeValue(forKey: token)
  
         // Clean user content controller to break configuration references
         webView.configuration.userContentController.removeAllUserScripts()
@@ -1342,6 +1370,16 @@ final class WebViewManager: NSObject {
         let wrapper = webView.superview
         webView.removeFromSuperview()
         wrapper?.removeFromSuperview()
+    }
+
+    private static func normalizedTitle(_ title: String?) -> String? {
+        let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedTitle.isEmpty ? nil : trimmedTitle
+    }
+
+    private func retainTitle(_ title: String?, for webView: WKWebView) {
+        guard let title = Self.normalizedTitle(title) else { return }
+        lastKnownTitlesByWebView[ObjectIdentifier(webView)] = title
     }
 
     private func attachNotificationBridge(to webView: WKWebView, service: Service, sessionIndex: Int) {

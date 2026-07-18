@@ -28,9 +28,11 @@ final class NavigationButtonGroup: NSView {
             .withSymbolConfiguration(config)!
         
         backButton = HoverIconButton(image: backImage, target: nil, action: nil)
-        backButton.toolTip = "Go Back"
+        backButton.tooltipText = "Go Back"
+        backButton.tooltipShortcut = "⌘["
         forwardButton = HoverIconButton(image: forwardImage, target: nil, action: nil)
-        forwardButton.toolTip = "Go Forward"
+        forwardButton.tooltipText = "Go Forward"
+        forwardButton.tooltipShortcut = "⌘]"
         
         super.init(frame: .zero)
         setAccessibilityIdentifier("NavigationButtonGroup")

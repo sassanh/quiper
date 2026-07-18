@@ -12,6 +12,23 @@ class HoverIconButton: NSButton {
         didSet { needsDisplay = true }
     }
     
+    /// Main label text shown in the QuickTooltip.
+    var tooltipText: String? {
+        didSet {
+            // Clear native tooltip to prevent the system tooltip from appearing
+            super.toolTip = nil
+        }
+    }
+
+    /// Preserve the standard NSView tooltip value for callers while QuickTooltip owns presentation.
+    override var toolTip: String? {
+        get { tooltipText }
+        set { tooltipText = newValue }
+    }
+
+    /// Optional shortcut string displayed as a pill badge inside the QuickTooltip (e.g. "⌘Y").
+    var tooltipShortcut: String?
+
     private var trackingArea: NSTrackingArea?
     private var isHovered = false { didSet { needsDisplay = true } }
     private var isPressed = false { didSet { needsDisplay = true } }
@@ -55,11 +72,15 @@ class HoverIconButton: NSButton {
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
         contentTintColor = .labelColor
+        if let text = tooltipText {
+            QuickTooltip.shared.show(text, shortcut: tooltipShortcut, for: self)
+        }
     }
     
     override func mouseExited(with event: NSEvent) {
         isHovered = false
         contentTintColor = .secondaryLabelColor
+        QuickTooltip.shared.hide(for: self)
     }
     
     override func mouseDown(with event: NSEvent) {

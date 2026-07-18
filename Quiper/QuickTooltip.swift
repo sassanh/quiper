@@ -1,19 +1,105 @@
 import AppKit
 import QuartzCore
 
+struct TooltipTargetID: Equatable {
+    let owner: ObjectIdentifier
+    let segment: Int?
+
+    init(owner: AnyObject, segment: Int? = nil) {
+        self.owner = ObjectIdentifier(owner)
+        self.segment = segment
+    }
+}
+
+struct TooltipVisibilityCoordinator {
+    enum State: Equatable {
+        case hidden
+        case visible(TooltipTargetID)
+        case pendingHide(TooltipTargetID, requestID: UInt64)
+    }
+
+    enum HideRequest: Equatable {
+        case none
+        case existing(requestID: UInt64)
+        case scheduled(requestID: UInt64)
+    }
+
+    private(set) var state: State = .hidden
+    private var nextRequestID: UInt64 = 0
+
+    mutating func show(_ target: TooltipTargetID) {
+        state = .visible(target)
+    }
+
+    mutating func requestHide(for owner: ObjectIdentifier) -> HideRequest {
+        switch state {
+        case .hidden:
+            return .none
+        case .visible(let target):
+            guard target.owner == owner else { return .none }
+            nextRequestID &+= 1
+            state = .pendingHide(target, requestID: nextRequestID)
+            return .scheduled(requestID: nextRequestID)
+        case .pendingHide(let target, let requestID):
+            guard target.owner == owner else { return .none }
+            return .existing(requestID: requestID)
+        }
+    }
+
+    mutating func completeHide(requestID: UInt64) -> Bool {
+        guard case .pendingHide(_, let pendingRequestID) = state,
+              pendingRequestID == requestID else { return false }
+        state = .hidden
+        return true
+    }
+
+    mutating func hideImmediately() {
+        state = .hidden
+    }
+
+    func canUpdate(_ target: TooltipTargetID) -> Bool {
+        guard case .visible(let visibleTarget) = state else { return false }
+        return visibleTarget == target
+    }
+}
+
 /// A high-performance, fast-appearing tooltip panel that replaces the slow system tooltips.
 final class QuickTooltip: NSPanel {
+
+    private enum Target {
+        case view(owner: NSView, anchor: NSView)
+        case segment(control: NSSegmentedControl, index: Int)
+
+        var id: TooltipTargetID {
+            switch self {
+            case .view(let owner, _):
+                return TooltipTargetID(owner: owner)
+            case .segment(let control, let index):
+                return TooltipTargetID(owner: control, segment: index)
+            }
+        }
+    }
     
     static let shared = QuickTooltip()
     
     private let label: NSTextField
     private let loadingBorderView: LoadingBorderView
+    private let shortcutBadge: NSView
+    private let shortcutBadgeLabel: NSTextField
+    private var labelTrailingConstraint: NSLayoutConstraint?
+    private var shortcutBadgeWidth: CGFloat = 0
+
+    private static let horizontalPadding: CGFloat = 8
+    private static let shortcutSpacing: CGFloat = 10
+    private static let shortcutHorizontalPadding: CGFloat = 7
+    private static let shortcutHeight: CGFloat = 20
     
-    private var currentTarget: Any?
+    private var currentTarget: Target?
     private var currentMargin: CGFloat = 4
     private var currentForcedWidth: CGFloat?
     private var currentForcedX: CGFloat?
-    private var hideTimer: Timer?
+    private var visibilityCoordinator = TooltipVisibilityCoordinator()
+    private var hideTask: Task<Void, Never>?
     
     private init() {
         label = NSTextField(labelWithString: "")
@@ -26,6 +112,23 @@ final class QuickTooltip: NSPanel {
         label.isBezeled = false
         label.drawsBackground = false
         
+        // Shortcut badge — small rounded pill that appears to the right
+        shortcutBadge = NSView()
+        shortcutBadge.wantsLayer = true
+        shortcutBadge.layer?.cornerRadius = 5
+        shortcutBadge.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.1).cgColor
+        shortcutBadge.layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.25).cgColor
+        shortcutBadge.layer?.borderWidth = 1
+
+        shortcutBadgeLabel = NSTextField(labelWithString: "")
+        shortcutBadgeLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        shortcutBadgeLabel.textColor = .labelColor
+        shortcutBadgeLabel.alignment = .center
+        shortcutBadgeLabel.isEditable = false
+        shortcutBadgeLabel.isSelectable = false
+        shortcutBadgeLabel.isBezeled = false
+        shortcutBadgeLabel.drawsBackground = false
+
         loadingBorderView = LoadingBorderView(frame: .zero)
         loadingBorderView.isHidden = true
         
@@ -49,11 +152,21 @@ final class QuickTooltip: NSPanel {
         visualEffect.wantsLayer = true
         visualEffect.layer?.cornerRadius = 6
         
+        shortcutBadge.addSubview(shortcutBadgeLabel)
         visualEffect.addSubview(loadingBorderView)
         visualEffect.addSubview(label)
+        visualEffect.addSubview(shortcutBadge)
         
         loadingBorderView.translatesAutoresizingMaskIntoConstraints = false
         label.translatesAutoresizingMaskIntoConstraints = false
+        shortcutBadge.translatesAutoresizingMaskIntoConstraints = false
+        shortcutBadgeLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let labelTrailing = label.trailingAnchor.constraint(
+            equalTo: visualEffect.trailingAnchor,
+            constant: -Self.horizontalPadding
+        )
+        self.labelTrailingConstraint = labelTrailing
         
         NSLayoutConstraint.activate([
             loadingBorderView.topAnchor.constraint(equalTo: visualEffect.topAnchor),
@@ -63,11 +176,29 @@ final class QuickTooltip: NSPanel {
             
             label.topAnchor.constraint(equalTo: visualEffect.topAnchor, constant: 6),
             label.bottomAnchor.constraint(equalTo: visualEffect.bottomAnchor, constant: -6),
-            label.leadingAnchor.constraint(equalTo: visualEffect.leadingAnchor, constant: 8),
-            label.trailingAnchor.constraint(equalTo: visualEffect.trailingAnchor, constant: -8)
+            label.leadingAnchor.constraint(equalTo: visualEffect.leadingAnchor, constant: Self.horizontalPadding),
+            labelTrailing,
+
+            shortcutBadge.centerYAnchor.constraint(equalTo: visualEffect.centerYAnchor),
+            shortcutBadge.trailingAnchor.constraint(
+                equalTo: visualEffect.trailingAnchor,
+                constant: -Self.horizontalPadding
+            ),
+            shortcutBadge.heightAnchor.constraint(equalToConstant: Self.shortcutHeight),
+
+            shortcutBadgeLabel.leadingAnchor.constraint(
+                equalTo: shortcutBadge.leadingAnchor,
+                constant: Self.shortcutHorizontalPadding
+            ),
+            shortcutBadgeLabel.trailingAnchor.constraint(
+                equalTo: shortcutBadge.trailingAnchor,
+                constant: -Self.shortcutHorizontalPadding
+            ),
+            shortcutBadgeLabel.centerYAnchor.constraint(equalTo: shortcutBadge.centerYAnchor)
         ])
         
         contentView = visualEffect
+        shortcutBadge.isHidden = true
     }
     
     /// Show tooltip immediately
@@ -79,50 +210,107 @@ final class QuickTooltip: NSPanel {
     ///   - forcedX: Optional fixed window X coordinate for the tooltip
     ///   - isLoading: Whether to show the loading spinner
     func show(_ string: String, for view: NSView, margin: CGFloat = 4, forcedWidth: CGFloat? = nil, forcedX: CGFloat? = nil, isLoading: Bool = false) {
-        // Cancel pending hide
-        hideTimer?.invalidate()
-        hideTimer = nil
-        
-        currentTarget = view
-        currentMargin = margin
-        currentForcedWidth = forcedWidth
-        currentForcedX = forcedX
-        
-        performShow(string, for: view, margin: margin, forcedWidth: forcedWidth, forcedX: forcedX, isLoading: isLoading)
+        guard let window = view.window else { return }
+        let target = Target.view(owner: view, anchor: view)
+
+        prepareToShow(target)
+        setShortcut(nil)
+        let targetRect = view.convert(view.bounds, to: nil)
+        performShow(
+            string,
+            in: window,
+            targetRect: targetRect,
+            margin: margin,
+            forcedWidth: forcedWidth,
+            forcedX: forcedX,
+            isLoading: isLoading
+        )
+    }
+
+    /// Show tooltip with a label and a styled shortcut badge
+    /// - Parameters:
+    ///   - string: The label text to show
+    ///   - shortcut: The shortcut string to display in a pill badge (e.g. "⌘Y")
+    ///   - view: The target view to align with
+    ///   - margin: Vertical margin from the view
+    func show(_ string: String, shortcut: String?, for view: NSView, margin: CGFloat = 4) {
+        guard let window = view.window else { return }
+        let target = Target.view(owner: view, anchor: view)
+
+        prepareToShow(target)
+        setShortcut(shortcut)
+        let targetRect = view.convert(view.bounds, to: nil)
+        performShow(
+            string,
+            in: window,
+            targetRect: targetRect,
+            margin: margin,
+            forcedWidth: nil,
+            forcedX: nil,
+            isLoading: false
+        )
+    }
+
+    /// Configure the shortcut badge: when nil the badge is hidden, otherwise it shows the shortcut string.
+    private func setShortcut(_ shortcut: String?) {
+        if let shortcut, !shortcut.isEmpty {
+            let displayedShortcut = shortcut.replacingOccurrences(of: "⎋", with: "Esc")
+            let attributedShortcut = NSAttributedString(
+                string: displayedShortcut,
+                attributes: [
+                    .font: shortcutBadgeLabel.font as Any,
+                    .foregroundColor: NSColor.labelColor,
+                    .kern: 1
+                ]
+            )
+            shortcutBadgeLabel.attributedStringValue = attributedShortcut
+            shortcutBadgeWidth = ceil(shortcutBadgeLabel.intrinsicContentSize.width)
+                + (Self.shortcutHorizontalPadding * 2)
+            shortcutBadge.isHidden = false
+            labelTrailingConstraint?.constant = -(
+                Self.horizontalPadding + shortcutBadgeWidth + Self.shortcutSpacing
+            )
+        } else {
+            shortcutBadge.isHidden = true
+            shortcutBadgeWidth = 0
+            labelTrailingConstraint?.constant = -Self.horizontalPadding
+        }
+        contentView?.layoutSubtreeIfNeeded()
     }
     
     /// Show tooltip specifically for a segment of an NSSegmentedControl
     func show(_ string: String, for control: NSSegmentedControl, segment: Int, margin: CGFloat = 4, forcedWidth: CGFloat? = nil, forcedX: CGFloat? = nil, isLoading: Bool = false) {
-        // Cancel pending hide
-        hideTimer?.invalidate()
-        hideTimer = nil
-        
-        currentTarget = (control, segment)
-        currentMargin = margin
-        currentForcedWidth = forcedWidth
-        currentForcedX = forcedX
-        
         guard let rect = rectForSegment(segment, in: control),
               let window = control.window else { return }
-        
+        let target = Target.segment(control: control, index: segment)
+
+        prepareToShow(target)
+        setShortcut(nil)
         let rectInWindow = control.convert(rect, to: nil)
         performShow(string, in: window, targetRect: rectInWindow, margin: margin, forcedWidth: forcedWidth, forcedX: forcedX, isLoading: isLoading)
     }
     
     /// Dynamic update if content changes while showing
-    func updateIfVisible(with string: String, for target: Any, isLoading: Bool = false) {
-        // Cancel pending hide if we are updating (means we still want it)
-        hideTimer?.invalidate()
-        hideTimer = nil
-        
-        // Simple check to see if we're showing for this target
-        if let currentView = currentTarget as? NSView, let targetView = target as? NSView, currentView === targetView {
-            performUpdate(string, isLoading: isLoading)
-        } else if let (currentControl, currentSeg) = currentTarget as? (NSSegmentedControl, Int),
-                  let (targetControl, targetSeg) = target as? (NSSegmentedControl, Int),
-                  currentControl === targetControl, currentSeg == targetSeg {
-            performUpdate(string, isLoading: isLoading)
-        }
+    func updateIfVisible(with string: String, for view: NSView, isLoading: Bool = false) {
+        updateIfVisible(
+            with: string,
+            targetID: TooltipTargetID(owner: view),
+            isLoading: isLoading
+        )
+    }
+
+    /// Dynamic update for a segment of an NSSegmentedControl.
+    func updateIfVisible(with string: String, for control: NSSegmentedControl, segment: Int, isLoading: Bool = false) {
+        updateIfVisible(
+            with: string,
+            targetID: TooltipTargetID(owner: control, segment: segment),
+            isLoading: isLoading
+        )
+    }
+
+    private func updateIfVisible(with string: String, targetID: TooltipTargetID, isLoading: Bool) {
+        guard visibilityCoordinator.canUpdate(targetID) else { return }
+        performUpdate(string, isLoading: isLoading)
     }
     
     private func performUpdate(_ string: String, isLoading: Bool) {
@@ -138,12 +326,6 @@ final class QuickTooltip: NSPanel {
         recalculatePosition()
     }
     
-    private func performShow(_ string: String, for view: NSView, margin: CGFloat, forcedWidth: CGFloat?, forcedX: CGFloat?, isLoading: Bool) {
-        guard let window = view.window else { return }
-        let rectInWindow = view.convert(view.bounds, to: nil)
-        performShow(string, in: window, targetRect: rectInWindow, margin: margin, forcedWidth: forcedWidth, forcedX: forcedX, isLoading: isLoading)
-    }
-    
     private func performShow(_ string: String, in window: NSWindow, targetRect: NSRect, margin: CGFloat, forcedWidth: CGFloat?, forcedX: CGFloat?, isLoading: Bool) {
         label.stringValue = string
         currentMargin = margin
@@ -157,11 +339,8 @@ final class QuickTooltip: NSPanel {
         }
         
         recalculatePosition(in: window, targetRect: targetRect)
-        
-        if alphaValue < 1 {
-            orderFront(nil)
-            animator().alphaValue = 1
-        }
+        alphaValue = 1
+        orderFront(nil)
     }
     
     private func recalculatePosition(in window: NSWindow? = nil, targetRect: NSRect? = nil) {
@@ -172,16 +351,17 @@ final class QuickTooltip: NSPanel {
             activeWindow = window
             activeRect = targetRect
         } else {
-            // Figure out from currentTarget
-            if let view = currentTarget as? NSView, let win = view.window {
-                activeWindow = win
-                activeRect = view.convert(view.bounds, to: nil)
-            } else if let (control, segment) = currentTarget as? (NSSegmentedControl, Int),
-                      let win = control.window,
-                      let rect = rectForSegment(segment, in: control) {
-                activeWindow = win
+            switch currentTarget {
+            case .view(_, let anchor):
+                guard let window = anchor.window else { return }
+                activeWindow = window
+                activeRect = anchor.convert(anchor.bounds, to: nil)
+            case .segment(let control, let segment):
+                guard let window = control.window,
+                      let rect = rectForSegment(segment, in: control) else { return }
+                activeWindow = window
                 activeRect = control.convert(rect, to: nil)
-            } else {
+            case nil:
                 return
             }
         }
@@ -191,15 +371,35 @@ final class QuickTooltip: NSPanel {
         let forcedX = currentForcedX
         
         // Calculate size needed
-        let width = forcedWidth ?? 300
-        let padding: CGFloat = 16 // 8 per side
-        let labelWidth = width - padding
+        let width: CGFloat
+        if let forced = forcedWidth {
+            width = forced
+        } else {
+            // Auto-size: measure label + optional badge
+            let maxLabelWidth: CGFloat = 300
+            label.preferredMaxLayoutWidth = maxLabelWidth
+            let labelNaturalSize = label.cell!.cellSize(forBounds: NSRect(x: 0, y: 0, width: maxLabelWidth, height: .greatestFiniteMagnitude))
+
+            if !shortcutBadge.isHidden {
+                width = min(
+                    Self.horizontalPadding + labelNaturalSize.width + Self.shortcutSpacing
+                        + shortcutBadgeWidth + Self.horizontalPadding,
+                    400
+                )
+            } else {
+                width = min(Self.horizontalPadding + labelNaturalSize.width + Self.horizontalPadding, 400)
+            }
+        }
+
+        let shortcutWidth = shortcutBadge.isHidden ? 0 : shortcutBadgeWidth + Self.shortcutSpacing
+        let labelWidth = width - (Self.horizontalPadding * 2) - shortcutWidth
         
         // Ensure multiline wrapping respects strict width
-        label.preferredMaxLayoutWidth = labelWidth
+        label.preferredMaxLayoutWidth = max(labelWidth, 40)
         
-        let labelSize = label.cell!.cellSize(forBounds: NSRect(x: 0, y: 0, width: labelWidth, height: .greatestFiniteMagnitude))
-        let totalHeight = labelSize.height + 12 // 6 per side vertical
+        let labelSize = label.cell!.cellSize(forBounds: NSRect(x: 0, y: 0, width: max(labelWidth, 40), height: .greatestFiniteMagnitude))
+        let contentHeight = shortcutBadge.isHidden ? labelSize.height : max(labelSize.height, Self.shortcutHeight)
+        let totalHeight = contentHeight + 12 // 6 per side vertical
         let totalSize = NSSize(width: width, height: totalHeight)
         
         let windowFrame = activeWindow.frame
@@ -224,61 +424,44 @@ final class QuickTooltip: NSPanel {
         setFrame(tooltipFrame, display: true)
     }
     
-    func hide(for target: Any) {
-        var matches = false
-        if let currentView = currentTarget as? NSView, let targetView = target as? NSView {
-            matches = (currentView == targetView)
-        } else if let (currentControl, currentSegment) = currentTarget as? (NSSegmentedControl, Int),
-                  let (targetControl, targetSegment) = target as? (NSSegmentedControl, Int) {
-            matches = (currentControl == targetControl && currentSegment == targetSegment)
-        } else if let currentObj = currentTarget as? NSObject, let targetObj = target as? NSObject {
-            matches = (currentObj == targetObj)
+    func hide(for owner: NSView) {
+        let ownerID = ObjectIdentifier(owner)
+        guard case .scheduled(let requestID) = visibilityCoordinator.requestHide(for: ownerID) else {
+            return
         }
-        
-        if matches {
-            hide()
-        }
-    }
-    
-    func hide() {
-        // Debounce hide to prevent flickering when moving between tooltipped elements
-        hideTimer?.invalidate()
-        hideTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: false) { [weak self] _ in
-            guard let self = self else { return }
-            self.currentTarget = nil
-            
-            if self.alphaValue > 0 {
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = 0.1
-                    self.animator().alphaValue = 0
-                }, completionHandler: { [weak self] in
-                    self?.orderOut(nil)
-                })
+
+        hideTask?.cancel()
+        hideTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(50))
+            } catch {
+                return
             }
+            self?.completeScheduledHide(requestID: requestID)
         }
     }
     
-    /// Hide the tooltip immediately without any debounce or animation
+    /// Hide the tooltip immediately and invalidate any delayed work.
     func hideImmediately() {
-        hideTimer?.invalidate()
-        hideTimer = nil
+        hideTask?.cancel()
+        hideTask = nil
+        visibilityCoordinator.hideImmediately()
         currentTarget = nil
+        loadingBorderView.stopAnimating()
         alphaValue = 0
         orderOut(nil)
     }
     
     /// Show tooltip on the right of the given alignment view, matching its height
-    func showOnRight(of alignmentView: NSView, text: String, width: CGFloat = 300) {
-        hideTimer?.invalidate()
-        hideTimer = nil
-        
-        currentTarget = alignmentView
-        
+    func showOnRight(of alignmentView: NSView, text: String, for owner: NSView, width: CGFloat = 300) {
+        guard let window = alignmentView.window else { return }
+        let target = Target.view(owner: owner, anchor: alignmentView)
+
+        prepareToShow(target)
+        setShortcut(nil)
         label.stringValue = text
         loadingBorderView.stopAnimating()
-        
-        guard let window = alignmentView.window else { return }
-        
+
         let rectInWindow = alignmentView.convert(alignmentView.bounds, to: nil)
         
         let containerRectInWindow: NSRect
@@ -305,11 +488,24 @@ final class QuickTooltip: NSPanel {
         label.preferredMaxLayoutWidth = width - 16
         
         setFrame(tooltipFrame, display: true)
-        
-        if alphaValue < 1 {
-            orderFront(nil)
-            animator().alphaValue = 1
-        }
+        alphaValue = 1
+        orderFront(nil)
+    }
+
+    private func prepareToShow(_ target: Target) {
+        hideTask?.cancel()
+        hideTask = nil
+        visibilityCoordinator.show(target.id)
+        currentTarget = target
+    }
+
+    private func completeScheduledHide(requestID: UInt64) {
+        guard visibilityCoordinator.completeHide(requestID: requestID) else { return }
+        hideTask = nil
+        currentTarget = nil
+        loadingBorderView.stopAnimating()
+        alphaValue = 0
+        orderOut(nil)
     }
     
     private func rectForSegment(_ segment: Int, in control: NSSegmentedControl) -> NSRect? {

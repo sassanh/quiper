@@ -636,6 +636,7 @@ struct PersistedTabState: Codable {
     var activeServiceURL: String?
     var activeIndicesByURL: [String: Int] = [:]
     var openTabs: [String: [Int: String]] = [:] // serviceURL -> [sessionIndex: currentURL]
+    var tabTitles: [String: [Int: String]] = [:] // serviceURL -> [sessionIndex: last non-empty title]
     var tabInputs: [String: [Int: TabInputState]] = [:] // serviceURL -> [sessionIndex: TabInputState]
     var tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:] // serviceURL -> [sessionIndex: [PromptHistoryEntry]]
     var tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:] // serviceURL -> [sessionIndex: Bool]
@@ -645,16 +646,18 @@ struct PersistedTabState: Codable {
         case activeServiceURL
         case activeIndicesByURL
         case openTabs
+        case tabTitles
         case tabInputs
         case tabPromptHistories
         case tabPromptHistoryEnabledOverrides
         case tabHistory
     }
 
-    init(activeServiceURL: String? = nil, activeIndicesByURL: [String: Int] = [:], openTabs: [String: [Int: String]] = [:], tabInputs: [String: [Int: TabInputState]] = [:], tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:], tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:], tabHistory: [TabIdentifier]? = nil) {
+    init(activeServiceURL: String? = nil, activeIndicesByURL: [String: Int] = [:], openTabs: [String: [Int: String]] = [:], tabTitles: [String: [Int: String]] = [:], tabInputs: [String: [Int: TabInputState]] = [:], tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:], tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:], tabHistory: [TabIdentifier]? = nil) {
         self.activeServiceURL = activeServiceURL
         self.activeIndicesByURL = activeIndicesByURL
         self.openTabs = openTabs
+        self.tabTitles = tabTitles
         self.tabInputs = tabInputs
         self.tabPromptHistories = tabPromptHistories
         self.tabPromptHistoryEnabledOverrides = tabPromptHistoryEnabledOverrides
@@ -666,6 +669,7 @@ struct PersistedTabState: Codable {
         activeServiceURL = try container.decodeIfPresent(String.self, forKey: .activeServiceURL)
         activeIndicesByURL = try container.decodeIfPresent([String: Int].self, forKey: .activeIndicesByURL) ?? [:]
         openTabs = try container.decodeIfPresent([String: [Int: String]].self, forKey: .openTabs) ?? [:]
+        tabTitles = try container.decodeIfPresent([String: [Int: String]].self, forKey: .tabTitles) ?? [:]
         tabInputs = try container.decodeIfPresent([String: [Int: TabInputState]].self, forKey: .tabInputs) ?? [:]
         tabPromptHistories = try container.decodeIfPresent([String: [Int: [PromptHistoryEntry]]].self, forKey: .tabPromptHistories) ?? [:]
         tabPromptHistoryEnabledOverrides = try container.decodeIfPresent([String: [Int: Bool]].self, forKey: .tabPromptHistoryEnabledOverrides) ?? [:]
