@@ -1124,6 +1124,7 @@ struct ServiceDetailView: View {
             case .action(let id):
                 if let action = settings.customActions.first(where: { $0.id == id }) {
                     ActionScriptEditor(action: action,
+                                       serviceID: service.id,
                                        code: Binding(
                                            get: { loadScript(action: action) },
                                            set: { newValue in
@@ -1186,7 +1187,7 @@ struct ServiceDetailView: View {
                         )
                     }
                     
-                    HighlightedCodeContainer(
+                    CodeEditorContainer(
                         code: Binding(
                             get: { loadFocusSelector() },
                             set: { newValue in
@@ -1198,20 +1199,23 @@ struct ServiceDetailView: View {
                                 appController?.reloadServices()
                             }
                         ),
-                        language: "css",
+                        language: .cssSelector,
                         fileName: "prompt-input-selector.txt",
+                        fileURL: FocusSelectorStorage.selectorURL(serviceID: service.id),
                         isReadOnly: settings.isTemplatePromptInputSelectorInSync(serviceID: service.id),
                         openInEditor: { openFocusSelectorInEditor() },
                         revealInFinder: { revealFocusSelectorInFinder() },
                         copyFilePath: { copyFocusSelectorFilePath() }
                     )
+                    .id("\(service.id)-prompt-input")
                     .frame(height: 200)
 
-                    if settings.isTemplatePromptInputSelectorInSync(serviceID: service.id) {
-                        Text("Disable latest default to edit this selector.")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
-                    }
+                    Text("Disable latest default to edit this selector.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1, reservesSpace: true)
+                        .opacity(settings.isTemplatePromptInputSelectorInSync(serviceID: service.id) ? 1 : 0)
+                        .accessibilityHidden(!settings.isTemplatePromptInputSelectorInSync(serviceID: service.id))
                     
                     Divider()
                         .padding(.vertical, 8)
@@ -1300,6 +1304,7 @@ struct ServiceDetailView: View {
                     )
                 }
             }
+            .contentMargins(.trailing, 12, for: .scrollContent)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1525,7 +1530,7 @@ struct ServiceDetailView: View {
                     )
                 }
                 
-                HighlightedCodeContainer(
+                CodeEditorContainer(
                     code: Binding(
                         get: { loadCSS() },
                         set: { newValue in
@@ -1537,20 +1542,23 @@ struct ServiceDetailView: View {
                             appController?.reloadServices()
                         }
                     ),
-                    language: "css",
+                    language: .css,
                     fileName: "custom.css",
+                    fileURL: CustomCSSStorage.cssURL(serviceID: service.id),
                     isReadOnly: settings.isTemplateCustomCSSInSync(serviceID: service.id),
                     openInEditor: { openCSSInEditor() },
                     revealInFinder: { revealCSSInFinder() },
                     copyFilePath: { copyCSSFilePath() }
                 )
+                .id("\(service.id)-custom-css")
                 .frame(maxHeight: .infinity)
 
-                if settings.isTemplateCustomCSSInSync(serviceID: service.id) {
-                    Text("Disable latest default to edit this stylesheet.")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
+                Text("Disable latest default to edit this stylesheet.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1, reservesSpace: true)
+                    .opacity(settings.isTemplateCustomCSSInSync(serviceID: service.id) ? 1 : 0)
+                    .accessibilityHidden(!settings.isTemplateCustomCSSInSync(serviceID: service.id))
             }
         }
         .padding()
@@ -2087,6 +2095,7 @@ private struct LatestDefaultToggle: View {
                 Text(isInSync ? syncedDescription : customDescription)
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .lineLimit(2, reservesSpace: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -2104,6 +2113,7 @@ private struct LatestDefaultToggle: View {
 
 private struct ActionScriptEditor: View {
     var action: CustomAction
+    var serviceID: UUID
     @Binding var code: String
     var isTemplateBacked: Bool
     var isInSync: Bool
@@ -2127,15 +2137,20 @@ private struct ActionScriptEditor: View {
                 )
             }
             
-            HighlightedCodeContainer(
+            CodeEditorContainer(
                 code: $code,
-                language: "javascript",
+                language: .javaScript,
                 fileName: "\(action.name.isEmpty ? "action" : action.name).js",
+                fileURL: ActionScriptStorage.scriptURL(
+                    serviceID: serviceID,
+                    actionID: action.id
+                ),
                 isReadOnly: isInSync,
                 openInEditor: openInEditor,
                 revealInFinder: revealInFinder,
                 copyFilePath: copyFilePath
             )
+            .id("\(serviceID)-\(action.id)-action-script")
             .frame(maxHeight: .infinity)
             
             Text(isInSync ? "Disable latest default to edit this script." : "Leave blank to log the default 'Action not implemented' message.")

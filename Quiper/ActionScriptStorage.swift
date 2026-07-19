@@ -60,14 +60,8 @@ enum ActionScriptStorage {
     }
 
     static func saveScript(_ script: String, serviceID: UUID, actionID: UUID) {
-        let trimmed = script.trimmingCharacters(in: .whitespacesAndNewlines)
         let url = scriptURL(serviceID: serviceID, actionID: actionID)
-        if trimmed.isEmpty {
-            try? FileManager.default.removeItem(at: url)
-            return
-        }
-        let data = Data(script.utf8)
-        try? data.write(to: url, options: .atomic)
+        TextFileStorage.save(script, to: url)
     }
 
     static func openInDefaultEditor(serviceID: UUID, actionID: UUID, contents: String) {

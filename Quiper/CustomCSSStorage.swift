@@ -55,14 +55,8 @@ enum CustomCSSStorage {
     }
 
     static func saveCSS(_ css: String, serviceID: UUID) {
-        let trimmed = css.trimmingCharacters(in: .whitespacesAndNewlines)
         let url = cssURL(serviceID: serviceID)
-        if trimmed.isEmpty {
-            try? FileManager.default.removeItem(at: url)
-            return
-        }
-        let data = Data(css.utf8)
-        try? data.write(to: url, options: .atomic)
+        TextFileStorage.save(css, to: url)
     }
 
     static func openInDefaultEditor(serviceID: UUID, contents: String) {

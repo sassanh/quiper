@@ -55,14 +55,8 @@ enum FocusSelectorStorage {
     }
 
     static func saveSelector(_ selector: String, serviceID: UUID) {
-        let trimmed = selector.trimmingCharacters(in: .whitespacesAndNewlines)
         let url = selectorURL(serviceID: serviceID)
-        if trimmed.isEmpty {
-            try? FileManager.default.removeItem(at: url)
-            return
-        }
-        let data = Data(selector.utf8)
-        try? data.write(to: url, options: .atomic)
+        TextFileStorage.save(selector, to: url)
     }
 
     static func openInDefaultEditor(serviceID: UUID, contents: String) {

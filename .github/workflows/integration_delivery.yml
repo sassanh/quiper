@@ -95,8 +95,20 @@ jobs:
       - name: Select Xcode 26.1.1
         run: sudo xcode-select -s /Applications/Xcode_26.1.1.app
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: CodeEditorWeb/package-lock.json
+
+      - name: Verify settings code editor bundle
+        run: ./scripts/build-code-editor.sh --check
+
       - name: Toolchain info
         run: |
+          node --version
+          npm --version
           swift --version
           xcodebuild -version
 
@@ -134,6 +146,14 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-tags: true
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: CodeEditorWeb/package-lock.json
+      - name: Verify settings code editor bundle
+        run: ./scripts/build-code-editor.sh --check
       - name: Set release app version
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |

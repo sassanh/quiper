@@ -37,3 +37,6 @@ result*.json
 docs/node_modules/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+
+# Bundled settings code editor
+CodeEditorWeb/node_modules/

@@ -76,8 +76,9 @@ Selector behavior still needs manual validation in a clean or test account when 
 
 For large scripts or when using custom IDEs (like VS Code or Cursor), you can edit your scripts directly on your file system:
 *   **Path:** `~/Library/Application Support/app.sassanh.quiper.Quiper/ActionScripts/[ServiceID]/[ActionID].js`
-*   **Quick Access:** In the **Engines** tab, next to the script input box, click **Open in Editor** (opens the `.js` file in your default code editor) or **Reveal in Finder**.
-*   Quiper loads the script directly from this file path when triggered, so edits saved in your external editor apply immediately without restarting the app.
+*   **Quick Access:** In the **Engines** tab, next to the script editor, click **Open Externally** (opens the `.js` file in your default code editor) or **Reveal in Finder**.
+*   Quiper loads the script directly from this file path when triggered. Saved external edits also appear live in the Settings editor without restarting the app.
+*   If Quiper and an external editor change the same revision simultaneously, Settings lets you choose **Load External** or **Keep Mine** instead of silently discarding either version.
 
 ---
 

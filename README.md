@@ -88,6 +88,8 @@ A passing result confirms the file came from this repository's CI and has not be
 
 ### Build from source
 
+Building Quiper requires Xcode 16+ and Node.js 20+. The shared Xcode scheme installs the locked CodeMirror dependencies when needed and rebuilds the bundled settings editor automatically.
+
 ```bash
 git clone https://github.com/sassanh/quiper.git
 cd quiper
