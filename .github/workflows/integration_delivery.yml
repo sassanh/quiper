@@ -38,7 +38,7 @@ jobs:
             exit 0
           fi
 
-          LATEST=$(gh release list --limit 50 --json tagName,publishedAt \
+          LATEST=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName,publishedAt \
             --jq '[.[] | select(.tagName | startswith("nightly-"))][0]')
 
           if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
@@ -49,7 +49,7 @@ jobs:
 
           PUBLISHED_AT=$(echo "$LATEST" | jq -r '.publishedAt')
           TAG=$(echo "$LATEST" | jq -r '.tagName')
-          BODY=$(gh release view "$TAG" --json body --jq '.body // ""')
+          BODY=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""')
 
           LAST_SHA=$(echo "$BODY" | grep -oE '<!-- Commit: [a-f0-9]+ -->' | head -1 | sed 's/<!-- Commit: //;s/ -->//' || true)
           if [ -z "$LAST_SHA" ]; then
