@@ -134,29 +134,28 @@ final class CollapsibleSelectorTests: XCTestCase {
         // 1. Expand
         selector.mouseEntered(with: makeEvent()) // expands
         XCTAssertTrue(selector.isExpanded)
-        XCTAssertNotNil(selector.expandedPanel)
+        let firstPanel = selector.expandedPanel
+        XCTAssertNotNil(firstPanel)
         
-        // 2. Collapse (immediately)
-        selector.collapse() // sets isExpanded=false, starts animation
+        // 2. Collapse immediately. Ownership is detached before the fade so a
+        // later expansion is not tied to the outgoing panel's cleanup.
+        selector.collapse()
         XCTAssertFalse(selector.isExpanded)
-        // Panel still exists (fading)
-        XCTAssertNotNil(selector.expandedPanel)
+        XCTAssertNil(selector.expandedPanel)
         
-        // 3. Expand again (immediately, while first collapse animation is running)
+        // 3. Expand again immediately while the old panel is still fading out
         selector.mouseEntered(with: makeEvent())
         XCTAssertTrue(selector.isExpanded)
         let newPanel = selector.expandedPanel
         XCTAssertNotNil(newPanel)
+        XCTAssertNotEqual(newPanel, firstPanel, "Re-expansion should attach a new panel")
         
-        // 4. Wait for the FIRST collapse completion to fire
-        // The first collapse completion will try to clean up.
-        // If buggy, it will set expandedPanel = nil even though we just created a new one.
-        
-        let expectation = XCTestExpectation(description: "Wait for animation params")
+        // 4. Wait for the first collapse's orderOut to finish. Cleanup of the
+        // detached panel must not clear or replace the new expanded panel.
+        let expectation = XCTestExpectation(description: "Wait for previous collapse cleanup")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            // Check state
             XCTAssertTrue(self.selector.isExpanded, "Should still be expanded")
-            XCTAssertNotNil(self.selector.expandedPanel, "Panel reference should not be nilled out by previous collapse")
+            XCTAssertNotNil(self.selector.expandedPanel, "New panel must survive previous collapse cleanup")
             XCTAssertEqual(self.selector.expandedPanel, newPanel, "Should still reference the new panel")
             expectation.fulfill()
         }

@@ -268,6 +268,12 @@ final class PromptHistoryHUDView: NSView {
         
         allItems = sortedHistory.map { entry in
             let row = PromptHistoryHUDRow(entry: entry)
+            row.onHover = { [weak self, weak row] in
+                guard let self, let row,
+                      let index = self.filteredItems.firstIndex(where: { $0.view === row }) else { return }
+                self.highlightedIndex = index
+                self.updateHighlighting()
+            }
             row.onClick = { [weak self, entry] in
                 self?.selectEntry(entry)
             }
@@ -1186,6 +1192,7 @@ fileprivate final class PromptHistoryHUDActionPill: NSControl {
 
 @MainActor
 fileprivate final class PromptHistoryHUDRow: NSControl {
+    var onHover: (() -> Void)?
     var onClick: (() -> Void)?
     var onDelete: (() -> Void)?
     var onCopy: (() -> Void)?
@@ -1345,6 +1352,7 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
     
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
+        onHover?()
         if isClipped {
             if let scrollView = findScrollView() {
                 QuickTooltip.shared.showOnRight(of: scrollView, text: entry.text, for: self)

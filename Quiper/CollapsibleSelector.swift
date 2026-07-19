@@ -74,12 +74,30 @@ class CollapsibleSelector: NSView {
     private let collapsedControl: SegmentedControl
     
     // Expanded State
-    private(set) var expandedPanel: NSPanel?
-    private var expandedControl: SegmentedControl?
-    private(set) var isExpanded = false
+    var expandedPanel: NSPanel? {
+        guard let window else { return nil }
+        return window.childWindows?
+            .compactMap { $0 as? NSPanel }
+            .first { expandedControl(in: $0) != nil }
+    }
+
+    private var expandedControl: SegmentedControl? {
+        guard let expandedPanel else { return nil }
+        return expandedControl(in: expandedPanel)
+    }
+
+    var isExpanded: Bool {
+        expandedPanel != nil
+    }
     
     var isTrackingMouse: Bool {
         return expandedControl?.isTrackingMouse ?? false
+    }
+
+    private func expandedControl(in panel: NSPanel) -> SegmentedControl? {
+        panel.contentView?.subviews
+            .compactMap { $0 as? SegmentedControl }
+            .first { $0.parentSelector === self }
     }
     
     // State
@@ -328,12 +346,6 @@ class CollapsibleSelector: NSView {
     func expand() {
         guard !isExpanded, let window = window, !items.isEmpty else { return }
         
-        // Notify delegate before expanding
-        delegate?.selectorWillExpand(self)
-        
-        isExpanded = true
-        delegate?.collapsibleSelector(self, didChangeExpansionState: true)
-        
         // 1. Create Control
         let control = SegmentedControl(frame: .zero)
         control.forceHighlight = true
@@ -442,37 +454,32 @@ class CollapsibleSelector: NSView {
         }
         panel.setFrameOrigin(NSPoint(x: panelX, y: collapsedRect.minY))
         
-        window.addChildWindow(panel, ordered: .above)
+        // Attaching the selector-owned panel is the single expanded-state transition.
+        // Do this before notifying the delegate so reentrant callbacks see the same state.
         panel.alphaValue = 0.4
+        window.addChildWindow(panel, ordered: .above)
+        delegate?.selectorWillExpand(self)
+        delegate?.collapsibleSelector(self, didChangeExpansionState: true)
         panel.animator().alphaValue = 1
-        
-        self.expandedPanel = panel
-        self.expandedControl = control
     }
     
     func collapse() {
-        guard isExpanded, let panel = expandedPanel else { return }
-        isExpanded = false
+        guard let panel = expandedPanel else { return }
+
+        // Detaching immediately makes the selector collapsed before the old panel
+        // finishes fading, allowing a new expansion without shared-state races.
+        panel.parent?.removeChildWindow(panel)
         delegate?.collapsibleSelector(self, didChangeExpansionState: false)
         
         NSAnimationContext.runAnimationGroup { context in
-             context.duration = animationDuration
-             panel.animator().alphaValue = 0
-        } completionHandler: { [weak self] in
-             Task { @MainActor [weak self] in
-                 guard let self = self else { return }
-                 
-                 // Clean up the specific panel that was collapsed
-                 panel.parent?.removeChildWindow(panel)
-                 panel.orderOut(nil)
-                 
-                 // Only clear the main reference if it still points to THIS panel.
-                 // If user re-expanded during animation, expandedPanel will be a different, new panel.
-                 if self.expandedPanel == panel {
-                     self.expandedPanel = nil
-                     self.expandedControl = nil
-                 }
-             }
+            context.duration = animationDuration
+            panel.animator().alphaValue = 0
+        } completionHandler: {
+            Task { @MainActor in
+                // The captured panel owns only its own visual cleanup. It never
+                // mutates the state of a panel created by a later expansion.
+                panel.orderOut(nil)
+            }
         }
     }
     

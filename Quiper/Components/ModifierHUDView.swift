@@ -373,6 +373,12 @@ final class ModifierHUDView: NSView {
             let shortcutStr = getShortcutString(for: service, index: idx, appShortcuts: appShortcuts)
             let btn = HUDEngineButton(title: service.name, shortcut: shortcutStr)
             btn.isSelected = (service.url == currentSvcURL)
+            btn.onHover = { [weak self, weak btn] in
+                guard let self, let btn,
+                      let index = self.filteredItems.firstIndex(where: { $0.button === btn }) else { return }
+                self.highlightedIndex = index
+                self.updateHighlighting()
+            }
             btn.onClick = { [weak self, idx] in
                 self?.wc?.selectService(at: idx)
                 self?.hide()
@@ -398,6 +404,12 @@ final class ModifierHUDView: NSView {
                     }
                     
                     let tabBtn = HUDTabButton(title: session.title, isSelected: isTabSelected, shortcut: sessionShortcutStr)
+                    tabBtn.onHover = { [weak self, weak tabBtn] in
+                        guard let self, let tabBtn,
+                              let index = self.filteredItems.firstIndex(where: { $0.button === tabBtn }) else { return }
+                        self.highlightedIndex = index
+                        self.updateHighlighting()
+                    }
                     tabBtn.onClick = { [weak self, idx, sessionIdx = session.sessionIndex] in
                         self?.wc?.selectService(at: idx)
                         self?.wc?.switchSession(to: sessionIdx)
@@ -595,6 +607,7 @@ final class HUDCloseButton: NSControl {
 
 @MainActor
 final class HUDEngineButton: NSControl {
+    var onHover: (() -> Void)?
     var onClick: (() -> Void)?
     var isSelected = false {
         didSet { updateAppearance() }
@@ -698,6 +711,7 @@ final class HUDEngineButton: NSControl {
     
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
+        onHover?()
     }
     
     override func mouseExited(with event: NSEvent) {
@@ -968,6 +982,7 @@ final class HUDShortcutRow: NSControl {
 
 @MainActor
 final class HUDTabButton: NSControl {
+    var onHover: (() -> Void)?
     var onClick: (() -> Void)?
     var isSelected = false {
         didSet { updateAppearance() }
@@ -1074,6 +1089,7 @@ final class HUDTabButton: NSControl {
     
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
+        onHover?()
     }
     
     override func mouseExited(with event: NSEvent) {
