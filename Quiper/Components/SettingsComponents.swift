@@ -225,6 +225,70 @@ struct SettingsToggleRow: View {
         }
     }
 }
+
+// MARK: - List labeled control rows (Shortcuts tab and similar)
+
+/// Title + detail on the left, trailing control(s) on the right.
+/// Use this instead of hand-rolled `HStack` + magic label widths so layout stays consistent.
+struct SettingsLabeledControlRow<Trailing: View>: View {
+    /// Shared label-column widths for List settings rows.
+    enum LabelWidth {
+        /// Single trailing control (shortcut button, switch).
+        case standard
+        /// Two trailing controls (primary + alternate).
+        case compact
+
+        var points: CGFloat {
+            switch self {
+            case .standard: return 320
+            case .compact: return 220
+            }
+        }
+    }
+
+    let title: String
+    let detail: String
+    var statusMessage: String = ""
+    var labelWidth: LabelWidth = .standard
+    @ViewBuilder private let trailing: () -> Trailing
+
+    init(
+        title: String,
+        detail: String,
+        statusMessage: String = "",
+        labelWidth: LabelWidth = .standard,
+        @ViewBuilder trailing: @escaping () -> Trailing
+    ) {
+        self.title = title
+        self.detail = detail
+        self.statusMessage = statusMessage
+        self.labelWidth = labelWidth
+        self.trailing = trailing
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .fontWeight(.semibold)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !statusMessage.isEmpty {
+                    Text(statusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: labelWidth.points, alignment: .leading)
+
+            Spacer(minLength: 0)
+
+            trailing()
+        }
+        .padding(.vertical, 10)
+    }
+}
  
 struct SettingsDivider: View {
     var body: some View {

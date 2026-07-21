@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Engine Launch Hotkey in Engines Settings**: Each engine's global launch shortcut can now be set from the engine header (alongside icon, name, and URL), in addition to the Shortcuts tab.
+- **Engine Shortcuts as Toggle**: New Shortcuts setting so each engine's global shortcut toggles Quiper—show and select the engine, or hide when that engine is already active and focused. Defaults on for new installs; existing installs get a one-time opt-in prompt.
+
 ## [4.5.0] - 2026-07-21
 
 ### Added

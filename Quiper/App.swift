@@ -110,6 +110,7 @@ final class AppController: NSObject, NSWindowDelegate {
         UpdateManager.shared.handleLaunchIfNeeded()
         presentTemplateActionSyncMigrationPromptIfNeeded()
         presentSparseBundleMigrationPromptIfNeeded()
+        presentEngineShortcutToggleMigrationPromptIfNeeded()
     }
 
     private func presentTemplateActionSyncMigrationPromptIfNeeded() {
@@ -132,6 +133,28 @@ final class AppController: NSObject, NSWindowDelegate {
             let shouldUpdate = alert.runModal() == .alertFirstButtonReturn
             Settings.shared.resolveTemplateActionSyncMigration(updateScripts: shouldUpdate)
             self.reloadServices()
+        }
+    }
+
+    private func presentEngineShortcutToggleMigrationPromptIfNeeded() {
+        guard Settings.shared.needsEngineShortcutToggleMigrationPrompt,
+              !Self.isRunningTests,
+              !Constants.LaunchMode.shouldSuppressInterferenceUI else {
+            return
+        }
+
+        DispatchQueue.main.async {
+            guard Settings.shared.needsEngineShortcutToggleMigrationPrompt else { return }
+
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.messageText = "Use engine shortcuts to show and hide?"
+            alert.informativeText = "Right now, pressing an engine's global shortcut while Quiper is already open on that engine does nothing. Enable this to hide Quiper instead—same idea as the main Show/Hide shortcut. You can change this later in Shortcuts settings."
+            alert.addButton(withTitle: "Enable")
+            alert.addButton(withTitle: "Keep Current")
+
+            let shouldEnable = alert.runModal() == .alertFirstButtonReturn
+            Settings.shared.resolveEngineShortcutToggleMigration(enable: shouldEnable)
         }
     }
     
@@ -653,6 +676,17 @@ final class AppController: NSObject, NSWindowDelegate {
             engineHotkeyManager.unregister(serviceID: serviceID)
             return
         }
+
+        let alreadyActiveEngine =
+            isWindowVisible
+            && NSApp.isActive
+            && windowController.activeServiceID == serviceID
+
+        if Settings.shared.hideQuiperWhenRetriggeringActiveEngineShortcut, alreadyActiveEngine {
+            hideWindow(nil)
+            return
+        }
+
         showWindow(nil)
         windowController.selectService(at: index)
         windowController.focusInputInActiveWebview()

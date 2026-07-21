@@ -57,3 +57,13 @@ Standard macOS native checkbox toggles (`.toggleStyle(.checkbox)`) do not reliab
 
 Ensure primary action buttons remain readable and do not blend into low-contrast background colors:
 *   Prominent buttons (such as "Check for Updates" or destructive buttons in the Danger Zone) must preserve their prominent color tints (e.g., blue or red) under both Classic and Colorful styles to ensure high contrast, readability, and clickability.
+
+---
+
+## 6. List Labeled Control Rows (Shortcuts tab)
+
+For Settings **List** rows that show a title + caption on the left and a control (switch, shortcut button, badge + switch) on the right:
+
+*   **Standard:** Use `SettingsLabeledControlRow` from `SettingsComponents.swift`. Do **not** hand-roll `HStack` + fixed label widths.
+*   Use `labelWidth: .standard` (default) for a single trailing control; use `.compact` when the trailing side has primary + alternate controls.
+*   Label column widths live only on `SettingsLabeledControlRow.LabelWidth`—change them there, not at call sites.

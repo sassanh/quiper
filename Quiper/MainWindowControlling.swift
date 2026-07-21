@@ -9,6 +9,7 @@ protocol MainWindowControlling: AnyObject {
     func toggleInspector()
     var window: NSWindow? { get }
     var activeServiceURL: String? { get }
+    var activeServiceID: UUID? { get }
     var activeWebView: WKWebView? { get }
     func focusInputInActiveWebview()
     func focusInputInActiveWebviewWithFallback()

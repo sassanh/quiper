@@ -221,7 +221,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         super.init(window: window)
-        let initialServices = services ?? Settings.shared.loadSettings()
+        // Settings.shared already loads from disk in its initializer; avoid a second loadSettings()
+        // that can re-stamp migration state mid-launch.
+        let initialServices = services ?? Settings.shared.services
         
         configureWindow(for: window)
         
@@ -278,6 +280,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Public API
     var serviceCount: Int { services.count }
     var activeServiceURL: String? { currentService()?.url }
+    var activeServiceID: UUID? { currentService()?.id }
     var activeSessionIndex: Int {
         guard let service = currentService() else { return 0 }
         return activeIndicesByURL[service.url] ?? 0

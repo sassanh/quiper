@@ -483,6 +483,7 @@ struct PersistedSettings: Codable {
     var promptHistoryRecordOnSelectionClear: Bool?
     var promptHistoryLimit: Int?
     var tabNavigationRingSize: Int?
+    var hideQuiperWhenRetriggeringActiveEngineShortcut: Bool?
     var quiperVersion: String?
     var version: Int? = 1
 
@@ -506,6 +507,7 @@ struct PersistedSettings: Codable {
         case promptHistoryRecordOnSelectionClear
         case promptHistoryLimit
         case tabNavigationRingSize
+        case hideQuiperWhenRetriggeringActiveEngineShortcut
         case quiperVersion
     }
 
@@ -539,6 +541,7 @@ struct PersistedSettings: Codable {
          promptHistoryRecordOnSelectionClear: Bool? = nil,
          promptHistoryLimit: Int? = nil,
          tabNavigationRingSize: Int? = nil,
+         hideQuiperWhenRetriggeringActiveEngineShortcut: Bool? = nil,
          quiperVersion: String? = nil,
          version: Int? = 1) {
         self.services = services
@@ -571,6 +574,7 @@ struct PersistedSettings: Codable {
         self.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear
         self.promptHistoryLimit = promptHistoryLimit
         self.tabNavigationRingSize = tabNavigationRingSize
+        self.hideQuiperWhenRetriggeringActiveEngineShortcut = hideQuiperWhenRetriggeringActiveEngineShortcut
         self.quiperVersion = quiperVersion
         self.version = version
     }
@@ -607,6 +611,7 @@ struct PersistedSettings: Codable {
         promptHistoryRecordOnSelectionClear = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnSelectionClear)
         promptHistoryLimit = try container.decodeIfPresent(Int.self, forKey: .promptHistoryLimit)
         tabNavigationRingSize = try container.decodeIfPresent(Int.self, forKey: .tabNavigationRingSize)
+        hideQuiperWhenRetriggeringActiveEngineShortcut = try container.decodeIfPresent(Bool.self, forKey: .hideQuiperWhenRetriggeringActiveEngineShortcut)
         quiperVersion = try container.decodeIfPresent(String.self, forKey: .quiperVersion)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }

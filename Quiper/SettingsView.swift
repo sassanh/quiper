@@ -791,6 +791,7 @@ struct ServiceDetailView: View {
     @State private var targetNewValue = false
     @State private var isMigratingData = false
     @State private var migrationMessage = ""
+    @State private var activationShortcutStatus = ""
 
     private var detailSelectionBinding: Binding<DetailSelection?> {
         Binding(
@@ -880,13 +881,30 @@ struct ServiceDetailView: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 8) {
-                        Text("Name:")
-                            .font(.callout)
-                            .foregroundColor(.secondary)
-                            .frame(width: 50, alignment: .trailing)
-                        TextField("Name", text: $service.name)
-                            .textFieldStyle(.roundedBorder)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text("Name:")
+                                .font(.callout)
+                                .foregroundColor(.secondary)
+                                .frame(width: 50, alignment: .trailing)
+                            TextField("Name", text: $service.name)
+                                .textFieldStyle(.roundedBorder)
+                            ShortcutButton(
+                                text: service.activationShortcut.map { ShortcutFormatter.string(for: $0) } ?? "Record Shortcut",
+                                isPlaceholder: service.activationShortcut == nil,
+                                onTap: { startActivationShortcutCapture() },
+                                onClear: service.activationShortcut != nil ? { clearActivationShortcut() } : nil,
+                                onReset: nil,
+                                width: 160,
+                                axIdentifier: "recorder_launch_engine_\(service.id.uuidString)"
+                            )
+                        }
+                        if !activationShortcutStatus.isEmpty {
+                            Text(activationShortcutStatus)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
                     }
                     
                     HStack(spacing: 8) {
@@ -1036,6 +1054,49 @@ struct ServiceDetailView: View {
                     .shadow(color: Color.black.opacity(0.25), radius: 20, x: 0, y: 10)
                 }
                 .transition(.opacity.animation(.easeInOut(duration: 0.15)))
+            }
+        }
+    }
+
+    private func startActivationShortcutCapture() {
+        let serviceID = service.id
+        let serviceName = service.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "Service"
+            : service.name
+        let session = StandardShortcutSession(onUpdate: { update in
+            shortcutState.updateMessage(update)
+        }, onFinish: {
+            shortcutState.cancel()
+        }, completion: { configuration in
+            if let configuration, let index = settings.services.firstIndex(where: { $0.id == serviceID }) {
+                settings.services[index].activationShortcut = configuration
+                settings.saveSettings()
+                Task { @MainActor in
+                    appController?.reloadServices()
+                }
+                activationShortcutStatus = "Saved"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    if activationShortcutStatus == "Saved" {
+                        activationShortcutStatus = ""
+                    }
+                }
+            }
+        })
+        shortcutState.start(session: session, title: "Launch \(serviceName)")
+    }
+
+    private func clearActivationShortcut() {
+        let serviceID = service.id
+        guard let index = settings.services.firstIndex(where: { $0.id == serviceID }) else { return }
+        settings.services[index].activationShortcut = nil
+        settings.saveSettings()
+        Task { @MainActor in
+            appController?.reloadServices()
+        }
+        activationShortcutStatus = "Cleared"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if activationShortcutStatus == "Cleared" {
+                activationShortcutStatus = ""
             }
         }
     }

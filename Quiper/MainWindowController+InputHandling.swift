@@ -305,7 +305,7 @@ extension MainWindowController {
 
         if isEmptyStateActive {
             if let service = services.first(where: { $0.activationShortcut == config }) {
-                _ = selectService(withURL: service.url)
+                handleActivationShortcut(for: service)
                 return true
             }
             if let digit = digitValue(for: keyCode) {
@@ -428,7 +428,7 @@ extension MainWindowController {
         }
         
         if let service = services.first(where: { $0.activationShortcut == config }) {
-            _ = selectService(withURL: service.url)
+            handleActivationShortcut(for: service)
             return true
         }
         
@@ -584,6 +584,15 @@ extension MainWindowController {
         return false
     }
     
+    private func handleActivationShortcut(for service: Service) {
+        let alreadyActiveEngine = currentService()?.id == service.id
+        if Settings.shared.hideQuiperWhenRetriggeringActiveEngineShortcut, alreadyActiveEngine {
+            hide()
+            return
+        }
+        _ = selectService(withURL: service.url)
+    }
+
     private func matches(_ lhs: HotkeyManager.Configuration, _ rhs: HotkeyManager.Configuration?) -> Bool {
         guard let rhs = rhs, !rhs.isDisabled else { return false }
         return lhs.keyCode == rhs.keyCode && lhs.modifierFlags == rhs.modifierFlags

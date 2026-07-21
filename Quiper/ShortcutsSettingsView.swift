@@ -38,16 +38,10 @@ struct KeyBindingsSettingsView: View {
                 }
 
                 Section("Control Center HUD") {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Double tap Command")
-                                .fontWeight(.semibold)
-                            Text("Open the Control Center HUD by quickly double-tapping the Command key.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        
+                    SettingsLabeledControlRow(
+                        title: "Double tap Command",
+                        detail: "Open the Control Center HUD by quickly double-tapping the Command key."
+                    ) {
                         HStack(spacing: 6) {
                             Text("⌘")
                                 .font(.system(size: 13, weight: .medium, design: .monospaced))
@@ -57,26 +51,17 @@ struct KeyBindingsSettingsView: View {
                             Text("Double Tap")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            Spacer().frame(width: 12)
+                            Toggle("", isOn: $settings.enableHUDDoubleTapCmd)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
                         }
-                        
-                        Spacer().frame(width: 12)
-                        
-                        Toggle("", isOn: $settings.enableHUDDoubleTapCmd)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
                     }
-                    .padding(.vertical, 4)
-                    
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Both Command Keys")
-                                .fontWeight(.semibold)
-                            Text("Open the Control Center HUD by pressing Left and Right Command together.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        
+
+                    SettingsLabeledControlRow(
+                        title: "Both Command Keys",
+                        detail: "Open the Control Center HUD by pressing Left and Right Command together."
+                    ) {
                         HStack(spacing: 6) {
                             Text("L ⌘")
                                 .font(.system(size: 13, weight: .medium, design: .monospaced))
@@ -91,15 +76,12 @@ struct KeyBindingsSettingsView: View {
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
                                 .background(RoundedRectangle(cornerRadius: 5).fill(.quaternary))
+                            Spacer().frame(width: 12)
+                            Toggle("", isOn: $settings.enableHUDCmdEscape)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
                         }
-                        
-                        Spacer().frame(width: 12)
-                        
-                        Toggle("", isOn: $settings.enableHUDCmdEscape)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
                     }
-                    .padding(.vertical, 4)
                 }
 
                 Section("App Shortcuts") {
@@ -506,6 +488,22 @@ struct KeyBindingsSettingsView: View {
             EmptyView()
         } else {
             Section("Service Hotkeys") {
+                SettingsLabeledControlRow(
+                    title: "Use engine shortcuts as toggle",
+                    detail: "When Quiper is already visible and focused on an engine, pressing that engine's global shortcut hides Quiper."
+                ) {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { settings.hideQuiperWhenRetriggeringActiveEngineShortcut },
+                            set: { settings.setHideQuiperWhenRetriggeringActiveEngineShortcut($0) }
+                        )
+                    )
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .accessibilityIdentifier("UseEngineShortcutsAsToggle")
+                }
+
                 ForEach($settings.services) { $service in
                     ServiceLaunchShortcutRow(
                         title: service.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Service" : service.name,
@@ -581,16 +579,7 @@ private struct AppShortcutRow: View {
     var alternateIdentifier: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .fontWeight(.semibold)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 220, alignment: .leading)
-            Spacer()
+        SettingsLabeledControlRow(title: title, detail: detail, labelWidth: .compact) {
             HStack(alignment: .top, spacing: 20) {
                 LabeledShortcutButton(
                     label: "Primary",
@@ -613,7 +602,6 @@ private struct AppShortcutRow: View {
                 )
             }
         }
-        .padding(.vertical, 10)
     }
 }
 
@@ -632,16 +620,7 @@ private struct DigitModifierRow: View {
     var alternateIdentifier: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .fontWeight(.semibold)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 220, alignment: .leading)
-            Spacer()
+        SettingsLabeledControlRow(title: title, detail: detail, labelWidth: .compact) {
             HStack(alignment: .top, spacing: 20) {
                 LabeledShortcutButton(
                     label: "Primary",
@@ -663,7 +642,6 @@ private struct DigitModifierRow: View {
                 )
             }
         }
-        .padding(.vertical, 10)
     }
 }
 
@@ -787,21 +765,11 @@ private struct GlobalShortcutRow: View {
     var axIdentifier: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .fontWeight(.semibold)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if !statusMessage.isEmpty {
-                    Text(statusMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: 320, alignment: .leading)
-            Spacer()
+        SettingsLabeledControlRow(
+            title: title,
+            detail: detail,
+            statusMessage: statusMessage
+        ) {
             ShortcutButton(
                 text: value,
                 isPlaceholder: value == "Disabled",
@@ -812,6 +780,5 @@ private struct GlobalShortcutRow: View {
                 axIdentifier: axIdentifier ?? "ShortcutRecorder"
             )
         }
-        .padding(.vertical, 10)
     }
 }

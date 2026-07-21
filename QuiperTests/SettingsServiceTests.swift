@@ -165,6 +165,93 @@ struct SettingsServiceTests {
         #expect(Settings.shared.customCSS(for: customCSSService) == "body { color: red; }")
     }
 
+    @Test func engineShortcutToggle_NewUserDefaultsEnabledWithoutMigrationPrompt() {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        #expect(Settings.shared.hideQuiperWhenRetriggeringActiveEngineShortcut == true)
+        #expect(Settings.shared.needsEngineShortcutToggleMigrationPrompt == false)
+        #expect(Settings.shared.makePersistedSettings().hideQuiperWhenRetriggeringActiveEngineShortcut == true)
+    }
+
+    @Test func engineShortcutToggle_MissingKeyTriggersMigrationAndResolvePersists() {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        let imported = PersistedSettings(
+            services: Settings.shared.services,
+            hideQuiperWhenRetriggeringActiveEngineShortcut: nil,
+            quiperVersion: "4.4.1"
+        )
+        Settings.shared.applyPersistedSettings(imported)
+
+        #expect(Settings.shared.hideQuiperWhenRetriggeringActiveEngineShortcut == false)
+        #expect(Settings.shared.needsEngineShortcutToggleMigrationPrompt == true)
+        #expect(Settings.shared.makePersistedSettings().hideQuiperWhenRetriggeringActiveEngineShortcut == nil)
+
+        Settings.shared.resolveEngineShortcutToggleMigration(enable: true)
+        #expect(Settings.shared.hideQuiperWhenRetriggeringActiveEngineShortcut == true)
+        #expect(Settings.shared.needsEngineShortcutToggleMigrationPrompt == false)
+        #expect(Settings.shared.makePersistedSettings().hideQuiperWhenRetriggeringActiveEngineShortcut == true)
+
+        Settings.shared.resolveEngineShortcutToggleMigration(enable: false)
+        #expect(Settings.shared.hideQuiperWhenRetriggeringActiveEngineShortcut == false)
+        #expect(Settings.shared.makePersistedSettings().hideQuiperWhenRetriggeringActiveEngineShortcut == false)
+    }
+
+    @Test func engineShortcutToggle_DoubleLoadDoesNotStampKeyOrClearMigrationPrompt() {
+        Settings.shared.wipeAllData()
+        defer { Settings.shared.wipeAllData() }
+
+        // Simulate an existing install that predates the preference (key absent).
+        let preFeature = PersistedSettings(
+            services: [Service(name: "Gemini", url: "https://example.com", focus_selector: "")],
+            hasCompletedGhostOnboarding: true,
+            enableHUDDoubleTapCmd: true,
+            enableHUDCmdEscape: true,
+            hideQuiperWhenRetriggeringActiveEngineShortcut: nil,
+            quiperVersion: "4.4.0 (2)"
+        )
+        Settings.shared.applyPersistedSettings(preFeature)
+        #expect(Settings.shared.needsEngineShortcutToggleMigrationPrompt == true)
+        #expect(Settings.shared.hideQuiperWhenRetriggeringActiveEngineShortcut == false)
+
+        // didSet-driven saves during apply/load must not stamp the preference while migration is pending.
+        Settings.shared.saveSettings()
+        #expect(Settings.shared.makePersistedSettings().hideQuiperWhenRetriggeringActiveEngineShortcut == nil)
+
+        // MainWindowController calls loadSettings() again after Settings.init — must not clear the prompt.
+        _ = Settings.shared.loadSettings()
+        #expect(Settings.shared.needsEngineShortcutToggleMigrationPrompt == true)
+        #expect(Settings.shared.hideQuiperWhenRetriggeringActiveEngineShortcut == false)
+        #expect(Settings.shared.makePersistedSettings().hideQuiperWhenRetriggeringActiveEngineShortcut == nil)
+
+        _ = Settings.shared.loadSettings()
+        #expect(Settings.shared.needsEngineShortcutToggleMigrationPrompt == true)
+        #expect(Settings.shared.makePersistedSettings().hideQuiperWhenRetriggeringActiveEngineShortcut == nil)
+    }
+
+    @Test func engineShortcutToggle_SetFromUISettlesMigration() {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        let imported = PersistedSettings(
+            services: Settings.shared.services,
+            hideQuiperWhenRetriggeringActiveEngineShortcut: nil,
+            quiperVersion: "4.4.1"
+        )
+        Settings.shared.applyPersistedSettings(imported)
+        #expect(Settings.shared.needsEngineShortcutToggleMigrationPrompt == true)
+
+        Settings.shared.setHideQuiperWhenRetriggeringActiveEngineShortcut(true)
+        #expect(Settings.shared.hideQuiperWhenRetriggeringActiveEngineShortcut == true)
+        #expect(Settings.shared.needsEngineShortcutToggleMigrationPrompt == false)
+        #expect(Settings.shared.makePersistedSettings().hideQuiperWhenRetriggeringActiveEngineShortcut == true)
+    }
+
     private func defaultTemplatePair() -> (service: Service, action: CustomAction, defaultScript: String)? {
         for service in Settings.shared.defaultServiceTemplates {
             for action in Settings.shared.defaultActionTemplates {
