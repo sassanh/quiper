@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-07-21
+
 ### Added
 
 - **First-Class Settings Code Editor**: Replaced the basic script and stylesheet fields with a full-featured editor providing line numbers, parsed JavaScript and CSS highlighting, indentation, bracket matching, folding, search, multiple selections, and contextual completions. Files opened in an external editor now update live in Settings, with an explicit choice when internal and external edits conflict.
