@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Engineering Blog**: Added an extensible VitePress blog at `/blog/` with automatic post listings, page-specific social metadata, and the first article, “Why I Built Spotlight for AI.”
 - **Global Engine Number Shortcuts**: The primary modifier configured for Go to engine 1–10 can now be enabled system-wide from General settings. Derived shortcuts appear read-only beside each eligible engine's launch shortcut, and recording an engine's matching number shortcut offers to enable the global behavior.
 - **Engine Launch Hotkey in Engines Settings**: Each engine's global launch shortcut can now be set from the engine header (alongside icon, name, and URL), in addition to the Shortcuts tab.
 - **Engine Shortcuts as Toggle**: New Shortcuts setting so each engine's global shortcut toggles Quiper—show and select the engine, or hide when that engine is already active and focused. Defaults on for new installs; existing installs get a one-time opt-in prompt.
