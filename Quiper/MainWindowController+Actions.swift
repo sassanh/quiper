@@ -536,6 +536,7 @@ extension MainWindowController: WebViewManagerDelegate {
         guard webView == currentWebView() else { return }
         
         webView.evaluateJavaScript("window.__quiperInputTrackerActive = true", completionHandler: nil)
+        webViewManager.pushRecordingIndicatorState(to: webView)
         
         if webView.title?.isEmpty ?? true {
              updateTitleLabel(withFallback: "-")

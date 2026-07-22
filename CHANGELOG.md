@@ -6,6 +6,7 @@
 
 - **Engine Launch Hotkey in Engines Settings**: Each engine's global launch shortcut can now be set from the engine header (alongside icon, name, and URL), in addition to the Shortcuts tab.
 - **Engine Shortcuts as Toggle**: New Shortcuts setting so each engine's global shortcut toggles Quiper—show and select the engine, or hide when that engine is already active and focused. Defaults on for new installs; existing installs get a one-time opt-in prompt.
+- **Prompt Recording Feedback**: When prompt history recording is enabled for a session, the prompt composer shows a moving gray dashed outline so you can tell Quiper's listeners are active. Saving a prompt makes the dashes briefly grow, thicken, and brighten in a subtle acknowledgment bounce before settling back. The indicator can be hidden in Settings and responds immediately to global and per-session recording changes.
 
 ## [4.5.0] - 2026-07-21
 
