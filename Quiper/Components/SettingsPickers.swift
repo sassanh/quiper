@@ -964,40 +964,29 @@ struct PromptRecordingIndicatorPicker: View {
     @ObservedObject private var settings = Settings.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var previewDashPhase: CGFloat = 0
+    @State private var previewGlowPhase: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: { settings.showPromptRecordingGlow = true }) {
-                VStack(spacing: 8) {
-                    composerPreview(showsIndicator: true)
-                        .padding(8)
-                        .pickerCardStyle(
-                            isSelected: settings.showPromptRecordingGlow,
-                            accentColor: .teal
-                        )
+            ForEach(PromptRecordingIndicatorStyle.allCases) { style in
+                Button(action: { settings.promptRecordingIndicatorStyle = style }) {
+                    VStack(spacing: 8) {
+                        composerPreview(style: style)
+                            .padding(8)
+                            .pickerCardStyle(
+                                isSelected: settings.promptRecordingIndicatorStyle == style,
+                                accentColor: .teal
+                            )
 
-                    Text("Shown")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(settings.showPromptRecordingGlow ? .primary : .secondary)
+                        Text(label(for: style))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(
+                                settings.promptRecordingIndicatorStyle == style ? .primary : .secondary
+                            )
+                    }
                 }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-
-            Button(action: { settings.showPromptRecordingGlow = false }) {
-                VStack(spacing: 8) {
-                    composerPreview(showsIndicator: false)
-                        .padding(8)
-                        .pickerCardStyle(
-                            isSelected: !settings.showPromptRecordingGlow,
-                            accentColor: .teal
-                        )
-
-                    Text("Hidden")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(settings.showPromptRecordingGlow ? .secondary : .primary)
-                }
-            }
-            .buttonStyle(.plain)
         }
         .frame(width: 260, alignment: .trailing)
         .onAppear {
@@ -1006,10 +995,25 @@ struct PromptRecordingIndicatorPicker: View {
             withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
                 previewDashPhase = -14
             }
+            previewGlowPhase = 0
+            withAnimation(.linear(duration: 5).repeatForever(autoreverses: false)) {
+                previewGlowPhase = -143
+            }
         }
     }
 
-    private func composerPreview(showsIndicator: Bool) -> some View {
+    private func label(for style: PromptRecordingIndicatorStyle) -> String {
+        switch style {
+        case .glow:
+            "Glow"
+        case .dashed:
+            "Dashed"
+        case .off:
+            "Hidden"
+        }
+    }
+
+    private func composerPreview(style: PromptRecordingIndicatorStyle) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color(NSColor.textBackgroundColor).opacity(0.65))
@@ -1028,7 +1032,7 @@ struct PromptRecordingIndicatorPicker: View {
                     .frame(width: 6, height: 6)
             }
 
-            if showsIndicator {
+            if style == .dashed {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .stroke(
                         Color.secondary.opacity(0.72),
@@ -1040,6 +1044,26 @@ struct PromptRecordingIndicatorPicker: View {
                         )
                     )
                     .frame(width: 52, height: 30)
+            } else if style == .glow {
+                let glowColor = Color(red: 96 / 255, green: 165 / 255, blue: 250 / 255)
+
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(glowColor.opacity(0.18), lineWidth: 2)
+                    .frame(width: 52, height: 30)
+                    .shadow(color: glowColor.opacity(0.55), radius: 3)
+
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(
+                        glowColor.opacity(0.92),
+                        style: StrokeStyle(
+                            lineWidth: 1.7,
+                            lineCap: .round,
+                            dash: [18, 125],
+                            dashPhase: reduceMotion ? 0 : previewGlowPhase
+                        )
+                    )
+                    .frame(width: 52, height: 30)
+                    .shadow(color: glowColor.opacity(0.8), radius: 2)
             }
         }
         .frame(width: 56, height: 36)

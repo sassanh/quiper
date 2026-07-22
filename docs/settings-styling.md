@@ -36,7 +36,7 @@ This rule applies to **all user-facing configuration choices**, including Boolea
 
 *   **Default:** Represent every configuration choice with custom selection card buttons that show a miniature graphical layout or behavior preview (schematic graphic).
 *   Avoid raw macOS controls such as `Picker`, naked segmented controls, switches, and checkboxes when a setting can be represented by selection cards.
-*   For Boolean settings, provide two graphical choices such as **Enabled / Disabled**, **Shown / Hidden**, or another pair of labels that describes the actual behavior. Existing examples include `PromptHistoryPicker` and `PromptRecordingIndicatorPicker`.
+*   For Boolean settings, provide two graphical choices such as **Enabled / Disabled**, **Shown / Hidden**, or another pair of labels that describes the actual behavior. `PromptHistoryPicker` is an existing example.
 *   Apply the `.pickerCardStyle(isSelected:accentColor:)` modifier to each preview card container.
 *   Schematic graphics representing specific states (like the Classic style vs Colorful style selector itself) should remain fixed in their preview colors so the user knows what each mode represents.
 *   If another section appears to permit a native control, this primary rule wins unless the product request explicitly requires that control.

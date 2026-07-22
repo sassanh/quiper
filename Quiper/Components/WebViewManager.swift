@@ -54,7 +54,7 @@ final class WebViewManager: NSObject {
                 self?.refreshAllRecordingIndicators()
             }
             .store(in: &cancellables)
-        Settings.shared.$showPromptRecordingGlow
+        Settings.shared.$promptRecordingIndicatorStyle
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -329,9 +329,9 @@ final class WebViewManager: NSObject {
         }
     }
 
-    /// Whether the composer should show the "recording armed" glow for this session.
+    /// Whether the composer should show the recording indicator for this session.
     func shouldShowRecordingIndicator(for service: Service, sessionIndex: Int) -> Bool {
-        Settings.shared.showPromptRecordingGlow
+        Settings.shared.promptRecordingIndicatorStyle != .off
             && service.preservePrompt
             && isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex)
     }
@@ -353,7 +353,17 @@ final class WebViewManager: NSObject {
     private func applyRecordingIndicatorState(to webView: WKWebView, service: Service, sessionIndex: Int) {
         let isVisible = webView.superview?.isHidden == false
         let enabled = isVisible && shouldShowRecordingIndicator(for: service, sessionIndex: sessionIndex)
+        let style: String
+        switch Settings.shared.promptRecordingIndicatorStyle {
+        case .glow:
+            style = "glow"
+        case .dashed:
+            style = "dashed"
+        case .off:
+            style = "off"
+        }
         let js = """
+        window.__quiperRecordingIndicatorStyle = "\(style)";
         window.__quiperRecordingEnabled = \(enabled ? "true" : "false");
         if (typeof window.__quiperUpdateRecordingIndicator === 'function') {
             window.__quiperUpdateRecordingIndicator();
@@ -575,14 +585,25 @@ final class WebViewManager: NSObject {
             if (window.__quiperInputTrackerInstalled) return;
             window.__quiperInputTrackerInstalled = true;
             window.__quiperInputTrackerActive = false;
-            window.__quiperRecordingEnabled = false;
+            if (typeof window.__quiperRecordingEnabled !== 'boolean') {
+                window.__quiperRecordingEnabled = false;
+            }
 
             const selector = "\(escapedSelector)";
             window.__quiperLatestTypedText = "";
             window.__quiperLastInputWasTrustedClear = false;
-            let glowOverlay = null;
+            if (typeof window.__quiperRecordingIndicatorStyle !== 'string') {
+                window.__quiperRecordingIndicatorStyle = "dashed";
+            }
+            let indicatorOverlay = null;
             let layoutInterval = null;
             let indicatedElement = null;
+            const ARC_LAYER_COUNT = 18;
+            const ARC_MAX_LEN = 18;
+            const ARC_MIN_LEN = 2.5;
+            const ARC_MIN_OPACITY = 0.04;
+            const ARC_MAX_OPACITY = 0.46;
+            const ARC_SPIN_SECONDS = 5;
 
             function ensureRecordingStyles() {
                 if (document.getElementById('__quiper-recording-style')) return;
@@ -605,9 +626,13 @@ final class WebViewManager: NSObject {
                     '  stroke-linecap: round;',
                     '}',
                     '#__quiper-recording-glow .__quiper-recording-border {',
+                    '  display: none;',
                     '  stroke: rgba(148, 148, 148, 0.35);',
                     '  stroke-width: 4;',
                     '  stroke-dasharray: 2 3;',
+                    '}',
+                    '#__quiper-recording-glow[data-style="dashed"] .__quiper-recording-border {',
+                    '  display: block;',
                     '  animation: __quiper-recording-border-motion 2s linear infinite;',
                     '}',
                     '@keyframes __quiper-recording-border-motion {',
@@ -639,47 +664,117 @@ final class WebViewManager: NSObject {
                     '    stroke-dasharray: 2 3;',
                     '  }',
                     '}',
-                    '#__quiper-recording-glow.__quiper-prompt-saved .__quiper-recording-border {',
+                    '#__quiper-recording-glow[data-style="dashed"].__quiper-prompt-saved .__quiper-recording-border {',
                     '  animation: __quiper-recording-border-motion 2s linear infinite, __quiper-recording-border-bounce 780ms linear 1;',
                     '}',
+                    '#__quiper-recording-glow .__quiper-glow-arc {',
+                    '  display: none;',
+                    '}',
+                    '#__quiper-recording-glow .__quiper-save-ripple {',
+                    '  display: none;',
+                    '  stroke: rgba(96, 165, 250, 0.92);',
+                    '  stroke-width: 2;',
+                    '  opacity: 0;',
+                    '  transform-box: fill-box;',
+                    '  transform-origin: center;',
+                    '}',
+                    '#__quiper-recording-glow[data-style="glow"] .__quiper-save-ripple {',
+                    '  display: block;',
+                    '}',
+                    '@keyframes __quiper-prompt-saved-ripple {',
+                    '  from { opacity: 0.92; transform: scale(1); }',
+                    '  to { opacity: 0; transform: scale(var(--__quiper-ripple-scale-x, 1), var(--__quiper-ripple-scale-y, 1)); }',
+                    '}',
+                    '#__quiper-recording-glow[data-style="glow"].__quiper-prompt-saved .__quiper-save-ripple {',
+                    '  animation: __quiper-prompt-saved-ripple 520ms cubic-bezier(0.16, 1, 0.3, 1);',
+                    '}',
                     '@media (prefers-reduced-motion: reduce) {',
-                    '  #__quiper-recording-glow .__quiper-recording-border {',
+                    '  #__quiper-recording-glow .__quiper-recording-border,',
+                    '  #__quiper-recording-glow .__quiper-glow-arc {',
                     '    animation: none !important;',
+                    '  }',
+                    '  #__quiper-recording-glow .__quiper-save-ripple {',
+                    '    animation: none !important;',
+                    '    opacity: 0 !important;',
                     '  }',
                     '}'
                 ];
+                for (let i = 0; i < ARC_LAYER_COUNT; i++) {
+                    const t = ARC_LAYER_COUNT === 1 ? 1 : i / (ARC_LAYER_COUNT - 1);
+                    const ease = t * t;
+                    const len = ARC_MAX_LEN - t * (ARC_MAX_LEN - ARC_MIN_LEN);
+                    const base = -(ARC_MAX_LEN - len) / 2;
+                    const opacity = ARC_MIN_OPACITY + ease * (ARC_MAX_OPACITY - ARC_MIN_OPACITY);
+                    const width = 2.05 - t * 0.55;
+                    parts.push(
+                        '@keyframes __quiper-recording-spin-' + i + ' {',
+                        '  from { stroke-dashoffset: ' + base.toFixed(3) + '; }',
+                        '  to { stroke-dashoffset: ' + (base - 100).toFixed(3) + '; }',
+                        '}',
+                        '#__quiper-recording-glow[data-style="glow"] .__quiper-arc-' + i + ' {',
+                        '  display: block;',
+                        '  stroke: rgba(96, 165, 250, ' + opacity.toFixed(3) + ');',
+                        '  stroke-width: ' + width.toFixed(2) + ';',
+                        '  stroke-dasharray: ' + len.toFixed(2) + ' ' + (100 - len).toFixed(2) + ';',
+                        '  animation: __quiper-recording-spin-' + i + ' ' + ARC_SPIN_SECONDS + 's linear infinite;',
+                        '}'
+                    );
+                }
+                const blurUntil = Math.min(6, ARC_LAYER_COUNT - 1);
+                for (let i = 0; i < blurUntil; i++) {
+                    const blur = (0.85 * (1 - i / blurUntil)).toFixed(2);
+                    parts.push(
+                        '#__quiper-recording-glow .__quiper-arc-' + i + ' {',
+                        '  filter: blur(' + blur + 'px);',
+                        '}'
+                    );
+                }
                 style.textContent = parts.join('\\n');
                 (document.head || document.documentElement).appendChild(style);
             }
 
-            function ensureGlowOverlay() {
+            function ensureIndicatorOverlay() {
                 ensureRecordingStyles();
-                if (glowOverlay && glowOverlay.isConnected) return glowOverlay;
-                glowOverlay = document.createElement('div');
-                glowOverlay.id = '__quiper-recording-glow';
-                glowOverlay.setAttribute('aria-hidden', 'true');
+                if (indicatorOverlay && indicatorOverlay.isConnected) return indicatorOverlay;
+                indicatorOverlay = document.createElement('div');
+                indicatorOverlay.id = '__quiper-recording-glow';
+                indicatorOverlay.setAttribute('aria-hidden', 'true');
                 const svgNamespace = 'http://www.w3.org/2000/svg';
                 const svg = document.createElementNS(svgNamespace, 'svg');
+                for (let i = 0; i < ARC_LAYER_COUNT; i++) {
+                    const arc = document.createElementNS(svgNamespace, 'rect');
+                    arc.setAttribute('class', '__quiper-glow-arc __quiper-arc-' + i);
+                    arc.setAttribute('pathLength', '100');
+                    svg.appendChild(arc);
+                }
+                const saveRipple = document.createElementNS(svgNamespace, 'rect');
+                saveRipple.setAttribute('class', '__quiper-save-ripple');
+                svg.appendChild(saveRipple);
                 const recordingBorder = document.createElementNS(svgNamespace, 'rect');
                 recordingBorder.setAttribute('class', '__quiper-recording-border');
                 recordingBorder.setAttribute('pathLength', '300');
                 svg.appendChild(recordingBorder);
-                glowOverlay.appendChild(svg);
+                indicatorOverlay.appendChild(svg);
                 const root = document.documentElement || document.body;
-                if (root) root.appendChild(glowOverlay);
-                return glowOverlay;
+                if (root) root.appendChild(indicatorOverlay);
+                return indicatorOverlay;
             }
 
-            function stopGlowTracking() {
+            function stopIndicatorTracking() {
                 if (layoutInterval) {
                     clearInterval(layoutInterval);
                     layoutInterval = null;
                 }
-                if (glowOverlay) {
-                    glowOverlay.style.display = 'none';
-                    glowOverlay.classList.remove('__quiper-prompt-saved');
+                if (indicatorOverlay) {
+                    indicatorOverlay.style.display = 'none';
+                    indicatorOverlay.classList.remove('__quiper-prompt-saved');
                 }
                 indicatedElement = null;
+            }
+
+            function recordingIndicatorStyle() {
+                const style = window.__quiperRecordingIndicatorStyle;
+                return style === 'glow' || style === 'dashed' ? style : 'off';
             }
 
             function parseBorderRadius(el, width, height) {
@@ -697,13 +792,19 @@ final class WebViewManager: NSObject {
                 return Math.max(0, Math.min(rx + 4, width / 2, height / 2));
             }
 
-            function positionGlowOverlay() {
-                const el = selector ? document.querySelector(selector) : null;
-                if (!window.__quiperRecordingEnabled || !el) {
-                    stopGlowTracking();
+            function positionIndicatorOverlay() {
+                const indicatorStyle = recordingIndicatorStyle();
+                if (!window.__quiperRecordingEnabled || indicatorStyle === 'off') {
+                    stopIndicatorTracking();
                     return;
                 }
-                const ring = ensureGlowOverlay();
+                const el = selector ? document.querySelector(selector) : null;
+                if (!el) {
+                    if (indicatorOverlay) indicatorOverlay.style.display = 'none';
+                    indicatedElement = null;
+                    return;
+                }
+                const ring = ensureIndicatorOverlay();
                 if (!ring) return;
                 const r = el.getBoundingClientRect();
                 if (r.width < 2 || r.height < 2 || (r.bottom < 0 && r.top < 0)) {
@@ -719,6 +820,10 @@ final class WebViewManager: NSObject {
                 const rects = ring.querySelectorAll('rect');
                 if (!svg || !rects.length) return;
 
+                if (ring.dataset.style !== indicatorStyle) {
+                    ring.classList.remove('__quiper-prompt-saved');
+                    ring.dataset.style = indicatorStyle;
+                }
                 ring.style.display = 'block';
                 ring.style.left = Math.round(r.left - pad) + 'px';
                 ring.style.top = Math.round(r.top - pad) + 'px';
@@ -739,31 +844,36 @@ final class WebViewManager: NSObject {
                     rect.setAttribute('rx', String(rectRx));
                     rect.setAttribute('ry', String(rectRx));
                 });
+                const saveRipple = ring.querySelector('.__quiper-save-ripple');
+                if (saveRipple) {
+                    const expansion = 4;
+                    saveRipple.style.setProperty('--__quiper-ripple-scale-x', String((rw + expansion * 2) / rw));
+                    saveRipple.style.setProperty('--__quiper-ripple-scale-y', String((rh + expansion * 2) / rh));
+                }
                 indicatedElement = el;
             }
 
-            function startGlowTracking() {
-                positionGlowOverlay();
-                // Layout sync only (composer moves/resizes). Border motion is CSS-only.
+            function startIndicatorTracking() {
+                positionIndicatorOverlay();
+                // Layout sync only (composer moves/resizes). Indicator motion is CSS-only.
                 if (layoutInterval) return;
-                layoutInterval = setInterval(positionGlowOverlay, 250);
+                layoutInterval = setInterval(positionIndicatorOverlay, 250);
             }
 
             function updateRecordingIndicator() {
-                if (!window.__quiperRecordingEnabled) {
-                    stopGlowTracking();
+                if (!window.__quiperRecordingEnabled || recordingIndicatorStyle() === 'off') {
+                    stopIndicatorTracking();
                     return;
                 }
-                startGlowTracking();
+                startIndicatorTracking();
             }
 
             function acknowledgePromptSaved() {
                 if (!window.__quiperRecordingEnabled) return;
 
-                positionGlowOverlay();
-                const ring = glowOverlay;
+                positionIndicatorOverlay();
+                const ring = indicatorOverlay;
                 if (!ring || !ring.isConnected || ring.style.display !== 'block') return;
-                if (!ring.querySelector('.__quiper-recording-border')) return;
 
                 ring.classList.remove('__quiper-prompt-saved');
                 void ring.offsetWidth;
@@ -773,10 +883,10 @@ final class WebViewManager: NSObject {
             window.__quiperUpdateRecordingIndicator = updateRecordingIndicator;
             window.__quiperAcknowledgePromptSaved = acknowledgePromptSaved;
             window.addEventListener('resize', function() {
-                if (window.__quiperRecordingEnabled) positionGlowOverlay();
+                if (window.__quiperRecordingEnabled) positionIndicatorOverlay();
             }, true);
             window.addEventListener('scroll', function() {
-                if (window.__quiperRecordingEnabled) positionGlowOverlay();
+                if (window.__quiperRecordingEnabled) positionIndicatorOverlay();
             }, true);
 
 
@@ -1159,7 +1269,7 @@ final class WebViewManager: NSObject {
                                 break;
                             }
                         }
-                        // SPA remounts replace the composer; keep the glow attached.
+                        // SPA remounts replace the composer; keep the indicator attached.
                         if (structureChanged || (indicatedElement && !indicatedElement.isConnected)) {
                             if (window.__quiperRecordingEnabled) {
                                 updateRecordingIndicator();

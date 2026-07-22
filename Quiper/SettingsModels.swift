@@ -140,6 +140,14 @@ enum SettingsColorStyle: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum PromptRecordingIndicatorStyle: String, Codable, CaseIterable, Identifiable {
+    case glow = "Glow"
+    case dashed = "Dashed"
+    case off = "Off"
+
+    var id: String { rawValue }
+}
+
 enum WindowBackgroundMode: String, Codable, CaseIterable, Identifiable {
     case macOSEffects = "macOS Effects"
     case solidColor = "Solid Color"
@@ -478,7 +486,7 @@ struct PersistedSettings: Codable {
     var tabSurvivalPolicy: TabSurvivalPolicy?
     var persistedTabState: PersistedTabState?
     var enablePromptHistory: Bool?
-    var showPromptRecordingGlow: Bool?
+    var promptRecordingIndicatorStyle: PromptRecordingIndicatorStyle?
     var promptHistoryRecordOnSubmit: Bool?
     var promptHistoryRecordOnCmdBackspace: Bool?
     var promptHistoryRecordOnSelectionClear: Bool?
@@ -504,7 +512,7 @@ struct PersistedSettings: Codable {
         case tabSurvivalPolicy
         case persistedTabState
         case enablePromptHistory
-        case showPromptRecordingGlow
+        case promptRecordingIndicatorStyle
         case promptHistoryRecordOnSubmit
         case promptHistoryRecordOnCmdBackspace
         case promptHistoryRecordOnSelectionClear
@@ -513,6 +521,10 @@ struct PersistedSettings: Codable {
         case hideQuiperWhenRetriggeringActiveEngineShortcut
         case globalEngineDigitShortcutsEnabled
         case quiperVersion
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case showPromptRecordingGlow
     }
 
     init(services: [Service],
@@ -540,7 +552,7 @@ struct PersistedSettings: Codable {
          tabSurvivalPolicy: TabSurvivalPolicy? = nil,
          persistedTabState: PersistedTabState? = nil,
          enablePromptHistory: Bool? = nil,
-         showPromptRecordingGlow: Bool? = nil,
+         promptRecordingIndicatorStyle: PromptRecordingIndicatorStyle? = nil,
          promptHistoryRecordOnSubmit: Bool? = nil,
          promptHistoryRecordOnCmdBackspace: Bool? = nil,
          promptHistoryRecordOnSelectionClear: Bool? = nil,
@@ -575,7 +587,7 @@ struct PersistedSettings: Codable {
         self.tabSurvivalPolicy = tabSurvivalPolicy
         self.persistedTabState = persistedTabState
         self.enablePromptHistory = enablePromptHistory
-        self.showPromptRecordingGlow = showPromptRecordingGlow
+        self.promptRecordingIndicatorStyle = promptRecordingIndicatorStyle
         self.promptHistoryRecordOnSubmit = promptHistoryRecordOnSubmit
         self.promptHistoryRecordOnCmdBackspace = promptHistoryRecordOnCmdBackspace
         self.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear
@@ -589,6 +601,7 @@ struct PersistedSettings: Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
         services = try container.decodeIfPresent([Service].self, forKey: .services) ?? []
         hotkey = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .hotkey)
         customActions = try container.decodeIfPresent([CustomAction].self, forKey: .customActions)
@@ -614,7 +627,15 @@ struct PersistedSettings: Codable {
         tabSurvivalPolicy = try container.decodeIfPresent(TabSurvivalPolicy.self, forKey: .tabSurvivalPolicy)
         persistedTabState = try container.decodeIfPresent(PersistedTabState.self, forKey: .persistedTabState)
         enablePromptHistory = try container.decodeIfPresent(Bool.self, forKey: .enablePromptHistory)
-        showPromptRecordingGlow = try container.decodeIfPresent(Bool.self, forKey: .showPromptRecordingGlow)
+
+        if let style = try container.decodeIfPresent(PromptRecordingIndicatorStyle.self, forKey: .promptRecordingIndicatorStyle) {
+            promptRecordingIndicatorStyle = style
+        } else if let legacyGlow = try legacyContainer.decodeIfPresent(Bool.self, forKey: .showPromptRecordingGlow) {
+            promptRecordingIndicatorStyle = legacyGlow ? .dashed : .off
+        } else {
+            promptRecordingIndicatorStyle = .dashed
+        }
+
         promptHistoryRecordOnSubmit = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnSubmit)
         promptHistoryRecordOnCmdBackspace = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnCmdBackspace)
         promptHistoryRecordOnSelectionClear = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnSelectionClear)

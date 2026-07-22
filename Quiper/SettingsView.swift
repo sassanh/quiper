@@ -242,7 +242,7 @@ struct GeneralSettingsView: View {
 
                         SettingsRow(
                             title: "Recording Indicator",
-                            message: "Show a subtle moving dashed outline while prompt history recording is enabled.",
+                            message: "Choose how prompt recording appears around the composer.",
                             icon: "rectangle.dashed",
                             iconColor: .teal.settingsResolved
                         ) {

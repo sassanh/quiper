@@ -453,7 +453,7 @@ class Settings: ObservableObject {
             saveSettings()
         }
     }
-    @Published var showPromptRecordingGlow: Bool = true {
+    @Published var promptRecordingIndicatorStyle: PromptRecordingIndicatorStyle = .dashed {
         didSet {
             saveSettings()
         }
@@ -518,7 +518,7 @@ class Settings: ObservableObject {
         tabSurvivalPolicy = .always
         tabNavigationRingSize = 2
         enablePromptHistory = true
-        showPromptRecordingGlow = true
+        promptRecordingIndicatorStyle = .dashed
         promptHistoryRecordOnSubmit = true
         promptHistoryRecordOnCmdBackspace = true
         promptHistoryRecordOnSelectionClear = false
@@ -2303,7 +2303,7 @@ class Settings: ObservableObject {
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
         enablePromptHistory = persisted.enablePromptHistory ?? true
-        showPromptRecordingGlow = persisted.showPromptRecordingGlow ?? true
+        promptRecordingIndicatorStyle = persisted.promptRecordingIndicatorStyle ?? .dashed
         promptHistoryRecordOnSubmit = persisted.promptHistoryRecordOnSubmit ?? true
         promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace ?? true
         promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear ?? false
@@ -2377,7 +2377,7 @@ class Settings: ObservableObject {
                                             tabSurvivalPolicy: tabSurvivalPolicy,
                                             persistedTabState: persistedTabState,
                                             enablePromptHistory: enablePromptHistory,
-                                            showPromptRecordingGlow: showPromptRecordingGlow,
+                                            promptRecordingIndicatorStyle: promptRecordingIndicatorStyle,
                                             promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
                                             promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
                                             promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
@@ -2418,7 +2418,7 @@ class Settings: ObservableObject {
             tabSurvivalPolicy: tabSurvivalPolicy,
             persistedTabState: persistedTabState,
             enablePromptHistory: enablePromptHistory,
-            showPromptRecordingGlow: showPromptRecordingGlow,
+            promptRecordingIndicatorStyle: promptRecordingIndicatorStyle,
             promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
             promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
             promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
@@ -2463,7 +2463,7 @@ class Settings: ObservableObject {
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
         tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2
         enablePromptHistory = persisted.enablePromptHistory ?? true
-        showPromptRecordingGlow = persisted.showPromptRecordingGlow ?? true
+        promptRecordingIndicatorStyle = persisted.promptRecordingIndicatorStyle ?? .dashed
         promptHistoryRecordOnSubmit = persisted.promptHistoryRecordOnSubmit ?? true
         promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace ?? true
         promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear ?? false

@@ -26,7 +26,7 @@ Quiper can maintain a local history of your sent prompts on a per-session basis,
 
 ### Record Prompt History
 *   **Description:** Globally enables or disables prompt recording for all engines and session slots.
-*   **Recording Indicator:** Shows a moving gray dashed outline around the active prompt composer while recording is enabled. Saving a prompt briefly enlarges and brightens the dashes in an acknowledgment bounce. The indicator is on by default and can be hidden without disabling prompt history.
+*   **Recording Indicator:** Shows either a blue glowing spinner or a moving gray dashed outline around the active prompt composer while recording is enabled. Saving a prompt produces a matching ripple or acknowledgment bounce. The dashed style is selected by default, and the indicator can be hidden without disabling prompt history.
 *   **Triggers:** You can customize what specific actions trigger prompt recording:
     *   **On Submit / Enter:** Records the prompt when you hit Enter to submit it to the AI.
     *   **On Cmd+Enter:** Records the prompt when you submit via Command + Enter.
