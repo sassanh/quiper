@@ -3,6 +3,18 @@ import Carbon
 
 @MainActor
 enum ShortcutValidator {
+    enum DigitModifierBinding: Equatable {
+        case sessionPrimary
+        case sessionAlternate
+        case enginePrimary
+        case engineAlternate
+    }
+
+    struct DigitModifierConflict {
+        let configuration: HotkeyManager.Configuration
+        let actionName: String
+    }
+
     static func allows(configuration: HotkeyManager.Configuration) -> Bool {
         let modifiers = NSEvent.ModifierFlags(rawValue: configuration.modifierFlags)
         let primary = modifiers.intersection([.command, .option, .control, .shift])
@@ -21,6 +33,90 @@ enum ShortcutValidator {
             return isFunctionKey(keyCode)
         }
         return true
+    }
+
+    static func digitModifierConflict(
+        modifiers rawModifiers: NSEvent.ModifierFlags,
+        excluding excludedBinding: DigitModifierBinding
+    ) -> DigitModifierConflict? {
+        let modifiers = rawModifiers.intersection([.command, .option, .control, .shift])
+        let settings = Settings.shared
+        let bindings = settings.appShortcutBindings
+
+        for keyCode in orderedDigitKeyCodes {
+            let configuration = HotkeyManager.Configuration(
+                keyCode: UInt32(keyCode),
+                modifierFlags: modifiers.rawValue
+            )
+
+            if configuration == settings.hotkeyConfiguration {
+                return DigitModifierConflict(
+                    configuration: configuration,
+                    actionName: "Show/Hide Quiper"
+                )
+            }
+
+            if let service = settings.services.first(where: { $0.activationShortcut == configuration }) {
+                let name = service.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return DigitModifierConflict(
+                    configuration: configuration,
+                    actionName: "Launch \(name.isEmpty ? "Service" : name)"
+                )
+            }
+
+            if let actionName = appShortcutName(matching: configuration, bindings: bindings) {
+                return DigitModifierConflict(
+                    configuration: configuration,
+                    actionName: actionName
+                )
+            }
+
+            if let action = settings.customActions.first(where: { $0.shortcut == configuration }) {
+                let name = action.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return DigitModifierConflict(
+                    configuration: configuration,
+                    actionName: name.isEmpty ? "Custom Action" : "Custom Action “\(name)”"
+                )
+            }
+
+            let digit = digitValue(for: keyCode)
+            let slotNumber = digit == 0 ? 10 : digit
+            let sessionModifiers = NSEvent.ModifierFlags(rawValue: bindings.sessionDigitsModifiers)
+            if excludedBinding != .sessionPrimary, modifiers == sessionModifiers {
+                return DigitModifierConflict(
+                    configuration: configuration,
+                    actionName: "Go to Session \(slotNumber)"
+                )
+            }
+
+            if excludedBinding != .sessionAlternate,
+               let rawAlternate = bindings.sessionDigitsAlternateModifiers,
+               modifiers == NSEvent.ModifierFlags(rawValue: rawAlternate) {
+                return DigitModifierConflict(
+                    configuration: configuration,
+                    actionName: "Go to Session \(slotNumber) (Alternate)"
+                )
+            }
+
+            let engineModifiers = NSEvent.ModifierFlags(rawValue: bindings.serviceDigitsPrimaryModifiers)
+            if excludedBinding != .enginePrimary, modifiers == engineModifiers {
+                return DigitModifierConflict(
+                    configuration: configuration,
+                    actionName: "Go to Engine \(slotNumber)"
+                )
+            }
+
+            if excludedBinding != .engineAlternate,
+               let rawAlternate = bindings.serviceDigitsSecondaryModifiers,
+               modifiers == NSEvent.ModifierFlags(rawValue: rawAlternate) {
+                return DigitModifierConflict(
+                    configuration: configuration,
+                    actionName: "Go to Engine \(slotNumber) (Alternate)"
+                )
+            }
+        }
+
+        return nil
     }
 
     static func reservedActionName(modifiers rawModifiers: NSEvent.ModifierFlags, keyCode: UInt16, excludingActionId: UUID? = nil) -> String? {
@@ -162,6 +258,29 @@ enum ShortcutValidator {
         return 0
     }
 
+    private static func appShortcutName(
+        matching configuration: HotkeyManager.Configuration,
+        bindings: AppShortcutBindings
+    ) -> String? {
+        let shortcuts: [(HotkeyManager.Configuration?, String)] = [
+            (bindings.nextSession, "Next Session"),
+            (bindings.previousSession, "Previous Session"),
+            (bindings.nextService, "Next Engine"),
+            (bindings.previousService, "Previous Engine"),
+            (bindings.lockCurrentEngine, "Lock Current Engine"),
+            (bindings.alternateNextSession, "Next Session (Alternate)"),
+            (bindings.alternatePreviousSession, "Previous Session (Alternate)"),
+            (bindings.alternateNextService, "Next Engine (Alternate)"),
+            (bindings.alternatePreviousService, "Previous Engine (Alternate)"),
+            (bindings.alternateLockCurrentEngine, "Lock Current Engine (Alternate)")
+        ]
+
+        return shortcuts.first(where: { shortcut, _ in
+            guard let shortcut, !shortcut.isDisabled else { return false }
+            return shortcut == configuration
+        })?.1
+    }
+
     static func isDigitKey(_ keyCode: UInt16) -> Bool {
         return topRowDigits.contains(keyCode) || keypadDigits.contains(keyCode)
     }
@@ -179,6 +298,15 @@ enum ShortcutValidator {
         UInt16(kVK_ANSI_Keypad0), UInt16(kVK_ANSI_Keypad1), UInt16(kVK_ANSI_Keypad2), UInt16(kVK_ANSI_Keypad3),
         UInt16(kVK_ANSI_Keypad4), UInt16(kVK_ANSI_Keypad5), UInt16(kVK_ANSI_Keypad6), UInt16(kVK_ANSI_Keypad7),
         UInt16(kVK_ANSI_Keypad8), UInt16(kVK_ANSI_Keypad9)
+    ]
+
+    private static let orderedDigitKeyCodes: [UInt16] = [
+        UInt16(kVK_ANSI_1), UInt16(kVK_ANSI_2), UInt16(kVK_ANSI_3), UInt16(kVK_ANSI_4),
+        UInt16(kVK_ANSI_5), UInt16(kVK_ANSI_6), UInt16(kVK_ANSI_7), UInt16(kVK_ANSI_8),
+        UInt16(kVK_ANSI_9), UInt16(kVK_ANSI_0), UInt16(kVK_ANSI_Keypad1),
+        UInt16(kVK_ANSI_Keypad2), UInt16(kVK_ANSI_Keypad3), UInt16(kVK_ANSI_Keypad4),
+        UInt16(kVK_ANSI_Keypad5), UInt16(kVK_ANSI_Keypad6), UInt16(kVK_ANSI_Keypad7),
+        UInt16(kVK_ANSI_Keypad8), UInt16(kVK_ANSI_Keypad9), UInt16(kVK_ANSI_Keypad0)
     ]
 
     private static let functionKeys: Set<UInt16> = [

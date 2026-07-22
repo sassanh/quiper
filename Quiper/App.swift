@@ -657,10 +657,25 @@ final class AppController: NSObject, NSWindowDelegate {
             )
         }
 
-        let entries: [EngineHotkeyManager.Entry] = Settings.shared.services.compactMap { service in
+        var entries: [EngineHotkeyManager.Entry] = Settings.shared.services.compactMap { service in
             guard let shortcut = service.activationShortcut,
                   isBlocked(shortcut, blockedHotkeys: blockedHotkeys) == false else { return nil }
             return EngineHotkeyManager.Entry(serviceID: service.id, configuration: shortcut)
+        }
+
+        if Settings.shared.globalEngineDigitShortcutsEnabled {
+            let primaryModifiers = Settings.shared.appShortcutBindings.serviceDigitsPrimaryModifiers
+            for (index, service) in Settings.shared.services.prefix(EngineDigitShortcut.maximumEngineCount).enumerated() {
+                guard let shortcut = EngineDigitShortcut.configuration(
+                    forEngineAt: index,
+                    modifiers: primaryModifiers
+                ), isBlocked(shortcut, blockedHotkeys: blockedHotkeys) == false else {
+                    continue
+                }
+                entries.append(
+                    EngineHotkeyManager.Entry(serviceID: service.id, configuration: shortcut)
+                )
+            }
         }
         guard !entries.isEmpty else {
             engineHotkeyManager.disable()

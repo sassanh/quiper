@@ -8,6 +8,7 @@ struct KeyBindingsSettingsView: View {
     @State private var pendingDeletion: PendingDeletion?
     @State private var activationStatus: [UUID: String] = [:]
     @State private var globalHotkeyStatus = ""
+    @State private var pendingGlobalDigitShortcut: PendingGlobalDigitShortcut?
     var appController: AppController?
 
     var body: some View {
@@ -179,6 +180,16 @@ struct KeyBindingsSettingsView: View {
                 message: Text("This removes the shortcut and any custom scripts bound to this action across your services."),
                 primaryButton: .destructive(Text("Delete")) {
                     removeAction(id: pending.id)
+                },
+                secondaryButton: .cancel()
+            )
+        }
+        .alert(item: $pendingGlobalDigitShortcut) { pending in
+            Alert(
+                title: Text("Enable Global Engine Number Shortcuts?"),
+                message: Text("\(pending.shortcutLabel) already selects \(pending.engineName) inside Quiper. Enable the primary Go to engine 1–10 shortcuts everywhere in macOS?"),
+                primaryButton: .default(Text("Enable")) {
+                    enableGlobalEngineDigitShortcuts()
                 },
                 secondaryButton: .cancel()
             )
@@ -366,7 +377,15 @@ struct KeyBindingsSettingsView: View {
             shortcutState.updateMessage(update)
         }, onFinish: {
             shortcutState.cancel()
-        }, completion: { modifiers, keyCode in
+        }, conflictCheck: { modifiers in
+            guard let conflict = ShortcutValidator.digitModifierConflict(
+                modifiers: NSEvent.ModifierFlags(rawValue: modifiers),
+                excluding: digitModifierBinding(for: group, slot: slot)
+            ) else {
+                return nil
+            }
+            return "\(ShortcutFormatter.string(for: conflict.configuration)) is already used by \(conflict.actionName)"
+        }, completion: { modifiers, _ in
             switch group {
             case .sessionDigits:
                 if slot == .primary {
@@ -388,6 +407,7 @@ struct KeyBindingsSettingsView: View {
                 }
             }
             settings.saveSettings()
+            reloadGlobalEngineDigitShortcutsIfNeeded(for: group, slot: slot)
         })
         let groupTitle: String
         switch group {
@@ -395,6 +415,18 @@ struct KeyBindingsSettingsView: View {
         case .serviceDigitsPrimary, .serviceDigitsSecondary: groupTitle = "Go to engine 1–10"
         }
         shortcutState.start(session: session, title: groupTitle)
+    }
+
+    private func digitModifierBinding(
+        for group: AppShortcutBindings.ModifierGroup,
+        slot: CaptureSlot
+    ) -> ShortcutValidator.DigitModifierBinding {
+        switch group {
+        case .sessionDigits:
+            return slot == .primary ? .sessionPrimary : .sessionAlternate
+        case .serviceDigitsPrimary, .serviceDigitsSecondary:
+            return slot == .primary ? .enginePrimary : .engineAlternate
+        }
     }
 
     private func resetModifier(_ group: AppShortcutBindings.ModifierGroup) {
@@ -407,6 +439,7 @@ struct KeyBindingsSettingsView: View {
             settings.appShortcutBindings.serviceDigitsSecondaryModifiers = AppShortcutBindings.defaults.serviceDigitsSecondaryModifiers
         }
         settings.saveSettings()
+        reloadGlobalEngineDigitShortcutsIfNeeded(for: group, slot: .primary)
     }
 
     private func resetAlternateModifier(_ group: AppShortcutBindings.ModifierGroup) {
@@ -431,6 +464,7 @@ struct KeyBindingsSettingsView: View {
             settings.appShortcutBindings.serviceDigitsSecondaryModifiers = 0
         }
         settings.saveSettings()
+        reloadGlobalEngineDigitShortcutsIfNeeded(for: group, slot: .primary)
     }
     
     private func clearAlternateModifier(_ group: AppShortcutBindings.ModifierGroup) {
@@ -450,6 +484,8 @@ struct KeyBindingsSettingsView: View {
             shortcutState.updateMessage(update)
         }, onFinish: {
             shortcutState.cancel()
+        }, configurationInterception: { configuration in
+            interceptGlobalDigitShortcut(configuration, for: serviceID)
         }, completion: { configuration in
             if let configuration, let index = settings.services.firstIndex(where: { $0.id == serviceID }) {
                 settings.services[index].activationShortcut = configuration
@@ -504,10 +540,11 @@ struct KeyBindingsSettingsView: View {
                     .accessibilityIdentifier("UseEngineShortcutsAsToggle")
                 }
 
-                ForEach($settings.services) { $service in
+                ForEach(settings.services) { service in
                     ServiceLaunchShortcutRow(
                         title: service.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Service" : service.name,
                         shortcut: service.activationShortcut,
+                        globalDigitShortcut: globalDigitShortcut(for: service.id),
                         statusMessage: activationStatus[service.id] ?? "",
                         onTap: { startActivationCapture(for: service.id) },
                         onClear: { clearActivation(for: service.id) },
@@ -515,6 +552,64 @@ struct KeyBindingsSettingsView: View {
                     )
                 }
             }
+        }
+    }
+
+    private func globalDigitShortcut(for serviceID: UUID) -> HotkeyManager.Configuration? {
+        guard settings.globalEngineDigitShortcutsEnabled,
+              let index = settings.services.firstIndex(where: { $0.id == serviceID }) else {
+            return nil
+        }
+        return EngineDigitShortcut.configuration(
+            forEngineAt: index,
+            modifiers: settings.appShortcutBindings.serviceDigitsPrimaryModifiers
+        )
+    }
+
+    private func interceptGlobalDigitShortcut(
+        _ configuration: HotkeyManager.Configuration,
+        for serviceID: UUID
+    ) -> Bool {
+        guard let index = settings.services.firstIndex(where: { $0.id == serviceID }),
+              let digitShortcut = EngineDigitShortcut.configuration(
+                  forEngineAt: index,
+                  modifiers: settings.appShortcutBindings.serviceDigitsPrimaryModifiers
+              ), configuration == digitShortcut else {
+            return false
+        }
+
+        if !settings.globalEngineDigitShortcutsEnabled {
+            let engineName = settings.services[index].name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let pending = PendingGlobalDigitShortcut(
+                serviceID: serviceID,
+                engineName: engineName.isEmpty ? "engine \(index + 1)" : engineName,
+                shortcutLabel: ShortcutFormatter.string(for: digitShortcut)
+            )
+            DispatchQueue.main.async {
+                pendingGlobalDigitShortcut = pending
+            }
+        }
+        return true
+    }
+
+    private func enableGlobalEngineDigitShortcuts() {
+        settings.setGlobalEngineDigitShortcutsEnabled(true)
+        appController?.reloadServices()
+    }
+
+    private func reloadGlobalEngineDigitShortcutsIfNeeded(
+        for group: AppShortcutBindings.ModifierGroup,
+        slot: CaptureSlot
+    ) {
+        guard settings.globalEngineDigitShortcutsEnabled,
+              slot == .primary else {
+            return
+        }
+        switch group {
+        case .sessionDigits:
+            return
+        case .serviceDigitsPrimary, .serviceDigitsSecondary:
+            appController?.reloadServices()
         }
     }
 
@@ -559,7 +654,7 @@ struct KeyBindingsSettingsView: View {
 
 
 
-private enum CaptureSlot {
+private enum CaptureSlot: Equatable {
     case primary
     case alternate
 }
@@ -698,15 +793,30 @@ private struct PendingDeletion: Identifiable {
     }
 }
 
+private struct PendingGlobalDigitShortcut: Identifiable {
+    let serviceID: UUID
+    let engineName: String
+    let shortcutLabel: String
+
+    var id: UUID { serviceID }
+}
+
 private final class ModifierCaptureSession: CancellableSession {
     private var monitor: Any?
     private let onUpdate: (String) -> Void
     private let onFinish: () -> Void
+    private let conflictCheck: (UInt) -> String?
     private let completion: (UInt, UInt16) -> Void
 
-    init(onUpdate: @escaping (String) -> Void, onFinish: @escaping () -> Void, completion: @escaping (UInt, UInt16) -> Void) {
+    init(
+        onUpdate: @escaping (String) -> Void,
+        onFinish: @escaping () -> Void,
+        conflictCheck: @escaping (UInt) -> String?,
+        completion: @escaping (UInt, UInt16) -> Void
+    ) {
         self.onUpdate = onUpdate
         self.onFinish = onFinish
+        self.conflictCheck = conflictCheck
         self.completion = completion
         self.onUpdate("Press modifier + digit (1–0)")
         attachKeyMonitor()
@@ -729,6 +839,12 @@ private final class ModifierCaptureSession: CancellableSession {
             guard ShortcutValidatorIsDigitKey.keyCodes.contains(keyCode), !modifiers.isEmpty else {
                 NSSound.beep()
                 self.onUpdate("Use modifiers with digits 0–9")
+                return nil
+            }
+
+            if let conflictMessage = self.conflictCheck(modifiers.rawValue) {
+                NSSound.beep()
+                self.onUpdate(conflictMessage)
                 return nil
             }
             

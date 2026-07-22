@@ -426,6 +426,8 @@ class Settings: ObservableObject {
     /// When true, pressing an engine's global launch shortcut while Quiper is already
     /// visible, focused, and showing that engine hides Quiper (toggle behavior).
     @Published var hideQuiperWhenRetriggeringActiveEngineShortcut: Bool = true
+    /// Makes the primary Go to engine 1–10 modifier shortcuts available system-wide.
+    @Published var globalEngineDigitShortcutsEnabled: Bool = false
     @Published var settingsColorStyle: SettingsColorStyle = .colorful {
         didSet {
             saveSettings()
@@ -510,6 +512,7 @@ class Settings: ObservableObject {
         enableHUDDoubleTapCmd = true
         enableHUDCmdEscape = true
         hideQuiperWhenRetriggeringActiveEngineShortcut = true
+        globalEngineDigitShortcutsEnabled = false
         showOnAllSpaces = false
         settingsColorStyle = .colorful
         tabSurvivalPolicy = .always
@@ -2296,6 +2299,7 @@ class Settings: ObservableObject {
         hasCompletedGhostOnboarding = persisted.hasCompletedGhostOnboarding ?? false
         enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
+        globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
         enablePromptHistory = persisted.enablePromptHistory ?? true
@@ -2380,6 +2384,7 @@ class Settings: ObservableObject {
                                             promptHistoryLimit: promptHistoryLimit,
                                             tabNavigationRingSize: tabNavigationRingSize,
                                             hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
+                                            globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
                                             quiperVersion: persistedQuiperVersionForSave())
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
@@ -2420,6 +2425,7 @@ class Settings: ObservableObject {
             promptHistoryLimit: promptHistoryLimit,
             tabNavigationRingSize: tabNavigationRingSize,
             hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
+            globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
             quiperVersion: persistedQuiperVersionForSave()
         )
     }
@@ -2451,6 +2457,7 @@ class Settings: ObservableObject {
         hasCompletedGhostOnboarding = persisted.hasCompletedGhostOnboarding ?? false
         enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
+        globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         settingsColorStyle = persisted.settingsColorStyle ?? .colorful
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
@@ -2672,6 +2679,11 @@ class Settings: ObservableObject {
         saveSettings()
     }
 
+    func setGlobalEngineDigitShortcutsEnabled(_ enabled: Bool) {
+        globalEngineDigitShortcutsEnabled = enabled
+        saveSettings()
+    }
+
     private func applyEngineShortcutToggleSetting(loadedFromDisk: Bool, persistedValue: Bool?) {
         if !loadedFromDisk {
             hideQuiperWhenRetriggeringActiveEngineShortcut = true
@@ -2767,6 +2779,7 @@ class Settings: ObservableObject {
         needsTemplateActionSyncMigrationPrompt = false
         needsEngineShortcutToggleMigrationPrompt = false
         hideQuiperWhenRetriggeringActiveEngineShortcut = true
+        globalEngineDigitShortcutsEnabled = false
         try? FileManager.default.removeItem(at: settingsFile)
         ActionScriptStorage.deleteAllScripts()
         CustomCSSStorage.deleteAllCSS()

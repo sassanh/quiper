@@ -179,6 +179,19 @@ struct GeneralSettingsView: View {
                 
                 SettingsSection(title: "Behavior", icon: "slider.horizontal.3", iconColor: .blue.settingsResolved) {
                     SettingsRow(
+                        title: "Global Engine Number Shortcuts",
+                        message: "Use the primary “Go to engine 1–10” modifier everywhere in macOS. The alternate modifier remains available only inside Quiper.",
+                        icon: "keyboard.badge.ellipsis",
+                        iconColor: .blue.settingsResolved
+                    ) {
+                        GlobalEngineNumberShortcutsPicker {
+                            appController?.reloadServices()
+                        }
+                    }
+
+                    SettingsDivider()
+
+                    SettingsRow(
                         title: "Session Switching",
                         message: "Manage automatic switching between engines and auto-creating empty sessions.",
                         icon: "shuffle",
@@ -809,6 +822,7 @@ struct ServiceDetailView: View {
     @State private var isMigratingData = false
     @State private var migrationMessage = ""
     @State private var activationShortcutStatus = ""
+    @State private var showGlobalEngineDigitShortcutPrompt = false
 
     private var detailSelectionBinding: Binding<DetailSelection?> {
         Binding(
@@ -915,6 +929,18 @@ struct ServiceDetailView: View {
                                 width: 160,
                                 axIdentifier: "recorder_launch_engine_\(service.id.uuidString)"
                             )
+                            if let globalDigitShortcut = visibleGlobalEngineDigitShortcut {
+                                ShortcutButton(
+                                    text: ShortcutFormatter.string(for: globalDigitShortcut),
+                                    onTap: {},
+                                    onClear: nil,
+                                    onReset: nil,
+                                    width: 160,
+                                    axIdentifier: "global_engine_digit_\(service.id.uuidString)"
+                                )
+                                .disabled(true)
+                                .help("Global Go to engine shortcut")
+                            }
                         }
                         if !activationShortcutStatus.isEmpty {
                             Text(activationShortcutStatus)
@@ -1073,6 +1099,15 @@ struct ServiceDetailView: View {
                 .transition(.opacity.animation(.easeInOut(duration: 0.15)))
             }
         }
+        .alert("Enable Global Engine Number Shortcuts?", isPresented: $showGlobalEngineDigitShortcutPrompt) {
+            Button("Enable") {
+                settings.setGlobalEngineDigitShortcutsEnabled(true)
+                appController?.reloadServices()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("\(engineDigitShortcutLabel) already selects this engine inside Quiper. Enable the primary Go to engine 1–10 shortcuts everywhere in macOS?")
+        }
     }
 
     private func startActivationShortcutCapture() {
@@ -1084,6 +1119,14 @@ struct ServiceDetailView: View {
             shortcutState.updateMessage(update)
         }, onFinish: {
             shortcutState.cancel()
+        }, configurationInterception: { configuration in
+            guard configuration == engineDigitShortcut else { return false }
+            if !settings.globalEngineDigitShortcutsEnabled {
+                DispatchQueue.main.async {
+                    showGlobalEngineDigitShortcutPrompt = true
+                }
+            }
+            return true
         }, completion: { configuration in
             if let configuration, let index = settings.services.firstIndex(where: { $0.id == serviceID }) {
                 settings.services[index].activationShortcut = configuration
@@ -1100,6 +1143,24 @@ struct ServiceDetailView: View {
             }
         })
         shortcutState.start(session: session, title: "Launch \(serviceName)")
+    }
+
+    private var engineDigitShortcut: HotkeyManager.Configuration? {
+        guard let index = settings.services.firstIndex(where: { $0.id == service.id }) else {
+            return nil
+        }
+        return EngineDigitShortcut.configuration(
+            forEngineAt: index,
+            modifiers: settings.appShortcutBindings.serviceDigitsPrimaryModifiers
+        )
+    }
+
+    private var visibleGlobalEngineDigitShortcut: HotkeyManager.Configuration? {
+        settings.globalEngineDigitShortcutsEnabled ? engineDigitShortcut : nil
+    }
+
+    private var engineDigitShortcutLabel: String {
+        engineDigitShortcut.map { ShortcutFormatter.string(for: $0) } ?? "This shortcut"
     }
 
     private func clearActivationShortcut() {

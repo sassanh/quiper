@@ -485,6 +485,7 @@ struct PersistedSettings: Codable {
     var promptHistoryLimit: Int?
     var tabNavigationRingSize: Int?
     var hideQuiperWhenRetriggeringActiveEngineShortcut: Bool?
+    var globalEngineDigitShortcutsEnabled: Bool?
     var quiperVersion: String?
     var version: Int? = 1
 
@@ -510,6 +511,7 @@ struct PersistedSettings: Codable {
         case promptHistoryLimit
         case tabNavigationRingSize
         case hideQuiperWhenRetriggeringActiveEngineShortcut
+        case globalEngineDigitShortcutsEnabled
         case quiperVersion
     }
 
@@ -545,6 +547,7 @@ struct PersistedSettings: Codable {
          promptHistoryLimit: Int? = nil,
          tabNavigationRingSize: Int? = nil,
          hideQuiperWhenRetriggeringActiveEngineShortcut: Bool? = nil,
+         globalEngineDigitShortcutsEnabled: Bool? = nil,
          quiperVersion: String? = nil,
          version: Int? = 1) {
         self.services = services
@@ -579,6 +582,7 @@ struct PersistedSettings: Codable {
         self.promptHistoryLimit = promptHistoryLimit
         self.tabNavigationRingSize = tabNavigationRingSize
         self.hideQuiperWhenRetriggeringActiveEngineShortcut = hideQuiperWhenRetriggeringActiveEngineShortcut
+        self.globalEngineDigitShortcutsEnabled = globalEngineDigitShortcutsEnabled
         self.quiperVersion = quiperVersion
         self.version = version
     }
@@ -617,6 +621,7 @@ struct PersistedSettings: Codable {
         promptHistoryLimit = try container.decodeIfPresent(Int.self, forKey: .promptHistoryLimit)
         tabNavigationRingSize = try container.decodeIfPresent(Int.self, forKey: .tabNavigationRingSize)
         hideQuiperWhenRetriggeringActiveEngineShortcut = try container.decodeIfPresent(Bool.self, forKey: .hideQuiperWhenRetriggeringActiveEngineShortcut)
+        globalEngineDigitShortcutsEnabled = try container.decodeIfPresent(Bool.self, forKey: .globalEngineDigitShortcutsEnabled)
         quiperVersion = try container.decodeIfPresent(String.self, forKey: .quiperVersion)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }

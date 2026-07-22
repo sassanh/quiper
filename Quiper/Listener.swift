@@ -198,10 +198,10 @@ final class EngineHotkeyManager {
     }
 
     private var eventHandler: EventHandlerRef?
-    private var hotKeyRefs: [UUID: EventHotKeyRef] = [:]
-    private var identifiersByService: [UUID: UInt32] = [:]
+    private var hotKeyRefsByIdentifier: [UInt32: EventHotKeyRef] = [:]
+    private var identifiersByService: [UUID: Set<UInt32>] = [:]
     private var serviceIDByIdentifier: [UInt32: UUID] = [:]
-    private var configurationByService: [UUID: HotkeyManager.Configuration] = [:]
+    private var configurationByIdentifier: [UInt32: HotkeyManager.Configuration] = [:]
     private var onTrigger: ((UUID) -> Void)?
     private var nextIdentifier: UInt32 = 1
     private let hotKeySignature = OSType(UInt32(truncatingIfNeeded: 0x51454E47)) // 'QENG'
@@ -238,13 +238,13 @@ final class EngineHotkeyManager {
 
     func reset() {
         assertMainThread()
-        for ref in hotKeyRefs.values {
+        for ref in hotKeyRefsByIdentifier.values {
             UnregisterEventHotKey(ref)
         }
-        hotKeyRefs.removeAll()
+        hotKeyRefsByIdentifier.removeAll()
         identifiersByService.removeAll()
         serviceIDByIdentifier.removeAll()
-        configurationByService.removeAll()
+        configurationByIdentifier.removeAll()
         onTrigger = nil
         nextIdentifier = 1
     }
@@ -266,14 +266,16 @@ final class EngineHotkeyManager {
 
     func unregister(serviceID: UUID) {
         assertMainThread()
-        guard let identifier = identifiersByService[serviceID] else { return }
-        if let ref = hotKeyRefs[serviceID] {
-            UnregisterEventHotKey(ref)
+        guard let identifiers = identifiersByService[serviceID] else { return }
+        for identifier in identifiers {
+            if let ref = hotKeyRefsByIdentifier[identifier] {
+                UnregisterEventHotKey(ref)
+            }
+            hotKeyRefsByIdentifier.removeValue(forKey: identifier)
+            serviceIDByIdentifier.removeValue(forKey: identifier)
+            configurationByIdentifier.removeValue(forKey: identifier)
         }
-        hotKeyRefs.removeValue(forKey: serviceID)
         identifiersByService.removeValue(forKey: serviceID)
-        serviceIDByIdentifier.removeValue(forKey: identifier)
-        configurationByService.removeValue(forKey: serviceID)
     }
 
     private func register(entry: Entry) {
@@ -295,10 +297,10 @@ final class EngineHotkeyManager {
             return
         }
         NSLog("[Quiper] Successfully registered engine hotkey id=\(identifier) keyCode=\(entry.configuration.keyCode)")
-        hotKeyRefs[entry.serviceID] = ref
-        identifiersByService[entry.serviceID] = identifier
+        hotKeyRefsByIdentifier[identifier] = ref
+        identifiersByService[entry.serviceID, default: []].insert(identifier)
         serviceIDByIdentifier[identifier] = entry.serviceID
-        configurationByService[entry.serviceID] = entry.configuration
+        configurationByIdentifier[identifier] = entry.configuration
     }
 
     private func installHandlerIfNeeded() {
@@ -338,9 +340,8 @@ final class EngineHotkeyManager {
 
     func configuration(for hotKeyID: EventHotKeyID) -> HotkeyManager.Configuration? {
         assertMainThread()
-        guard hotKeyID.signature == hotKeySignature,
-              let serviceID = serviceIDByIdentifier[hotKeyID.id] else { return nil }
-        return configurationByService[serviceID]
+        guard hotKeyID.signature == hotKeySignature else { return nil }
+        return configurationByIdentifier[hotKeyID.id]
     }
     
     @discardableResult

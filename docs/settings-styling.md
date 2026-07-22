@@ -30,26 +30,32 @@ Quiper supports two color styles: **Colorful** (vibrant, accent-colored) and **C
 
 ---
 
-## 3. Schematic Graphics over Native Controls
+## 3. Schematic Graphics over Native Controls (Primary Rule)
 
-For pickers and configuration settings (e.g., Dock Visibility, Toolbar Visibility, Tab Layout, Color Scheme):
-*   Avoid using raw macOS native dropdowns (`Picker`) or naked segmented controls.
-*   **Design Pattern:** Build custom selection card buttons that display a miniature graphical layout representation (schematic graphic) of the window/screen state.
-*   Apply the `.pickerCardStyle(isSelected:accentColor:)` modifier to these preview card containers.
-*   *Note:* Schematic graphics representing specific states (like the Classic style vs Colorful style selector itself) should remain fixed in their preview colors so the user knows what each mode represents.
+This rule applies to **all user-facing configuration choices**, including Boolean enabled/disabled settings. A setting being backed by a `Bool` does not make a checkbox, switch, or toggle the correct UI.
+
+*   **Default:** Represent every configuration choice with custom selection card buttons that show a miniature graphical layout or behavior preview (schematic graphic).
+*   Avoid raw macOS controls such as `Picker`, naked segmented controls, switches, and checkboxes when a setting can be represented by selection cards.
+*   For Boolean settings, provide two graphical choices such as **Enabled / Disabled**, **Shown / Hidden**, or another pair of labels that describes the actual behavior. Existing examples include `PromptHistoryPicker` and `PromptRecordingIndicatorPicker`.
+*   Apply the `.pickerCardStyle(isSelected:accentColor:)` modifier to each preview card container.
+*   Schematic graphics representing specific states (like the Classic style vs Colorful style selector itself) should remain fixed in their preview colors so the user knows what each mode represents.
+*   If another section appears to permit a native control, this primary rule wins unless the product request explicitly requires that control.
 
 ---
 
-## 4. Custom Checkboxes (macOS Workaround)
+## 4. Explicitly Requested Checkboxes Only (macOS Workaround)
+
+This section is a narrow implementation rule only for the rare case where the product request **explicitly requires a checkbox**. It is not permission to choose a checkbox merely because a setting is Boolean, and existing checkbox usage elsewhere is not sufficient precedent.
 
 Standard macOS native checkbox toggles (`.toggleStyle(.checkbox)`) do not reliably support custom colors via `.tint` or `.accentColor` and often glitch, rendering with solid black backgrounds.
 
-*   **Standard:** Use SF Symbol-based custom toggles for all checkboxes in settings:
+*   **When a checkbox is explicitly required:** Use the SF Symbol-based custom toggle:
     ```swift
     Toggle("Label", isOn: $value)
         .toggleStyle(.coloredCheckbox(color))
     ```
     This renders a clean, customizable checkmark box matching the specified accent color (or secondary gray in Classic mode).
+*   Never infer “Boolean setting → checkbox.” Re-evaluate the control under Section 3 first.
 
 ---
 

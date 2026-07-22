@@ -48,11 +48,13 @@ final class StandardShortcutSession: CancellableSession, @unchecked Sendable {
     private let completion: (HotkeyManager.Configuration?) -> Void
     private let onFinish: () -> Void
     private let additionalValidation: ((NSEvent) -> String?)?
+    private let configurationInterception: ((HotkeyManager.Configuration) -> Bool)?
     private let reservedActionCheck: (HotkeyManager.Configuration) -> String?
     
     init(onUpdate: @escaping (String) -> Void,
          onFinish: @escaping () -> Void,
          additionalValidation: ((NSEvent) -> String?)? = nil,
+         configurationInterception: ((HotkeyManager.Configuration) -> Bool)? = nil,
          reservedActionCheck: @escaping (HotkeyManager.Configuration) -> String? = { config in
              MainActor.assumeIsolated {
                  let modifiers = NSEvent.ModifierFlags(rawValue: config.modifierFlags)
@@ -64,6 +66,7 @@ final class StandardShortcutSession: CancellableSession, @unchecked Sendable {
         self.onUpdate = onUpdate
         self.onFinish = onFinish
         self.additionalValidation = additionalValidation
+        self.configurationInterception = configurationInterception
         self.reservedActionCheck = reservedActionCheck
         self.completion = completion
         attachKeyMonitor()
@@ -101,6 +104,11 @@ final class StandardShortcutSession: CancellableSession, @unchecked Sendable {
             self.onUpdate("Shortcut must include Command/Option/Control/Shift unless using F1–F20")
             return nil
         }
+
+        if self.configurationInterception?(configuration) == true {
+            self.finish(nil)
+            return nil
+        }
         
         // Check if shortcut is reserved
         let shortcutString = ShortcutFormatter.string(for: modifiers, keyCode: event.keyCode, characters: event.charactersIgnoringModifiers)
@@ -125,6 +133,10 @@ final class StandardShortcutSession: CancellableSession, @unchecked Sendable {
             guard let config = notification.object as? HotkeyManager.Configuration else { return }
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                if self.configurationInterception?(config) == true {
+                    self.finish(nil)
+                    return
+                }
                 let shortcutString = ShortcutFormatter.string(for: config)
                 if let actionName = self.reservedActionCheck(config) {
                     NSSound.beep()

@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ShortcutButton: View {
+    @Environment(\.isEnabled) private var isEnabled
+
     var text: String
     var isPlaceholder: Bool = false
     var onTap: () -> Void
@@ -52,8 +54,11 @@ struct ShortcutButton: View {
             }
         }
         .contentShape(RoundedRectangle(cornerRadius: 10))
+        .opacity(isEnabled ? 1 : 0.5)
         .onTapGesture {
-            onTap()
+            if isEnabled {
+                onTap()
+            }
         }
         .accessibilityElement(children: .contain)
         // .accessibilityAddTraits(.isButton) // Removed to expose children (Clear/Reset buttons)

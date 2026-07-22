@@ -781,6 +781,111 @@ struct SessionSwitchingPicker: View {
     }
 }
 
+struct GlobalEngineNumberShortcutsPicker: View {
+    @ObservedObject private var settings = Settings.shared
+    var onChange: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            optionButton(
+                isGlobal: true,
+                title: "Everywhere",
+                accessibilityIdentifier: "GlobalEngineNumberShortcutsEverywhere"
+            )
+            optionButton(
+                isGlobal: false,
+                title: "Quiper Only",
+                accessibilityIdentifier: "GlobalEngineNumberShortcutsQuiperOnly"
+            )
+        }
+        .frame(width: 260, alignment: .trailing)
+        .accessibilityIdentifier("GlobalEngineNumberShortcuts")
+    }
+
+    private func optionButton(
+        isGlobal: Bool,
+        title: String,
+        accessibilityIdentifier: String
+    ) -> some View {
+        Button {
+            guard settings.globalEngineDigitShortcutsEnabled != isGlobal else { return }
+            settings.setGlobalEngineDigitShortcutsEnabled(isGlobal)
+            onChange()
+        } label: {
+            VStack(spacing: 8) {
+                shortcutScopePreview(isGlobal: isGlobal)
+                    .padding(8)
+                    .pickerCardStyle(
+                        isSelected: settings.globalEngineDigitShortcutsEnabled == isGlobal,
+                        accentColor: .blue
+                    )
+
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(
+                        settings.globalEngineDigitShortcutsEnabled == isGlobal ? .primary : .secondary
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    private func shortcutScopePreview(isGlobal: Bool) -> some View {
+        VStack(spacing: 5) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(
+                        isGlobal
+                            ? Color.blue.settingsResolved.opacity(0.12)
+                            : Color(NSColor.controlBackgroundColor)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .stroke(
+                                isGlobal ? Color.blue.settingsResolved : Color(NSColor.separatorColor),
+                                lineWidth: isGlobal ? 1.5 : 0.75
+                            )
+                    )
+                    .frame(width: 56, height: 30)
+
+                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    .fill(
+                        isGlobal
+                            ? Color(NSColor.controlBackgroundColor)
+                            : Color.blue.settingsResolved.opacity(0.18)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                            .stroke(
+                                isGlobal ? Color(NSColor.separatorColor) : Color.blue.settingsResolved,
+                                lineWidth: isGlobal ? 0.75 : 1.5
+                            )
+                    )
+                    .frame(width: 30, height: 15)
+            }
+
+            Text("\(primaryModifierSymbols)1–0")
+                .font(.system(size: 7, weight: .bold, design: .rounded))
+                .foregroundColor(Color.blue.settingsResolved)
+        }
+        .frame(width: 60, height: 44)
+    }
+
+    private var primaryModifierSymbols: String {
+        let modifiers = NSEvent.ModifierFlags(
+            rawValue: settings.appShortcutBindings.serviceDigitsPrimaryModifiers
+        )
+        var symbols = ""
+        if modifiers.contains(.control) { symbols += "⌃" }
+        if modifiers.contains(.option) { symbols += "⌥" }
+        if modifiers.contains(.shift) { symbols += "⇧" }
+        if modifiers.contains(.command) { symbols += "⌘" }
+        return symbols
+    }
+
+}
+
 struct PromptHistoryPicker: View {
     @ObservedObject private var settings = Settings.shared
 
