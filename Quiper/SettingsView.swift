@@ -128,12 +128,12 @@ struct GeneralSettingsView: View {
                         )
                 )
 
-                SettingsSection(title: "Startup", icon: "rocket.fill", iconColor: .purple) {
+                SettingsSection(title: "System", icon: "gearshape.2.fill", iconColor: .purple.settingsResolved) {
                     SettingsRow(
                         title: "Startup Options",
                         message: "Configure automatic login and cache cleanup behavior at startup.",
                         icon: "bolt.fill",
-                        iconColor: .purple
+                        iconColor: .purple.settingsResolved
                     ) {
                         VStack(alignment: .leading, spacing: 8) {
                             Toggle("Launch at login", isOn: $launchAtLogin)
@@ -151,6 +151,29 @@ struct GeneralSettingsView: View {
                         }
                         .toggleStyle(.coloredCheckbox(Color.purple.settingsResolved))
                         .frame(width: 260, alignment: .leading)
+                    }
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Notification Permission",
+                        message: notificationPermissionMessage,
+                        icon: "bell.and.waveform.fill",
+                        iconColor: .purple.settingsResolved
+                    ) {
+                        HStack {
+                            Text(notificationPermissionStatus)
+                                .foregroundColor(notificationPermissionColor)
+                                .font(.callout)
+
+                            Spacer()
+
+                            Button("System Settings") {
+                                notificationDispatcher.openSystemNotificationSettings()
+                            }
+                            .tint(Color.purple.settingsResolved)
+                        }
+                        .frame(width: 260)
                     }
                 }
                 
@@ -185,25 +208,41 @@ struct GeneralSettingsView: View {
                     ) {
                         TabNavigationRingSizePicker()
                     }
+                }
 
-                    SettingsDivider()
-
-                    SettingsToggleRow(
-                        title: "Prompt History",
+                SettingsSection(
+                    title: "Prompt History",
+                    icon: "clock.arrow.circlepath",
+                    iconColor: .teal.settingsResolved
+                ) {
+                    SettingsRow(
+                        title: "History Recording",
                         message: "Keep a history of sent prompts per session.",
-                        icon: "clock.arrow.circlepath",
-                        iconColor: .blue,
-                        isOn: $settings.enablePromptHistory
-                    )
+                        icon: "record.circle",
+                        iconColor: .teal.settingsResolved
+                    ) {
+                        PromptHistoryPicker()
+                    }
 
                     if settings.enablePromptHistory {
+                        SettingsDivider()
+
+                        SettingsRow(
+                            title: "Prompt Recording Glow",
+                            message: "Show a blue glow around the prompt composer while prompt history recording is enabled.",
+                            icon: "sparkles",
+                            iconColor: .teal.settingsResolved
+                        ) {
+                            PromptRecordingGlowPicker()
+                        }
+
                         SettingsDivider()
 
                         SettingsRow(
                             title: "History Limit",
                             message: "Keep only the most recent prompts per session.",
                             icon: "number",
-                            iconColor: .blue.settingsResolved
+                            iconColor: .teal.settingsResolved
                         ) {
                             PromptHistoryLimitPicker()
                         }
@@ -214,32 +253,10 @@ struct GeneralSettingsView: View {
                             title: "Recording Triggers",
                             message: "Configure which actions record the prompt to history.",
                             icon: "arrow.right.doc.on.clipboard",
-                            iconColor: .blue.settingsResolved
+                            iconColor: .teal.settingsResolved
                         ) {
                             PromptHistoryTriggerPicker()
                         }
-                    }
-                }
-                
-                SettingsSection(title: "Notifications", icon: "bell.fill", iconColor: .orange) {
-                    SettingsRow(
-                        title: "Notification Permission",
-                        message: notificationPermissionMessage,
-                        icon: "bell.and.waveform.fill",
-                        iconColor: .orange
-                    ) {
-                        HStack {
-                            Text(notificationPermissionStatus)
-                                .foregroundColor(notificationPermissionColor)
-                                .font(.callout)
-                            
-                            Spacer()
-                            
-                            Button("System Settings") {
-                                notificationDispatcher.openSystemNotificationSettings()
-                            }
-                        }
-                        .frame(width: 260)
                     }
                 }
                 

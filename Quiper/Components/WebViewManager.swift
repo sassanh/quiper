@@ -40,12 +40,27 @@ final class WebViewManager: NSObject {
     private var tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:]
     private var tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:]
     private var approvedURLs = Set<URL>()
+    private var cancellables = Set<AnyCancellable>()
 
     init(containerView: NSView) {
         self.containerView = containerView
         super.init()
         NotificationCenter.default.addObserver(self, selector: #selector(webDataClearedNotification(_:)), name: .webDataCleared, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(promptHistoryLimitChangedNotification(_:)), name: .promptHistoryLimitChanged, object: nil)
+        Settings.shared.$enablePromptHistory
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshAllRecordingIndicators()
+            }
+            .store(in: &cancellables)
+        Settings.shared.$showPromptRecordingGlow
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshAllRecordingIndicators()
+            }
+            .store(in: &cancellables)
     }
     
     func updateServices(_ newServices: [Service]) {
@@ -294,10 +309,13 @@ final class WebViewManager: NSObject {
     }
 
     func isPromptHistoryEnabled(for serviceURL: String, sessionIndex: Int) -> Bool {
+        guard Settings.shared.enablePromptHistory else {
+            return false
+        }
         if let override = tabPromptHistoryEnabledOverrides[serviceURL]?[sessionIndex] {
             return override
         }
-        return Settings.shared.enablePromptHistory
+        return true
     }
 
     func setPromptHistoryEnabled(_ enabled: Bool, for serviceURL: String, sessionIndex: Int) {
@@ -305,6 +323,75 @@ final class WebViewManager: NSObject {
             tabPromptHistoryEnabledOverrides[serviceURL] = [:]
         }
         tabPromptHistoryEnabledOverrides[serviceURL]?[sessionIndex] = enabled
+        if let service = services.first(where: { $0.url == serviceURL }),
+           let webView = webviewsByID[service.id]?[sessionIndex] {
+            pushRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
+        }
+    }
+
+    /// Whether the composer should show the "recording armed" glow for this session.
+    func shouldShowRecordingIndicator(for service: Service, sessionIndex: Int) -> Bool {
+        Settings.shared.showPromptRecordingGlow
+            && service.preservePrompt
+            && isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex)
+    }
+
+    func pushRecordingIndicatorState(to webView: WKWebView) {
+        guard let (service, sessionIndex) = findServiceAndSession(for: webView) else { return }
+        pushRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
+    }
+
+    func pushRecordingIndicatorState(to webView: WKWebView, service: Service, sessionIndex: Int) {
+        applyRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
+        // Re-evaluate rather than replaying stale state if visibility/settings change during the delay.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, weak webView] in
+            guard let self, let webView else { return }
+            self.applyRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
+        }
+    }
+
+    private func applyRecordingIndicatorState(to webView: WKWebView, service: Service, sessionIndex: Int) {
+        let isVisible = webView.superview?.isHidden == false
+        let enabled = isVisible && shouldShowRecordingIndicator(for: service, sessionIndex: sessionIndex)
+        let js = """
+        window.__quiperRecordingEnabled = \(enabled ? "true" : "false");
+        if (typeof window.__quiperUpdateRecordingIndicator === 'function') {
+            window.__quiperUpdateRecordingIndicator();
+        } else {
+            // Script not ready yet (document still loading); retry shortly.
+            setTimeout(function() {
+                if (typeof window.__quiperUpdateRecordingIndicator === 'function') {
+                    window.__quiperUpdateRecordingIndicator();
+                }
+            }, 400);
+        }
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    func refreshAllRecordingIndicators() {
+        for service in services {
+            guard let sessions = webviewsByID[service.id] else { continue }
+            for (sessionIndex, webView) in sessions {
+                pushRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
+            }
+        }
+    }
+
+    func didReceiveInputTrackerReadyMessage(_ message: WKScriptMessage) {
+        guard message.name == "quiperInputTrackerReady",
+              message.frameInfo.isMainFrame,
+              let webView = message.webView,
+              let (service, sessionIndex) = findServiceAndSession(for: webView) else {
+            return
+        }
+
+        let isActive = webView.superview?.isHidden == false
+        webView.evaluateJavaScript(
+            "window.__quiperInputTrackerActive = \(isActive ? "true" : "false");",
+            completionHandler: nil
+        )
+        pushRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
     }
 
     func didReceiveInputStateMessage(_ message: WKScriptMessage) {
@@ -359,6 +446,7 @@ final class WebViewManager: NSObject {
                 if trimmed.count >= 2 && isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex) {
                     let newEntry = PromptHistoryEntry(text: wasSentText, timestamp: Date())
                     addPromptHistoryEntry(newEntry, for: service.url, sessionIndex: sessionIndex)
+                    acknowledgePromptSaved(in: webView, service: service, sessionIndex: sessionIndex)
                     NSLog("[Quiper] [History] Successfully added entry to session \(sessionIndex) prompt history")
                     self.delegate?.inputStateRequestSave()
                 } else {
@@ -373,6 +461,20 @@ final class WebViewManager: NSObject {
         if wasSent {
             self.delegate?.inputStateRequestSave()
         }
+    }
+
+    private func acknowledgePromptSaved(in webView: WKWebView, service: Service, sessionIndex: Int) {
+        guard shouldShowRecordingIndicator(for: service, sessionIndex: sessionIndex) else {
+            return
+        }
+        webView.evaluateJavaScript(
+            """
+            if (typeof window.__quiperAcknowledgePromptSaved === 'function') {
+                window.__quiperAcknowledgePromptSaved();
+            }
+            """,
+            completionHandler: nil
+        )
     }
 
     func findServiceAndSession(for webView: WKWebView) -> (Service, Int)? {
@@ -473,10 +575,254 @@ final class WebViewManager: NSObject {
             if (window.__quiperInputTrackerInstalled) return;
             window.__quiperInputTrackerInstalled = true;
             window.__quiperInputTrackerActive = false;
+            window.__quiperRecordingEnabled = false;
 
             const selector = "\(escapedSelector)";
             window.__quiperLatestTypedText = "";
             window.__quiperLastInputWasTrustedClear = false;
+            let glowOverlay = null;
+            let layoutInterval = null;
+            let saveRippleTimer = null;
+            let indicatedElement = null;
+            // Many thin nested dashes + light blur ≈ continuous falloff (SVG can't stroke a true path gradient).
+            const ARC_LAYER_COUNT = 18;
+            const ARC_MAX_LEN = 18;
+            const ARC_MIN_LEN = 2.5;
+            const ARC_MIN_OPACITY = 0.04;
+            const ARC_MAX_OPACITY = 0.46;
+            const ARC_SPIN_SECONDS = 5;
+
+            function ensureRecordingStyles() {
+                if (document.getElementById('__quiper-recording-style')) return;
+                const style = document.createElement('style');
+                style.id = '__quiper-recording-style';
+                const parts = [
+                    '#__quiper-recording-glow {',
+                    '  position: fixed;',
+                    '  pointer-events: none;',
+                    '  z-index: 2147483646;',
+                    '  display: none;',
+                    '  overflow: visible;',
+                    '}',
+                    '#__quiper-recording-glow svg {',
+                    '  display: block;',
+                    '  overflow: visible;',
+                    '}',
+                    '#__quiper-recording-glow rect {',
+                    '  fill: none;',
+                    '  stroke-linecap: round;',
+                    '}',
+                    '#__quiper-recording-glow .__quiper-save-ripple {',
+                    '  stroke: rgba(96, 165, 250, 0.92);',
+                    '  stroke-width: 2;',
+                    '  opacity: 0;',
+                    '  transform-box: fill-box;',
+                    '  transform-origin: center;',
+                    '}',
+                    '@keyframes __quiper-prompt-saved-ripple {',
+                    '  from { opacity: 0.92; transform: scale(1); }',
+                    '  to { opacity: 0; transform: scale(var(--__quiper-ripple-scale-x, 1), var(--__quiper-ripple-scale-y, 1)); }',
+                    '}',
+                    '#__quiper-recording-glow.__quiper-prompt-saved .__quiper-save-ripple {',
+                    '  animation: __quiper-prompt-saved-ripple 520ms cubic-bezier(0.16, 1, 0.3, 1);',
+                    '}',
+                    '@media (prefers-reduced-motion: reduce) {',
+                    '  #__quiper-recording-glow.__quiper-prompt-saved .__quiper-save-ripple {',
+                    '    animation: none !important;',
+                    '    opacity: 0 !important;',
+                    '  }',
+                    '}'
+                ];
+                for (let i = 0; i < ARC_LAYER_COUNT; i++) {
+                    const t = ARC_LAYER_COUNT === 1 ? 1 : i / (ARC_LAYER_COUNT - 1);
+                    // Ease opacity toward the core so ends stay soft.
+                    const ease = t * t;
+                    const len = ARC_MAX_LEN - t * (ARC_MAX_LEN - ARC_MIN_LEN);
+                    const base = -(ARC_MAX_LEN - len) / 2;
+                    const opacity = ARC_MIN_OPACITY + ease * (ARC_MAX_OPACITY - ARC_MIN_OPACITY);
+                    const width = 2.05 - t * 0.55;
+                    parts.push(
+                        '@keyframes __quiper-recording-spin-' + i + ' {',
+                        '  from { stroke-dashoffset: ' + base.toFixed(3) + '; }',
+                        '  to { stroke-dashoffset: ' + (base - 100).toFixed(3) + '; }',
+                        '}',
+                        '#__quiper-recording-glow .__quiper-arc-' + i + ' {',
+                        '  stroke: rgba(96, 165, 250, ' + opacity.toFixed(3) + ');',
+                        '  stroke-width: ' + width.toFixed(2) + ';',
+                        '  stroke-dasharray: ' + len.toFixed(2) + ' ' + (100 - len).toFixed(2) + ';',
+                        '  animation: __quiper-recording-spin-' + i + ' ' + ARC_SPIN_SECONDS + 's linear infinite;',
+                        '}'
+                    );
+                }
+                // Blur only the outer (softest) layers to melt residual stepping.
+                const blurUntil = Math.min(6, ARC_LAYER_COUNT - 1);
+                for (let i = 0; i < blurUntil; i++) {
+                    const blur = (0.85 * (1 - i / blurUntil)).toFixed(2);
+                    parts.push(
+                        '#__quiper-recording-glow .__quiper-arc-' + i + ' {',
+                        '  filter: blur(' + blur + 'px);',
+                        '}'
+                    );
+                }
+                style.textContent = parts.join('\\n');
+                (document.head || document.documentElement).appendChild(style);
+            }
+
+            function ensureGlowOverlay() {
+                ensureRecordingStyles();
+                if (glowOverlay && glowOverlay.isConnected) return glowOverlay;
+                glowOverlay = document.createElement('div');
+                glowOverlay.id = '__quiper-recording-glow';
+                glowOverlay.setAttribute('aria-hidden', 'true');
+                const svgNamespace = 'http://www.w3.org/2000/svg';
+                const svg = document.createElementNS(svgNamespace, 'svg');
+                for (let i = 0; i < ARC_LAYER_COUNT; i++) {
+                    const rect = document.createElementNS(svgNamespace, 'rect');
+                    rect.setAttribute('class', '__quiper-arc-' + i);
+                    rect.setAttribute('pathLength', '100');
+                    svg.appendChild(rect);
+                }
+                const saveRipple = document.createElementNS(svgNamespace, 'rect');
+                saveRipple.setAttribute('class', '__quiper-save-ripple');
+                svg.appendChild(saveRipple);
+                glowOverlay.appendChild(svg);
+                const root = document.documentElement || document.body;
+                if (root) root.appendChild(glowOverlay);
+                return glowOverlay;
+            }
+
+            function stopGlowTracking() {
+                if (layoutInterval) {
+                    clearInterval(layoutInterval);
+                    layoutInterval = null;
+                }
+                if (saveRippleTimer) {
+                    clearTimeout(saveRippleTimer);
+                    saveRippleTimer = null;
+                }
+                if (glowOverlay) {
+                    glowOverlay.style.display = 'none';
+                    glowOverlay.classList.remove('__quiper-prompt-saved');
+                }
+                indicatedElement = null;
+            }
+
+            function parseBorderRadius(el, width, height) {
+                let rx = 12;
+                try {
+                    const cs = window.getComputedStyle(el);
+                    if (cs && cs.borderRadius) {
+                        const first = String(cs.borderRadius).split(' ')[0];
+                        const n = parseFloat(first);
+                        if (!isNaN(n)) {
+                            rx = first.indexOf('%') >= 0 ? (n / 100) * Math.min(width, height) : n;
+                        }
+                    }
+                } catch (e) {}
+                return Math.max(0, Math.min(rx + 4, width / 2, height / 2));
+            }
+
+            function positionGlowOverlay() {
+                const el = selector ? document.querySelector(selector) : null;
+                if (!window.__quiperRecordingEnabled || !el) {
+                    stopGlowTracking();
+                    return;
+                }
+                const ring = ensureGlowOverlay();
+                if (!ring) return;
+                const r = el.getBoundingClientRect();
+                if (r.width < 2 || r.height < 2 || (r.bottom < 0 && r.top < 0)) {
+                    ring.style.display = 'none';
+                    return;
+                }
+                const pad = 4;
+                const w = Math.max(8, Math.round(r.width + pad * 2));
+                const h = Math.max(8, Math.round(r.height + pad * 2));
+                const inset = 1.5;
+                const rx = parseBorderRadius(el, w, h);
+                const svg = ring.querySelector('svg');
+                const rects = ring.querySelectorAll('rect');
+                if (!svg || !rects.length) return;
+
+                ring.style.display = 'block';
+                ring.style.left = Math.round(r.left - pad) + 'px';
+                ring.style.top = Math.round(r.top - pad) + 'px';
+                ring.style.width = w + 'px';
+                ring.style.height = h + 'px';
+                svg.setAttribute('width', String(w));
+                svg.setAttribute('height', String(h));
+                svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+
+                const rw = Math.max(1, w - inset * 2);
+                const rh = Math.max(1, h - inset * 2);
+                const rectRx = Math.min(rx, rw / 2, rh / 2);
+                rects.forEach(function(rect) {
+                    rect.setAttribute('x', String(inset));
+                    rect.setAttribute('y', String(inset));
+                    rect.setAttribute('width', String(rw));
+                    rect.setAttribute('height', String(rh));
+                    rect.setAttribute('rx', String(rectRx));
+                    rect.setAttribute('ry', String(rectRx));
+                });
+                const saveRipple = ring.querySelector('.__quiper-save-ripple');
+                if (saveRipple) {
+                    const expansion = 4;
+                    saveRipple.style.setProperty('--__quiper-ripple-scale-x', String((rw + expansion * 2) / rw));
+                    saveRipple.style.setProperty('--__quiper-ripple-scale-y', String((rh + expansion * 2) / rh));
+                }
+                indicatedElement = el;
+            }
+
+            function startGlowTracking() {
+                positionGlowOverlay();
+                // Layout sync only (composer moves/resizes). Spin is CSS-only.
+                if (layoutInterval) return;
+                layoutInterval = setInterval(positionGlowOverlay, 250);
+            }
+
+            function updateRecordingIndicator() {
+                if (!window.__quiperRecordingEnabled) {
+                    stopGlowTracking();
+                    return;
+                }
+                startGlowTracking();
+            }
+
+            function acknowledgePromptSaved() {
+                if (!window.__quiperRecordingEnabled) return;
+                try {
+                    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                        return;
+                    }
+                } catch (e) {}
+
+                positionGlowOverlay();
+                const ring = glowOverlay;
+                if (!ring || !ring.isConnected || ring.style.display !== 'block') return;
+                if (!ring.querySelector('.__quiper-save-ripple')) return;
+
+                if (saveRippleTimer) {
+                    clearTimeout(saveRippleTimer);
+                    saveRippleTimer = null;
+                }
+                ring.classList.remove('__quiper-prompt-saved');
+                void ring.offsetWidth;
+                ring.classList.add('__quiper-prompt-saved');
+                saveRippleTimer = setTimeout(function() {
+                    ring.classList.remove('__quiper-prompt-saved');
+                    saveRippleTimer = null;
+                }, 560);
+            }
+
+            window.__quiperUpdateRecordingIndicator = updateRecordingIndicator;
+            window.__quiperAcknowledgePromptSaved = acknowledgePromptSaved;
+            window.addEventListener('resize', function() {
+                if (window.__quiperRecordingEnabled) positionGlowOverlay();
+            }, true);
+            window.addEventListener('scroll', function() {
+                if (window.__quiperRecordingEnabled) positionGlowOverlay();
+            }, true);
+
 
             function getContentEditableSelection(el) {
                 try {
@@ -850,6 +1196,19 @@ final class WebViewManager: NSObject {
                 try {
                     if (observer) observer.disconnect();
                     observer = new MutationObserver((mutations) => {
+                        let structureChanged = false;
+                        for (const m of mutations) {
+                            if (m.type === 'childList') {
+                                structureChanged = true;
+                                break;
+                            }
+                        }
+                        // SPA remounts replace the composer; keep the glow attached.
+                        if (structureChanged || (indicatedElement && !indicatedElement.isConnected)) {
+                            if (window.__quiperRecordingEnabled) {
+                                updateRecordingIndicator();
+                            }
+                        }
                         const el = getTargetElement();
                         if (el) {
                             const isContentEditable = el.contentEditable === 'true' || el.getAttribute('contenteditable') === 'true';
@@ -859,6 +1218,7 @@ final class WebViewManager: NSObject {
                         }
                     });
                     observer.observe(document.body, { childList: true, characterData: true, subtree: true });
+                    updateRecordingIndicator();
                 } catch (e) {
                     console.error("Quiper: failed to setup MutationObserver", e);
                 }
@@ -867,6 +1227,11 @@ final class WebViewManager: NSObject {
                 setupMutationObserver();
             } else {
                 document.addEventListener('DOMContentLoaded', setupMutationObserver);
+            }
+            // Re-apply if Swift already pushed recording state before this script finished installing.
+            updateRecordingIndicator();
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.quiperInputTrackerReady) {
+                window.webkit.messageHandlers.quiperInputTrackerReady.postMessage({});
             }
         })();
         """
@@ -1174,6 +1539,7 @@ final class WebViewManager: NSObject {
         
         let inputHandler = InputStateScriptMessageHandler(manager: self)
         userContentController.add(inputHandler, name: "quiperInputState")
+        userContentController.add(inputHandler, name: "quiperInputTrackerReady")
 
         let webview = WKWebView(frame: bounds, configuration: config)
         webview.setValue(false, forKey: "drawsBackground")
@@ -1197,7 +1563,16 @@ final class WebViewManager: NSObject {
             sessionMap.values.forEach { webView in
                 if let wrapper = webView.superview {
                     wrapper.isHidden = true
-                    webView.evaluateJavaScript("window.__quiperInputTrackerActive = false", completionHandler: nil)
+                    webView.evaluateJavaScript(
+                        """
+                        window.__quiperInputTrackerActive = false;
+                        window.__quiperRecordingEnabled = false;
+                        if (typeof window.__quiperUpdateRecordingIndicator === 'function') {
+                            window.__quiperUpdateRecordingIndicator();
+                        }
+                        """,
+                        completionHandler: nil
+                    )
                 }
             }
         }
@@ -1280,6 +1655,7 @@ final class WebViewManager: NSObject {
         
         wrapper.isHidden = false
         webView.evaluateJavaScript("window.__quiperInputTrackerActive = true", completionHandler: nil)
+        pushRecordingIndicatorState(to: webView)
         
         if let container = containerView, wrapper.superview != container {
             if let dragArea = self.dragArea {
@@ -1349,6 +1725,7 @@ final class WebViewManager: NSObject {
  
         detachNotificationBridge(from: webView)
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "quiperInputState")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "quiperInputTrackerReady")
  
         // Resume and clear any pending navigation continuation to prevent CheckedContinuation leaks
         let token = ObjectIdentifier(webView)
@@ -2051,7 +2428,14 @@ private final class InputStateScriptMessageHandler: NSObject, WKScriptMessageHan
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         let mgr = manager
         Task { @MainActor in
-            mgr?.didReceiveInputStateMessage(message)
+            switch message.name {
+            case "quiperInputState":
+                mgr?.didReceiveInputStateMessage(message)
+            case "quiperInputTrackerReady":
+                mgr?.didReceiveInputTrackerReadyMessage(message)
+            default:
+                break
+            }
         }
     }
 }

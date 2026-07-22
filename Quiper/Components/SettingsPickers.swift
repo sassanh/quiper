@@ -572,13 +572,13 @@ struct TabSurvivalPolicyPicker: View {
                         // Active tabs (filled color boxes)
                         HStack(spacing: 2) {
                             RoundedRectangle(cornerRadius: 1)
-                                .fill(Color.orange.settingsResolved.opacity(0.8))
+                                .fill(Color.blue.settingsResolved.opacity(0.8))
                                 .frame(width: 8, height: 6)
                             RoundedRectangle(cornerRadius: 1)
-                                .fill(Color.orange.settingsResolved.opacity(0.5))
+                                .fill(Color.blue.settingsResolved.opacity(0.5))
                                 .frame(width: 8, height: 6)
                             RoundedRectangle(cornerRadius: 1)
-                                .fill(Color.orange.settingsResolved.opacity(0.5))
+                                .fill(Color.blue.settingsResolved.opacity(0.5))
                                 .frame(width: 8, height: 6)
                         }
                         .offset(y: -8)
@@ -586,12 +586,12 @@ struct TabSurvivalPolicyPicker: View {
                         // circular reload/restore arrow
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(Color.orange.settingsResolved)
+                            .foregroundColor(Color.blue.settingsResolved)
                             .offset(y: 6)
                     }
                     .frame(width: 44, height: 36)
                     .padding(8)
-                    .pickerCardStyle(isSelected: selection == .always, accentColor: .orange)
+                    .pickerCardStyle(isSelected: selection == .always, accentColor: .blue)
 
                     Text("Always")
                         .font(.system(size: 11, weight: .medium))
@@ -612,10 +612,10 @@ struct TabSurvivalPolicyPicker: View {
                         // Active tabs (filled color boxes)
                         HStack(spacing: 2) {
                             RoundedRectangle(cornerRadius: 1)
-                                .fill(Color.orange.settingsResolved.opacity(0.8))
+                                .fill(Color.blue.settingsResolved.opacity(0.8))
                                 .frame(width: 8, height: 6)
                             RoundedRectangle(cornerRadius: 1)
-                                .fill(Color.orange.settingsResolved.opacity(0.5))
+                                .fill(Color.blue.settingsResolved.opacity(0.5))
                                 .frame(width: 8, height: 6)
                         }
                         .offset(y: -8)
@@ -623,7 +623,7 @@ struct TabSurvivalPolicyPicker: View {
                         // Question mark alert bubble/box
                         ZStack {
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(Color.orange.settingsResolved.opacity(0.7))
+                                .fill(Color.blue.settingsResolved.opacity(0.7))
                                 .frame(width: 14, height: 12)
                             Text("?")
                                 .font(.system(size: 8, weight: .bold))
@@ -633,7 +633,7 @@ struct TabSurvivalPolicyPicker: View {
                     }
                     .frame(width: 44, height: 36)
                     .padding(8)
-                    .pickerCardStyle(isSelected: selection == .askOnExit, accentColor: .orange)
+                    .pickerCardStyle(isSelected: selection == .askOnExit, accentColor: .blue)
 
                     Text("Ask on Exit")
                         .font(.system(size: 11, weight: .medium))
@@ -670,7 +670,7 @@ struct TabSurvivalPolicyPicker: View {
                     }
                     .frame(width: 44, height: 36)
                     .padding(8)
-                    .pickerCardStyle(isSelected: selection == .never, accentColor: .orange)
+                    .pickerCardStyle(isSelected: selection == .never, accentColor: .blue)
 
                     Text("Never")
                         .font(.system(size: 11, weight: .medium))
@@ -781,6 +781,150 @@ struct SessionSwitchingPicker: View {
     }
 }
 
+struct PromptHistoryPicker: View {
+    @ObservedObject private var settings = Settings.shared
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: { settings.enablePromptHistory = true }) {
+                VStack(spacing: 8) {
+                    historyPreview(isEnabled: true)
+                        .padding(8)
+                        .pickerCardStyle(
+                            isSelected: settings.enablePromptHistory,
+                            accentColor: .teal
+                        )
+
+                    Text("Enabled")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.enablePromptHistory ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { settings.enablePromptHistory = false }) {
+                VStack(spacing: 8) {
+                    historyPreview(isEnabled: false)
+                        .padding(8)
+                        .pickerCardStyle(
+                            isSelected: !settings.enablePromptHistory,
+                            accentColor: .teal
+                        )
+
+                    Text("Disabled")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.enablePromptHistory ? .secondary : .primary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 260, alignment: .trailing)
+    }
+
+    private func historyPreview(isEnabled: Bool) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                .frame(width: 48, height: 32)
+
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(0..<3, id: \.self) { index in
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(
+                                isEnabled && index == 0
+                                    ? Color.teal.settingsResolved
+                                    : Color.secondary.opacity(0.35)
+                            )
+                            .frame(width: 4, height: 4)
+                        RoundedRectangle(cornerRadius: 1, style: .continuous)
+                            .fill(Color.secondary.opacity(isEnabled ? 0.45 : 0.22))
+                            .frame(width: CGFloat(24 - index * 3), height: 3)
+                    }
+                }
+            }
+
+            if !isEnabled {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.65))
+                    .frame(width: 42, height: 1)
+                    .rotationEffect(.degrees(-32))
+            }
+        }
+        .frame(width: 56, height: 36)
+    }
+}
+
+struct PromptRecordingGlowPicker: View {
+    @ObservedObject private var settings = Settings.shared
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: { settings.showPromptRecordingGlow = true }) {
+                VStack(spacing: 8) {
+                    composerPreview(showsGlow: true)
+                        .padding(8)
+                        .pickerCardStyle(
+                            isSelected: settings.showPromptRecordingGlow,
+                            accentColor: .teal
+                        )
+
+                    Text("Shown")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.showPromptRecordingGlow ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { settings.showPromptRecordingGlow = false }) {
+                VStack(spacing: 8) {
+                    composerPreview(showsGlow: false)
+                        .padding(8)
+                        .pickerCardStyle(
+                            isSelected: !settings.showPromptRecordingGlow,
+                            accentColor: .teal
+                        )
+
+                    Text("Hidden")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.showPromptRecordingGlow ? .secondary : .primary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 260, alignment: .trailing)
+    }
+
+    private func composerPreview(showsGlow: Bool) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(NSColor.textBackgroundColor).opacity(0.65))
+                .frame(width: 48, height: 26)
+
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                .frame(width: 48, height: 26)
+
+            HStack(spacing: 3) {
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(Color.secondary.opacity(0.45))
+                    .frame(width: 22, height: 3)
+                Circle()
+                    .fill(Color.secondary.opacity(0.35))
+                    .frame(width: 6, height: 6)
+            }
+
+            if showsGlow {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(Color.teal.settingsResolved, lineWidth: 1.5)
+                    .shadow(color: Color.teal.settingsResolved.opacity(0.75), radius: 3)
+                    .frame(width: 52, height: 30)
+            }
+        }
+        .frame(width: 56, height: 36)
+    }
+}
+
 struct PromptHistoryTriggerPicker: View {
     @ObservedObject private var settings = Settings.shared
 
@@ -807,12 +951,12 @@ struct PromptHistoryTriggerPicker: View {
                         // Paperplane sending
                         Image(systemName: "paperplane.fill")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(settings.promptHistoryRecordOnSubmit ? Color.blue.settingsResolved : .gray.opacity(0.4))
+                            .foregroundColor(settings.promptHistoryRecordOnSubmit ? Color.teal.settingsResolved : .gray.opacity(0.4))
                             .offset(y: 4)
                     }
                     .frame(width: 44, height: 36)
                     .padding(8)
-                    .pickerCardStyle(isSelected: settings.promptHistoryRecordOnSubmit, accentColor: .blue)
+                    .pickerCardStyle(isSelected: settings.promptHistoryRecordOnSubmit, accentColor: .teal)
 
                     Text("On Submit")
                         .font(.system(size: 11, weight: .medium))
@@ -836,15 +980,15 @@ struct PromptHistoryTriggerPicker: View {
                         HStack(spacing: 3) {
                             Text("⌘")
                                 .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(settings.promptHistoryRecordOnCmdBackspace ? Color.blue.settingsResolved : .gray.opacity(0.4))
+                                .foregroundColor(settings.promptHistoryRecordOnCmdBackspace ? Color.teal.settingsResolved : .gray.opacity(0.4))
                             Image(systemName: "delete.left.fill")
                                 .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(settings.promptHistoryRecordOnCmdBackspace ? Color.blue.settingsResolved : .gray.opacity(0.4))
+                                .foregroundColor(settings.promptHistoryRecordOnCmdBackspace ? Color.teal.settingsResolved : .gray.opacity(0.4))
                         }
                     }
                     .frame(width: 44, height: 36)
                     .padding(8)
-                    .pickerCardStyle(isSelected: settings.promptHistoryRecordOnCmdBackspace, accentColor: .blue)
+                    .pickerCardStyle(isSelected: settings.promptHistoryRecordOnCmdBackspace, accentColor: .teal)
 
                     Text("Cmd+⌫")
                         .font(.system(size: 11, weight: .medium))
@@ -866,19 +1010,19 @@ struct PromptHistoryTriggerPicker: View {
 
                         // Selected text representation
                         RoundedRectangle(cornerRadius: 1)
-                            .fill(settings.promptHistoryRecordOnSelectionClear ? Color.blue.settingsResolved.opacity(0.3) : Color.gray.opacity(0.2))
+                            .fill(settings.promptHistoryRecordOnSelectionClear ? Color.teal.settingsResolved.opacity(0.3) : Color.gray.opacity(0.2))
                             .frame(width: 26, height: 10)
                             .offset(y: -6)
 
                         // Scissors / Cut icon
                         Image(systemName: "scissors")
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(settings.promptHistoryRecordOnSelectionClear ? Color.blue.settingsResolved : .gray.opacity(0.4))
+                            .foregroundColor(settings.promptHistoryRecordOnSelectionClear ? Color.teal.settingsResolved : .gray.opacity(0.4))
                             .offset(y: 6)
                     }
                     .frame(width: 44, height: 36)
                     .padding(8)
-                    .pickerCardStyle(isSelected: settings.promptHistoryRecordOnSelectionClear, accentColor: .blue)
+                    .pickerCardStyle(isSelected: settings.promptHistoryRecordOnSelectionClear, accentColor: .teal)
 
                     Text("Clear / Overwrite")
                         .font(.system(size: 11, weight: .medium))
@@ -887,6 +1031,7 @@ struct PromptHistoryTriggerPicker: View {
             }
             .buttonStyle(.plain)
         }
+        .tint(Color.teal.settingsResolved)
         .frame(width: 260, alignment: .trailing)
     }
 }
@@ -903,6 +1048,7 @@ struct PromptHistoryLimitPicker: View {
                 .font(.body.monospacedDigit())
                 .frame(minWidth: 34, alignment: .trailing)
         }
+        .tint(Color.teal.settingsResolved)
         .frame(width: 260, alignment: .trailing)
     }
 }
@@ -919,6 +1065,7 @@ struct TabNavigationRingSizePicker: View {
                 .font(.body.monospacedDigit())
                 .frame(minWidth: 34, alignment: .trailing)
         }
+        .tint(Color.blue.settingsResolved)
         .frame(width: 260, alignment: .trailing)
     }
 }

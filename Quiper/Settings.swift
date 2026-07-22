@@ -451,6 +451,11 @@ class Settings: ObservableObject {
             saveSettings()
         }
     }
+    @Published var showPromptRecordingGlow: Bool = true {
+        didSet {
+            saveSettings()
+        }
+    }
     @Published var promptHistoryRecordOnSubmit: Bool = true {
         didSet {
             saveSettings()
@@ -510,6 +515,7 @@ class Settings: ObservableObject {
         tabSurvivalPolicy = .always
         tabNavigationRingSize = 2
         enablePromptHistory = true
+        showPromptRecordingGlow = true
         promptHistoryRecordOnSubmit = true
         promptHistoryRecordOnCmdBackspace = true
         promptHistoryRecordOnSelectionClear = false
@@ -1156,7 +1162,7 @@ class Settings: ObservableObject {
             name: "ChatGPT",
             url: "https://chatgpt.com?referrer=https://github.io/sassanh/quiper",
             // Prefer the stable prompt id; keep ProseMirror/role fallbacks for older markup.
-            focus_selector: "#prompt-textarea, .ProseMirror[role='textbox'], div[contenteditable='true'][role='textbox']",
+            focus_selector: "#prompt-textarea, .ProseMirror[role='textbox'], textarea[name='prompt'], div[contenteditable='true'][role='textbox']",
             actionScripts: [
                 Settings.newSessionActionID: """
                 \(Settings.defaultActionScriptHelpers)
@@ -2293,6 +2299,7 @@ class Settings: ObservableObject {
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
         enablePromptHistory = persisted.enablePromptHistory ?? true
+        showPromptRecordingGlow = persisted.showPromptRecordingGlow ?? true
         promptHistoryRecordOnSubmit = persisted.promptHistoryRecordOnSubmit ?? true
         promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace ?? true
         promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear ?? false
@@ -2366,6 +2373,7 @@ class Settings: ObservableObject {
                                             tabSurvivalPolicy: tabSurvivalPolicy,
                                             persistedTabState: persistedTabState,
                                             enablePromptHistory: enablePromptHistory,
+                                            showPromptRecordingGlow: showPromptRecordingGlow,
                                             promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
                                             promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
                                             promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
@@ -2405,6 +2413,7 @@ class Settings: ObservableObject {
             tabSurvivalPolicy: tabSurvivalPolicy,
             persistedTabState: persistedTabState,
             enablePromptHistory: enablePromptHistory,
+            showPromptRecordingGlow: showPromptRecordingGlow,
             promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
             promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
             promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
@@ -2447,6 +2456,7 @@ class Settings: ObservableObject {
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
         tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2
         enablePromptHistory = persisted.enablePromptHistory ?? true
+        showPromptRecordingGlow = persisted.showPromptRecordingGlow ?? true
         promptHistoryRecordOnSubmit = persisted.promptHistoryRecordOnSubmit ?? true
         promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace ?? true
         promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear ?? false

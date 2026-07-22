@@ -478,6 +478,7 @@ struct PersistedSettings: Codable {
     var tabSurvivalPolicy: TabSurvivalPolicy?
     var persistedTabState: PersistedTabState?
     var enablePromptHistory: Bool?
+    var showPromptRecordingGlow: Bool?
     var promptHistoryRecordOnSubmit: Bool?
     var promptHistoryRecordOnCmdBackspace: Bool?
     var promptHistoryRecordOnSelectionClear: Bool?
@@ -502,6 +503,7 @@ struct PersistedSettings: Codable {
         case tabSurvivalPolicy
         case persistedTabState
         case enablePromptHistory
+        case showPromptRecordingGlow
         case promptHistoryRecordOnSubmit
         case promptHistoryRecordOnCmdBackspace
         case promptHistoryRecordOnSelectionClear
@@ -536,6 +538,7 @@ struct PersistedSettings: Codable {
          tabSurvivalPolicy: TabSurvivalPolicy? = nil,
          persistedTabState: PersistedTabState? = nil,
          enablePromptHistory: Bool? = nil,
+         showPromptRecordingGlow: Bool? = nil,
          promptHistoryRecordOnSubmit: Bool? = nil,
          promptHistoryRecordOnCmdBackspace: Bool? = nil,
          promptHistoryRecordOnSelectionClear: Bool? = nil,
@@ -569,6 +572,7 @@ struct PersistedSettings: Codable {
         self.tabSurvivalPolicy = tabSurvivalPolicy
         self.persistedTabState = persistedTabState
         self.enablePromptHistory = enablePromptHistory
+        self.showPromptRecordingGlow = showPromptRecordingGlow
         self.promptHistoryRecordOnSubmit = promptHistoryRecordOnSubmit
         self.promptHistoryRecordOnCmdBackspace = promptHistoryRecordOnCmdBackspace
         self.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear
@@ -606,6 +610,7 @@ struct PersistedSettings: Codable {
         tabSurvivalPolicy = try container.decodeIfPresent(TabSurvivalPolicy.self, forKey: .tabSurvivalPolicy)
         persistedTabState = try container.decodeIfPresent(PersistedTabState.self, forKey: .persistedTabState)
         enablePromptHistory = try container.decodeIfPresent(Bool.self, forKey: .enablePromptHistory)
+        showPromptRecordingGlow = try container.decodeIfPresent(Bool.self, forKey: .showPromptRecordingGlow)
         promptHistoryRecordOnSubmit = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnSubmit)
         promptHistoryRecordOnCmdBackspace = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnCmdBackspace)
         promptHistoryRecordOnSelectionClear = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnSelectionClear)
