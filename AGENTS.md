@@ -44,6 +44,16 @@
 - User settings live at `~/Library/Application Support/app.sassanh.quiper.Quiper/settings.json` (and `app.sassanh.quiper.QuiperDev/settings.json` in Debug); include migrations if you change its shape or location.
 - Notifications use the WebKit bridge; ensure new features respect macOS notification permissions and sandbox expectations.
 
+## Settings Persistence & Migration Rules
+
+- **Establish semantics from evidence before changing persisted data.** Inspect the active encoder, decoder, existing migrations, representative stored data, and relevant history. Never infer a field’s purpose, a version’s meaning, or the repository’s compatibility policy from its name or type.
+- **Do not invent missing migration inputs.** Release boundaries, defaults, compatibility windows, and old-to-new mappings must come from authoritative repository evidence or explicit user direction. If a material input cannot be established, ask before implementing.
+- **Use only authoritative migration predicates.** A migration condition must state exactly what metadata it compares, what that metadata represents, and why the comparison proves the migration is eligible. Never substitute a convenient proxy for an unknown boundary.
+- **Separate detection, transformation, persistence decisions, and persistence.** Treat them as distinct stages with names that truthfully describe completed state versus pending work. A flag that records a completed decode-time transformation must not be named as though the transformation is still required.
+- **Keep schema direction explicit.** Follow the repository’s established compatibility contract; normally, legacy representations belong only at the decoding boundary, the in-memory model represents the current schema, and encoding emits only the current schema. Do not retain obsolete model state merely to make migration code convenient.
+- **Require migrations to be deterministic, lossless, and idempotent.** Handle missing, partial, mixed, unknown, and newer data conservatively. Re-reading migrated output must not migrate again or change values.
+- **Verify the entire transition.** Cover legacy decoding and exact value mapping, current-schema round trips, removal of obsolete encoded data, and stable repeated reads. Add focused tests for these guarantees, but do not execute them without the explicit approval required below.
+
 ## Agent Behavior Rules
 
 - **BUILD WARNINGS ARE NOT ACCEPTABLE**: When implementing or refactoring code, always aim for zero compiler warnings. Code must be written cleanly, following the strict concurrency guidelines of Swift 6, and avoiding deprecated APIs. Any warnings introduced during changes must be resolved immediately before completing the task.

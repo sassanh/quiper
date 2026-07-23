@@ -39,6 +39,57 @@ struct SettingsServiceTests {
         #expect(decoded.quiperVersion == Bundle.main.versionDisplayString)
     }
 
+    @Test func selectorDisplayModes_LegacySharedModeMigratesToBothSelectors() throws {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        let legacyData = Data(
+            """
+            {
+              "services": [],
+              "selectorDisplayMode": "Compact",
+              "quiperVersion": "4.5.0",
+              "version": 1
+            }
+            """.utf8
+        )
+        let migrated = try JSONDecoder().decode(PersistedSettings.self, from: legacyData)
+
+        #expect(migrated.didDecodeLegacySelectorDisplayMode)
+        #expect(migrated.engineSelectorDisplayMode == .compact)
+        #expect(migrated.sessionSelectorDisplayMode == .compact)
+
+        Settings.shared.applyPersistedSettings(migrated)
+        #expect(Settings.shared.engineSelectorDisplayMode == .compact)
+        #expect(Settings.shared.sessionSelectorDisplayMode == .compact)
+
+        let rewrittenData = try JSONEncoder().encode(migrated)
+        let rewrittenObject = try JSONSerialization.jsonObject(with: rewrittenData)
+        guard let rewrittenSettings = rewrittenObject as? [String: Any] else {
+            Issue.record("Expected a settings JSON object")
+            return
+        }
+        #expect(rewrittenSettings["selectorDisplayMode"] == nil)
+    }
+
+    @Test func selectorDisplayModes_PersistIndependently() throws {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        Settings.shared.engineSelectorDisplayMode = .expanded
+        Settings.shared.sessionSelectorDisplayMode = .compact
+
+        let data = try JSONEncoder().encode(Settings.shared.makePersistedSettings())
+        let decoded = try JSONDecoder().decode(PersistedSettings.self, from: data)
+        let object = try JSONSerialization.jsonObject(with: data)
+
+        #expect(decoded.engineSelectorDisplayMode == .expanded)
+        #expect(decoded.sessionSelectorDisplayMode == .compact)
+        #expect((object as? [String: Any])?["selectorDisplayMode"] == nil)
+    }
+
     @Test func templateActionScriptSync_UsesBundledDefaultAndCustomEditsOptOut() throws {
         Settings.shared.wipeAllData()
         _ = Settings.shared.loadSettings()

@@ -91,14 +91,28 @@ struct AppearanceSettingsView: View {
                 
                 SettingsSection(title: "Selectors", icon: "square.grid.2x2.fill", iconColor: .purple) {
                     SettingsRow(
-                        title: "Selector Display",
-                        message: "Controls how engine and session selectors appear. Auto switches based on window width.",
+                        title: "Engine Selector",
+                        message: "Controls how the engine selector appears. Auto switches based on window width.",
                         icon: "rectangle.grid.1x2.fill",
                         iconColor: .purple
                     ) {
-                        SelectorDisplayPicker(selection: $settings.selectorDisplayMode)
+                        SelectorDisplayPicker(selection: $settings.engineSelectorDisplayMode)
                     }
-                    .onChange(of: settings.selectorDisplayMode) { _, _ in
+                    .onChange(of: settings.engineSelectorDisplayMode) { _, _ in
+                        settings.saveSettings()
+                    }
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Session Selector",
+                        message: "Controls how the session selector appears. Auto switches based on window width.",
+                        icon: "square.grid.3x2.fill",
+                        iconColor: .purple
+                    ) {
+                        SelectorDisplayPicker(selection: $settings.sessionSelectorDisplayMode)
+                    }
+                    .onChange(of: settings.sessionSelectorDisplayMode) { _, _ in
                         settings.saveSettings()
                     }
                 }

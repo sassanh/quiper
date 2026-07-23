@@ -1420,7 +1420,8 @@ struct SecureTabState: Codable {
     }
 
     @objc private func handleWindowDidResize(_ notification: Notification) {
-        if Settings.shared.selectorDisplayMode == .auto {
+        if Settings.shared.engineSelectorDisplayMode == .auto
+            || Settings.shared.sessionSelectorDisplayMode == .auto {
             updateSelectorsMode()
             layoutSelectors()
         }

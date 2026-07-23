@@ -377,7 +377,12 @@ class Settings: ObservableObject {
             NotificationCenter.default.post(name: .dockVisibilityChanged, object: nil)
         }
     }
-    @Published var selectorDisplayMode: SelectorDisplayMode = .auto {
+    @Published var engineSelectorDisplayMode: SelectorDisplayMode = .auto {
+        didSet {
+            NotificationCenter.default.post(name: .selectorDisplayModeChanged, object: nil)
+        }
+    }
+    @Published var sessionSelectorDisplayMode: SelectorDisplayMode = .auto {
         didSet {
             NotificationCenter.default.post(name: .selectorDisplayModeChanged, object: nil)
         }
@@ -499,7 +504,8 @@ class Settings: ObservableObject {
         updatePreferences = UpdatePreferences()
         serviceZoomLevels = [:]
         appShortcutBindings = .defaults
-        selectorDisplayMode = .auto
+        engineSelectorDisplayMode = .auto
+        sessionSelectorDisplayMode = .auto
         topBarVisibility = .visible
         dragAreaPosition = .top
         showHiddenBarOnModifiers = true
@@ -2444,6 +2450,8 @@ class Settings: ObservableObject {
 
         let (persisted, loadedFromDisk) = readPersistedSettings()
         let loadedWithoutQuiperVersion = loadedFromDisk && persisted.quiperVersion == nil
+        let shouldPersistSelectorDisplayModeMigration = loadedFromDisk
+            && shouldPersistDecodedSelectorDisplayModeMigration(persisted)
         suppressQuiperVersionPersistence = loadedWithoutQuiperVersion
 
         // Resolve migration state before any @Published assignments that may call saveSettings().
@@ -2472,8 +2480,11 @@ class Settings: ObservableObject {
         if dockVisibility != (persisted.dockVisibility ?? .whenVisible) {
             dockVisibility = persisted.dockVisibility ?? .whenVisible
         }
-        if selectorDisplayMode != (persisted.selectorDisplayMode ?? .auto) {
-            selectorDisplayMode = persisted.selectorDisplayMode ?? .auto
+        if engineSelectorDisplayMode != (persisted.engineSelectorDisplayMode ?? .auto) {
+            engineSelectorDisplayMode = persisted.engineSelectorDisplayMode ?? .auto
+        }
+        if sessionSelectorDisplayMode != (persisted.sessionSelectorDisplayMode ?? .auto) {
+            sessionSelectorDisplayMode = persisted.sessionSelectorDisplayMode ?? .auto
         }
         if topBarVisibility != (persisted.topBarVisibility ?? .visible) {
             topBarVisibility = persisted.topBarVisibility ?? .visible
@@ -2528,6 +2539,9 @@ class Settings: ObservableObject {
         if loadedWithoutQuiperVersion && !needsTemplateActionSyncMigrationPrompt {
             shouldSaveAfterLoad = true
         }
+        if shouldPersistSelectorDisplayModeMigration {
+            shouldSaveAfterLoad = true
+        }
 
         isLoadingSettings = false
         if shouldSaveAfterLoad {
@@ -2560,7 +2574,8 @@ class Settings: ObservableObject {
                                             appShortcuts: appShortcutBindings,
                                             sessionDigitsAlternateModifiers: appShortcutBindings.sessionDigitsAlternateModifiers,
                                             dockVisibility: dockVisibility,
-                                            selectorDisplayMode: selectorDisplayMode,
+                                            engineSelectorDisplayMode: engineSelectorDisplayMode,
+                                            sessionSelectorDisplayMode: sessionSelectorDisplayMode,
                                             topBarVisibility: topBarVisibility,
                                             dragAreaPosition: dragAreaPosition,
                                             showHiddenBarOnModifiers: showHiddenBarOnModifiers,
@@ -2602,7 +2617,8 @@ class Settings: ObservableObject {
             appShortcuts: appShortcutBindings,
             sessionDigitsAlternateModifiers: appShortcutBindings.sessionDigitsAlternateModifiers,
             dockVisibility: dockVisibility,
-            selectorDisplayMode: selectorDisplayMode,
+            engineSelectorDisplayMode: engineSelectorDisplayMode,
+            sessionSelectorDisplayMode: sessionSelectorDisplayMode,
             topBarVisibility: topBarVisibility,
             showHiddenBarOnModifiers: showHiddenBarOnModifiers,
             windowAppearance: windowAppearance,
@@ -2645,7 +2661,8 @@ class Settings: ObservableObject {
             appShortcutBindings.sessionDigitsAlternateModifiers = altSessionDigits
         }
         dockVisibility = persisted.dockVisibility ?? .whenVisible
-        selectorDisplayMode = persisted.selectorDisplayMode ?? .auto
+        engineSelectorDisplayMode = persisted.engineSelectorDisplayMode ?? .auto
+        sessionSelectorDisplayMode = persisted.sessionSelectorDisplayMode ?? .auto
         topBarVisibility = persisted.topBarVisibility ?? .visible
         dragAreaPosition = persisted.dragAreaPosition ?? .top
         showHiddenBarOnModifiers = persisted.showHiddenBarOnModifiers ?? true
@@ -2903,6 +2920,42 @@ class Settings: ObservableObject {
         suppressEngineShortcutTogglePersistence = true
     }
 
+    private func shouldPersistDecodedSelectorDisplayModeMigration(
+        _ persisted: PersistedSettings
+    ) -> Bool {
+        persisted.didDecodeLegacySelectorDisplayMode
+            && Self.isCurrentQuiperVersionAtLeast(persisted.quiperVersion)
+    }
+
+    private static func isCurrentQuiperVersionAtLeast(_ persistedVersion: String?) -> Bool {
+        guard let currentVersionComponents = semanticVersionComponents(
+            in: Bundle.main.versionDisplayString
+        ) else {
+            return false
+        }
+        guard let persistedVersion,
+              let persistedVersionComponents = semanticVersionComponents(in: persistedVersion) else {
+            return true
+        }
+
+        return !currentVersionComponents.lexicographicallyPrecedes(persistedVersionComponents)
+    }
+
+    private static func semanticVersionComponents(in version: String) -> [Int]? {
+        for candidate in version.split(whereSeparator: { !$0.isNumber && $0 != "." }) {
+            let components = candidate.split(separator: ".", omittingEmptySubsequences: false)
+            guard components.count >= 2,
+                  components.allSatisfy({ Int($0) != nil }) else {
+                continue
+            }
+
+            return (0..<3).map { index in
+                index < components.count ? Int(components[index]) ?? 0 : 0
+            }
+        }
+        return nil
+    }
+
     private func persistedQuiperVersionForSave() -> String? {
         suppressQuiperVersionPersistence ? nil : Bundle.main.versionDisplayString
     }
@@ -2980,6 +3033,8 @@ class Settings: ObservableObject {
         needsEngineShortcutToggleMigrationPrompt = false
         hideQuiperWhenRetriggeringActiveEngineShortcut = true
         globalEngineDigitShortcutsEnabled = false
+        engineSelectorDisplayMode = .auto
+        sessionSelectorDisplayMode = .auto
         try? FileManager.default.removeItem(at: settingsFile)
         ActionScriptStorage.deleteAllScripts()
         CustomCSSStorage.deleteAllCSS()

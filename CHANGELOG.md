@@ -11,6 +11,7 @@
 - **Engine Launch Hotkey in Engines Settings**: Each engine's global launch shortcut can now be set from the engine header (alongside icon, name, and URL), in addition to the Shortcuts tab.
 - **Engine Shortcuts as Toggle**: New Shortcuts setting so each engine's global shortcut toggles Quiper—show and select the engine, or hide when that engine is already active and focused. Defaults on for new installs; existing installs get a one-time opt-in prompt.
 - **Prompt Recording Feedback**: Choose between a blue glowing spinner and a moving gray dashed outline around the prompt composer while history recording is active. Saving a prompt produces a matching ripple or acknowledgment bounce. The indicator can also be hidden and responds immediately to global and per-session recording changes.
+- **Independent Selector Display Modes**: Engine and session selectors can now be configured separately as Expanded, Compact, or Auto. On upgrade, the previous shared choice is migrated once into both settings, and subsequent saves contain only the new per-selector fields.
 
 ### Changed
 

@@ -12,6 +12,16 @@ Quiper allows you to customize the application’s visual style to match your de
 To customize Quiper's native frame and panel styling, open **Settings (`⌘ ,`)** and navigate to the **Appearance** tab. 
 You can customize styling properties for the **Light Theme** and **Dark Theme** independently, allowing the layout to adapt gracefully when your system changes modes.
 
+## Selector Display
+
+The engine and session selectors can be configured independently:
+
+*   **Expanded:** Always displays every selector segment.
+*   **Compact:** Displays the active segment and expands the selector when needed.
+*   **Auto:** Uses the available window width to choose between Expanded and Compact.
+
+Upgrading from an older version preserves the previous shared selector display choice for both selectors.
+
 ### 1. Color Scheme
 Choose how Quiper behaves in light or dark modes:
 *   **System (Default):** Dynamically matches your macOS System preferences.

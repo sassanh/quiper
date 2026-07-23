@@ -469,7 +469,8 @@ struct PersistedSettings: Codable {
     var appShortcuts: AppShortcutBindings?
     var sessionDigitsAlternateModifiers: UInt?
     var dockVisibility: DockVisibility?
-    var selectorDisplayMode: SelectorDisplayMode?
+    var engineSelectorDisplayMode: SelectorDisplayMode?
+    var sessionSelectorDisplayMode: SelectorDisplayMode?
     var topBarVisibility: TopBarVisibility?
     var dragAreaPosition: DragAreaPosition?
     var showHiddenBarOnModifiers: Bool?
@@ -496,10 +497,12 @@ struct PersistedSettings: Codable {
     var globalEngineDigitShortcutsEnabled: Bool?
     var quiperVersion: String?
     var version: Int? = 1
+    private(set) var didDecodeLegacySelectorDisplayMode = false
 
     enum CodingKeys: String, CodingKey {
         case services, hotkey, customActions, updatePreferences, serviceZoomLevels, appShortcuts
-        case sessionDigitsAlternateModifiers, dockVisibility, selectorDisplayMode, topBarVisibility
+        case sessionDigitsAlternateModifiers, dockVisibility
+        case engineSelectorDisplayMode, sessionSelectorDisplayMode, topBarVisibility
         case dragAreaPosition, showHiddenBarOnModifiers, windowAppearance, colorScheme, version
         case automaticallySwitchEngineOnLastSessionClose
         case autoCreateSessionOnEmptyEngineActivation
@@ -525,6 +528,9 @@ struct PersistedSettings: Codable {
 
     private enum LegacyCodingKeys: String, CodingKey {
         case showPromptRecordingGlow
+        // The shared selector mode shipped in v2.3.0. It is decoded only to populate
+        // the current per-selector fields and is never retained or encoded again.
+        case selectorDisplayMode
     }
 
     init(services: [Service],
@@ -535,7 +541,8 @@ struct PersistedSettings: Codable {
          appShortcuts: AppShortcutBindings? = nil,
          sessionDigitsAlternateModifiers: UInt? = nil,
          dockVisibility: DockVisibility? = nil,
-         selectorDisplayMode: SelectorDisplayMode? = nil,
+         engineSelectorDisplayMode: SelectorDisplayMode? = nil,
+         sessionSelectorDisplayMode: SelectorDisplayMode? = nil,
          topBarVisibility: TopBarVisibility? = nil,
          dragAreaPosition: DragAreaPosition? = nil,
          showHiddenBarOnModifiers: Bool? = nil,
@@ -570,7 +577,8 @@ struct PersistedSettings: Codable {
         self.appShortcuts = appShortcuts
         self.sessionDigitsAlternateModifiers = sessionDigitsAlternateModifiers
         self.dockVisibility = dockVisibility
-        self.selectorDisplayMode = selectorDisplayMode
+        self.engineSelectorDisplayMode = engineSelectorDisplayMode
+        self.sessionSelectorDisplayMode = sessionSelectorDisplayMode
         self.topBarVisibility = topBarVisibility
         self.dragAreaPosition = dragAreaPosition
         self.showHiddenBarOnModifiers = showHiddenBarOnModifiers
@@ -610,7 +618,19 @@ struct PersistedSettings: Codable {
         appShortcuts = try container.decodeIfPresent(AppShortcutBindings.self, forKey: .appShortcuts)
         sessionDigitsAlternateModifiers = try container.decodeIfPresent(UInt.self, forKey: .sessionDigitsAlternateModifiers)
         dockVisibility = try container.decodeIfPresent(DockVisibility.self, forKey: .dockVisibility)
-        selectorDisplayMode = try container.decodeIfPresent(SelectorDisplayMode.self, forKey: .selectorDisplayMode)
+        let decodedEngineSelectorDisplayMode =
+            try container.decodeIfPresent(SelectorDisplayMode.self, forKey: .engineSelectorDisplayMode)
+        let decodedSessionSelectorDisplayMode =
+            try container.decodeIfPresent(SelectorDisplayMode.self, forKey: .sessionSelectorDisplayMode)
+        let legacySelectorDisplayMode = try legacyContainer.decodeIfPresent(
+            SelectorDisplayMode.self,
+            forKey: .selectorDisplayMode
+        )
+        engineSelectorDisplayMode = decodedEngineSelectorDisplayMode ?? legacySelectorDisplayMode
+        sessionSelectorDisplayMode = decodedSessionSelectorDisplayMode ?? legacySelectorDisplayMode
+        didDecodeLegacySelectorDisplayMode =
+            legacySelectorDisplayMode != nil
+            && (decodedEngineSelectorDisplayMode == nil || decodedSessionSelectorDisplayMode == nil)
         topBarVisibility = try container.decodeIfPresent(TopBarVisibility.self, forKey: .topBarVisibility)
         dragAreaPosition = try container.decodeIfPresent(DragAreaPosition.self, forKey: .dragAreaPosition)
         showHiddenBarOnModifiers = try container.decodeIfPresent(Bool.self, forKey: .showHiddenBarOnModifiers)

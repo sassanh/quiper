@@ -6,53 +6,68 @@ extension MainWindowController {
     // MARK: - Selector Layout & Synchronization
     
     func updateSelectorsMode() {
-        let mode = Settings.shared.selectorDisplayMode
+        let engineMode = Settings.shared.engineSelectorDisplayMode
+        let sessionMode = Settings.shared.sessionSelectorDisplayMode
         let windowWidth = window?.frame.width ?? 0
 
-        let useCompact: Bool
-        if GhostOnboardingManager.shared.isActive {
-            useCompact = true
-        } else {
-            switch mode {
-            case .expanded: useCompact = false
-            case .compact: useCompact = true
-            case .auto:
-                let inset: CGFloat = 4
-                let isHiddenMode = Settings.shared.topBarVisibility == .hidden
-                let gap: CGFloat = isHiddenMode ? 8 : 4
-                let buttonSize: CGFloat = 24
-                let minimumServiceWidth: CGFloat = 150
-                let titleAreaMargin: CGFloat = 2
-                let minTitleWidth: CGFloat = 120
+        let automaticSelectorsUseCompact: Bool = {
+            guard engineMode == .auto || sessionMode == .auto else { return false }
 
-                let showActionsButton = Settings.shared.dockVisibility == .never
-                let rightOffset = showActionsButton ? (inset + buttonSize + gap) : inset
+            let inset: CGFloat = 4
+            let isHiddenMode = Settings.shared.topBarVisibility == .hidden
+            let gap: CGFloat = isHiddenMode ? 8 : 4
+            let buttonSize: CGFloat = 24
+            let minimumServiceWidth: CGFloat = 150
+            let titleAreaMargin: CGFloat = 2
+            let minTitleWidth: CGFloat = 120
 
-                let staticServiceWidth = max(minimumServiceWidth, estimatedWidthForServiceSegments())
-                let staticSessionWidth = sessionSelector?.fittingSize.width ?? 0
+            let showActionsButton = Settings.shared.dockVisibility == .never
+            let rightOffset = showActionsButton ? (inset + buttonSize + gap) : inset
 
-                let rsButtonSpace: CGFloat = 24 + gap
-                let trashButtonSpace: CGFloat = 24 + gap
-                let requiredWidth = minTitleWidth + rsButtonSpace + trashButtonSpace + rightOffset + inset + staticSessionWidth + staticServiceWidth + (2 * gap) + (2 * titleAreaMargin)
+            let expandedEngineWidth = max(minimumServiceWidth, estimatedWidthForServiceSegments())
+            let compactEngineWidth = collapsibleServiceSelector?.currentWidth ?? 0
+            let engineWidth = engineMode == .compact ? compactEngineWidth : expandedEngineWidth
 
-                useCompact = windowWidth < requiredWidth
-            }
-        }
+            let expandedSessionWidth = sessionSelector?.fittingSize.width ?? 0
+            let compactSessionWidth = collapsibleSessionSelector?.currentWidth ?? 0
+            let sessionWidth = sessionMode == .compact ? compactSessionWidth : expandedSessionWidth
 
-        serviceSelector?.isHidden = useCompact
-        collapsibleServiceSelector?.isHidden = !useCompact
- 
+            let rsButtonSpace: CGFloat = 24 + gap
+            let trashButtonSpace: CGFloat = 24 + gap
+            let requiredWidth = minTitleWidth
+                + rsButtonSpace
+                + trashButtonSpace
+                + rightOffset
+                + inset
+                + sessionWidth
+                + engineWidth
+                + (2 * gap)
+                + (2 * titleAreaMargin)
+
+            return windowWidth < requiredWidth
+        }()
+
+        let useCompactEngine = GhostOnboardingManager.shared.isActive
+            || engineMode == .compact
+            || (engineMode == .auto && automaticSelectorsUseCompact)
+        let useCompactSession = GhostOnboardingManager.shared.isActive
+            || sessionMode == .compact
+            || (sessionMode == .auto && automaticSelectorsUseCompact)
+
+        serviceSelector?.isHidden = useCompactEngine
+        collapsibleServiceSelector?.isHidden = !useCompactEngine
+
         let isEngineLocked: Bool = {
             guard let service = currentService() else { return false }
             return service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
         }()
- 
+
         if isEngineLocked {
             sessionSelector?.isHidden = true
             collapsibleSessionSelector?.isHidden = true
         } else {
-            sessionSelector?.isHidden = useCompact
-            collapsibleSessionSelector?.isHidden = !useCompact
+            sessionSelector?.isHidden = useCompactSession
+            collapsibleSessionSelector?.isHidden = !useCompactSession
         }
 
         syncSelectorSelections()

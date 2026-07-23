@@ -27,8 +27,8 @@ final class MainWindowControllerModifierTests: XCTestCase {
         controller.skipSafeAreaCheck = true
         controller.skipModalCheck = true
         
-        // Force Auto/Compact mode to ensure they are visible/created
-        Settings.shared.selectorDisplayMode = .compact
+        // Force Compact mode to ensure the collapsible session selector is visible.
+        Settings.shared.sessionSelectorDisplayMode = .compact
         NotificationCenter.default.post(name: .selectorDisplayModeChanged, object: nil)
         
         guard let sessionSel: CollapsibleSelector = getPrivateProperty(controller, "collapsibleSessionSelector") else {
@@ -87,7 +87,7 @@ final class MainWindowControllerModifierTests: XCTestCase {
         let controller = MainWindowController(services: services)
         controller.skipSafeAreaCheck = true
         controller.skipModalCheck = true
-        Settings.shared.selectorDisplayMode = .compact
+        Settings.shared.engineSelectorDisplayMode = .compact
         NotificationCenter.default.post(name: .selectorDisplayModeChanged, object: nil)
         
         guard let serviceSel: CollapsibleSelector = getPrivateProperty(controller, "collapsibleServiceSelector") else {
