@@ -57,6 +57,7 @@ For provider-specific live checks, prefer checked-in scripts over ad hoc inline 
 node scripts/validate-claude-template.js
 node scripts/validate-x-template.js
 node scripts/validate-zai-template.js
+node scripts/validate-qwen-template.js
 node scripts/validate-deepseek-template.js
 node scripts/validate-openwebui-template.js
 node scripts/validate-google-template.js
@@ -97,6 +98,8 @@ node scripts/apply-default-template-to-dev-storage.js --service Gemini --action 
 ```
 
 This updates `QuiperDev`'s saved action script files only. It does not affect production settings and does not restart the app or touch browser session data.
+
+The bridge's `POST /templates/apply-defaults` endpoint is the preferred option for validation automation. It can install a missing built-in template with `installIfMissing: true`, and accepts `focusSelector: true` and `customCSS: true` alongside an optional `actions` array. Installed templates automatically follow their bundled action scripts, prompt selector, and custom CSS. The endpoint only exists in the guarded Debug bridge described above.
 
 ## Related Audit
 

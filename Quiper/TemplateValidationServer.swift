@@ -319,10 +319,32 @@ final class TemplateValidationServer {
 
         let settings = Settings.shared
         let requestedServiceName = (body["service"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let serviceIndex: Int?
+        var serviceIndex: Int?
+        var installed = false
         if let requestedServiceName, !requestedServiceName.isEmpty {
             serviceIndex = settings.services.firstIndex {
                 $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(requestedServiceName) == .orderedSame
+            }
+            if serviceIndex == nil, body["installIfMissing"] as? Bool == true {
+                guard var template = settings.defaultServiceTemplates.first(where: {
+                    $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(requestedServiceName) == .orderedSame
+                }) else {
+                    throw TemplateValidationError.notFound("Default template not found for \(requestedServiceName)")
+                }
+                template.id = UUID()
+                template.actionScripts = [:]
+                template.templateActionScriptSync = [:]
+                if settings.isTemplatePromptInputSelector(template) {
+                    template.templatePromptInputSelectorSync = true
+                    template.focus_selector = ""
+                }
+                if settings.isTemplateCustomCSS(template) {
+                    template.templateCustomCSSSync = true
+                    template.customCSS = nil
+                }
+                settings.services.append(template)
+                serviceIndex = settings.services.indices.last
+                installed = true
             }
         } else if let current = controller.currentService() {
             serviceIndex = settings.services.firstIndex { $0.id == current.id }
@@ -345,6 +367,22 @@ final class TemplateValidationServer {
             $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         }.filter { !$0.isEmpty })
 
+        var appliedFocusSelector = false
+        if installed || body["focusSelector"] as? Bool == true {
+            settings.services[serviceIndex].templatePromptInputSelectorSync = true
+            settings.services[serviceIndex].focus_selector = ""
+            FocusSelectorStorage.deleteSelector(for: service.id)
+            appliedFocusSelector = true
+        }
+
+        var appliedCustomCSS = false
+        if installed || body["customCSS"] as? Bool == true {
+            settings.services[serviceIndex].templateCustomCSSSync = true
+            settings.services[serviceIndex].customCSS = nil
+            CustomCSSStorage.deleteCSS(for: service.id)
+            appliedCustomCSS = true
+        }
+
         var applied: [String] = []
         for action in settings.customActions {
             let normalizedActionName = action.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -360,10 +398,14 @@ final class TemplateValidationServer {
         }
 
         settings.saveSettings()
+        controller.reloadServices(settings.services)
         return [
             "service": settings.services[serviceIndex].name,
+            "installed": installed,
             "appliedActions": applied,
-            "appliedCount": applied.count
+            "appliedCount": applied.count,
+            "appliedFocusSelector": appliedFocusSelector,
+            "appliedCustomCSS": appliedCustomCSS
         ]
     }
 

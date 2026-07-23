@@ -741,7 +741,25 @@ class Settings: ObservableObject {
     }
     """
 
-    private let defaultEngines: [Service] = [
+    private var defaultEngines: [Service] {
+        defaultEngineDefinitions.sorted { lhs, rhs in
+            let lhsIsLocal = Self.isLocalDefaultEngine(lhs)
+            let rhsIsLocal = Self.isLocalDefaultEngine(rhs)
+            if lhsIsLocal != rhsIsLocal {
+                return !lhsIsLocal
+            }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    private static func isLocalDefaultEngine(_ service: Service) -> Bool {
+        guard let host = URL(string: service.url)?.host?.lowercased() else {
+            return false
+        }
+        return host == "localhost" || host == "127.0.0.1" || host == "::1"
+    }
+
+    private let defaultEngineDefinitions: [Service] = [
         Service(
             name: "Gemini",
             url: "https://gemini.google.com?referrer=https://github.io/sassanh/quiper",
@@ -1875,6 +1893,103 @@ class Settings: ObservableObject {
             ],
             customCSS: """
             body, #app, .app>div, text-3d-flip-char>.backface-hidden  {
+              background-color: transparent !important;
+            }
+            """
+        ),
+        Service(
+            name: "Qwen",
+            url: "https://chat.qwen.ai?referrer=https://github.io/sassanh/quiper",
+            focus_selector: ".message-input-textarea, textarea[placeholder='How can I help you today?'], textarea",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function qwenTemporaryActive() {
+                  const temporary = quiperFind([
+                    "[role='button'][aria-label='Temporary Chat']",
+                    ".temporary-chat-entry[aria-label='Temporary Chat']"
+                  ]);
+                  return temporary?.getAttribute("aria-pressed") === "true";
+                }
+
+                const temporary = quiperFind([
+                  "[role='button'][aria-label='Temporary Chat']",
+                  ".temporary-chat-entry[aria-label='Temporary Chat']"
+                ]);
+                if (qwenTemporaryActive()) {
+                  await quiperClickElement(temporary, "Temporary Chat button not found");
+                  await waitFor(() => !qwenTemporaryActive(), 1500);
+                }
+
+                const newChat = quiperFind([
+                  "[role='button'][aria-label='New Chat']",
+                  "button[aria-label='New Chat']",
+                  "[aria-label='New Chat']"
+                ]) || quiperFindByText(["New chat", "New Chat"]);
+                await quiperClickElement(newChat, "New chat button not found");
+                await waitFor(() => quiperFind([
+                  ".message-input-textarea",
+                  "textarea[placeholder='How can I help you today?']",
+                  "textarea"
+                ]), 1500);
+                """,
+                Settings.newTemporarySessionActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function qwenTemporaryButton() {
+                  return quiperFind([
+                    "[role='button'][aria-label='Temporary Chat']",
+                    ".temporary-chat-entry[aria-label='Temporary Chat']"
+                  ]);
+                }
+
+                function qwenTemporaryActive() {
+                  return qwenTemporaryButton()?.getAttribute("aria-pressed") === "true";
+                }
+
+                const newChat = quiperFind([
+                  "[role='button'][aria-label='New Chat']",
+                  "button[aria-label='New Chat']",
+                  "[aria-label='New Chat']"
+                ]) || quiperFindByText(["New chat", "New Chat"]);
+                await quiperClickElement(newChat, "New chat button not found");
+                await waitFor(() => qwenTemporaryButton(), 1500);
+
+                if (!qwenTemporaryActive()) {
+                  await quiperClickElement(qwenTemporaryButton(), "Temporary Chat button not found");
+                  await waitFor(() => qwenTemporaryActive(), 1500);
+                }
+                """,
+                Settings.shareActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                await quiperClick(
+                  [
+                    "button[aria-label='Share']",
+                    "[aria-label='Share']",
+                    "[data-testid*='share']"
+                  ],
+                  ["Share"],
+                  "Share button not found"
+                );
+                """,
+                Settings.historyActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                await quiperClick(
+                  [
+                    "button[aria-label='Toggle sidebar']",
+                    "button[aria-label='Expand sidebar']",
+                    "button[aria-label='Collapse sidebar']"
+                  ],
+                  ["Toggle sidebar", "Expand sidebar", "Collapse sidebar"],
+                  "Sidebar/history button not found"
+                );
+                """
+            ],
+            routingRules: [
+                RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay),
+                RoutingRule(pattern: "^https?://([^/]*\\.)?github\\.com(/|$)", action: .internalStay)
+            ],
+            customCSS: """
+            html, body, #root {
               background-color: transparent !important;
             }
             """
