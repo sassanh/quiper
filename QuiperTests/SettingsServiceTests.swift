@@ -303,6 +303,78 @@ struct SettingsServiceTests {
         #expect(Settings.shared.makePersistedSettings().hideQuiperWhenRetriggeringActiveEngineShortcut == true)
     }
 
+    @Test func engineShortcutToggle_NewerSettingsDeferMigrationAndPreserveVersion() {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        let futureVersion = "9999.0.0-whatever (10)"
+        let imported = PersistedSettings(
+            services: Settings.shared.services,
+            hideQuiperWhenRetriggeringActiveEngineShortcut: nil,
+            quiperVersion: futureVersion
+        )
+        Settings.shared.applyPersistedSettings(imported)
+
+        let persisted = Settings.shared.makePersistedSettings()
+        #expect(Settings.shared.hideQuiperWhenRetriggeringActiveEngineShortcut == false)
+        #expect(Settings.shared.needsEngineShortcutToggleMigrationPrompt == false)
+        #expect(persisted.hideQuiperWhenRetriggeringActiveEngineShortcut == nil)
+        #expect(persisted.quiperVersion == futureVersion)
+    }
+
+    @Test func engineShortcutToggle_UnknownSettingsVersionDefersConservatively() {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        let unknownVersion = "not-a-quiper-version"
+        let imported = PersistedSettings(
+            services: Settings.shared.services,
+            hideQuiperWhenRetriggeringActiveEngineShortcut: nil,
+            quiperVersion: unknownVersion
+        )
+        Settings.shared.applyPersistedSettings(imported)
+
+        let persisted = Settings.shared.makePersistedSettings()
+        #expect(Settings.shared.needsEngineShortcutToggleMigrationPrompt == false)
+        #expect(persisted.hideQuiperWhenRetriggeringActiveEngineShortcut == nil)
+        #expect(persisted.quiperVersion == unknownVersion)
+    }
+
+    @Test func templateActionMigration_ImportedLegacySettingsKeepVersionUnsetUntilResolved() {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        guard let pair = defaultTemplatePair() else {
+            Issue.record("Expected at least one default service/action script pair")
+            return
+        }
+
+        let action = CustomAction(id: UUID(), name: pair.action.name)
+        var service = pair.service
+        service.id = UUID()
+        service.actionScripts = [action.id: "console.log('legacy');"]
+        service.templateActionScriptSync = [:]
+
+        let imported = PersistedSettings(
+            services: [service],
+            customActions: [action],
+            hideQuiperWhenRetriggeringActiveEngineShortcut: false,
+            quiperVersion: nil
+        )
+        Settings.shared.applyPersistedSettings(imported)
+
+        #expect(Settings.shared.needsTemplateActionSyncMigrationPrompt)
+        #expect(Settings.shared.makePersistedSettings().quiperVersion == nil)
+
+        Settings.shared.resolveTemplateActionSyncMigration(updateScripts: false)
+
+        #expect(!Settings.shared.needsTemplateActionSyncMigrationPrompt)
+        #expect(Settings.shared.makePersistedSettings().quiperVersion != nil)
+    }
+
     private func defaultTemplatePair() -> (service: Service, action: CustomAction, defaultScript: String)? {
         for service in Settings.shared.defaultServiceTemplates {
             for action in Settings.shared.defaultActionTemplates {

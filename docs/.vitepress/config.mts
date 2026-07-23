@@ -105,6 +105,7 @@ export default defineConfig({
           { text: 'Settings Styling Standards', link: '/settings-styling' },
           { text: 'Default Template Validation', link: '/default-template-validation' },
           { text: 'Version Ordering', link: '/version-ordering' },
+          { text: 'Migration Architecture', link: '/migrations' },
         ],
       },
     ],

@@ -22,6 +22,7 @@
 - **Qwen Template Transparency**: Made Qwen's full-window application layers transparent so the engine matches Quiper's overlay appearance.
 - **Digit Modifier Conflict Detection**: Recording a session or engine number modifier now detects existing modifier-plus-digit shortcuts, including global, engine-launch, app, custom-action, primary, and alternate bindings.
 - **Unified Version Ordering**: Software updates and version-aware settings migrations now share one comparison contract, with suffixed builds ordered after their stable base and numeric build numbers breaking ties consistently.
+- **Consistent Migration Eligibility**: Prompted and automatic settings migrations now share one conservative version policy, defer data written by newer or unrecognized app versions, and preserve the source version during unrelated saves.
 
 ## [4.5.0] - 2026-07-21
 

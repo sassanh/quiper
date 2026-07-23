@@ -44,3 +44,6 @@ These examples follow directly from the contract:
 If a numeric version core cannot be parsed, comparison is unknown unless both
 sides provide explicit build metadata. This keeps settings migrations
 conservative while preserving update compatibility with legacy release tags.
+
+See [Migration Architecture](migrations.md) for how this comparison determines
+automatic, prompted, and deferred settings migrations.

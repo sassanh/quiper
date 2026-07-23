@@ -530,10 +530,10 @@ class Settings: ObservableObject {
         promptHistoryRecordOnSelectionClear = false
         promptHistoryLimit = Self.defaultPromptHistoryLimit
         persistedTabState = nil
-        suppressQuiperVersionPersistence = false
-        suppressEngineShortcutTogglePersistence = false
-        needsTemplateActionSyncMigrationPrompt = false
-        needsEngineShortcutToggleMigrationPrompt = false
+        beginPersistedSettingsMigrationEvaluation(
+            loadedFromDisk: false,
+            persistedVersion: nil
+        )
     }
 
     private let settingsFile: URL = {
@@ -2388,11 +2388,20 @@ class Settings: ObservableObject {
     private var isPerformingWipe = false
     /// Prevents `@Published` didSet handlers from writing settings while `loadSettings()` is applying disk state.
     private var isLoadingSettings = false
-    private var suppressQuiperVersionPersistence = false
-    private var suppressEngineShortcutTogglePersistence = false
-    private(set) var needsTemplateActionSyncMigrationPrompt = false
+    private var persistedSettingsMigrationContext = PersistedSettingsMigrationContext(
+        loadedFromDisk: false,
+        persistedVersion: nil,
+        currentVersion: Bundle.main.versionDisplayString
+    )
+    private var persistedSettingsMigrationDispositions:
+        [PersistedSettingsMigration: PersistedSettingsMigrationDisposition] = [:]
+    var needsTemplateActionSyncMigrationPrompt: Bool {
+        migrationDisposition(for: .templateActionScriptSync) == .awaitingPrompt
+    }
     private(set) var needsSparseBundleMigrationPrompt = false
-    private(set) var needsEngineShortcutToggleMigrationPrompt = false
+    var needsEngineShortcutToggleMigrationPrompt: Bool {
+        migrationDisposition(for: .engineShortcutToggle) == .awaitingPrompt
+    }
 
     init() {
         _ = loadSettings()
@@ -2449,15 +2458,21 @@ class Settings: ObservableObject {
         isLoadingSettings = true
 
         let (persisted, loadedFromDisk) = readPersistedSettings()
-        let loadedWithoutQuiperVersion = loadedFromDisk && persisted.quiperVersion == nil
-        let shouldPersistSelectorDisplayModeMigration = loadedFromDisk
-            && shouldPersistDecodedSelectorDisplayModeMigration(persisted)
-        suppressQuiperVersionPersistence = loadedWithoutQuiperVersion
+        beginPersistedSettingsMigrationEvaluation(
+            loadedFromDisk: loadedFromDisk,
+            persistedVersion: persisted.quiperVersion
+        )
+        setMigrationDisposition(
+            persistedSettingsMigrationContext.disposition(
+                whenDetected: persisted.didDecodeLegacySelectorDisplayMode,
+                presentation: .automatic
+            ),
+            for: .selectorDisplayModes
+        )
 
         // Resolve migration state before any @Published assignments that may call saveSettings().
         // Mid-load saves must not stamp new keys (that would clear the prompt on the next loadSettings()).
         applyEngineShortcutToggleSetting(
-            loadedFromDisk: loadedFromDisk,
             persistedValue: persisted.hideQuiperWhenRetriggeringActiveEngineShortcut
         )
         
@@ -2521,11 +2536,10 @@ class Settings: ObservableObject {
         promptHistoryLimit = Self.clampedPromptHistoryLimit(persisted.promptHistoryLimit ?? Self.defaultPromptHistoryLimit)
         persistedTabState = persisted.persistedTabState
         tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2
-        needsTemplateActionSyncMigrationPrompt = loadedWithoutQuiperVersion && hasTemplateActionScriptMigrationCandidates()
+        configureTemplateActionSyncMigration()
         needsSparseBundleMigrationPrompt =
             services.contains(where: { $0.isEncrypted })
             && EncryptedVolumeManager.shared.hasAnyLegacyBundles(in: services)
-        suppressQuiperVersionPersistence = needsTemplateActionSyncMigrationPrompt
 
         var shouldSaveAfterLoad = false
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
@@ -2536,10 +2550,11 @@ class Settings: ObservableObject {
         } else {
             hotkeyConfiguration = HotkeyManager.defaultConfiguration
         }
-        if loadedWithoutQuiperVersion && !needsTemplateActionSyncMigrationPrompt {
+        if persistedSettingsMigrationContext.isUnversionedExistingSettings
+            && !migrationDisposition(for: .templateActionScriptSync).isUnresolved {
             shouldSaveAfterLoad = true
         }
-        if shouldPersistSelectorDisplayModeMigration {
+        if migrationDisposition(for: .selectorDisplayModes) == .runAutomatically {
             shouldSaveAfterLoad = true
         }
 
@@ -2648,12 +2663,16 @@ class Settings: ObservableObject {
 
     func applyPersistedSettings(_ persisted: PersistedSettings) {
         isLoadingSettings = true
-        applyEngineShortcutToggleSetting(
+        beginPersistedSettingsMigrationEvaluation(
             loadedFromDisk: true,
+            persistedVersion: persisted.quiperVersion
+        )
+        applyEngineShortcutToggleSetting(
             persistedValue: persisted.hideQuiperWhenRetriggeringActiveEngineShortcut
         )
         services = persisted.services
         customActions = persisted.customActions ?? []
+        configureTemplateActionSyncMigration()
         updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
         serviceZoomLevels = (persisted.serviceZoomLevels ?? [:]).mapValues { CGFloat($0) }
         appShortcutBindings = persisted.appShortcuts ?? .defaults
@@ -2876,23 +2895,20 @@ class Settings: ObservableObject {
                 }
             }
         }
-        needsTemplateActionSyncMigrationPrompt = false
-        suppressQuiperVersionPersistence = false
+        clearMigrationDisposition(for: .templateActionScriptSync)
         saveSettings()
     }
 
     func resolveEngineShortcutToggleMigration(enable: Bool) {
         hideQuiperWhenRetriggeringActiveEngineShortcut = enable
-        needsEngineShortcutToggleMigrationPrompt = false
-        suppressEngineShortcutTogglePersistence = false
+        clearMigrationDisposition(for: .engineShortcutToggle)
         saveSettings()
     }
 
     /// User-facing setter that also settles any pending migration for this preference.
     func setHideQuiperWhenRetriggeringActiveEngineShortcut(_ enabled: Bool) {
         hideQuiperWhenRetriggeringActiveEngineShortcut = enabled
-        needsEngineShortcutToggleMigrationPrompt = false
-        suppressEngineShortcutTogglePersistence = false
+        clearMigrationDisposition(for: .engineShortcutToggle)
         saveSettings()
     }
 
@@ -2901,49 +2917,85 @@ class Settings: ObservableObject {
         saveSettings()
     }
 
-    private func applyEngineShortcutToggleSetting(loadedFromDisk: Bool, persistedValue: Bool?) {
-        if !loadedFromDisk {
+    private func applyEngineShortcutToggleSetting(persistedValue: Bool?) {
+        if !persistedSettingsMigrationContext.isExistingSettings {
             hideQuiperWhenRetriggeringActiveEngineShortcut = true
-            needsEngineShortcutToggleMigrationPrompt = false
-            suppressEngineShortcutTogglePersistence = false
+            clearMigrationDisposition(for: .engineShortcutToggle)
             return
         }
         if let persistedValue {
             hideQuiperWhenRetriggeringActiveEngineShortcut = persistedValue
-            needsEngineShortcutToggleMigrationPrompt = false
-            suppressEngineShortcutTogglePersistence = false
+            clearMigrationDisposition(for: .engineShortcutToggle)
             return
         }
+
         // Existing settings from before this preference existed: keep old behavior and offer opt-in.
         hideQuiperWhenRetriggeringActiveEngineShortcut = false
-        needsEngineShortcutToggleMigrationPrompt = true
-        suppressEngineShortcutTogglePersistence = true
+        setMigrationDisposition(
+            persistedSettingsMigrationContext.disposition(
+                whenDetected: true,
+                presentation: .prompted
+            ),
+            for: .engineShortcutToggle
+        )
     }
 
-    private func shouldPersistDecodedSelectorDisplayModeMigration(
-        _ persisted: PersistedSettings
-    ) -> Bool {
-        persisted.didDecodeLegacySelectorDisplayMode
-            && Self.isCurrentQuiperVersionAtLeast(persisted.quiperVersion)
+    private func beginPersistedSettingsMigrationEvaluation(
+        loadedFromDisk: Bool,
+        persistedVersion: String?
+    ) {
+        persistedSettingsMigrationContext = PersistedSettingsMigrationContext(
+            loadedFromDisk: loadedFromDisk,
+            persistedVersion: persistedVersion,
+            currentVersion: Bundle.main.versionDisplayString
+        )
+        persistedSettingsMigrationDispositions.removeAll()
     }
 
-    private static func isCurrentQuiperVersionAtLeast(_ persistedVersion: String?) -> Bool {
-        guard let persistedVersion else {
-            return true
-        }
-
-        return QuiperVersion.isAtLeast(
-            Bundle.main.versionDisplayString,
-            persistedVersion
-        ) ?? false
+    private func configureTemplateActionSyncMigration() {
+        let detected = persistedSettingsMigrationContext.isUnversionedExistingSettings
+            && hasTemplateActionScriptMigrationCandidates()
+        setMigrationDisposition(
+            persistedSettingsMigrationContext.disposition(
+                whenDetected: detected,
+                presentation: .prompted
+            ),
+            for: .templateActionScriptSync
+        )
     }
 
     private func persistedQuiperVersionForSave() -> String? {
-        suppressQuiperVersionPersistence ? nil : Bundle.main.versionDisplayString
+        if migrationDisposition(for: .templateActionScriptSync).isUnresolved {
+            return nil
+        }
+        return persistedSettingsMigrationContext.versionForPersistence
     }
 
     private func persistedEngineShortcutToggleForSave() -> Bool? {
-        suppressEngineShortcutTogglePersistence ? nil : hideQuiperWhenRetriggeringActiveEngineShortcut
+        migrationDisposition(for: .engineShortcutToggle).isUnresolved
+            ? nil
+            : hideQuiperWhenRetriggeringActiveEngineShortcut
+    }
+
+    private func migrationDisposition(
+        for migration: PersistedSettingsMigration
+    ) -> PersistedSettingsMigrationDisposition {
+        persistedSettingsMigrationDispositions[migration] ?? .notNeeded
+    }
+
+    private func setMigrationDisposition(
+        _ disposition: PersistedSettingsMigrationDisposition,
+        for migration: PersistedSettingsMigration
+    ) {
+        if disposition == .notNeeded {
+            persistedSettingsMigrationDispositions.removeValue(forKey: migration)
+        } else {
+            persistedSettingsMigrationDispositions[migration] = disposition
+        }
+    }
+
+    private func clearMigrationDisposition(for migration: PersistedSettingsMigration) {
+        persistedSettingsMigrationDispositions.removeValue(forKey: migration)
     }
     
     private func hasTemplateActionScriptMigrationCandidates() -> Bool {
@@ -3009,10 +3061,10 @@ class Settings: ObservableObject {
         updatePreferences = UpdatePreferences()
         hotkeyConfiguration = HotkeyManager.defaultConfiguration
         serviceZoomLevels.removeAll()
-        suppressQuiperVersionPersistence = false
-        suppressEngineShortcutTogglePersistence = false
-        needsTemplateActionSyncMigrationPrompt = false
-        needsEngineShortcutToggleMigrationPrompt = false
+        beginPersistedSettingsMigrationEvaluation(
+            loadedFromDisk: false,
+            persistedVersion: nil
+        )
         hideQuiperWhenRetriggeringActiveEngineShortcut = true
         globalEngineDigitShortcutsEnabled = false
         engineSelectorDisplayMode = .auto
