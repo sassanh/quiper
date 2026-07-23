@@ -2,7 +2,11 @@
 
 Quiper unifies all your AI chat services into a single, instant-access macOS overlay. A global hotkey drops you into your conversations without rearranging windows, while persistent multi-sessions ensure you never lose your context. It stays completely out of your Dock and secures sensitive engines behind TouchID.
 
-![Quiper Main Window](.github/assets/hero.webp)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/hero.webp">
+  <source media="(prefers-color-scheme: light)" srcset=".github/assets/hero-light.webp">
+  <img src=".github/assets/hero.webp" alt="Quiper showing a local AI coding session over Xcode">
+</picture>
 
 [![CI](https://github.com/sassanh/quiper/actions/workflows/integration_delivery.yml/badge.svg)](https://github.com/sassanh/quiper/actions/workflows/integration_delivery.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

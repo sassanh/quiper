@@ -1,40 +1,76 @@
-# Quiper Documentation
+---
+layout: home
 
-Welcome to the official Quiper documentation. This guide serves as a comprehensive reference for both new users setting up Quiper for the first time and power users looking to write custom scripts or customize window transparency.
+hero:
+  name: Quiper
+  text: |
+    Spotlight for AI.
+    Any engine. One shortcut.
+  tagline: |
+    A native macOS overlay for persistent
+    conversations across cloud and local AI engines.
+  actions:
+    - theme: brand
+      text: Download Quiper
+      link: https://github.com/sassanh/quiper/releases/latest/download/Quiper.dmg
+    - theme: alt
+      text: Getting Started
+      link: /getting-started
 
+features:
+  - icon: ⚡
+    title: One Shortcut, Anywhere
+    details: Open Quiper over the application you are using, ask what you need, and dismiss it without rearranging your workspace.
+  - icon: 🗂️
+    title: Persistent Sessions
+    details: Keep up to ten independent sessions per engine for coding, research, writing, and everything between them.
+  - icon: ↔️
+    title: Cloud and Local Engines
+    details: Switch between services such as ChatGPT, Claude, Gemini, and Grok or connect local interfaces like Open WebUI and llama.cpp.
+  - icon: ⌨️
+    title: Native and Keyboard-First
+    details: Navigate engines, sessions, history, search, and custom actions through native macOS controls and configurable shortcuts.
+  - icon: 🔒
+    title: Optional Local Protection
+    details: Protect selected engines' local WebKit data with Touch ID, Keychain, and encrypted APFS storage when you need it.
+  - icon: ✓
+    title: Open and Verifiable
+    details: Quiper is open source and telemetry-free, with stable release provenance verifiable through GitHub artifact attestations.
 ---
 
-## What is Quiper?
+<style>
+@media (min-width: 640px) {
+  .VPHero .text {
+    max-width: 720px;
+    font-size: 48px;
+    line-height: 1.12;
+  }
+}
 
-Quiper is an open-source, lightweight macOS utility that unifies all your AI chat interfaces (such as Gemini, Claude, ChatGPT, Grok, and local engines like Open WebUI) into a single, instant-access global overlay window.
+@media (min-width: 960px) {
+  .VPHero.has-image .container {
+    gap: 32px;
+  }
 
-Unlike standard web browsers or heavy desktop apps, Quiper is designed to be invisible when not in use:
-*   It operates completely out of the macOS Dock, residing strictly in the status menu bar.
-*   It is summoned instantly via a global hotkey overlay (`⌥ Space` by default).
-*   It provides dedicated, persistent memory slots for each engine, keeping sessions separated and cached.
-*   It encrypts sensitive conversations behind Touch ID authentication.
+  .VPHero.has-image .main,
+  .VPHero.has-image .text {
+    max-width: 560px;
+  }
 
----
+  .VPHero.has-image .image {
+    min-width: 0;
+  }
+}
 
-## Core Philosophy
+@media (min-width: 1280px) {
+  .VPHero.has-image .container {
+    gap: 48px;
+    max-width: 1280px;
+  }
 
-1.  **Speed Above All:** Summons in milliseconds, switches between engines instantly, and gets out of your way without rearranging your active desktop window configuration.
-2.  **Privacy and Verification:** Quiper compiles transparently on GitHub Actions with verified supply chain attestations. Your sensitive engine data (cookies, storage, cache) is protected locally using AES-256 APFS sparsebundles, and we collect zero telemetry.
-3.  **Keyboard-Driven Control:** Designed for keyboard power-users. Almost all actions (switching engines, switching sessions, resetting zoom, finding text) are mapped to standard modifier keys.
-4.  **Extensible and Customizable:** Bring your own engines, override appearance styles using Custom CSS, and write custom JavaScript scripts (Custom Actions) to automate repetitious flows.
-
----
-
-## Documentation Sections
-
-Explore our guides to configure and customize Quiper:
-
-*   [Getting Started](getting-started.md): System requirements, installation steps, and launching.
-*   [Daily Workflow](daily-workflow.md): Hotkeys, shortcuts tables, and session/engine switching.
-*   [Tab History Switcher](tab-history.md): MRU tab cycling HUD, ring size configuration, and keyboard reference.
-*   [Managing Engines](engines.md): Adding AI providers, setting up custom URLs, and configuring auto-focus selectors.
-*   [Application Settings](settings.md): Reference for behavior preferences, configuration backups, updates, and the danger zone.
-*   [Appearance Settings](appearance.md): Tweaking transparency styles, blur levels, and outline configurations.
-*   [Custom Actions (JS Scripting)](custom-actions.md): Automating interactions with Javascript scripts and native utilities.
-*   [Touch ID & Data Security](security.md): A detailed look at biometric encryption, sparsebundles, and local security.
-*   [Troubleshooting & Diagnostics](troubleshooting.md): Fixing hotkeys, resetting defaults, and debugging actions using the Web Inspector.
+  .VPHero.has-image .main,
+  .VPHero.has-image .text {
+    max-width: 640px;
+  }
+}
+</style>

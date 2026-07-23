@@ -1,7 +1,7 @@
 ---
 title: Quiper Blog
 description: Engineering notes about building Quiper, a native AI overlay for macOS.
-image: /blog/quiper-overlay.webp
+image: /blog/why-i-built-spotlight-for-ai-social.webp
 blogIndex: true
 sidebar: false
 aside: false
