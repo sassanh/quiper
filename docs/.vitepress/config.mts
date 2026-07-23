@@ -104,6 +104,7 @@ export default defineConfig({
         items: [
           { text: 'Settings Styling Standards', link: '/settings-styling' },
           { text: 'Default Template Validation', link: '/default-template-validation' },
+          { text: 'Version Ordering', link: '/version-ordering' },
         ],
       },
     ],

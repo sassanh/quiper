@@ -130,13 +130,12 @@ final class UpdateManager: NSObject, ObservableObject {
                     self.settings.updatePreferences.lastAutomaticCheck = now
                     self.settings.saveSettings()
                     
-                    let isNewer: Bool
-                    if let releaseBN = release.buildNumber, self.currentAppBuildNumber > 0 {
-                        isNewer = releaseBN > self.currentAppBuildNumber
-                    } else {
-                        // Fallback to standard semantic version compare if no build numbers present (safety net)
-                        isNewer = release.version.compare(self.currentAppVersion(), options: .numeric) == .orderedDescending
-                    }
+                    let isNewer = QuiperVersion.isAfter(
+                        release.version,
+                        buildNumber: release.buildNumber,
+                        than: self.currentAppVersion(),
+                        buildNumber: self.currentAppBuildNumber
+                    )
                     
                     if isNewer {
                         self.handleReleaseAvailable(release, userInitiated: userInitiated)
@@ -431,9 +430,13 @@ final class UpdateManager: NSObject, ObservableObject {
                            requiresBrowserDownload: requiresBrowser)
     }
 
-    private var currentAppBuildNumber: Int {
-        guard let numStr = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else { return 0 }
-        return Int(numStr) ?? 0
+    private var currentAppBuildNumber: Int? {
+        guard let number = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String else {
+            return nil
+        }
+        return Int(number)
     }
 
     private func currentAppVersion() -> String {

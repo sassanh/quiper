@@ -2928,32 +2928,14 @@ class Settings: ObservableObject {
     }
 
     private static func isCurrentQuiperVersionAtLeast(_ persistedVersion: String?) -> Bool {
-        guard let currentVersionComponents = semanticVersionComponents(
-            in: Bundle.main.versionDisplayString
-        ) else {
-            return false
-        }
-        guard let persistedVersion,
-              let persistedVersionComponents = semanticVersionComponents(in: persistedVersion) else {
+        guard let persistedVersion else {
             return true
         }
 
-        return !currentVersionComponents.lexicographicallyPrecedes(persistedVersionComponents)
-    }
-
-    private static func semanticVersionComponents(in version: String) -> [Int]? {
-        for candidate in version.split(whereSeparator: { !$0.isNumber && $0 != "." }) {
-            let components = candidate.split(separator: ".", omittingEmptySubsequences: false)
-            guard components.count >= 2,
-                  components.allSatisfy({ Int($0) != nil }) else {
-                continue
-            }
-
-            return (0..<3).map { index in
-                index < components.count ? Int(components[index]) ?? 0 : 0
-            }
-        }
-        return nil
+        return QuiperVersion.isAtLeast(
+            Bundle.main.versionDisplayString,
+            persistedVersion
+        ) ?? false
     }
 
     private func persistedQuiperVersionForSave() -> String? {
