@@ -54,6 +54,7 @@ final class TemplateManagementUITests: BaseUITest {
             "Gemini",
             "Google",
             "Grok",
+            "Kimi",
             "Qwen",
             "X",
             "Z.ai",

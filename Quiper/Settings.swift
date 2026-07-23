@@ -1898,6 +1898,88 @@ class Settings: ObservableObject {
             """
         ),
         Service(
+            name: "Kimi",
+            url: "https://www.kimi.com?referrer=https://github.io/sassanh/quiper",
+            focus_selector: "[contenteditable='true'][role='textbox'], textarea",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                await quiperClick(
+                  [
+                    "a.new-chat-btn",
+                    "a[aria-label='New Chat']",
+                    "[aria-label='New Chat']"
+                  ],
+                  ["New chat", "New Chat"],
+                  "New chat button not found"
+                );
+                await waitFor(() => quiperFind([
+                  "[contenteditable='true'][role='textbox']",
+                  "textarea"
+                ]), 1500);
+                """,
+                Settings.shareActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                await quiperClick(
+                  [
+                    "button[aria-label='Share']",
+                    "[role='button'][aria-label='Share']",
+                    "button[title='Share']",
+                    "[data-testid*='share']"
+                  ],
+                  ["Share"],
+                  "Share button not found"
+                );
+                """,
+                Settings.historyActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function kimiInViewport(element) {
+                  if (!quiperIsVisible(element)) { return false; }
+                  const rect = element.getBoundingClientRect();
+                  return rect.right > 0 &&
+                    rect.left < window.innerWidth &&
+                    rect.bottom > 0 &&
+                    rect.top < window.innerHeight;
+                }
+
+                function kimiSidebarExpanded() {
+                  const sidebar = document.querySelector(".next-sidebar");
+                  if (!sidebar) { return false; }
+                  const rect = sidebar.getBoundingClientRect();
+                  return kimiInViewport(sidebar) && rect.right > Math.min(100, rect.width / 2);
+                }
+
+                const wasExpanded = kimiSidebarExpanded();
+                const collapse = quiperFind([
+                  "button.expand-btn[aria-label='Hide Sidebar']",
+                  "button[aria-label='Hide Sidebar']"
+                ]);
+                const expand = quiperFind([
+                  ".sidebar-main-trigger__button[aria-label='Expand Sidebar']",
+                  "[aria-label='Expand Sidebar']"
+                ]);
+                const target = wasExpanded ? collapse : expand;
+                if (!target || !kimiInViewport(target)) {
+                  throw new Error("Sidebar/history button not found");
+                }
+                target.click();
+                await waitFor(() => kimiSidebarExpanded() !== wasExpanded, 1500);
+                """
+            ],
+            routingRules: [
+                RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay),
+                RoutingRule(pattern: "^https?://([^/]*\\.)?appleid\\.apple\\.com(/|$)", action: .internalStay),
+                RoutingRule(pattern: "^https?://([^/]*\\.)?github\\.com(/|$)", action: .internalStay)
+            ],
+            customCSS: """
+            html, body, #app, .main,
+            .publisher-stage,
+            #chat-box {
+              background-color: transparent !important;
+            }
+            """
+        ),
+        Service(
             name: "Qwen",
             url: "https://chat.qwen.ai?referrer=https://github.io/sassanh/quiper",
             focus_selector: ".message-input-textarea, textarea[placeholder='How can I help you today?'], textarea",
@@ -1989,7 +2071,10 @@ class Settings: ObservableObject {
                 RoutingRule(pattern: "^https?://([^/]*\\.)?github\\.com(/|$)", action: .internalStay)
             ],
             customCSS: """
-            html, body, #root {
+            html, body, #root,
+            .desktop-layout,
+            .desktop-layout-content,
+            .home-page-layout-main {
               background-color: transparent !important;
             }
             """

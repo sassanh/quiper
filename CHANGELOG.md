@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Kimi Engine Template**: Added Kimi with synced prompt focusing, transparent page and content layers, authentication routing, and default shortcuts for starting chats, sharing conversations, and toggling history.
 - **Qwen Engine Template**: Added Qwen Studio with synced prompt focusing, transparent styling, authentication routing, and default shortcuts for starting new or temporary chats, sharing conversations, and toggling history.
 - **Engineering Blog**: Added an extensible VitePress blog at `/blog/` with automatic post listings, page-specific social metadata, and the first article, “Why I Built Spotlight for AI.”
 - **Global Engine Number Shortcuts**: The primary modifier configured for Go to engine 1–10 can now be enabled system-wide from General settings. Derived shortcuts appear read-only beside each eligible engine's launch shortcut, and recording an engine's matching number shortcut offers to enable the global behavior.
@@ -17,6 +18,7 @@
 
 ### Fixed
 
+- **Qwen Template Transparency**: Made Qwen's full-window application layers transparent so the engine matches Quiper's overlay appearance.
 - **Digit Modifier Conflict Detection**: Recording a session or engine number modifier now detects existing modifier-plus-digit shortcuts, including global, engine-launch, app, custom-action, primary, and alternate bindings.
 
 ## [4.5.0] - 2026-07-21

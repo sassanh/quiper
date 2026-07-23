@@ -57,6 +57,7 @@ For provider-specific live checks, prefer checked-in scripts over ad hoc inline 
 node scripts/validate-claude-template.js
 node scripts/validate-x-template.js
 node scripts/validate-zai-template.js
+node scripts/validate-kimi-template.js
 node scripts/validate-qwen-template.js
 node scripts/validate-deepseek-template.js
 node scripts/validate-openwebui-template.js

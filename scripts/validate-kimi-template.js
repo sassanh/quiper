@@ -11,10 +11,10 @@ const settingsPath = path.join(repoRoot, "Quiper", "Settings.swift");
 const portFilePath = path.join(os.tmpdir(), "quiper-template-validation-port.json");
 const source = fs.readFileSync(settingsPath, "utf8");
 const helperSource = parseHelper(source);
-const service = parseServices(source).find((candidate) => candidate.name === "Qwen");
+const service = parseServices(source).find((candidate) => candidate.name === "Kimi");
 
 if (!service) {
-  throw new Error("Qwen default service template not found");
+  throw new Error("Kimi default service template not found");
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -26,70 +26,54 @@ const base = {
 const actions = Object.fromEntries(service.actions.map((action) => [action.name, liveScript(action)]));
 
 main().catch((error) => {
-  console.error(`Qwen validation failed: ${error.message}`);
+  console.error(`Kimi validation failed: ${error.message}`);
   process.exit(1);
 });
 
 async function main() {
-  await request("POST", "/engine/select", { name: "Qwen" });
+  await request("POST", "/engine/select", { name: "Kimi" });
   await request("POST", "/session/start-current", { reload: options.reload });
   await waitForReady();
   await delay(options.pageDelayMs);
 
   if (options.inspectOnly) {
-    console.log(JSON.stringify(await qwenState(), null, 2));
+    console.log(JSON.stringify(await kimiState(), null, 2));
     return;
   }
 
   const results = [];
   await runDefaultAction("New Session");
-  const normalState = await waitForState((state) => state.composerVisible && !state.temporaryActive);
-  if (normalState.opaqueLayers.length > 0) {
-    throw new Error(`Qwen still has opaque full-window layers: ${JSON.stringify(normalState.opaqueLayers)}`);
+  const newSessionState = await waitForState((state) => state.composerVisible);
+  if (newSessionState.opaqueLayers.length > 0) {
+    throw new Error(`Kimi still has opaque full-window layers: ${JSON.stringify(newSessionState.opaqueLayers)}`);
   }
-  results.push(`New Session: ${formatState(normalState)}`);
+  results.push(`New Session: composer=${newSessionState.composerVisible}`);
   results.push("Transparency: no opaque full-window layers");
 
   for (const size of ["small", "large"]) {
     await request("POST", "/viewport", { size });
     await delay(options.viewportDelayMs);
-    const focus = await waitForFocusVisible(`${size} Qwen composer`);
+    const focus = await waitForFocusVisible(`${size} Kimi composer`);
     results.push(`${size} focus ${focus.visibleCount || 0}/${focus.count || 0}`);
   }
 
-  const beforeHistory = await qwenState();
+  const beforeHistory = await kimiState();
   await runDefaultAction("History");
-  await delay(options.actionDelayMs);
-  const afterHistory = await qwenState();
-  if (!sidebarChanged(beforeHistory, afterHistory)) {
-    throw new Error(`History did not change sidebar state: ${JSON.stringify({ beforeHistory, afterHistory })}`);
-  }
-  results.push(`History toggled: ${formatSidebar(beforeHistory)} -> ${formatSidebar(afterHistory)}`);
+  const afterHistory = await waitForState((state) => state.sidebarExpanded !== beforeHistory.sidebarExpanded);
+  results.push(`History toggled: expanded=${beforeHistory.sidebarExpanded} -> ${afterHistory.sidebarExpanded}`);
 
   await runDefaultAction("History");
-  await delay(options.actionDelayMs);
-  const restoredHistory = await qwenState();
-  if (!sidebarChanged(afterHistory, restoredHistory)) {
-    throw new Error(`History did not restore sidebar state: ${JSON.stringify({ afterHistory, restoredHistory })}`);
-  }
-  results.push(`History restored: ${formatSidebar(restoredHistory)}`);
+  const restoredHistory = await waitForState((state) => state.sidebarExpanded === beforeHistory.sidebarExpanded);
+  results.push(`History restored: expanded=${restoredHistory.sidebarExpanded}`);
 
-  await runDefaultAction("New Temporary Session");
-  const temporaryState = await waitForState((state) => state.composerVisible && state.temporaryActive);
-  results.push(`New Temporary Session: ${formatState(temporaryState)}`);
-
-  await runDefaultAction("New Session");
-  const restoredNormalState = await waitForState((state) => state.composerVisible && !state.temporaryActive);
-  results.push(`New Session after temporary: ${formatState(restoredNormalState)}`);
-
-  if (restoredNormalState.shareVisible) {
+  if (restoredHistory.shareVisible) {
     await runDefaultAction("Share");
     results.push("Share: opened from the current conversation");
   } else {
     results.push("Share: skipped on an empty new chat");
   }
 
-  console.log("Qwen validation completed");
+  console.log("Kimi validation completed");
   for (const result of results) {
     console.log(`- ${result}`);
   }
@@ -110,7 +94,7 @@ async function runDefaultAction(name) {
   return response.result;
 }
 
-async function qwenState() {
+async function kimiState() {
   return runJSONProbe(`
     (() => {
       const visible = (element) => {
@@ -123,17 +107,16 @@ async function qwenState() {
           rect.height > 0;
       };
       const elements = (selector) => [...document.querySelectorAll(selector)].filter(visible);
-      const temporary = elements("[role='button'][aria-label='Temporary Chat'], .temporary-chat-entry[aria-label='Temporary Chat']")[0];
-      const sidebar = elements("button[aria-label='Toggle sidebar'], button[aria-label='Expand sidebar'], button[aria-label='Collapse sidebar']")[0];
-      const share = elements("button[aria-label='Share'], [role='button'][aria-label='Share'], [data-testid*='share']");
+      const sidebar = document.querySelector(".next-sidebar");
+      const trigger = document.querySelector(".sidebar-main-trigger__button");
       const background = (element) => element ? window.getComputedStyle(element).backgroundColor : null;
       const opaqueLayers = [...document.querySelectorAll("body *")]
         .filter((element) => {
           if (!visible(element)) { return false; }
           const rect = element.getBoundingClientRect();
           const color = background(element);
-          return rect.width >= window.innerWidth * 0.6 &&
-            rect.height >= window.innerHeight * 0.6 &&
+          return rect.width >= window.innerWidth * 0.8 &&
+            rect.height >= window.innerHeight * 0.2 &&
             color &&
             color !== "transparent" &&
             color !== "rgba(0, 0, 0, 0)";
@@ -154,23 +137,38 @@ async function qwenState() {
             }
           };
         });
+      const summary = (element) => {
+        if (!element) { return null; }
+        const rect = element.getBoundingClientRect();
+        return {
+          className: String(element.className || "").slice(0, 160),
+          ariaLabel: element.getAttribute("aria-label"),
+          visible: visible(element),
+          rect: {
+            x: Math.round(rect.x),
+            y: Math.round(rect.y),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
+          }
+        };
+      };
       throw JSON.stringify({
         origin: location.origin,
         path: location.pathname,
         composerVisible: elements(${JSON.stringify(service.focusSelector)}).length > 0,
-        temporaryActive: temporary?.getAttribute("aria-pressed") === "true",
-        temporaryVisible: Boolean(temporary),
-        newChatVisible: elements("[role='button'][aria-label='New Chat'], button[aria-label='New Chat']").length > 0,
-        historySearchVisible: elements("input.chat-search-input").length > 0,
-        sidebarLabel: sidebar?.getAttribute("aria-label") || null,
-        sidebarClass: sidebar?.className || null,
-        shareVisible: share.length > 0,
+        newChatVisible: elements("a.new-chat-btn, a[aria-label='New Chat']").length > 0,
+        sidebarExpanded: Boolean(sidebar && visible(sidebar) &&
+          sidebar.getBoundingClientRect().right > Math.min(100, sidebar.getBoundingClientRect().width / 2)),
+        expandVisible: elements(".sidebar-main-trigger__button[aria-label='Expand Sidebar'], [aria-label='Expand Sidebar']").length > 0,
+        shareVisible: elements("button[aria-label='Share'], [role='button'][aria-label='Share'], button[title='Share'], [data-testid*='share']").length > 0,
         backgrounds: {
           html: background(document.documentElement),
           body: background(document.body),
-          root: background(document.querySelector("#root"))
+          app: background(document.querySelector("#app"))
         },
-        opaqueLayers
+        opaqueLayers,
+        sidebar: summary(sidebar),
+        trigger: summary(trigger)
       });
     })();
   `);
@@ -197,13 +195,13 @@ async function waitForReady(timeoutMs = options.readyTimeoutMs) {
   while (Date.now() - startedAt <= timeoutMs) {
     lastStatus = await request("GET", "/status");
     if (lastStatus.result?.ready &&
-        lastStatus.result?.currentService === "Qwen" &&
+        lastStatus.result?.currentService === "Kimi" &&
         lastStatus.result?.isLoading === false) {
       return lastStatus.result;
     }
     await delay(options.readyPollMs);
   }
-  throw new Error(`Timed out waiting for Qwen; last status: ${JSON.stringify(redactStatus(lastStatus))}`);
+  throw new Error(`Timed out waiting for Kimi; last status: ${JSON.stringify(redactStatus(lastStatus))}`);
 }
 
 async function waitForFocusVisible(label, timeoutMs = options.readyTimeoutMs) {
@@ -227,20 +225,13 @@ async function waitForState(predicate, timeoutMs = options.readyTimeoutMs) {
   const startedAt = Date.now();
   let lastState = null;
   while (Date.now() - startedAt <= timeoutMs) {
-    lastState = await qwenState();
+    lastState = await kimiState();
     if (predicate(lastState)) {
       return lastState;
     }
     await delay(options.readyPollMs);
   }
-  throw new Error(`Timed out waiting for Qwen state: ${JSON.stringify(lastState)}`);
-}
-
-function sidebarChanged(before, after) {
-  return before.newChatVisible !== after.newChatVisible ||
-    before.historySearchVisible !== after.historySearchVisible ||
-    before.sidebarLabel !== after.sidebarLabel ||
-    before.sidebarClass !== after.sidebarClass;
+  throw new Error(`Timed out waiting for Kimi state: ${JSON.stringify(lastState)}`);
 }
 
 function request(method, pathname, body = undefined) {
@@ -302,14 +293,6 @@ function redactURL(value) {
   }
 }
 
-function formatState(state) {
-  return `composer=${state.composerVisible} temporary=${state.temporaryActive}`;
-}
-
-function formatSidebar(state) {
-  return `${state.sidebarLabel || "unlabelled"} newChat=${state.newChatVisible} search=${state.historySearchVisible}`;
-}
-
 function liveScript(action) {
   return action.sourceLines
     .map((line) => (/^\s*\\\(Settings\.defaultActionScriptHelpers\)\s*$/.test(line) ? helperSource : line))
@@ -331,7 +314,6 @@ function delay(ms) {
 
 function parseArgs(args) {
   const parsed = {
-    actionDelayMs: 500,
     inspectOnly: false,
     pageDelayMs: 5000,
     readyPollMs: 300,
