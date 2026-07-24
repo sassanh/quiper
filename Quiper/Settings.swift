@@ -41,6 +41,9 @@ struct Service: Codable, Identifiable {
     var isEncrypted: Bool = false
     /// True once this engine's sparsebundle was created or migrated with diskutil.
     var usesDiskutilSparseBundle: Bool = false
+    /// True once this engine's metadata has been migrated into the secure bundle.
+    /// After migration, metadata fields are no longer persisted in settings.json.
+    var hasMigratedMetadata: Bool = false
     var lockOnSwitchAway: Bool = true
     var lockAfterInactivity: Bool = false
     var autoLockInactivityTimeout: Int = 5
@@ -64,6 +67,7 @@ struct Service: Codable, Identifiable {
         case iconManuallyUnset
         case isEncrypted
         case usesDiskutilSparseBundle
+        case hasMigratedMetadata
         case lockOnSwitchAway
         case lockAfterInactivity
         case autoLockInactivityTimeout
@@ -86,6 +90,7 @@ struct Service: Codable, Identifiable {
          iconManuallyUnset: Bool? = nil,
          isEncrypted: Bool = false,
          usesDiskutilSparseBundle: Bool = false,
+         hasMigratedMetadata: Bool = false,
          lockOnSwitchAway: Bool = true,
          lockAfterInactivity: Bool = false,
          autoLockInactivityTimeout: Int = 5,
@@ -105,6 +110,7 @@ struct Service: Codable, Identifiable {
         self.iconManuallyUnset = iconManuallyUnset
         self.isEncrypted = isEncrypted
         self.usesDiskutilSparseBundle = usesDiskutilSparseBundle
+        self.hasMigratedMetadata = hasMigratedMetadata
         self.lockOnSwitchAway = lockOnSwitchAway
         self.lockAfterInactivity = lockAfterInactivity
         self.autoLockInactivityTimeout = autoLockInactivityTimeout
@@ -162,6 +168,7 @@ struct Service: Codable, Identifiable {
         iconManuallyUnset = try container.decodeIfPresent(Bool.self, forKey: .iconManuallyUnset)
         isEncrypted = try container.decodeIfPresent(Bool.self, forKey: .isEncrypted) ?? false
         usesDiskutilSparseBundle = try container.decodeIfPresent(Bool.self, forKey: .usesDiskutilSparseBundle) ?? false
+        hasMigratedMetadata = try container.decodeIfPresent(Bool.self, forKey: .hasMigratedMetadata) ?? false
         
         let switchAway = try container.decodeIfPresent(Bool.self, forKey: .lockOnSwitchAway)
         let inactivity = try container.decodeIfPresent(Bool.self, forKey: .lockAfterInactivity)
@@ -188,43 +195,51 @@ struct Service: Codable, Identifiable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
-        try container.encode(url, forKey: .url)
-        try container.encode(focus_selector, forKey: .focus_selector)
-        if !actionScripts.isEmpty {
-            try container.encode(actionScripts, forKey: .actionScripts)
+
+        let isMigrated = isEncrypted && hasMigratedMetadata
+        if !isMigrated {
+            try container.encode(url, forKey: .url)
+            try container.encode(focus_selector, forKey: .focus_selector)
+            if !actionScripts.isEmpty {
+                try container.encode(actionScripts, forKey: .actionScripts)
+            }
+            if let activationShortcut {
+                try container.encode(activationShortcut, forKey: .activationShortcut)
+            }
+            if !routingRules.isEmpty {
+                try container.encode(routingRules, forKey: .routingRules)
+            }
+            if let customCSS, !customCSS.isEmpty {
+                try container.encode(customCSS, forKey: .customCSS)
+            }
+            if let iconBase64 {
+                try container.encode(iconBase64, forKey: .iconBase64)
+            }
+            if let iconManuallyUnset {
+                try container.encode(iconManuallyUnset, forKey: .iconManuallyUnset)
+            }
+            try container.encode(preservePrompt, forKey: .preservePrompt)
+            if !templateActionScriptSync.isEmpty {
+                try container.encode(templateActionScriptSync, forKey: .templateActionScriptSync)
+            }
+            if templatePromptInputSelectorSync {
+                try container.encode(templatePromptInputSelectorSync, forKey: .templatePromptInputSelectorSync)
+            }
+            if templateCustomCSSSync {
+                try container.encode(templateCustomCSSSync, forKey: .templateCustomCSSSync)
+            }
         }
-        if let activationShortcut {
-            try container.encode(activationShortcut, forKey: .activationShortcut)
-        }
-        if !routingRules.isEmpty {
-            try container.encode(routingRules, forKey: .routingRules)
-        }
-        if let customCSS, !customCSS.isEmpty {
-            try container.encode(customCSS, forKey: .customCSS)
-        }
-        if let iconBase64 {
-            try container.encode(iconBase64, forKey: .iconBase64)
-        }
-        if let iconManuallyUnset {
-            try container.encode(iconManuallyUnset, forKey: .iconManuallyUnset)
-        }
+
         try container.encode(isEncrypted, forKey: .isEncrypted)
         if usesDiskutilSparseBundle {
             try container.encode(usesDiskutilSparseBundle, forKey: .usesDiskutilSparseBundle)
         }
+        if isEncrypted {
+            try container.encode(hasMigratedMetadata, forKey: .hasMigratedMetadata)
+        }
         try container.encode(lockOnSwitchAway, forKey: .lockOnSwitchAway)
         try container.encode(lockAfterInactivity, forKey: .lockAfterInactivity)
         try container.encode(autoLockInactivityTimeout, forKey: .autoLockInactivityTimeout)
-        try container.encode(preservePrompt, forKey: .preservePrompt)
-        if !templateActionScriptSync.isEmpty {
-            try container.encode(templateActionScriptSync, forKey: .templateActionScriptSync)
-        }
-        if templatePromptInputSelectorSync {
-            try container.encode(templatePromptInputSelectorSync, forKey: .templatePromptInputSelectorSync)
-        }
-        if templateCustomCSSSync {
-            try container.encode(templateCustomCSSSync, forKey: .templateCustomCSSSync)
-        }
     }
 }
 
@@ -2618,7 +2633,21 @@ class Settings: ObservableObject {
                                             quiperVersion: persistedQuiperVersionForSave())
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
+            syncSecuredEngineMetadataToBundles()
         } catch {
+        }
+    }
+
+    /// For migrated+unlocked engines, writes current in-memory metadata back to
+    /// the secure bundle so edits made in Settings persist alongside the encrypted data.
+    private func syncSecuredEngineMetadataToBundles() {
+        for service in services where service.isEncrypted && service.hasMigratedMetadata {
+            guard EncryptedVolumeManager.shared.isUnlocked(for: service.id) else { continue }
+            do {
+                try EngineMetadataMigrationManager.shared.saveMetadataToBundle(for: service.id)
+            } catch {
+                NSLog("[Settings] Failed to sync metadata to bundle for %@: %@", service.name, error.localizedDescription)
+            }
         }
     }
 

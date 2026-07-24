@@ -282,17 +282,16 @@ final class LockOverlayView: NSView {
         ])
 
         // Title
-        let titleLabel = NSTextField(labelWithString: "Secure Storage Locked")
+        let titleLabel = NSTextField(labelWithString: "\(serviceName) is Locked")
         titleLabel.font = NSFont.systemFont(ofSize: 20, weight: .semibold)
         titleLabel.textColor = .labelColor
         titleLabel.alignment = .center
         containerStack.addArrangedSubview(titleLabel)
 
-        // Subtitle (Original typographic styling)
         let userName = NSFullUserName().isEmpty ? "User" : NSFullUserName()
         let subtitleLabel = NSTextField(
             labelWithString:
-                "Touch ID or enter password for \u{201C}\(userName)\u{201D}\nto unlock secure storage."
+                "Touch ID or enter password for \u{201C}\(userName)\u{201D}\nto unlock \(serviceName)."
         )
         subtitleLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         subtitleLabel.textColor = .secondaryLabelColor
@@ -428,10 +427,13 @@ final class LockOverlayView: NSView {
     }
 
     @objc private func usePasswordClicked() {
-        guard !isUnlockInProgress else { return }
-        isUnlockInProgress = true
+        laContext.invalidate()
+        laView?.removeFromSuperview()
+        laView = nil
+        isBiometricsInitialized = false
+        isUnlockInProgress = false
         errorContainer.isHidden = true
-        NSLog("[LockOverlay] usePasswordClicked fired - spawning dedicated fallback context")
+        NSLog("[LockOverlay] usePasswordClicked fired - releasing biometrics and spawning dedicated fallback context")
         let fallbackContext = LAContext()
         self.activeFallbackContext = fallbackContext
         

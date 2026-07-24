@@ -1454,6 +1454,24 @@ final class WebViewManager: NSObject {
                             NSLog("[LockOverlay] Mounting volume")
                             try await EncryptedVolumeManager.shared.mountVolume(for: serviceId, passphrase: key)
                             
+                            // Metadata migration: move engine metadata from settings into secure bundle
+                            if let currentService = Settings.shared.services.first(where: { $0.id == serviceId }),
+                               !currentService.hasMigratedMetadata,
+                               !currentService.url.isEmpty {
+                                overlay.updateStatus("Migrating engine metadata...")
+                                do {
+                                    try await EngineMetadataMigrationManager.shared.migrateMetadata(for: serviceId, context: context)
+                                } catch {
+                                    NSLog("[MetadataMigration] Migration failed for %@: %@", serviceId.uuidString, error.localizedDescription)
+                                }
+                            }
+                            
+                            // Load metadata from secure bundle for already-migrated engines
+                            if let currentService = Settings.shared.services.first(where: { $0.id == serviceId }),
+                               currentService.hasMigratedMetadata {
+                                EngineMetadataMigrationManager.shared.loadMetadataForUnlockedService(serviceId)
+                            }
+                            
                             overlay.updateStatus("Loading secure session...")
                             try? await Task.sleep(nanoseconds: 1_000_000_000)
                             

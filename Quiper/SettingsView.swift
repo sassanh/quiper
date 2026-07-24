@@ -585,6 +585,14 @@ struct ServicesSettingsView: View {
                             .frame(width: 16, height: 16)
                     }
                     Text(service.name)
+                    if EngineMetadataMigrationManager.shared.hasLegacyMetadata(for: service) {
+                        Image(systemName: "info.circle")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 11, height: 11)
+                            .foregroundColor(.orange)
+                            .help("This secured engine still stores metadata (URL, icon, scripts) in unencrypted settings. Unlock it to automatically migrate its data into the encrypted storage bundle.")
+                    }
                 }
                 .tag(service.id)
                 .contentShape(Rectangle())
@@ -1099,11 +1107,11 @@ struct ServiceDetailView: View {
                             .font(.system(size: 48))
                             .foregroundColor(.secondary)
                         
-                        Text("Engine Locked")
+                        Text("\(service.name) is Locked")
                             .font(.title2)
                             .fontWeight(.semibold)
                         
-                        Text("Authenticate to access settings")
+                        Text("Authenticate to access \(service.name) settings")
                             .font(.body)
                             .foregroundColor(.secondary)
                         
@@ -1223,6 +1231,18 @@ struct ServiceDetailView: View {
             do {
                 let key = try await SecureStorageManager.shared.retrieveKeyFromKeychain(for: serviceID, context: context)
                 try await EncryptedVolumeManager.shared.mountVolume(for: serviceID, passphrase: key)
+                
+                if let svc = Settings.shared.services.first(where: { $0.id == serviceID }),
+                   !svc.hasMigratedMetadata,
+                   !svc.url.isEmpty {
+                    do {
+                        try await EngineMetadataMigrationManager.shared.migrateMetadata(for: serviceID, context: context)
+                    } catch {
+                        NSLog("[MetadataMigration] Settings unlock migration failed: %@", error.localizedDescription)
+                    }
+                }
+                
+                EngineMetadataMigrationManager.shared.loadMetadataForUnlockedService(serviceID)
                 
                 await MainActor.run {
                     isUnlockingEngine = false

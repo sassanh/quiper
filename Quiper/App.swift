@@ -111,6 +111,22 @@ final class AppController: NSObject, NSWindowDelegate {
         presentTemplateActionSyncMigrationPromptIfNeeded()
         presentSparseBundleMigrationPromptIfNeeded()
         presentEngineShortcutToggleMigrationPromptIfNeeded()
+        presentEngineMetadataMigrationPromptIfNeeded()
+    }
+
+    private func presentEngineMetadataMigrationPromptIfNeeded() {
+        guard !Self.isRunningTests,
+              !Constants.LaunchMode.shouldSuppressInterferenceUI else {
+            return
+        }
+        guard EngineMetadataMigrationManager.shared.hasAnyLegacyMetadata(in: Settings.shared.services) else {
+            return
+        }
+        Task { @MainActor in
+            await EngineMetadataMigrationManager.shared.presentMigrationWizardIfNeeded(
+                relativeTo: windowController.window
+            )
+        }
     }
 
     private func presentTemplateActionSyncMigrationPromptIfNeeded() {

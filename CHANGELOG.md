@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Secure Engine Metadata Migration ([EngineMetadataMigration.swift](Quiper/Components/EngineMetadataMigration.swift), [Settings.swift](Quiper/Settings.swift), [WebViewManager.swift](Quiper/Components/WebViewManager.swift), [App.swift](Quiper/App.swift), [SettingsView.swift](Quiper/SettingsView.swift))**: Encrypted engine metadata (URL, icon, scripts, CSS, routing rules, shortcuts, and prompt preservation) is now stored inside the secure bundle, leaving only the name and lock behavior in unencrypted settings. Legacy engines display a settings-list indicator and can be migrated through a launch wizard or automatically the next time they unlock. The migration writes to the mounted bundle, verifies the write, and then strips the legacy fields from settings.json on the next save.
 - **Settings Lock Overlay ([SettingsView.swift](Quiper/SettingsView.swift), [LockOverlayView.swift](Quiper/Components/LockOverlayView.swift))**: Locked engines now display a lock icon in the sidebar list and icon picker. Selecting a locked engine in settings reveals the same embedded biometric console used in the main window—Touch ID authenticates inline, then retrieves the secure key and mounts the volume before the settings detail appears.
 - **Kimi Engine Template**: Added Kimi with synced prompt focusing, transparent page and content layers, authentication routing, and default shortcuts for starting chats, sharing conversations, and toggling history.
 - **Qwen Engine Template**: Added Qwen Studio with synced prompt focusing, transparent styling, authentication routing, and default shortcuts for starting new or temporary chats, sharing conversations, and toggling history.
@@ -20,6 +21,7 @@
 
 ### Fixed
 
+- **Lock Overlay Engine Name & Password Fallback ([LockOverlayView.swift](Quiper/Components/LockOverlayView.swift))**: Lock overlay now names the engine being unlocked and releases the active biometric context before falling back to password authentication, so the "Use Password... ⌘P" button works reliably.
 - **Qwen Template Transparency**: Made Qwen's full-window application layers transparent so the engine matches Quiper's overlay appearance.
 - **Digit Modifier Conflict Detection**: Recording a session or engine number modifier now detects existing modifier-plus-digit shortcuts, including global, engine-launch, app, custom-action, primary, and alternate bindings.
 - **Unified Version Ordering**: Software updates and version-aware settings migrations now share one comparison contract, with suffixed builds ordered after their stable base and numeric build numbers breaking ties consistently.
