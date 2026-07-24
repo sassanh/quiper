@@ -735,7 +735,15 @@ private final class EngineRowView: NSView {
         iconView.widthAnchor.constraint(equalToConstant: 18).isActive = true
         iconView.heightAnchor.constraint(equalToConstant: 18).isActive = true
         
-        if let base64 = iconBase64,
+        if isLocked {
+            let lockConfig = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+            if let lockImage = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?
+                .withSymbolConfiguration(lockConfig) {
+                lockImage.isTemplate = true
+                iconView.image = lockImage
+                iconView.contentTintColor = EmptyStateColors.iconTint
+            }
+        } else if let base64 = iconBase64,
            let data = Data(base64Encoded: base64),
            let nsImage = NSImage(data: data) {
             iconView.image = nsImage

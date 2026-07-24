@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import LocalAuthentication
 import LocalAuthenticationEmbeddedUI
 
@@ -755,6 +756,87 @@ final class LockScreenShortcutButton: NSControl {
             layer?.backgroundColor = NSColor.white.withAlphaComponent(0.12).cgColor
         } else {
             layer?.backgroundColor = NSColor.white.withAlphaComponent(0.05).cgColor
+        }
+    }
+}
+
+/// A SwiftUI-compatible wrapper around BiometricDiskConsoleView + LAAuthenticationView.
+/// Used in Settings to show the same embedded biometric prompt as the main window lock overlay.
+struct BiometricUnlockView: NSViewRepresentable {
+    let serviceName: String
+    let onSuccess: (LAContext) -> Void
+    let onFailure: (String) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        container.wantsLayer = true
+
+        let consoleView = BiometricDiskConsoleView()
+        consoleView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(consoleView)
+
+        NSLayoutConstraint.activate([
+            consoleView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            consoleView.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            consoleView.widthAnchor.constraint(equalToConstant: 120),
+            consoleView.heightAnchor.constraint(equalToConstant: 140)
+        ])
+
+        context.coordinator.consoleView = consoleView
+        context.coordinator.onSuccess = onSuccess
+        context.coordinator.onFailure = onFailure
+        context.coordinator.serviceName = serviceName
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            context.coordinator.startAuthentication(in: consoleView)
+        }
+
+        return container
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onSuccess = onSuccess
+        context.coordinator.onFailure = onFailure
+        context.coordinator.serviceName = serviceName
+    }
+
+    final class Coordinator {
+        var laContext: LAContext?
+        var laView: LAAuthenticationView?
+        var consoleView: BiometricDiskConsoleView?
+        var onSuccess: ((LAContext) -> Void)?
+        var onFailure: ((String) -> Void)?
+        var serviceName: String?
+        var isAuthenticating = false
+
+        func startAuthentication(in console: BiometricDiskConsoleView) {
+            guard !isAuthenticating else { return }
+            isAuthenticating = true
+
+            laContext = LAContext()
+            guard let context = laContext else { return }
+
+            let authView = LAAuthenticationView(context: context)
+            laView = authView
+            console.embedBiometricView(authView)
+
+            Task { @MainActor in
+                do {
+                    try await context.evaluatePolicy(
+                        .deviceOwnerAuthentication,
+                        localizedReason: "Authorize access to \(serviceName ?? "engine") settings"
+                    )
+                    onSuccess?(context)
+                } catch {
+                    let errString = error.localizedDescription
+                    if errString.contains("Canceled") || errString.contains("cancel") || errString.contains("-128") || errString.contains("denied") {
+                        return
+                    }
+                    onFailure?(errString)
+                }
+            }
         }
     }
 }

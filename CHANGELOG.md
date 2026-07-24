@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Settings Lock Overlay ([SettingsView.swift](Quiper/SettingsView.swift), [LockOverlayView.swift](Quiper/Components/LockOverlayView.swift))**: Locked engines now display a lock icon in the sidebar list and icon picker. Selecting a locked engine in settings reveals the same embedded biometric console used in the main window—Touch ID authenticates inline, then retrieves the secure key and mounts the volume before the settings detail appears.
 - **Kimi Engine Template**: Added Kimi with synced prompt focusing, transparent page and content layers, authentication routing, and default shortcuts for starting chats, sharing conversations, and toggling history.
 - **Qwen Engine Template**: Added Qwen Studio with synced prompt focusing, transparent styling, authentication routing, and default shortcuts for starting new or temporary chats, sharing conversations, and toggling history.
 - **Engineering Blog**: Added an extensible VitePress blog at `/blog/` with automatic post listings, page-specific social metadata, and the first article, “Why I Built Spotlight for AI.”

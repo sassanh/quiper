@@ -5,6 +5,7 @@ import Carbon
 import AppKit
 import UserNotifications
 import WebKit
+import LocalAuthentication
 
 struct SettingsView: View {
     @State private var selectedTab = "Engines"
@@ -562,7 +563,14 @@ struct ServicesSettingsView: View {
         List(selection: $selectedServiceID) {
             ForEach(settings.services) { service in
                 HStack {
-                    if let base64 = service.iconBase64,
+                    let isLocked = service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+                    if isLocked {
+                        Image(systemName: "lock.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 12, height: 12)
+                            .foregroundColor(.secondary)
+                    } else if let base64 = service.iconBase64,
                        let data = Data(base64Encoded: base64),
                        let nsImage = NSImage(data: data) {
                         Image(nsImage: nsImage)
@@ -823,6 +831,8 @@ struct ServiceDetailView: View {
     @State private var migrationMessage = ""
     @State private var activationShortcutStatus = ""
     @State private var showGlobalEngineDigitShortcutPrompt = false
+    @State private var isUnlockingEngine = false
+    @State private var unlockErrorMessage: String? = nil
 
     private var detailSelectionBinding: Binding<DetailSelection?> {
         Binding(
@@ -870,7 +880,14 @@ struct ServiceDetailView: View {
                                     .stroke(isHoveringIcon ? Color.accentColor : Color.secondary.opacity(0.2), lineWidth: 1.5)
                             )
                         
-                        if let iconBase64 = service.iconBase64,
+                        let isLocked = service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+                        if isLocked {
+                            Image(systemName: "lock.fill")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 24, height: 24)
+                                .foregroundColor(.secondary)
+                        } else if let iconBase64 = service.iconBase64,
                            let data = Data(base64Encoded: iconBase64),
                            let nsImage = NSImage(data: data) {
                             let _ = { nsImage.size = NSSize(width: 40, height: 40) }()
@@ -1070,6 +1087,58 @@ struct ServiceDetailView: View {
             }
             }
             
+            let isEngineLocked = service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+            if isEngineLocked {
+                ZStack {
+                    Color.black.opacity(0.15)
+                        .background(.ultraThinMaterial)
+                        .ignoresSafeArea()
+                    
+                    VStack(spacing: 16) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 48))
+                            .foregroundColor(.secondary)
+                        
+                        Text("Engine Locked")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        
+                        Text("Authenticate to access settings")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                        
+                        if let errorMessage = unlockErrorMessage {
+                            Text(errorMessage)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                        }
+                        
+                        BiometricUnlockView(
+                            serviceName: service.name,
+                            onSuccess: { context in
+                                unlockEngine(context: context)
+                            },
+                            onFailure: { error in
+                                unlockErrorMessage = error
+                            }
+                        )
+                        .frame(width: 140, height: 160)
+                    }
+                    .padding(32)
+                    .frame(maxWidth: 320)
+                    .background(Color(NSColor.windowBackgroundColor).opacity(0.95))
+                    .cornerRadius(16)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.25), radius: 20, x: 0, y: 10)
+                }
+                .transition(.opacity.animation(.easeInOut(duration: 0.15)))
+            }
+            
             if isMigratingData {
                 ZStack {
                     Color.black.opacity(0.15)
@@ -1143,6 +1212,33 @@ struct ServiceDetailView: View {
             }
         })
         shortcutState.start(session: session, title: "Launch \(serviceName)")
+    }
+
+    private func unlockEngine(context: LAContext) {
+        let serviceID = service.id
+        isUnlockingEngine = true
+        unlockErrorMessage = nil
+        
+        Task {
+            do {
+                let key = try await SecureStorageManager.shared.retrieveKeyFromKeychain(for: serviceID, context: context)
+                try await EncryptedVolumeManager.shared.mountVolume(for: serviceID, passphrase: key)
+                
+                await MainActor.run {
+                    isUnlockingEngine = false
+                    appController?.reloadServices()
+                }
+            } catch {
+                await MainActor.run {
+                    isUnlockingEngine = false
+                    if (error as? LAError)?.code == .userCancel {
+                        unlockErrorMessage = nil
+                    } else {
+                        unlockErrorMessage = error.localizedDescription
+                    }
+                }
+            }
+        }
     }
 
     private var engineDigitShortcut: HotkeyManager.Configuration? {
