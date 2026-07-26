@@ -135,7 +135,7 @@ final class HybridSelectorInteractionsUITests: BaseUITest {
         let endCoord = windowAnchor.withOffset(CGVector(dx: offsetX_End, dy: offsetY_End))
         
         // Execute Resize
-        startCoord.press(forDuration: 0.5, thenDragTo: endCoord)
+        startCoord.click(forDuration: 0.5, thenDragTo: endCoord)
         
         // Re-find the window to check its new frame (cached frame is now old)
         // We use the same finding logic to ensure we get the main window, not overlay

@@ -88,15 +88,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var activeDownloads: [Any] = [] 
 
     private var titleObservation: NSKeyValueObservation?
-    var sessionTitleObservations: [String: NSKeyValueObservation] = [:]
+    var sessionTitleObservations: [TabIdentifier: NSKeyValueObservation] = [:]
     var services: [Service] = []
     var currentServiceName: String?
-    var currentServiceURL: String?
+    var currentServiceID: UUID?
     var webViewManager: WebViewManager!
     var emptyStateView: EmptyStateView!
     var findBarViewController: FindBarViewController!
     var draggingServiceIndex: Int?
-    var activeIndicesByURL: [String: Int] = [:]
+    var activeIndicesByID: [UUID: Int] = [:]
     
     // MARK: - Tab History & MRU Navigation
     var tabHistory: [TabIdentifier] = []
@@ -240,7 +240,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         emptyStateView.onSessionSelected = { [weak self] svcIndex, sessionIndex in
             guard let self = self, self.services.indices.contains(svcIndex) else { return }
             let service = self.services[svcIndex]
-            self.activeIndicesByURL[service.url] = sessionIndex
+            self.activeIndicesByID[service.id] = sessionIndex
             self.selectService(at: svcIndex)
         }
         emptyStateView.onWindowDragBegan = { [weak self] in
@@ -257,7 +257,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         webViewManager.updateServices(initialServices)
         
         self.services.forEach { service in
-            activeIndicesByURL[service.url] = 0
+            activeIndicesByID[service.id] = 0
         }
         setupUI()
         setupInactivityMonitoring()
@@ -279,17 +279,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - Public API
     var serviceCount: Int { services.count }
-    var activeServiceURL: String? { currentService()?.url }
     var activeServiceID: UUID? { currentService()?.id }
     var activeSessionIndex: Int {
         guard let service = currentService() else { return 0 }
-        return activeIndicesByURL[service.url] ?? 0
+        return activeIndicesByID[service.id] ?? 0
     }
 
     var activeWebView: WKWebView? {
         guard let manager = webViewManager else { return nil }
         guard let service = currentService(),
-              let index = activeIndicesByURL[service.url] else {
+              let index = activeIndicesByID[service.id] else {
             return nil
         }
         return manager.getWebView(for: service, sessionIndex: index)
@@ -325,9 +324,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard let webView = currentWebView() else { return }
         let escapedSelector = escapeForJavaScript(selector)
         
-        let sessionIdx = activeIndicesByURL[service.url] ?? 0
+        let sessionIdx = activeIndicesByID[service.id] ?? 0
         let shouldRestore = service.preservePrompt
-        let inputState = shouldRestore ? webViewManager?.getTabInputState(for: service.url, sessionIndex: sessionIdx) : nil
+        let inputState = shouldRestore ? webViewManager?.getTabInputState(for: service.id, sessionIndex: sessionIdx) : nil
         
         let hasSaved = inputState != nil
         let textVal = inputState?.text ?? ""
@@ -622,7 +621,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func currentWebView() -> WKWebView? {
         guard let manager = webViewManager else { return nil }
         guard let service = currentService(),
-              let index = activeIndicesByURL[service.url] else {
+              let index = activeIndicesByID[service.id] else {
             return nil
         }
         return manager.getWebView(for: service, sessionIndex: index)
@@ -910,9 +909,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         webViewManager.delegate = self
         
-        activeIndicesByURL.removeAll()
+        activeIndicesByID.removeAll()
         for service in services {
-            activeIndicesByURL[service.url] = 0
+            activeIndicesByID[service.id] = 0
         }
         webViewManager.updateServices(services)
 
@@ -975,20 +974,20 @@ struct SecureTabState: Codable {
         var state = PersistedTabState()
         
         // Filter out encrypted engines from the global active Service URL
-        if let currentURL = currentServiceURL,
-           let svc = services.first(where: { $0.url == currentURL }),
+        if let currentID = currentServiceID,
+           let svc = services.first(where: { $0.id == currentID }),
            svc.isEncrypted {
-            state.activeServiceURL = nil
+            state.activeServiceID = nil
         } else {
-            state.activeServiceURL = currentServiceURL
+            state.activeServiceID = currentService()?.id
         }
         
         // Filter out encrypted engines from global active indices
-        var unencryptedIndices = activeIndicesByURL
+        var unencryptedIndices = activeIndicesByID
         for svc in services where svc.isEncrypted {
-            unencryptedIndices.removeValue(forKey: svc.url)
+            unencryptedIndices.removeValue(forKey: svc.id)
         }
-        state.activeIndicesByURL = unencryptedIndices
+        state.activeIndicesByID = unencryptedIndices
         state.tabHistory = tabHistory
 
         if let manager = webViewManager {
@@ -1001,20 +1000,20 @@ struct SecureTabState: Codable {
             // Filter out services with preservePrompt disabled
             for svc in services {
                 if !svc.preservePrompt {
-                    allTabInputs.removeValue(forKey: svc.url)
+                    allTabInputs.removeValue(forKey: svc.id)
                 }
             }
             
             // Extract and save encrypted services securely
             for svc in services where svc.isEncrypted {
-                if let sessions = allOpenTabs[svc.url] {
+                if let sessions = allOpenTabs[svc.id] {
                     // Only save to secure storage if it's currently unlocked
                     if EncryptedVolumeManager.shared.isUnlocked(for: svc.id) {
-                        let activeIdx = activeIndicesByURL[svc.url] ?? 0
-                        let secureTitles = allTabTitles[svc.url]
-                        let secureInputs = allTabInputs[svc.url]
-                        let secureHistories = allPromptHistories[svc.url]
-                        let secureOverrides = allPromptHistoryOverrides[svc.url]
+                        let activeIdx = activeIndicesByID[svc.id] ?? 0
+                        let secureTitles = allTabTitles[svc.id]
+                        let secureInputs = allTabInputs[svc.id]
+                        let secureHistories = allPromptHistories[svc.id]
+                        let secureOverrides = allPromptHistoryOverrides[svc.id]
                         let secureState = SecureTabState(
                             activeIndex: activeIdx,
                             openTabs: sessions,
@@ -1030,11 +1029,11 @@ struct SecureTabState: Codable {
                     }
                 }
                 // Remove from the global unencrypted state
-                allOpenTabs.removeValue(forKey: svc.url)
-                allTabTitles.removeValue(forKey: svc.url)
-                allTabInputs.removeValue(forKey: svc.url)
-                allPromptHistories.removeValue(forKey: svc.url)
-                allPromptHistoryOverrides.removeValue(forKey: svc.url)
+                allOpenTabs.removeValue(forKey: svc.id)
+                allTabTitles.removeValue(forKey: svc.id)
+                allTabInputs.removeValue(forKey: svc.id)
+                allPromptHistories.removeValue(forKey: svc.id)
+                allPromptHistoryOverrides.removeValue(forKey: svc.id)
             }
             state.openTabs = allOpenTabs
             state.tabTitles = allTabTitles
@@ -1060,10 +1059,10 @@ struct SecureTabState: Codable {
             }
         }
 
-        // Restore activeIndicesByURL
-        for (url, index) in savedState.activeIndicesByURL {
-            if services.contains(where: { $0.url == url }) {
-                activeIndicesByURL[url] = index
+        // Restore activeIndicesByID
+        for (svcID, index) in savedState.activeIndicesByID {
+            if services.contains(where: { $0.id == svcID }) {
+                activeIndicesByID[svcID] = index
             }
         }
 
@@ -1073,11 +1072,11 @@ struct SecureTabState: Codable {
         webViewManager.restoreTabPromptHistoryOverrides(savedState.tabPromptHistoryEnabledOverrides)
 
         // Restore open tabs
-        for (svcURL, sessions) in savedState.openTabs {
-            guard let service = services.first(where: { $0.url == svcURL }) else { continue }
+        for (svcID, sessions) in savedState.openTabs {
+            guard let service = services.first(where: { $0.id == svcID }) else { continue }
             
             var secureSessions = sessions
-            var restoredTitles = savedState.tabTitles[svcURL] ?? [:]
+            var restoredTitles = savedState.tabTitles[svcID] ?? [:]
             if service.isEncrypted && EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
                 let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: service.id).appendingPathComponent("quiper_tabs.json")
                 if let data = try? Data(contentsOf: stateURL),
@@ -1085,18 +1084,18 @@ struct SecureTabState: Codable {
                     secureSessions = secureState.openTabs
                     restoredTitles = secureState.tabTitles ?? [:]
                     if let secureInputs = secureState.tabInputs {
-                        webViewManager.restoreTabInputStates([service.url: secureInputs])
+                        webViewManager.restoreTabInputStates([service.id: secureInputs])
                     }
                     if let secureHistories = secureState.tabPromptHistories {
-                        webViewManager.restoreTabPromptHistories([service.url: secureHistories])
+                        webViewManager.restoreTabPromptHistories([service.id: secureHistories])
                     }
                     if let secureOverrides = secureState.tabPromptHistoryEnabledOverrides {
-                        webViewManager.restoreTabPromptHistoryOverrides([service.url: secureOverrides])
+                        webViewManager.restoreTabPromptHistoryOverrides([service.id: secureOverrides])
                     }
                 }
             }
             
-            let activeIndex = activeIndicesByURL[service.url] ?? 0
+            let activeIndex = activeIndicesByID[service.id] ?? 0
             for (sessionIndex, urlString) in secureSessions {
                 // Pre-instantiate the webview with its restored URL
                 _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString, restoredTitle: restoredTitles[sessionIndex], loadImmediately: (sessionIndex == activeIndex))
@@ -1109,12 +1108,10 @@ struct SecureTabState: Codable {
         }
 
         // Restore active service selection
-        if let activeURL = savedState.activeServiceURL,
-           services.contains(where: { $0.url == activeURL }) {
-            currentServiceURL = activeURL
-            if let index = services.firstIndex(where: { $0.url == activeURL }) {
-                currentServiceName = services[index].name
-            }
+        if let activeID = savedState.activeServiceID,
+           let service = services.first(where: { $0.id == activeID }) {
+            currentServiceID = service.id
+            currentServiceName = service.name
         }
 
         refreshInstantiationState()
@@ -1470,7 +1467,7 @@ struct SecureTabState: Codable {
         Settings.shared.saveSettings()
         NotificationCenter.default.post(name: .servicesOrderUpdated, object: nil)
         
-        if let idx = services.firstIndex(where: { $0.url == currentServiceURL }) {
+        if let idx = services.firstIndex(where: { $0.id == currentServiceID }) {
             serviceSelector?.selectedSegment = idx
             collapsibleServiceSelector?.selectedSegment = idx
         }

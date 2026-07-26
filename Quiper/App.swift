@@ -515,9 +515,7 @@ final class AppController: NSObject, NSWindowDelegate {
         }
     }
 
-    var currentServiceURL: String? {
-        windowController.activeServiceURL
-    }
+    var currentServiceID: UUID? { windowController.activeServiceID }
 
     var isWindowVisible: Bool {
         guard let window = windowController.window else { return false }
@@ -803,11 +801,11 @@ final class AppController: NSObject, NSWindowDelegate {
 
 extension AppController: NotificationDispatcherDelegate {
     func notificationDispatcher(_ dispatcher: NotificationDispatcher,
-                                didActivateNotificationForServiceURL serviceURL: String?,
+                                didActivateNotificationForServiceID serviceID: UUID?,
                                 sessionIndex: Int?) {
         showWindow(nil)
-        if let url = serviceURL {
-            _ = windowController.selectService(withURL: url)
+        if let serviceID {
+            _ = windowController.selectService(withID: serviceID)
         }
         if let sessionIndex {
             windowController.switchSession(to: sessionIndex)

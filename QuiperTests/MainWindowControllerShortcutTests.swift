@@ -47,7 +47,7 @@ final class MainWindowControllerShortcutTests: XCTestCase {
         let handled = controller.handleCommandShortcut(event: arrowEvent(keyCode: UInt16(kVK_RightArrow), modifiers: [.command, .control]))
 
         XCTAssertTrue(handled)
-        XCTAssertEqual(controller.activeServiceURL, "https://beta.test")
+        XCTAssertEqual(controller.activeServiceID, controller.services[1].id)
     }
 
     func testCommandOptionArrowIsIgnored() {
@@ -76,7 +76,7 @@ final class MainWindowControllerShortcutTests: XCTestCase {
         let handled = controller.handleCommandShortcut(event: digitEvent(number: 2, modifiers: [.command, .control]))
 
         XCTAssertTrue(handled)
-        XCTAssertEqual(controller.activeServiceURL, "https://beta.test")
+        XCTAssertEqual(controller.activeServiceID, controller.services[1].id)
     }
 
     func testClearedShortcutDoesNotCaptureTyping() {

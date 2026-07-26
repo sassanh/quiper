@@ -79,16 +79,16 @@ final class ZoomPersistenceTests: XCTestCase {
         
         // Zoom in once
         windowController.zoom(by: 0.2)
-        XCTAssertEqual(Double(Settings.shared.serviceZoomLevels[testService.url] ?? 0.0), 1.2, accuracy: 0.01)
+        XCTAssertEqual(Double(Settings.shared.serviceZoomLevels[testService.id] ?? 0.0), 1.2, accuracy: 0.01)
         
         // Reset zoom
         windowController.performMenuResetZoom(nil)
         
         // Verify persisted zoom is cleared (or nil)
-        XCTAssertNil(Settings.shared.serviceZoomLevels[testService.url])
+        XCTAssertNil(Settings.shared.serviceZoomLevels[testService.id])
         
         // Zoom in again should start from 1.0 -> 1.2
         windowController.zoom(by: 0.2)
-        XCTAssertEqual(Double(Settings.shared.serviceZoomLevels[testService.url] ?? 0.0), 1.2, accuracy: 0.01)
+        XCTAssertEqual(Double(Settings.shared.serviceZoomLevels[testService.id] ?? 0.0), 1.2, accuracy: 0.01)
     }
 }

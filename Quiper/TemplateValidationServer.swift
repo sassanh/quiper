@@ -160,7 +160,7 @@ final class TemplateValidationServer {
             "currentServiceID": jsonOrNull(service?.id.uuidString),
             "currentServiceEncrypted": service?.isEncrypted ?? false,
             "currentServiceIndex": jsonOrNull(service.flatMap { activeIndex(for: $0, in: controller) }),
-            "currentSessionIndex": jsonOrNull(service.map { controller.activeIndicesByURL[$0.url] ?? 0 }),
+            "currentSessionIndex": jsonOrNull(service.map { controller.activeIndicesByID[$0.id] ?? 0 }),
             "pageURL": jsonOrNull(webView?.url?.absoluteString),
             "pageTitle": jsonOrNull(webView?.title),
             "isLoading": webView?.isLoading ?? false,
@@ -179,12 +179,16 @@ final class TemplateValidationServer {
         }
 
         let index: Int?
-        if let name = body["name"] as? String {
+        if let idString = body["id"] as? String,
+           let id = UUID(uuidString: idString) {
+            index = controller.services.firstIndex { $0.id == id }
+        } else if let name = body["name"] as? String {
             index = controller.services.firstIndex { $0.name.caseInsensitiveCompare(name) == .orderedSame }
         } else if let url = body["url"] as? String {
+            // Retain the URL request boundary for older validation clients.
             index = controller.services.firstIndex { $0.url == url }
         } else {
-            throw TemplateValidationError.badRequest("Expected name or url")
+            throw TemplateValidationError.badRequest("Expected id, name, or url")
         }
 
         guard let index else {
@@ -201,7 +205,7 @@ final class TemplateValidationServer {
             throw TemplateValidationError.unavailable("No active engine")
         }
 
-        let sessionIndex = controller.activeIndicesByURL[service.url] ?? 0
+        let sessionIndex = controller.activeIndicesByID[service.id] ?? 0
         let webView = controller.getOrCreateWebview(for: service, sessionIndex: sessionIndex)
         if (body["reload"] as? Bool) == true, let url = URL(string: service.url) {
             webView.load(URLRequest(url: url))

@@ -22,13 +22,12 @@ class MockUserNotificationCenter: UserNotificationCentering {
 }
 
 class MockNotificationDispatcherDelegate: NotificationDispatcherDelegate {
-    var didActivateNotificationForServiceURLCalled = false
-    var serviceURL: String?
+    var didActivateNotificationForServiceIDCalled = false
+    var serviceID: UUID?
     var sessionIndex: Int?
-
-    func notificationDispatcher(_ dispatcher: NotificationDispatcher, didActivateNotificationForServiceURL serviceURL: String?, sessionIndex: Int?) {
-        didActivateNotificationForServiceURLCalled = true
-        self.serviceURL = serviceURL
+    func notificationDispatcher(_ dispatcher: NotificationDispatcher, didActivateNotificationForServiceID serviceID: UUID?, sessionIndex: Int?) {
+        didActivateNotificationForServiceIDCalled = true
+        self.serviceID = serviceID
         self.sessionIndex = sessionIndex
     }
 }
@@ -99,4 +98,3 @@ struct NotificationDispatcherTests {
         #expect(mockURLOpener.openedURL?.absoluteString == expectedURL)
     }
 }
-

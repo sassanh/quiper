@@ -147,11 +147,14 @@ final class WindowSizeToggleUITests: BaseUITest {
         let relY = midY - windowOrigin.y
         
         // Create coordinate relative to the Window's top-left
-        let startCoord = mainWindow.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0)).withOffset(CGVector(dx: relX, dy: relY))
+        let windowAnchor = mainWindow.coordinate(withNormalizedOffset: .zero)
+        let startCoord = windowAnchor.withOffset(CGVector(dx: relX, dy: relY))
         
         // Drag to move window to a different position
         let dragVector = CGVector(dx: 150, dy: 100)
-        let endCoord = startCoord.withOffset(dragVector)
+        let endCoord = windowAnchor.withOffset(
+            CGVector(dx: relX + dragVector.dx, dy: relY + dragVector.dy)
+        )
         
         startCoord.press(forDuration: 0.5, thenDragTo: endCoord)
         Thread.sleep(forTimeInterval: 0.3)

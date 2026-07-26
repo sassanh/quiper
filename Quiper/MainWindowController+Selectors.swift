@@ -74,7 +74,7 @@ extension MainWindowController {
     }
     
     func syncSelectorSelections() {
-        let serviceIdx = services.firstIndex(where: { $0.url == currentServiceURL }) ?? 0
+        let serviceIdx = services.firstIndex(where: { $0.id == currentServiceID }) ?? 0
         serviceSelector?.selectedSegment = serviceIdx
         collapsibleServiceSelector?.selectedSegment = serviceIdx
         
@@ -82,7 +82,9 @@ extension MainWindowController {
             sessionSelector?.selectedSegment = -1
             collapsibleSessionSelector?.selectedSegment = -1
         } else {
-            let sessionIdx = segmentIndex(forSession: activeIndicesByURL[currentServiceURL ?? ""] ?? 0)
+            let sessionIdx = segmentIndex(
+                forSession: currentService().flatMap { activeIndicesByID[$0.id] } ?? 0
+            )
             sessionSelector?.selectedSegment = sessionIdx
             collapsibleSessionSelector?.selectedSegment = sessionIdx
         }
@@ -348,12 +350,12 @@ extension MainWindowController {
 
         collapsibleServiceSelector?.setItems(items)
         
-        if let idx = services.firstIndex(where: { $0.url == currentServiceURL }) {
+        if let idx = services.firstIndex(where: { $0.id == currentServiceID }) {
             collapsibleServiceSelector?.selectedSegment = idx
             serviceSelector?.selectedSegment = idx
         } else {
             if services.isEmpty {
-                currentServiceURL = nil
+                currentServiceID = nil
                 currentServiceName = nil
                 titleLabel?.stringValue = ""
                 collapsibleServiceSelector?.selectedSegment = -1
@@ -369,19 +371,19 @@ extension MainWindowController {
     }
 
     func syncCurrentServiceSelection() {
-        if let url = currentServiceURL,
-           let match = services.first(where: { $0.url == url }) {
+        if let currentID = currentServiceID,
+           let match = services.first(where: { $0.id == currentID }) {
             currentServiceName = match.name
             return
         }
         if let name = currentServiceName,
            let match = services.first(where: { $0.name == name }) {
-            currentServiceURL = match.url
+            currentServiceID = match.id
             currentServiceName = match.name
             return
         }
         currentServiceName = services.first?.name
-        currentServiceURL = services.first?.url
+        currentServiceID = services.first?.id
     }
 
     static func sessionTooltipTitle(pageTitle: String?, fallbackTitle: String? = nil, sessionIndex: Int) -> String {
@@ -400,7 +402,7 @@ extension MainWindowController {
         preferredTitle: String? = nil,
         isLoading: Bool? = nil
     ) {
-        guard service.url == currentServiceURL else { return }
+        guard service.id == currentServiceID else { return }
 
         let webView = webViewManager.getWebView(for: service, sessionIndex: sessionIndex)
         let toolTip = webView.map {
@@ -427,7 +429,7 @@ extension MainWindowController {
 
     func updateSessionSelector() {
         guard let service = currentService() else { return }
-        let index = activeIndicesByURL[service.url] ?? 0
+        let index = activeIndicesByID[service.id] ?? 0
         let segmentIdx = segmentIndex(forSession: index)
 
         for sessionIndex in 0..<10 {

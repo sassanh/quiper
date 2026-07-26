@@ -465,7 +465,7 @@ struct PersistedSettings: Codable {
     var hotkey: HotkeyManager.Configuration?
     var customActions: [CustomAction]?
     var updatePreferences: UpdatePreferences?
-    var serviceZoomLevels: [String: Double]?
+    var serviceZoomLevels: [UUID: Double]?
     var appShortcuts: AppShortcutBindings?
     var sessionDigitsAlternateModifiers: UInt?
     var dockVisibility: DockVisibility?
@@ -498,6 +498,7 @@ struct PersistedSettings: Codable {
     var quiperVersion: String?
     var version: Int? = 1
     private(set) var didDecodeLegacySelectorDisplayMode = false
+    private(set) var didDecodeLegacyServiceIdentifiers = false
 
     enum CodingKeys: String, CodingKey {
         case services, hotkey, customActions, updatePreferences, serviceZoomLevels, appShortcuts
@@ -537,7 +538,7 @@ struct PersistedSettings: Codable {
          hotkey: HotkeyManager.Configuration? = nil,
          customActions: [CustomAction]? = nil,
          updatePreferences: UpdatePreferences? = nil,
-         serviceZoomLevels: [String: Double]? = nil,
+         serviceZoomLevels: [UUID: Double]? = nil,
          appShortcuts: AppShortcutBindings? = nil,
          sessionDigitsAlternateModifiers: UInt? = nil,
          dockVisibility: DockVisibility? = nil,
@@ -614,7 +615,30 @@ struct PersistedSettings: Codable {
         hotkey = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .hotkey)
         customActions = try container.decodeIfPresent([CustomAction].self, forKey: .customActions)
         updatePreferences = try container.decodeIfPresent(UpdatePreferences.self, forKey: .updatePreferences)
-        serviceZoomLevels = try container.decodeIfPresent([String: Double].self, forKey: .serviceZoomLevels)
+        if !container.contains(.serviceZoomLevels) {
+            serviceZoomLevels = nil
+        } else if try container.decodeNil(forKey: .serviceZoomLevels) {
+            serviceZoomLevels = nil
+        } else if let currentZoomLevels = try? container.decode(
+            [UUID: Double].self,
+            forKey: .serviceZoomLevels
+        ) {
+            serviceZoomLevels = currentZoomLevels
+        } else {
+            let legacyZoomLevels = try container.decode(
+                [String: Double].self,
+                forKey: .serviceZoomLevels
+            )
+            var migratedZoomLevels: [UUID: Double] = [:]
+            for (serviceURL, zoomLevel) in legacyZoomLevels {
+                // URL-keyed zoom levels applied to every engine sharing that URL.
+                for service in services where service.url == serviceURL {
+                    migratedZoomLevels[service.id] = zoomLevel
+                }
+            }
+            serviceZoomLevels = migratedZoomLevels
+            didDecodeLegacyServiceIdentifiers = true
+        }
         appShortcuts = try container.decodeIfPresent(AppShortcutBindings.self, forKey: .appShortcuts)
         sessionDigitsAlternateModifiers = try container.decodeIfPresent(UInt.self, forKey: .sessionDigitsAlternateModifiers)
         dockVisibility = try container.decodeIfPresent(DockVisibility.self, forKey: .dockVisibility)
@@ -645,7 +669,19 @@ struct PersistedSettings: Codable {
         showOnAllSpaces = try container.decodeIfPresent(Bool.self, forKey: .showOnAllSpaces)
         settingsColorStyle = try container.decodeIfPresent(SettingsColorStyle.self, forKey: .settingsColorStyle)
         tabSurvivalPolicy = try container.decodeIfPresent(TabSurvivalPolicy.self, forKey: .tabSurvivalPolicy)
-        persistedTabState = try container.decodeIfPresent(PersistedTabState.self, forKey: .persistedTabState)
+        if !container.contains(.persistedTabState) {
+            persistedTabState = nil
+        } else if try container.decodeNil(forKey: .persistedTabState) {
+            persistedTabState = nil
+        } else {
+            let decodedTabState = try PersistedTabState.decode(
+                from: container.superDecoder(forKey: .persistedTabState),
+                services: services
+            )
+            persistedTabState = decodedTabState.state
+            didDecodeLegacyServiceIdentifiers =
+                didDecodeLegacyServiceIdentifiers || decodedTabState.didMigrateLegacyIdentifiers
+        }
         enablePromptHistory = try container.decodeIfPresent(Bool.self, forKey: .enablePromptHistory)
 
         if let style = try container.decodeIfPresent(PromptRecordingIndicatorStyle.self, forKey: .promptRecordingIndicatorStyle) {
@@ -689,18 +725,18 @@ struct PromptHistoryEntry: Codable, Equatable {
 }
 
 struct PersistedTabState: Codable {
-    var activeServiceURL: String?
-    var activeIndicesByURL: [String: Int] = [:]
-    var openTabs: [String: [Int: String]] = [:] // serviceURL -> [sessionIndex: currentURL]
-    var tabTitles: [String: [Int: String]] = [:] // serviceURL -> [sessionIndex: last non-empty title]
-    var tabInputs: [String: [Int: TabInputState]] = [:] // serviceURL -> [sessionIndex: TabInputState]
-    var tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:] // serviceURL -> [sessionIndex: [PromptHistoryEntry]]
-    var tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:] // serviceURL -> [sessionIndex: Bool]
+    var activeServiceID: UUID?
+    var activeIndicesByID: [UUID: Int] = [:]
+    var openTabs: [UUID: [Int: String]] = [:] // serviceID -> [sessionIndex: currentURL]
+    var tabTitles: [UUID: [Int: String]] = [:] // serviceID -> [sessionIndex: last non-empty title]
+    var tabInputs: [UUID: [Int: TabInputState]] = [:] // serviceID -> [sessionIndex: TabInputState]
+    var tabPromptHistories: [UUID: [Int: [PromptHistoryEntry]]] = [:] // serviceID -> [sessionIndex: [PromptHistoryEntry]]
+    var tabPromptHistoryEnabledOverrides: [UUID: [Int: Bool]] = [:] // serviceID -> [sessionIndex: Bool]
     var tabHistory: [TabIdentifier]?
 
     enum CodingKeys: String, CodingKey {
-        case activeServiceURL
-        case activeIndicesByURL
+        case activeServiceID
+        case activeIndicesByID
         case openTabs
         case tabTitles
         case tabInputs
@@ -709,9 +745,9 @@ struct PersistedTabState: Codable {
         case tabHistory
     }
 
-    init(activeServiceURL: String? = nil, activeIndicesByURL: [String: Int] = [:], openTabs: [String: [Int: String]] = [:], tabTitles: [String: [Int: String]] = [:], tabInputs: [String: [Int: TabInputState]] = [:], tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:], tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:], tabHistory: [TabIdentifier]? = nil) {
-        self.activeServiceURL = activeServiceURL
-        self.activeIndicesByURL = activeIndicesByURL
+    init(activeServiceID: UUID? = nil, activeIndicesByID: [UUID: Int] = [:], openTabs: [UUID: [Int: String]] = [:], tabTitles: [UUID: [Int: String]] = [:], tabInputs: [UUID: [Int: TabInputState]] = [:], tabPromptHistories: [UUID: [Int: [PromptHistoryEntry]]] = [:], tabPromptHistoryEnabledOverrides: [UUID: [Int: Bool]] = [:], tabHistory: [TabIdentifier]? = nil) {
+        self.activeServiceID = activeServiceID
+        self.activeIndicesByID = activeIndicesByID
         self.openTabs = openTabs
         self.tabTitles = tabTitles
         self.tabInputs = tabInputs
@@ -722,13 +758,203 @@ struct PersistedTabState: Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        activeServiceURL = try container.decodeIfPresent(String.self, forKey: .activeServiceURL)
-        activeIndicesByURL = try container.decodeIfPresent([String: Int].self, forKey: .activeIndicesByURL) ?? [:]
-        openTabs = try container.decodeIfPresent([String: [Int: String]].self, forKey: .openTabs) ?? [:]
-        tabTitles = try container.decodeIfPresent([String: [Int: String]].self, forKey: .tabTitles) ?? [:]
-        tabInputs = try container.decodeIfPresent([String: [Int: TabInputState]].self, forKey: .tabInputs) ?? [:]
-        tabPromptHistories = try container.decodeIfPresent([String: [Int: [PromptHistoryEntry]]].self, forKey: .tabPromptHistories) ?? [:]
-        tabPromptHistoryEnabledOverrides = try container.decodeIfPresent([String: [Int: Bool]].self, forKey: .tabPromptHistoryEnabledOverrides) ?? [:]
+        activeServiceID = try container.decodeIfPresent(UUID.self, forKey: .activeServiceID)
+        activeIndicesByID = try container.decodeIfPresent([UUID: Int].self, forKey: .activeIndicesByID) ?? [:]
+        openTabs = try container.decodeIfPresent([UUID: [Int: String]].self, forKey: .openTabs) ?? [:]
+        tabTitles = try container.decodeIfPresent([UUID: [Int: String]].self, forKey: .tabTitles) ?? [:]
+        tabInputs = try container.decodeIfPresent([UUID: [Int: TabInputState]].self, forKey: .tabInputs) ?? [:]
+        tabPromptHistories = try container.decodeIfPresent([UUID: [Int: [PromptHistoryEntry]]].self, forKey: .tabPromptHistories) ?? [:]
+        tabPromptHistoryEnabledOverrides = try container.decodeIfPresent([UUID: [Int: Bool]].self, forKey: .tabPromptHistoryEnabledOverrides) ?? [:]
         tabHistory = try container.decodeIfPresent([TabIdentifier].self, forKey: .tabHistory)
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case activeServiceURL
+        case activeIndicesByURL
+        case openTabs
+        case tabTitles
+        case tabInputs
+        case tabPromptHistories
+        case tabPromptHistoryEnabledOverrides
+        case tabHistory
+    }
+
+    private struct LegacyTabIdentifier: Decodable {
+        let serviceURL: String
+        let sessionIndex: Int
+    }
+
+    static func decode(
+        from decoder: Decoder,
+        services: [Service]
+    ) throws -> (state: PersistedTabState, didMigrateLegacyIdentifiers: Bool) {
+        let currentContainer = try decoder.container(keyedBy: CodingKeys.self)
+        let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        var didMigrateLegacyIdentifiers =
+            legacyContainer.contains(.activeServiceURL)
+            || legacyContainer.contains(.activeIndicesByURL)
+
+        let activeServiceID: UUID?
+        if let currentServiceID = try currentContainer.decodeIfPresent(
+            UUID.self,
+            forKey: .activeServiceID
+        ) {
+            activeServiceID = currentServiceID
+        } else if let legacyServiceURL = try legacyContainer.decodeIfPresent(
+            String.self,
+            forKey: .activeServiceURL
+        ) {
+            activeServiceID = services.first(where: { $0.url == legacyServiceURL })?.id
+            didMigrateLegacyIdentifiers = true
+        } else {
+            activeServiceID = nil
+        }
+
+        let activeIndices = try decodeServiceDictionary(
+            currentType: [UUID: Int].self,
+            legacyType: [String: Int].self,
+            currentContainer: currentContainer,
+            currentKey: .activeIndicesByID,
+            legacyContainer: legacyContainer,
+            legacyKey: .activeIndicesByURL,
+            services: services
+        )
+        didMigrateLegacyIdentifiers =
+            didMigrateLegacyIdentifiers || activeIndices.didMigrateLegacyIdentifiers
+
+        let openTabs = try decodeServiceDictionary(
+            currentType: [UUID: [Int: String]].self,
+            legacyType: [String: [Int: String]].self,
+            currentContainer: currentContainer,
+            currentKey: .openTabs,
+            legacyContainer: legacyContainer,
+            legacyKey: .openTabs,
+            services: services
+        )
+        didMigrateLegacyIdentifiers =
+            didMigrateLegacyIdentifiers || openTabs.didMigrateLegacyIdentifiers
+
+        let tabTitles = try decodeServiceDictionary(
+            currentType: [UUID: [Int: String]].self,
+            legacyType: [String: [Int: String]].self,
+            currentContainer: currentContainer,
+            currentKey: .tabTitles,
+            legacyContainer: legacyContainer,
+            legacyKey: .tabTitles,
+            services: services
+        )
+        didMigrateLegacyIdentifiers =
+            didMigrateLegacyIdentifiers || tabTitles.didMigrateLegacyIdentifiers
+
+        let tabInputs = try decodeServiceDictionary(
+            currentType: [UUID: [Int: TabInputState]].self,
+            legacyType: [String: [Int: TabInputState]].self,
+            currentContainer: currentContainer,
+            currentKey: .tabInputs,
+            legacyContainer: legacyContainer,
+            legacyKey: .tabInputs,
+            services: services
+        )
+        didMigrateLegacyIdentifiers =
+            didMigrateLegacyIdentifiers || tabInputs.didMigrateLegacyIdentifiers
+
+        let tabPromptHistories = try decodeServiceDictionary(
+            currentType: [UUID: [Int: [PromptHistoryEntry]]].self,
+            legacyType: [String: [Int: [PromptHistoryEntry]]].self,
+            currentContainer: currentContainer,
+            currentKey: .tabPromptHistories,
+            legacyContainer: legacyContainer,
+            legacyKey: .tabPromptHistories,
+            services: services
+        )
+        didMigrateLegacyIdentifiers =
+            didMigrateLegacyIdentifiers || tabPromptHistories.didMigrateLegacyIdentifiers
+
+        let tabPromptHistoryEnabledOverrides = try decodeServiceDictionary(
+            currentType: [UUID: [Int: Bool]].self,
+            legacyType: [String: [Int: Bool]].self,
+            currentContainer: currentContainer,
+            currentKey: .tabPromptHistoryEnabledOverrides,
+            legacyContainer: legacyContainer,
+            legacyKey: .tabPromptHistoryEnabledOverrides,
+            services: services
+        )
+        didMigrateLegacyIdentifiers =
+            didMigrateLegacyIdentifiers
+            || tabPromptHistoryEnabledOverrides.didMigrateLegacyIdentifiers
+
+        let tabHistory: [TabIdentifier]?
+        if !currentContainer.contains(.tabHistory) {
+            tabHistory = nil
+        } else if try currentContainer.decodeNil(forKey: .tabHistory) {
+            tabHistory = nil
+        } else if let currentTabHistory = try? currentContainer.decode(
+            [TabIdentifier].self,
+            forKey: .tabHistory
+        ) {
+            tabHistory = currentTabHistory
+        } else {
+            let legacyTabHistory = try legacyContainer.decode(
+                [LegacyTabIdentifier].self,
+                forKey: .tabHistory
+            )
+            tabHistory = legacyTabHistory.compactMap { tab in
+                guard let serviceID = services.first(where: { $0.url == tab.serviceURL })?.id else {
+                    return nil
+                }
+                return TabIdentifier(serviceID: serviceID, sessionIndex: tab.sessionIndex)
+            }
+            didMigrateLegacyIdentifiers = true
+        }
+
+        return (
+            PersistedTabState(
+                activeServiceID: activeServiceID,
+                activeIndicesByID: activeIndices.value,
+                openTabs: openTabs.value,
+                tabTitles: tabTitles.value,
+                tabInputs: tabInputs.value,
+                tabPromptHistories: tabPromptHistories.value,
+                tabPromptHistoryEnabledOverrides: tabPromptHistoryEnabledOverrides.value,
+                tabHistory: tabHistory
+            ),
+            didMigrateLegacyIdentifiers
+        )
+    }
+
+    private static func decodeServiceDictionary<Value: Decodable>(
+        currentType: [UUID: Value].Type,
+        legacyType: [String: Value].Type,
+        currentContainer: KeyedDecodingContainer<CodingKeys>,
+        currentKey: CodingKeys,
+        legacyContainer: KeyedDecodingContainer<LegacyCodingKeys>,
+        legacyKey: LegacyCodingKeys,
+        services: [Service]
+    ) throws -> (value: [UUID: Value], didMigrateLegacyIdentifiers: Bool) {
+        guard currentContainer.contains(currentKey)
+            || legacyContainer.contains(legacyKey) else {
+            return ([:], false)
+        }
+
+        if currentContainer.contains(currentKey),
+           !(try currentContainer.decodeNil(forKey: currentKey)),
+           let currentValue = try? currentContainer.decode(currentType, forKey: currentKey) {
+            return (currentValue, false)
+        }
+
+        guard legacyContainer.contains(legacyKey),
+              !(try legacyContainer.decodeNil(forKey: legacyKey)) else {
+            return ([:], false)
+        }
+
+        let legacyValue = try legacyContainer.decode(legacyType, forKey: legacyKey)
+        var migratedValue: [UUID: Value] = [:]
+        for (serviceURL, value) in legacyValue {
+            // Legacy tab state selected the first engine matching a URL.
+            if let serviceID = services.first(where: { $0.url == serviceURL })?.id {
+                migratedValue[serviceID] = value
+            }
+        }
+        return (migratedValue, true)
     }
 }

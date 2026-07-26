@@ -113,8 +113,8 @@ final class TabHistoryHUDView: NSView {
         if wc.isCyclingHistory {
             activeTab = wc.highlightedTab
         } else if let svc = wc.currentService() {
-            let activeIndex = wc.activeIndicesByURL[svc.url] ?? 0
-            activeTab = TabIdentifier(serviceURL: svc.url, sessionIndex: activeIndex)
+            let activeIndex = wc.activeIndicesByID[svc.id] ?? 0
+            activeTab = TabIdentifier(serviceID: svc.id, sessionIndex: activeIndex)
         } else {
             activeTab = nil
         }
@@ -174,7 +174,7 @@ final class TabHistoryHUDView: NSView {
         }
         
         // Find corresponding service
-        let service = wc?.services.first { $0.url == tab.serviceURL }
+        let service = wc?.services.first { $0.id == tab.serviceID }
         let tabNum = tab.sessionIndex == 9 ? 10 : tab.sessionIndex + 1
         
         let pageTitle: String

@@ -75,7 +75,7 @@ final class PromptHistoryHUDView: NSView {
     
     private func setupContainerCard() {
         guard let wc = wc, let service = wc.currentService() else { return }
-        let sessionIdx = wc.activeIndicesByURL[service.url] ?? 0
+        let sessionIdx = wc.activeIndicesByID[service.id] ?? 0
         
         containerView.wantsLayer = true
         containerView.layer?.backgroundColor = NSColor.clear.cgColor
@@ -135,11 +135,11 @@ final class PromptHistoryHUDView: NSView {
         containerView.addSubview(controlBar)
         
         // Record History switch
-        let isRecordEnabled = wc.webViewManager?.isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIdx) ?? true
+        let isRecordEnabled = wc.webViewManager?.isPromptHistoryEnabled(for: service.id, sessionIndex: sessionIdx) ?? true
         recordSwitch.isOn = isRecordEnabled
         recordSwitch.onToggle = { [weak self, service, sessionIdx] isOn in
             guard let self = self else { return }
-            self.wc?.webViewManager?.setPromptHistoryEnabled(isOn, for: service.url, sessionIndex: sessionIdx)
+            self.wc?.webViewManager?.setPromptHistoryEnabled(isOn, for: service.id, sessionIndex: sessionIdx)
             self.wc?.saveTabsState()
         }
         recordSwitch.translatesAutoresizingMaskIntoConstraints = false
@@ -151,7 +151,7 @@ final class PromptHistoryHUDView: NSView {
         clearAllButton.shortcut = "⌘K"
         clearAllButton.onClick = { [weak self, service, sessionIdx] in
             guard let self = self else { return }
-            self.wc?.webViewManager?.clearPromptHistory(for: service.url, sessionIndex: sessionIdx)
+            self.wc?.webViewManager?.clearPromptHistory(for: service.id, sessionIndex: sessionIdx)
             self.wc?.saveTabsState()
             self.reloadEntries()
         }
@@ -254,8 +254,8 @@ final class PromptHistoryHUDView: NSView {
     
     func reloadEntries() {
         guard let wc = wc, let service = wc.currentService() else { return }
-        let sessionIdx = wc.activeIndicesByURL[service.url] ?? 0
-        let history = wc.webViewManager?.getPromptHistory(for: service.url, sessionIndex: sessionIdx) ?? []
+        let sessionIdx = wc.activeIndicesByID[service.id] ?? 0
+        let history = wc.webViewManager?.getPromptHistory(for: service.id, sessionIndex: sessionIdx) ?? []
         
         // Clear old stack subviews
         for view in stackView.arrangedSubviews {
@@ -296,9 +296,9 @@ final class PromptHistoryHUDView: NSView {
     
     private func selectEntry(_ entry: PromptHistoryEntry) {
         guard let wc = wc, let service = wc.currentService() else { return }
-        let sessionIdx = wc.activeIndicesByURL[service.url] ?? 0
+        let sessionIdx = wc.activeIndicesByID[service.id] ?? 0
         let inputState = TabInputState(text: entry.text, isContentEditable: false, start: entry.text.count, end: entry.text.count)
-        wc.webViewManager?.setTabInputState(inputState, for: service.url, sessionIndex: sessionIdx)
+        wc.webViewManager?.setTabInputState(inputState, for: service.id, sessionIndex: sessionIdx)
         wc.focusInputInActiveWebview()
         hide()
     }
@@ -313,12 +313,12 @@ final class PromptHistoryHUDView: NSView {
     private func deleteEntry(_ entry: PromptHistoryEntry) {
         QuickTooltip.shared.hideImmediately()
         guard let wc = wc, let service = wc.currentService() else { return }
-        let sessionIdx = wc.activeIndicesByURL[service.url] ?? 0
+        let sessionIdx = wc.activeIndicesByID[service.id] ?? 0
         
         // Retain current highlight offset or adjust it
         let selectedItemText = highlightedIndex >= 0 && highlightedIndex < filteredItems.count ? filteredItems[highlightedIndex].entry.text : nil
         
-        wc.webViewManager?.deletePromptHistoryEntry(entry, for: service.url, sessionIndex: sessionIdx)
+        wc.webViewManager?.deletePromptHistoryEntry(entry, for: service.id, sessionIndex: sessionIdx)
         wc.saveTabsState()
         
         // Reload and restore highlighted index if appropriate
@@ -424,11 +424,11 @@ final class PromptHistoryHUDView: NSView {
     
     private func toggleRecordHistory() {
         guard let wc = wc, let service = wc.currentService() else { return }
-        let sessionIdx = wc.activeIndicesByURL[service.url] ?? 0
-        let currentVal = wc.webViewManager?.isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIdx) ?? true
+        let sessionIdx = wc.activeIndicesByID[service.id] ?? 0
+        let currentVal = wc.webViewManager?.isPromptHistoryEnabled(for: service.id, sessionIndex: sessionIdx) ?? true
         let newVal = !currentVal
         recordSwitch.isOn = newVal
-        wc.webViewManager?.setPromptHistoryEnabled(newVal, for: service.url, sessionIndex: sessionIdx)
+        wc.webViewManager?.setPromptHistoryEnabled(newVal, for: service.id, sessionIndex: sessionIdx)
         wc.saveTabsState()
     }
     
@@ -483,20 +483,20 @@ final class PromptHistoryHUDView: NSView {
         
         // Refresh dynamic configuration/data
         if let wc = wc, let service = wc.currentService() {
-            let sessionIdx = wc.activeIndicesByURL[service.url] ?? 0
+            let sessionIdx = wc.activeIndicesByID[service.id] ?? 0
             
-            let isRecordEnabled = wc.webViewManager?.isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIdx) ?? true
+            let isRecordEnabled = wc.webViewManager?.isPromptHistoryEnabled(for: service.id, sessionIndex: sessionIdx) ?? true
             recordSwitch.isOn = isRecordEnabled
             
             recordSwitch.onToggle = { [weak self, service, sessionIdx] isOn in
                 guard let self = self else { return }
-                self.wc?.webViewManager?.setPromptHistoryEnabled(isOn, for: service.url, sessionIndex: sessionIdx)
+            self.wc?.webViewManager?.setPromptHistoryEnabled(isOn, for: service.id, sessionIndex: sessionIdx)
                 self.wc?.saveTabsState()
             }
             
             clearAllButton.onClick = { [weak self, service, sessionIdx] in
                 guard let self = self else { return }
-                self.wc?.webViewManager?.clearPromptHistory(for: service.url, sessionIndex: sessionIdx)
+            self.wc?.webViewManager?.clearPromptHistory(for: service.id, sessionIndex: sessionIdx)
                 self.wc?.saveTabsState()
                 self.reloadEntries()
             }
