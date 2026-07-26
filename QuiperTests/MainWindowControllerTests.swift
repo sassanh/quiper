@@ -14,20 +14,20 @@ final class MainWindowControllerTests: XCTestCase {
         let controller = MainWindowController(services: [service1, service2])
         
         // When selecting existing service
-        let result1 = controller.selectService(withURL: "https://example.com/2")
+        let result1 = controller.selectService(withID: service2.id)
         
         // Then
         XCTAssertTrue(result1)
-        XCTAssertEqual(controller.activeServiceURL, "https://example.com/2")
+        XCTAssertEqual(controller.currentServiceID, service2.id)
         XCTAssertEqual(controller.currentServiceName, "Service 2")
         
         // When selecting non-existent service
-        let result2 = controller.selectService(withURL: "https://example.com/3")
+        let result2 = controller.selectService(withID: UUID())
         
         // Then
         XCTAssertFalse(result2)
         // Should remain on previous selection
-        XCTAssertEqual(controller.activeServiceURL, "https://example.com/2")
+        XCTAssertEqual(controller.currentServiceID, service2.id)
     }
 
     func testTrashSessionButtonInitialization() {
@@ -66,15 +66,15 @@ final class MainWindowControllerTests: XCTestCase {
         let controller = MainWindowController(services: [service])
         
         // Default should follow Settings (true)
-        XCTAssertTrue(controller.webViewManager.isPromptHistoryEnabled(for: service.url, sessionIndex: 0))
+        XCTAssertTrue(controller.webViewManager.isPromptHistoryEnabled(for: service.id, sessionIndex: 0))
         
         // Override to false
-        controller.webViewManager.setPromptHistoryEnabled(false, for: service.url, sessionIndex: 0)
-        XCTAssertFalse(controller.webViewManager.isPromptHistoryEnabled(for: service.url, sessionIndex: 0))
+        controller.webViewManager.setPromptHistoryEnabled(false, for: service.id, sessionIndex: 0)
+        XCTAssertFalse(controller.webViewManager.isPromptHistoryEnabled(for: service.id, sessionIndex: 0))
         
         // Override to true
-        controller.webViewManager.setPromptHistoryEnabled(true, for: service.url, sessionIndex: 0)
-        XCTAssertTrue(controller.webViewManager.isPromptHistoryEnabled(for: service.url, sessionIndex: 0))
+        controller.webViewManager.setPromptHistoryEnabled(true, for: service.id, sessionIndex: 0)
+        XCTAssertTrue(controller.webViewManager.isPromptHistoryEnabled(for: service.id, sessionIndex: 0))
     }
 
     func testPromptHistoryClearing() {
@@ -82,13 +82,13 @@ final class MainWindowControllerTests: XCTestCase {
         let controller = MainWindowController(services: [service])
         
         let entry = PromptHistoryEntry(text: "Test Prompt", timestamp: Date())
-        controller.webViewManager.addPromptHistoryEntry(entry, for: service.url, sessionIndex: 0)
+        controller.webViewManager.addPromptHistoryEntry(entry, for: service.id, sessionIndex: 0)
         
-        XCTAssertEqual(controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).count, 1)
-        XCTAssertEqual(controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).first?.text, "Test Prompt")
+        XCTAssertEqual(controller.webViewManager.getPromptHistory(for: service.id, sessionIndex: 0).count, 1)
+        XCTAssertEqual(controller.webViewManager.getPromptHistory(for: service.id, sessionIndex: 0).first?.text, "Test Prompt")
         
-        controller.webViewManager.clearPromptHistory(for: service.url, sessionIndex: 0)
-        XCTAssertTrue(controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).isEmpty)
+        controller.webViewManager.clearPromptHistory(for: service.id, sessionIndex: 0)
+        XCTAssertTrue(controller.webViewManager.getPromptHistory(for: service.id, sessionIndex: 0).isEmpty)
     }
 
     func testPromptHistoryLimitTrimsNewRestoredAndExistingEntries() {
@@ -103,30 +103,30 @@ final class MainWindowControllerTests: XCTestCase {
 
         for index in 1...5 {
             let entry = PromptHistoryEntry(text: "Prompt \(index)", timestamp: Date(timeIntervalSince1970: TimeInterval(index)))
-            controller.webViewManager.addPromptHistoryEntry(entry, for: service.url, sessionIndex: 0)
+            controller.webViewManager.addPromptHistoryEntry(entry, for: service.id, sessionIndex: 0)
         }
 
         XCTAssertEqual(
-            controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).map(\.text),
+            controller.webViewManager.getPromptHistory(for: service.id, sessionIndex: 0).map(\.text),
             ["Prompt 3", "Prompt 4", "Prompt 5"]
         )
 
         let restoredEntries = (1...5).map {
             PromptHistoryEntry(text: "Restored \($0)", timestamp: Date(timeIntervalSince1970: TimeInterval($0)))
         }
-        controller.webViewManager.restoreTabPromptHistories([service.url: [1: restoredEntries]])
+        controller.webViewManager.restoreTabPromptHistories([service.id: [1: restoredEntries]])
         XCTAssertEqual(
-            controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 1).map(\.text),
+            controller.webViewManager.getPromptHistory(for: service.id, sessionIndex: 1).map(\.text),
             ["Restored 3", "Restored 4", "Restored 5"]
         )
 
         Settings.shared.promptHistoryLimit = 2
         XCTAssertEqual(
-            controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).map(\.text),
+            controller.webViewManager.getPromptHistory(for: service.id, sessionIndex: 0).map(\.text),
             ["Prompt 4", "Prompt 5"]
         )
         XCTAssertEqual(
-            controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 1).map(\.text),
+            controller.webViewManager.getPromptHistory(for: service.id, sessionIndex: 1).map(\.text),
             ["Restored 4", "Restored 5"]
         )
     }
@@ -151,7 +151,7 @@ final class MainWindowControllerTests: XCTestCase {
         
         let mockWebView = MockWebView()
         controller.webViewManager.webviewsByID[service.id] = [0: mockWebView]
-        controller.activeIndicesByURL[service.url] = 0
+        controller.activeIndicesByID[service.id] = 0
         
         // Scenario 1: WebView is loading -> Escape key should stop loading and return nil (swallowed)
         mockWebView.mockIsLoading = true
@@ -188,7 +188,7 @@ final class MainWindowControllerTests: XCTestCase {
         
         // 1. When selectionClear trigger is disabled (default):
         Settings.shared.promptHistoryRecordOnSelectionClear = false
-        controller.webViewManager.clearPromptHistory(for: service.url, sessionIndex: 0)
+        controller.webViewManager.clearPromptHistory(for: service.id, sessionIndex: 0)
         
         let payloadDisabled: [String: Any] = [
             "text": "new text",
@@ -201,7 +201,7 @@ final class MainWindowControllerTests: XCTestCase {
         ]
         
         controller.webViewManager.mockReceiveInputStateMessage(payload: payloadDisabled, service: service, sessionIndex: 0)
-        XCTAssertTrue(controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0).isEmpty)
+        XCTAssertTrue(controller.webViewManager.getPromptHistory(for: service.id, sessionIndex: 0).isEmpty)
         
         // 2. When selectionClear trigger is enabled:
         Settings.shared.promptHistoryRecordOnSelectionClear = true
@@ -216,7 +216,7 @@ final class MainWindowControllerTests: XCTestCase {
         ]
         
         controller.webViewManager.mockReceiveInputStateMessage(payload: payloadEnabled, service: service, sessionIndex: 0)
-        let history = controller.webViewManager.getPromptHistory(for: service.url, sessionIndex: 0)
+        let history = controller.webViewManager.getPromptHistory(for: service.id, sessionIndex: 0)
         XCTAssertEqual(history.count, 1)
         XCTAssertEqual(history.first?.text, "previous select-all prompt")
         

@@ -501,7 +501,7 @@ final class EmptyStateView: NSView {
 
     func updateShortcuts(services: [Service],
                          appShortcuts: AppShortcutBindings,
-                         openSessions: [String: [Int: String]] = [:],
+                         openSessions: [UUID: [Int: String]] = [:],
                          activeEngine: Service? = nil) {
         
         if let engine = activeEngine {
@@ -578,7 +578,7 @@ final class EmptyStateView: NSView {
         
         for (i, service) in services.enumerated() where i < 10 {
             let isLocked = service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
-            let openSessionDict = isLocked ? [:] : (openSessions[service.url] ?? [:])
+            let openSessionDict = isLocked ? [:] : (openSessions[service.id] ?? [:])
             let hasSessions = !openSessionDict.isEmpty
             
             let digit = (i + 1) % 10

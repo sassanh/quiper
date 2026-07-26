@@ -8,7 +8,6 @@ protocol MainWindowControlling: AnyObject {
     func hide()
     func toggleInspector()
     var window: NSWindow? { get }
-    var activeServiceURL: String? { get }
     var activeServiceID: UUID? { get }
     var activeWebView: WKWebView? { get }
     func focusInputInActiveWebview()
@@ -17,7 +16,7 @@ protocol MainWindowControlling: AnyObject {
     func setShortcutsEnabled(_ enabled: Bool)
     func performCustomAction(_ action: CustomAction)
     func selectService(at index: Int)
-    func selectService(withURL url: String) -> Bool
+    func selectService(withID id: UUID) -> Bool
     func switchSession(to index: Int)
     func showQuitOverlay()
     func saveTabsState()

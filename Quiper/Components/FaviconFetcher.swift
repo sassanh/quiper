@@ -293,11 +293,27 @@ final class FaviconFetcher {
         
         guard let tiffData = resizedImage.tiffRepresentation,
               let bitmapRep = NSBitmapImageRep(data: tiffData),
+              hasVisiblePixels(bitmapRep),
               let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
             return nil
         }
         
         return pngData.base64EncodedString()
+    }
+
+    @MainActor
+    private static func hasVisiblePixels(_ bitmapRep: NSBitmapImageRep) -> Bool {
+        guard bitmapRep.hasAlpha else { return true }
+
+        for y in 0..<bitmapRep.pixelsHigh {
+            for x in 0..<bitmapRep.pixelsWide {
+                if bitmapRep.colorAt(x: x, y: y)?.alphaComponent ?? 0 > 0.01 {
+                    return true
+                }
+            }
+        }
+
+        return false
     }
 }
 

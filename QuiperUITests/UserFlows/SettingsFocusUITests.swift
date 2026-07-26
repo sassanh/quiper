@@ -69,7 +69,7 @@ class SettingsFocusUITests: BaseUITest {
         // Open Settings
         openSettings()
         
-        let settingsWindow = app.windows.containing(.radioButton, identifier: "gear").firstMatch
+        let settingsWindow = app.windows["Quiper Settings"]
         XCTAssertTrue(settingsWindow.waitForExistence(timeout: 3.0), "Settings window should open")
         
         // Close Settings via the close button
@@ -111,7 +111,7 @@ class SettingsFocusUITests: BaseUITest {
         // Open Settings
         openSettings()
         
-        let settingsWindow = app.windows.containing(.radioButton, identifier: "gear").firstMatch
+        let settingsWindow = app.windows["Quiper Settings"]
         XCTAssertTrue(settingsWindow.waitForExistence(timeout: 3.0), "Settings window should open")
         
         // Close Settings via the keyboard shortcut Cmd+W

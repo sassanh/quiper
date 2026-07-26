@@ -45,7 +45,6 @@ class MockMainWindowController: MainWindowControlling {
     var toggleInspectorCalled = false
     var window: NSWindow? = NSWindow()
     var currentWebViewURLToReturn: URL? = URL(string: "https://example.com")
-    var activeServiceURL: String? = "https://example.com"
     var activeServiceID: UUID?
     var activeWebView: WKWebView? = nil
     var focusInputInActiveWebviewCalled = false
@@ -54,7 +53,7 @@ class MockMainWindowController: MainWindowControlling {
     var setShortcutsEnabledCalled = false
     var performCustomActionCalled = false
     var selectServiceAtIndex: Int?
-    var selectServiceWithURLCalled = false
+    var selectServiceWithIDCalled = false
     var switchSessionCalled = false
     var showQuitOverlayCalled = false
     var saveTabsStateCalled = false
@@ -103,8 +102,8 @@ class MockMainWindowController: MainWindowControlling {
         selectServiceAtIndex = index
     }
 
-    func selectService(withURL url: String) -> Bool {
-        selectServiceWithURLCalled = true
+    func selectService(withID id: UUID) -> Bool {
+        selectServiceWithIDCalled = true
         return true
     }
 
@@ -246,4 +245,3 @@ final class AppControllerTests: XCTestCase {
         appController.uninstallFromLogin(nil)
     }
 }
-

@@ -6,6 +6,7 @@ enum PersistedSettingsMigration: Hashable, Sendable {
     case templateActionScriptSync
     case engineShortcutToggle
     case selectorDisplayModes
+    case serviceIdentifiers
 }
 
 enum PersistedSettingsMigrationPresentation: Sendable {

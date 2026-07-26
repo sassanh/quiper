@@ -49,11 +49,14 @@ final class MainWindowPositionUITests: BaseUITest {
         let relY = midY - windowOrigin.y
         
         // Create coordinate relative to the Window's top-left
-        let startCoord = mainWindow.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0)).withOffset(CGVector(dx: relX, dy: relY))
+        let windowAnchor = mainWindow.coordinate(withNormalizedOffset: .zero)
+        let startCoord = windowAnchor.withOffset(CGVector(dx: relX, dy: relY))
         
         // Drag vector
         let dragVector = CGVector(dx: 150, dy: 100)
-        let endCoord = startCoord.withOffset(dragVector)
+        let endCoord = windowAnchor.withOffset(
+            CGVector(dx: relX + dragVector.dx, dy: relY + dragVector.dy)
+        )
         
         startCoord.press(forDuration: 0.5, thenDragTo: endCoord)
         
@@ -81,8 +84,11 @@ final class MainWindowPositionUITests: BaseUITest {
         let resetDeltaY = targetY - finalFrame.origin.y
         
         // Use relative start coord again (same spot on window, even though window moved)
-        let resetSourceCoord = mainWindow.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0)).withOffset(CGVector(dx: relX, dy: relY))
-        let resetTargetCoord = resetSourceCoord.withOffset(CGVector(dx: resetDeltaX, dy: resetDeltaY))
+        let resetAnchor = mainWindow.coordinate(withNormalizedOffset: .zero)
+        let resetSourceCoord = resetAnchor.withOffset(CGVector(dx: relX, dy: relY))
+        let resetTargetCoord = resetAnchor.withOffset(
+            CGVector(dx: relX + resetDeltaX, dy: relY + resetDeltaY)
+        )
         
         resetSourceCoord.press(forDuration: 0.5, thenDragTo: resetTargetCoord)
         

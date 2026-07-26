@@ -2,7 +2,7 @@ import AppKit
 import WebKit
 
 struct TabIdentifier: Equatable, Codable, Hashable {
-    let serviceURL: String
+    let serviceID: UUID
     let sessionIndex: Int
 }
 
@@ -10,8 +10,8 @@ extension MainWindowController {
     
     // MARK: - Session & Service Management
     
-    func selectService(withURL url: String) -> Bool {
-        guard let index = services.firstIndex(where: { $0.url == url }) else { return false }
+    func selectService(withID id: UUID) -> Bool {
+        guard let index = services.firstIndex(where: { $0.id == id }) else { return false }
         selectService(at: index)
         return true
     }
@@ -27,22 +27,22 @@ extension MainWindowController {
         guard services.indices.contains(index) else { return }
         
         if let previousService = currentService() {
-            if services[index].url != previousService.url {
+            if services[index].id != previousService.id {
                 handleSwitchAway(from: previousService)
             }
         }
         
         currentServiceName = services[index].name
-        currentServiceURL = services[index].url
+        currentServiceID = services[index].id
         
         serviceSelector?.selectedSegment = index
         collapsibleServiceSelector?.selectedSegment = index
-        
+        let activeServiceLabel = "Active: \(services[index].name)"
+        serviceSelector?.setAccessibilityLabel(activeServiceLabel)
+        collapsibleServiceSelector?.setAccessibilityLabel(activeServiceLabel)
+
         if let sel = activeServiceSelector {
             NSAccessibility.post(element: sel, notification: .valueChanged)
-            if let combo = sel as? SegmentedControl {
-                 combo.setAccessibilityLabel("Active: \(services[index].name)")
-            }
         }
         
         updateActiveWebview(focusWebView: focusWebView)
@@ -70,13 +70,13 @@ extension MainWindowController {
         }
         
         let bounded = max(0, min(index, 9))
-        activeIndicesByURL[service.url] = bounded
+        activeIndicesByID[service.id] = bounded
         
         let segmentIdx = segmentIndex(forSession: bounded)
         sessionSelector?.selectedSegment = segmentIdx
         collapsibleSessionSelector?.selectedSegment = segmentIdx
         
-        if let svcIndex = services.firstIndex(where: { $0.url == service.url }) {
+        if let svcIndex = services.firstIndex(where: { $0.id == service.id }) {
             serviceSelector?.selectedSegment = svcIndex
             collapsibleServiceSelector?.selectedSegment = svcIndex
         }
@@ -94,7 +94,7 @@ extension MainWindowController {
     }
 
     func reloadServices() {
-        reloadServices(nil)
+        reloadServices(Settings.shared.services)
     }
 
     func reloadServices(_ services: [Service]? = nil) {
@@ -103,16 +103,16 @@ extension MainWindowController {
     }
 
     private func updateServices(newServices: [Service]) {
-        let incomingURLs = Set(newServices.map { $0.url })
-        let existingURLs = Set(activeIndicesByURL.keys)
+        let incomingIDs = Set(newServices.map { $0.id })
+        let existingIDs = Set(activeIndicesByID.keys)
 
-        let removedURLs = existingURLs.subtracting(incomingURLs)
-        for url in removedURLs {
-            activeIndicesByURL.removeValue(forKey: url)
+        let removedIDs = existingIDs.subtracting(incomingIDs)
+        for id in removedIDs {
+            activeIndicesByID.removeValue(forKey: id)
         }
         
-        for service in newServices where activeIndicesByURL[service.url] == nil {
-             activeIndicesByURL[service.url] = 0
+        for service in newServices where activeIndicesByID[service.id] == nil {
+             activeIndicesByID[service.id] = 0
         }
 
         webViewManager.updateServices(newServices)
@@ -150,26 +150,25 @@ extension MainWindowController {
     }
 
     func currentService() -> Service? {
-        if let url = currentServiceURL,
-           let match = services.first(where: { $0.url == url }) {
+        if let currentID = currentServiceID,
+           let match = services.first(where: { $0.id == currentID }) {
             currentServiceName = match.name
             return match
         }
         if let name = currentServiceName,
            let match = services.first(where: { $0.name == name }) {
-            currentServiceURL = match.url
+            currentServiceID = match.id
             return match
         }
         currentServiceName = services.first?.name
-        currentServiceURL = services.first?.url
+        currentServiceID = services.first?.id
         return services.first
     }
 
     func updateActiveWebview(focusWebView: Bool = true, forceCreate: Bool = false) {
         guard let service = currentService(), webViewManager != nil else { return }
-        
         if let oldTab = lastActiveTab,
-           let oldService = services.first(where: { $0.url == oldTab.serviceURL }),
+           let oldService = services.first(where: { $0.id == oldTab.serviceID }),
            let oldWV = webViewManager.getWebView(for: oldService, sessionIndex: oldTab.sessionIndex) {
             oldWV.takeSnapshot(with: nil) { [weak self] image, error in
                 guard let img = image, error == nil else { return }
@@ -180,13 +179,13 @@ extension MainWindowController {
         }
         
         tabHistory = tabHistory.filter { tab in
-            guard let svc = services.first(where: { $0.url == tab.serviceURL }) else { return false }
+            guard let svc = services.first(where: { $0.id == tab.serviceID }) else { return false }
             return webViewManager.getWebView(for: svc, sessionIndex: tab.sessionIndex) != nil
         }
         
-        let activeIndex = activeIndicesByURL[service.url] ?? 0
+        let activeIndex = activeIndicesByID[service.id] ?? 0
         
-        let currentTab = TabIdentifier(serviceURL: service.url, sessionIndex: activeIndex)
+        let currentTab = TabIdentifier(serviceID: service.id, sessionIndex: activeIndex)
         if lastActiveTab != currentTab {
             if !isCyclingHistory {
                 tabHistory.removeAll { $0 == currentTab }
@@ -216,8 +215,8 @@ extension MainWindowController {
         
         webViewManager.showSession(activeWebview)
         
-        if let zoom = Settings.shared.serviceZoomLevels[service.url] {
-             webViewManager.applyZoom(zoom, for: service.url)
+        if let zoom = Settings.shared.serviceZoomLevels[service.id] {
+            webViewManager.applyZoom(zoom, for: service.id)
         }
         
         updateTitleLabel(from: activeWebview)
@@ -233,14 +232,14 @@ extension MainWindowController {
     
     func stepSession(by delta: Int) {
         guard let service = currentService() else { return }
-        let current = activeIndicesByURL[service.url] ?? 0
+        let current = activeIndicesByID[service.id] ?? 0
         let next = (current + delta + 10) % 10
         switchSession(to: next)
     }
 
     func stepService(by delta: Int) {
         guard !services.isEmpty else { return }
-        let currentIndex = services.firstIndex(where: { $0.url == currentServiceURL }) ??
+        let currentIndex = services.firstIndex(where: { $0.id == currentServiceID }) ??
                            services.firstIndex(where: { $0.name == currentServiceName }) ??
                            0
         let next = (currentIndex + delta + services.count) % services.count
@@ -249,10 +248,10 @@ extension MainWindowController {
 
     func closeCurrentTab() {
         guard let service = currentService() else { return }
-        let currentSession = activeIndicesByURL[service.url] ?? 0
-        let currentServiceIndex = services.firstIndex(where: { $0.url == service.url }) ?? 0
+        let currentSession = activeIndicesByID[service.id] ?? 0
+        let currentServiceIndex = services.firstIndex(where: { $0.id == service.id }) ?? 0
 
-        let closedTab = TabIdentifier(serviceURL: service.url, sessionIndex: currentSession)
+        let closedTab = TabIdentifier(serviceID: service.id, sessionIndex: currentSession)
         tabHistory.removeAll { $0 == closedTab }
         if lastActiveTab == closedTab {
             lastActiveTab = nil
@@ -262,7 +261,7 @@ extension MainWindowController {
 
         let remainingSessionsCount = (0..<10).filter { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }.count
         if remainingSessionsCount == 0 {
-            activeIndicesByURL[service.url] = 0
+            activeIndicesByID[service.id] = 0
         }
 
         func nearestInstantiatedSession(in svc: Service, excluding: Int? = nil) -> Int? {
@@ -289,7 +288,7 @@ extension MainWindowController {
             let rightServices = stride(from: currentServiceIndex + 1, to: services.count, by: 1).map { services[$0] }
 
             for svc in (leftServices + rightServices) {
-                let activeSession = activeIndicesByURL[svc.url] ?? 0
+                let activeSession = activeIndicesByID[svc.id] ?? 0
                 let targetSession: Int?
                 if webViewManager.getWebView(for: svc, sessionIndex: activeSession) != nil {
                     targetSession = activeSession
@@ -297,8 +296,8 @@ extension MainWindowController {
                     targetSession = nearestInstantiatedSession(in: svc)
                 }
                 if let session = targetSession {
-                    let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
-                    activeIndicesByURL[svc.url] = session
+                    let svcIndex = services.firstIndex(where: { $0.id == svc.id })!
+                    activeIndicesByID[svc.id] = session
                     selectService(at: svcIndex)
                     refreshInstantiationState()
                     return
@@ -320,13 +319,13 @@ extension MainWindowController {
         
         guard webViewManager.getWebView(for: service, sessionIndex: sessionIndex) != nil else { return }
         
-        let currentSession = activeIndicesByURL[service.url] ?? 0
+        let currentSession = activeIndicesByID[service.id] ?? 0
         
         removeWebViewAndCleanObserver(for: service, sessionIndex: sessionIndex)
         
         let remainingSessionsCount = (0..<10).filter { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }.count
         if remainingSessionsCount == 0 {
-            activeIndicesByURL[service.url] = 0
+            activeIndicesByID[service.id] = 0
         }
         
         if sessionIndex == currentSession {
@@ -345,21 +344,21 @@ extension MainWindowController {
             }
             
             if Settings.shared.automaticallySwitchEngineOnLastSessionClose {
-                let currentServiceIndex = services.firstIndex(where: { $0.url == service.url }) ?? 0
+                let currentServiceIndex = services.firstIndex(where: { $0.id == service.id }) ?? 0
                 let leftServices  = stride(from: currentServiceIndex - 1, through: 0, by: -1).map { services[$0] }
                 let rightServices = stride(from: currentServiceIndex + 1, to: services.count, by: 1).map { services[$0] }
                 
                 for svc in (leftServices + rightServices) {
-                    let activeSession = activeIndicesByURL[svc.url] ?? 0
+                    let activeSession = activeIndicesByID[svc.id] ?? 0
                     if webViewManager.getWebView(for: svc, sessionIndex: activeSession) != nil {
-                        let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
+                        let svcIndex = services.firstIndex(where: { $0.id == svc.id })!
                         selectService(at: svcIndex)
                         refreshInstantiationState()
                         return
                     }
                     if let anySession = (0..<10).first(where: { webViewManager.getWebView(for: svc, sessionIndex: $0) != nil }) {
-                        let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
-                        activeIndicesByURL[svc.url] = anySession
+                        let svcIndex = services.firstIndex(where: { $0.id == svc.id })!
+                        activeIndicesByID[svc.id] = anySession
                         selectService(at: svcIndex)
                         refreshInstantiationState()
                         return
@@ -381,10 +380,10 @@ extension MainWindowController {
         
         guard !instantiatedSessions.isEmpty else { return }
         
-        if instantiatedSessions.count == 1, currentServiceURL == service.url {
+        if instantiatedSessions.count == 1, currentServiceID == service.id {
             let sessionIndex = instantiatedSessions[0]
             removeWebViewAndCleanObserver(for: service, sessionIndex: sessionIndex)
-            activeIndicesByURL[service.url] = 0
+            activeIndicesByID[service.id] = 0
             
             navigateAwayFromService(at: serviceIndex)
             refreshInstantiationState()
@@ -421,9 +420,9 @@ extension MainWindowController {
                 removeWebViewAndCleanObserver(for: service, sessionIndex: sessionIndex)
             }
         }
-        activeIndicesByURL[service.url] = 0
+        activeIndicesByID[service.id] = 0
         
-        if currentServiceURL == service.url {
+        if currentServiceID == service.id {
             navigateAwayFromService(at: serviceIndex)
         }
         
@@ -435,15 +434,15 @@ extension MainWindowController {
         let rightServices = stride(from: serviceIndex + 1, to: services.count, by: 1).map { services[$0] }
         
         for svc in (leftServices + rightServices) {
-            let activeSession = activeIndicesByURL[svc.url] ?? 0
+            let activeSession = activeIndicesByID[svc.id] ?? 0
             if webViewManager.getWebView(for: svc, sessionIndex: activeSession) != nil {
-                let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
+                let svcIndex = services.firstIndex(where: { $0.id == svc.id })!
                 selectService(at: svcIndex)
                 return
             }
             if let anySession = (0..<10).first(where: { webViewManager.getWebView(for: svc, sessionIndex: $0) != nil }) {
-                let svcIndex = services.firstIndex(where: { $0.url == svc.url })!
-                activeIndicesByURL[svc.url] = anySession
+                let svcIndex = services.firstIndex(where: { $0.id == svc.id })!
+                activeIndicesByID[svc.id] = anySession
                 selectService(at: svcIndex)
                 return
             }
@@ -462,7 +461,7 @@ extension MainWindowController {
         titleLabel?.stringValue = ""
         
         if let service = currentService(),
-           let idx = services.firstIndex(where: { $0.url == service.url }) {
+           let idx = services.firstIndex(where: { $0.id == service.id }) {
             serviceSelector?.selectedSegment = idx
             collapsibleServiceSelector?.selectedSegment = idx
         } else {
@@ -488,7 +487,7 @@ extension MainWindowController {
     
     func updateEmptyStateShortcuts(force: Bool = false) {
         guard force || !emptyStateView.isHidden else { return }
-        var openSessions: [String: [Int: String]] = [:]
+        var openSessions: [UUID: [Int: String]] = [:]
         for service in services {
             var activeSessions: [Int: String] = [:]
             for idx in 0..<10 {
@@ -497,7 +496,7 @@ extension MainWindowController {
                     activeSessions[idx] = (title == nil || title!.isEmpty) ? "Session \(idx + 1)" : title!
                 }
             }
-            openSessions[service.url] = activeSessions
+            openSessions[service.id] = activeSessions
         }
         
         emptyStateView.updateShortcuts(
@@ -509,7 +508,7 @@ extension MainWindowController {
     }
     
     func setupSessionTitleObserver(for service: Service, sessionIndex: Int, webView: WKWebView) {
-        let key = "\(service.url)_\(sessionIndex)"
+        let key = TabIdentifier(serviceID: service.id, sessionIndex: sessionIndex)
         guard sessionTitleObservations[key] == nil else { return }
         
         sessionTitleObservations[key] = webView.observe(\.title, options: [.new]) { [weak self] _, _ in
@@ -522,7 +521,7 @@ extension MainWindowController {
     func removeWebViewAndCleanObserver(for service: Service, sessionIndex: Int) {
         webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
         updateSessionTooltip(for: service, sessionIndex: sessionIndex)
-        let key = "\(service.url)_\(sessionIndex)"
+        let key = TabIdentifier(serviceID: service.id, sessionIndex: sessionIndex)
         sessionTitleObservations[key] = nil
         saveTabsState()
     }

@@ -116,6 +116,7 @@ final class EncryptedVolumeManager {
     
     func markLocked(_ serviceID: UUID) {
         unlockedServiceIDs.remove(serviceID)
+        EngineMetadataMigrationManager.shared.clearCachedMetadata(for: serviceID)
     }
     
     /// Checks if the volume is currently mounted

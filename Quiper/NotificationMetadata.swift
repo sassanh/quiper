@@ -1,5 +1,6 @@
 enum NotificationMetadata {
     // Current keys using the official app bundle namespace
+    static let serviceIDKey = "app.sassanh.quiper.serviceID"
     static let serviceURLKey = "app.sassanh.quiper.serviceURL"
     static let serviceNameKey = "app.sassanh.quiper.serviceName"
     static let sessionIndexKey = "app.sassanh.quiper.sessionIndex"

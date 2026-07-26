@@ -12,12 +12,12 @@ struct SettingsView: View {
     @StateObject private var shortcutState = ShortcutRecordingState()
     @ObservedObject private var settings = Settings.shared
     var appController: AppController?
-    var initialServiceURL: String?
+    var initialServiceID: UUID?
     
     var body: some View {
         TabView(selection: $selectedTab) {
             ServicesSettingsView(appController: appController,
-                                 initialServiceURL: initialServiceURL)
+                                 initialServiceID: initialServiceID)
             .tabItem {
                 Label("Engines", systemImage: "list.bullet")
             }
@@ -493,20 +493,20 @@ struct GeneralSettingsView: View {
 
 struct ServicesSettingsView: View {
     var appController: AppController?
-    var initialServiceURL: String?
+    var initialServiceID: UUID?
     @ObservedObject private var settings = Settings.shared
     @State private var selectedServiceID: Service.ID?
     @State private var pendingServiceDeletion: PendingServiceDeletion?
     private let localTemplateNames: Set<String> = ["open webui", "llama.cpp", "omlx"]
     
-    init(appController: AppController?, initialServiceURL: String?) {
+    init(appController: AppController?, initialServiceID: UUID?) {
         self.appController = appController
-        self.initialServiceURL = initialServiceURL
-        if let url = initialServiceURL,
-           let service = Settings.shared.services.first(where: { $0.url == url }) {
+        self.initialServiceID = initialServiceID
+        if let id = initialServiceID,
+           let service = Settings.shared.services.first(where: { $0.id == id }) {
             _selectedServiceID = State(initialValue: service.id)
-        } else if let url = appController?.currentServiceURL,
-                  let service = Settings.shared.services.first(where: { $0.url == url }) {
+        } else if let id = appController?.currentServiceID,
+                  let service = Settings.shared.services.first(where: { $0.id == id }) {
             _selectedServiceID = State(initialValue: service.id)
         } else {
             _selectedServiceID = State(initialValue: Settings.shared.services.first?.id)
@@ -533,7 +533,7 @@ struct ServicesSettingsView: View {
             syncSelectionWithCurrentService()
             ensureSelectionExists()
         }
-        .onChange(of: appController?.currentServiceURL ?? "__none__") { _, _ in
+        .onChange(of: appController?.currentServiceID) { _, _ in
             syncSelectionWithCurrentService()
         }
         .onChange(of: settings.services) { _, newServices in
@@ -781,6 +781,8 @@ struct ServicesSettingsView: View {
     private func moveServices(from source: IndexSet, to destination: Int) {
         settings.services.move(fromOffsets: source, toOffset: destination)
         ensureSelectionExists()
+        settings.saveSettings()
+        appController?.reloadServices()
     }
     
     private func bindingForSelectedService() -> Binding<Service>? {
@@ -792,8 +794,8 @@ struct ServicesSettingsView: View {
     }
     
     private func syncSelectionWithCurrentService() {
-        guard let url = appController?.currentServiceURL,
-              let service = settings.services.first(where: { $0.url == url }) else {
+        guard let id = appController?.currentServiceID,
+              let service = settings.services.first(where: { $0.id == id }) else {
             ensureSelectionExists()
             return
         }
@@ -2024,8 +2026,14 @@ struct ServiceDetailView: View {
                         SecureDataMigrationManager.shared.discardBackup(for: serviceID)
                     }
                     
-                    // 5. Update settings properties
+                    // 5. Secure engine metadata while the new volume is mounted.
+                    service.hasMigratedMetadata = false
                     service.isEncrypted = true
+                    migrationMessage = "Securing engine metadata..."
+                    try await EngineMetadataMigrationManager.shared.migrateMetadata(
+                        for: serviceID,
+                        context: LAContext()
+                    )
                     settings.saveSettings()
                     appController?.reloadServices()
                     
@@ -2083,6 +2091,7 @@ struct ServiceDetailView: View {
                 
                 // 4. Update settings properties
                 service.isEncrypted = false
+                service.hasMigratedMetadata = false
                 settings.saveSettings()
                 appController?.reloadServices()
                 
