@@ -84,12 +84,17 @@ final class NotificationDispatcher: NSObject, UNUserNotificationCenterDelegate, 
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
+        let persistedServiceID = (userInfo[NotificationMetadata.serviceIDKey] as? String)
+            .flatMap(UUID.init(uuidString:))
         let serviceURL = (userInfo[NotificationMetadata.serviceURLKey] ?? userInfo[NotificationMetadata.legacyServiceURLKey]) as? String
         let sessionIndex = (userInfo[NotificationMetadata.sessionIndexKey] ?? userInfo[NotificationMetadata.legacySessionIndexKey]) as? Int
-        Task { @MainActor [weak self, serviceURL, sessionIndex] in
+        Task { @MainActor [weak self, persistedServiceID, serviceURL, sessionIndex] in
             guard let self else { return }
+            let legacyServiceID = serviceURL.flatMap { url in
+                Settings.shared.services.first(where: { $0.url == url })?.id
+            }
             self.delegate?.notificationDispatcher(self,
-                                                  didActivateNotificationForServiceURL: serviceURL,
+                                                  didActivateNotificationForServiceID: persistedServiceID ?? legacyServiceID,
                                                   sessionIndex: sessionIndex)
         }
         completionHandler()
@@ -101,6 +106,6 @@ extension NotificationDispatcher: @unchecked Sendable {}
 @MainActor
 protocol NotificationDispatcherDelegate: AnyObject {
     func notificationDispatcher(_ dispatcher: NotificationDispatcher,
-                                didActivateNotificationForServiceURL serviceURL: String?,
+                                didActivateNotificationForServiceID serviceID: UUID?,
                                 sessionIndex: Int?)
 }

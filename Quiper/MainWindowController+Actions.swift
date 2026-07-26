@@ -267,17 +267,17 @@ extension MainWindowController {
 
     @objc func performMenuResetZoom(_ sender: Any?) {
         guard let service = currentService() else { return }
-        webViewManager.applyZoom(Zoom.default, for: service.url)
-        Settings.shared.clearZoomLevel(for: service.url)
+        webViewManager.applyZoom(Zoom.default, for: service.id)
+        Settings.shared.clearZoomLevel(for: service.id)
     }
 
     func zoom(by delta: CGFloat) {
         guard let service = currentService() else { return }
-        let currentZoom = Settings.shared.serviceZoomLevels[service.url] ?? Zoom.default
+        let currentZoom = Settings.shared.serviceZoomLevels[service.id] ?? Zoom.default
         let nextZoom = max(Zoom.min, min(Zoom.max, currentZoom + delta))
         
-        webViewManager.applyZoom(nextZoom, for: service.url)
-        Settings.shared.storeZoomLevel(nextZoom, for: service.url)
+        webViewManager.applyZoom(nextZoom, for: service.id)
+        Settings.shared.storeZoomLevel(nextZoom, for: service.id)
     }
 
     @objc func performMenuHideWindow(_ sender: Any?) {
@@ -567,7 +567,7 @@ extension MainWindowController: WebViewManagerDelegate {
             if let data = try? Data(contentsOf: stateURL),
                let state = try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data) {
                 
-                activeIndicesByURL[service.url] = state.activeIndex
+                activeIndicesByID[service.id] = state.activeIndex
                 
                 for (sessionIndex, urlString) in state.openTabs {
                     _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString, restoredTitle: state.tabTitles?[sessionIndex], loadImmediately: (sessionIndex == state.activeIndex))
@@ -577,7 +577,7 @@ extension MainWindowController: WebViewManagerDelegate {
                     }
                 }
                 
-                if currentServiceURL == service.url {
+                if currentServiceID == service.id {
                     updateActiveWebview()
                 }
             }

@@ -4,8 +4,6 @@
 
 ### Added
 
-- **Secure Engine Metadata Migration ([EngineMetadataMigration.swift](Quiper/Components/EngineMetadataMigration.swift), [Settings.swift](Quiper/Settings.swift), [WebViewManager.swift](Quiper/Components/WebViewManager.swift), [App.swift](Quiper/App.swift), [SettingsView.swift](Quiper/SettingsView.swift))**: Encrypted engine metadata (URL, icon, scripts, CSS, routing rules, shortcuts, and prompt preservation) is now stored inside the secure bundle, leaving only the name and lock behavior in unencrypted settings. Legacy engines display a settings-list indicator and can be migrated through a launch wizard or automatically the next time they unlock. The migration writes to the mounted bundle, verifies the write, and then strips the legacy fields from settings.json on the next save.
-- **Settings Lock Overlay ([SettingsView.swift](Quiper/SettingsView.swift), [LockOverlayView.swift](Quiper/Components/LockOverlayView.swift))**: Locked engines now display a lock icon in the sidebar list and icon picker. Selecting a locked engine in settings reveals the same embedded biometric console used in the main window—Touch ID authenticates inline, then retrieves the secure key and mounts the volume before the settings detail appears.
 - **Kimi Engine Template**: Added Kimi with synced prompt focusing, transparent page and content layers, authentication routing, and default shortcuts for starting chats, sharing conversations, and toggling history.
 - **Qwen Engine Template**: Added Qwen Studio with synced prompt focusing, transparent styling, authentication routing, and default shortcuts for starting new or temporary chats, sharing conversations, and toggling history.
 - **Engineering Blog**: Added an extensible VitePress blog at `/blog/` with automatic post listings, page-specific social metadata, and the first article, “Why I Built Spotlight for AI.”
@@ -14,6 +12,9 @@
 - **Engine Shortcuts as Toggle**: New Shortcuts setting so each engine's global shortcut toggles Quiper—show and select the engine, or hide when that engine is already active and focused. Defaults on for new installs; existing installs get a one-time opt-in prompt.
 - **Prompt Recording Feedback**: Choose between a blue glowing spinner and a moving gray dashed outline around the prompt composer while history recording is active. Saving a prompt produces a matching ripple or acknowledgment bounce. The indicator can also be hidden and responds immediately to global and per-session recording changes.
 - **Independent Selector Display Modes**: Engine and session selectors can now be configured separately as Expanded, Compact, or Auto. On upgrade, the previous shared choice is migrated once into both settings, and subsequent saves contain only the new per-selector fields.
+- **Secure Engine Metadata Storage**: Encrypted engine metadata (URL, icon, scripts, CSS, routing rules, shortcuts, and prompt preservation) is now stored in the secure bundle, leaving only the name and lock behavior in unencrypted settings. Legacy engines display a settings-list indicator and can be migrated through a launch wizard or automatically the next time they unlock.
+- **Settings Lock Overlay**: Locked engines now display a lock icon in the sidebar list and icon picker. Selecting a locked engine in settings reveals the same embedded biometric console used in the main window—Touch ID authenticates inline, then retrieves the secure key and mounts the volume before the settings detail appears.
+- **Complete UUID-based Engine Identification**: Migrated all engine identification from URL strings to UUIDs throughout the codebase for consistent and secure service selection.
 
 ### Changed
 

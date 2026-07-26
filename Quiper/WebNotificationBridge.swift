@@ -9,13 +9,13 @@ final class WebNotificationBridge: NSObject {
 
     private weak var webView: WKWebView?
     private let handlerProxy = WeakScriptMessageHandler()
-    private let serviceURL: String
+    private let serviceID: UUID
     private let serviceName: String
     private let sessionIndex: Int
 
-    init(webView: WKWebView, serviceURL: String, serviceName: String, sessionIndex: Int) {
+    init(webView: WKWebView, serviceID: UUID, serviceName: String, sessionIndex: Int) {
         self.webView = webView
-        self.serviceURL = serviceURL
+        self.serviceID = serviceID
         self.serviceName = serviceName
         self.sessionIndex = sessionIndex
         super.init()
@@ -103,20 +103,18 @@ final class WebNotificationBridge: NSObject {
                     content.threadIdentifier = tag
                 }
                 content.sound = payload.silent ? nil : .default
-            var userInfo = payload.userInfo ?? [:]
-            userInfo[NotificationMetadata.serviceURLKey] = serviceURL
-            userInfo[NotificationMetadata.serviceNameKey] = serviceName
-            userInfo[NotificationMetadata.sessionIndexKey] = sessionIndex
-            content.userInfo = userInfo
+                var userInfo = payload.userInfo ?? [:]
+                userInfo[NotificationMetadata.serviceIDKey] = serviceID.uuidString
+                userInfo[NotificationMetadata.serviceNameKey] = serviceName
+                userInfo[NotificationMetadata.sessionIndexKey] = sessionIndex
+                content.userInfo = userInfo
 
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.2, repeats: false)
-            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
-            Task {
-                    do {
-                        try await UNUserNotificationCenter.current().add(request)
-                    } catch {
-                        NSLog("[Quiper] Failed to deliver notification: \(error.localizedDescription)")
-                    }
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.2, repeats: false)
+                let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+                do {
+                    try await UNUserNotificationCenter.current().add(request)
+                } catch {
+                    NSLog("[Quiper] Failed to deliver notification: \(error.localizedDescription)")
                 }
             }
         }

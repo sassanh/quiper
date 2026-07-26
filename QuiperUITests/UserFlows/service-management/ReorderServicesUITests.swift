@@ -155,15 +155,10 @@ final class ReorderServicesUITests: BaseUITest {
         XCTAssertTrue(sourceRow.waitForExistence(timeout: 3.0), "Source row \(source) not found")
         XCTAssertTrue(targetRow.waitForExistence(timeout: 3.0), "Target row \(target) not found")
         
-
-        
-        // Target the top part of the target row (inside the row, not outside)
-        // dy: 0.1 is 10% from the top edge. 0.0 is top edge.
-        // Trying to keep it strictly *inside* the target row's "upper half" which usually triggers "insert above".
         let startCoord = sourceRow.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
         let destCoord = targetRow.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.1))
-        
-        startCoord.press(forDuration: 0.8, thenDragTo: destCoord)
+        startCoord.tap()
+        startCoord.click(forDuration: 0.8, thenDragTo: destCoord)
     }
     
     func testServiceDeletion() throws {

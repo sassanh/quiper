@@ -53,12 +53,12 @@ final class LaunchShortcutsUITests: BaseUITest {
                 // Check if the record dialog is open for THIS specific engine
                 // The overlay shows "ShortcutRecorderTitle" with text "Launch <EngineName>"
                 let expectedTitle = "Launch \(assignment.engineName)"
-                let titleElement = app.descendants(matching: .any).matching(identifier: "ShortcutRecorderTitle").firstMatch
-                if (!titleElement.exists) {
-                    continue;
+                let titleElement = app.staticTexts["ShortcutRecorderTitle"]
+                if !titleElement.exists {
+                    continue
                 }
 
-                let titleValue = titleElement.value as? String ?? ""
+                let titleValue = titleElement.value as? String ?? titleElement.label
                 if titleValue == expectedTitle {
                     dialogOpened = true
                     break
@@ -70,8 +70,8 @@ final class LaunchShortcutsUITests: BaseUITest {
                 }
             }
             
-            let titleElement = app.descendants(matching: .any).matching(identifier: "ShortcutRecorderTitle").firstMatch
-            let actualValue = titleElement.value as? String ?? "nil"
+            let titleElement = app.staticTexts["ShortcutRecorderTitle"]
+            let actualValue = titleElement.value as? String ?? titleElement.label
             XCTAssertTrue(dialogOpened, "Failed to open record dialog for \(assignment.engineName) after 3 attempts. Title value was: '\(actualValue)'")
             
             app.typeKey(assignment.letter, modifierFlags: assignment.modifiers)

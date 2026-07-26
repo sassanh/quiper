@@ -42,14 +42,14 @@ final class ServiceSwitchingTests: XCTestCase {
         }
         
         // Verify initial state
-        XCTAssertEqual(windowController.activeServiceURL, service1.url, "Should start on Service1")
+        XCTAssertEqual(windowController.currentServiceID, service1.id, "Should start on Service1")
         
         // Switch to Service2 (triggers new load)
         windowController.selectService(at: 1)
         
         if let webView2 = windowController.activeWebView {
             await windowController.waitForNavigation(on: webView2)
-            XCTAssertEqual(windowController.activeServiceURL, service2.url, "Should switch to Service2")
+            XCTAssertEqual(windowController.currentServiceID, service2.id, "Should switch to Service2")
             XCTAssertTrue(webView2.url?.absoluteString.contains("subpage") == true, "Should load subpage")
         } else {
             XCTFail("WebView for Service2 should not be nil")
@@ -58,6 +58,6 @@ final class ServiceSwitchingTests: XCTestCase {
         // Switch back to Service1 (already loaded, no navigation wait needed)
         windowController.selectService(at: 0)
         
-        XCTAssertEqual(windowController.activeServiceURL, service1.url, "Should switch back to Service1")
+        XCTAssertEqual(windowController.currentServiceID, service1.id, "Should switch back to Service1")
     }
 }

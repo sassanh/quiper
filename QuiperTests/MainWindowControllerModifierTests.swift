@@ -178,7 +178,7 @@ final class MainWindowControllerModifierTests: XCTestCase {
         
         // Add entry
         let entry = PromptHistoryEntry(text: "Hello World", timestamp: Date())
-        controller.webViewManager.addPromptHistoryEntry(entry, for: "https://test.com", sessionIndex: 0)
+        controller.webViewManager.addPromptHistoryEntry(entry, for: services[0].id, sessionIndex: 0)
         
         // Reload HUD
         hud.reloadEntries()

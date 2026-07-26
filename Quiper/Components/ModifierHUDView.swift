@@ -358,8 +358,8 @@ final class ModifierHUDView: NSView {
     
     func refreshData() {
         guard let wc = wc else { return }
-        let currentSvcURL = wc.currentServiceURL
-        let activeSession = wc.activeIndicesByURL[currentSvcURL ?? ""] ?? 0
+        let currentSvc = wc.currentService()
+        let activeSession = currentSvc.flatMap { wc.activeIndicesByID[$0.id] } ?? 0
         let appShortcuts = Settings.shared.appShortcutBindings
         
         for view in enginesStack.arrangedSubviews {
@@ -372,7 +372,7 @@ final class ModifierHUDView: NSView {
         for (idx, service) in wc.services.enumerated() {
             let shortcutStr = getShortcutString(for: service, index: idx, appShortcuts: appShortcuts)
             let btn = HUDEngineButton(title: service.name, shortcut: shortcutStr)
-            btn.isSelected = (service.url == currentSvcURL)
+            btn.isSelected = (service.id == currentSvc?.id)
             btn.onHover = { [weak self, weak btn] in
                 guard let self, let btn,
                       let index = self.filteredItems.firstIndex(where: { $0.button === btn }) else { return }
@@ -394,10 +394,10 @@ final class ModifierHUDView: NSView {
             
             if let openSessions = wc.webViewManager?.getOpenSessions(for: service) {
                 for session in openSessions {
-                    let isTabSelected = (service.url == currentSvcURL && session.sessionIndex == activeSession)
+                    let isTabSelected = (service.id == currentSvc?.id && session.sessionIndex == activeSession)
                     
                     let sessionShortcutStr: String?
-                    if service.url == currentSvcURL {
+                    if service.id == currentSvc?.id {
                         sessionShortcutStr = getSessionShortcutString(sessionIndex: session.sessionIndex, appShortcuts: appShortcuts)
                     } else {
                         sessionShortcutStr = nil

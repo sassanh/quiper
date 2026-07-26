@@ -195,6 +195,9 @@ struct Service: Codable, Identifiable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
+        if let activationShortcut {
+            try container.encode(activationShortcut, forKey: .activationShortcut)
+        }
 
         let isMigrated = isEncrypted && hasMigratedMetadata
         if !isMigrated {
@@ -202,9 +205,6 @@ struct Service: Codable, Identifiable {
             try container.encode(focus_selector, forKey: .focus_selector)
             if !actionScripts.isEmpty {
                 try container.encode(actionScripts, forKey: .actionScripts)
-            }
-            if let activationShortcut {
-                try container.encode(activationShortcut, forKey: .activationShortcut)
             }
             if !routingRules.isEmpty {
                 try container.encode(routingRules, forKey: .routingRules)
@@ -253,14 +253,16 @@ class SettingsWindow: NSWindow {
 
     public weak var appController: AppController? {
         didSet {
-            hostingController.rootView = SettingsView(appController: appController,
-                                                      initialServiceURL: appController?.currentServiceURL)
+            hostingController.rootView = SettingsView(
+                appController: appController,
+                initialServiceID: appController?.currentServiceID
+            )
             delegate = appController
         }
     }
 
     private init() {
-        hostingController = NSHostingController(rootView: SettingsView(appController: nil, initialServiceURL: nil))
+        hostingController = NSHostingController(rootView: SettingsView(appController: nil, initialServiceID: nil))
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 500),
             styleMask: [.titled, .closable, .resizable],
@@ -385,7 +387,7 @@ class Settings: ObservableObject {
     @Published var hotkeyConfiguration: HotkeyManager.Configuration = HotkeyManager.defaultConfiguration
     @Published var customActions: [CustomAction] = []
     @Published var updatePreferences: UpdatePreferences = UpdatePreferences()
-    @Published var serviceZoomLevels: [String: CGFloat] = [:]
+    @Published var serviceZoomLevels: [UUID: CGFloat] = [:]
     @Published var appShortcutBindings: AppShortcutBindings = .defaults
     @Published var dockVisibility: DockVisibility = .whenVisible {
         didSet {
@@ -2484,6 +2486,13 @@ class Settings: ObservableObject {
             ),
             for: .selectorDisplayModes
         )
+        setMigrationDisposition(
+            persistedSettingsMigrationContext.disposition(
+                whenDetected: persisted.didDecodeLegacyServiceIdentifiers,
+                presentation: .automatic
+            ),
+            for: .serviceIdentifiers
+        )
 
         // Resolve migration state before any @Published assignments that may call saveSettings().
         // Mid-load saves must not stamp new keys (that would clear the prompt on the next loadSettings()).
@@ -2498,11 +2507,7 @@ class Settings: ObservableObject {
         let useDefaultActions = !CommandLine.arguments.contains("--no-default-actions")
         customActions = loadedFromDisk ? (persisted.customActions ?? []) : (useDefaultActions ? defaultActions : [])
         updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
-        if let storedZooms = persisted.serviceZoomLevels {
-            serviceZoomLevels = storedZooms.mapValues { CGFloat($0) }
-        } else {
-            serviceZoomLevels = [:]
-        }
+        serviceZoomLevels = (persisted.serviceZoomLevels ?? [:]).mapValues { CGFloat($0) }
         appShortcutBindings = persisted.appShortcuts ?? .defaults
         if let altSessionDigits = persisted.sessionDigitsAlternateModifiers {
             appShortcutBindings.sessionDigitsAlternateModifiers = altSessionDigits
@@ -2570,6 +2575,9 @@ class Settings: ObservableObject {
             shouldSaveAfterLoad = true
         }
         if migrationDisposition(for: .selectorDisplayModes) == .runAutomatically {
+            shouldSaveAfterLoad = true
+        }
+        if migrationDisposition(for: .serviceIdentifiers) == .runAutomatically {
             shouldSaveAfterLoad = true
         }
 
@@ -3068,16 +3076,16 @@ class Settings: ObservableObject {
         saveSettings()
     }
 
-    func storeZoomLevel(_ value: CGFloat, for serviceURL: String) {
-        if serviceZoomLevels[serviceURL] == value {
+    func storeZoomLevel(_ value: CGFloat, for serviceID: UUID) {
+        if serviceZoomLevels[serviceID] == value {
             return
         }
-        serviceZoomLevels[serviceURL] = value
+        serviceZoomLevels[serviceID] = value
         saveSettings()
     }
 
-    func clearZoomLevel(for serviceURL: String) {
-        if serviceZoomLevels.removeValue(forKey: serviceURL) != nil {
+    func clearZoomLevel(for serviceID: UUID) {
+        if serviceZoomLevels.removeValue(forKey: serviceID) != nil {
             saveSettings()
         }
     }
