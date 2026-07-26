@@ -34,30 +34,27 @@ class BaseUITest: XCTestCase {
     }
     
     /// Open Settings window
-    /// Open Settings window
-    /// Open Settings window
     func openSettings() {
-        // Try to activate the app first
         app.activate()
-        
-        // Wait for app to be idle
-        _ = app.wait(for: .runningForeground, timeout: 1.0)
-        
-        // Use status menu exclusively as Cmd+, is unreliable when app is hidden/backgrounded
-        
-        // Find status item
-        let statusItem = app.statusItems.firstMatch
-        if statusItem.waitForExistence(timeout: 1.0) {
-            statusItem.click()
-            
-            // Use Cmd+, to open settings reliably once menu is focused
-            // Direct menu item clicking can leave the menu stuck open, disabling the app
-            app.typeKey(",", modifierFlags: .command)
-        }
-        
-        // Verify window opens
+        _ = app.wait(for: .runningForeground, timeout: 2.0)
+
         let settingsWindow = app.windows["Quiper Settings"]
-        if !waitForElement(settingsWindow, timeout: 1) {
+        app.typeKey(",", modifierFlags: .command)
+        if settingsWindow.waitForExistence(timeout: 5.0) {
+            return
+        }
+
+        // If the app did not receive the shortcut, use its status menu as a fallback.
+        let statusItem = app.statusItems.firstMatch
+        if statusItem.waitForExistence(timeout: 2.0) {
+            statusItem.click()
+            let settingsItem = app.menuItems["Settings..."]
+            if settingsItem.waitForExistence(timeout: 2.0) {
+                settingsItem.click()
+            }
+        }
+
+        if !settingsWindow.waitForExistence(timeout: 5.0) {
             XCTFail("Settings window did not open")
         }
     }

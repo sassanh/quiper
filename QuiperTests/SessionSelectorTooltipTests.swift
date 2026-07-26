@@ -117,11 +117,11 @@ final class SessionSelectorTooltipTests: XCTestCase {
 
         XCTAssertNil(webView.url)
         XCTAssertEqual(manager.sessionTitle(for: service, sessionIndex: 1), "Restored page")
-        XCTAssertEqual(manager.getOpenSessionTitlesState()[service.url]?[1], "Restored page")
+        XCTAssertEqual(manager.getOpenSessionTitlesState()[service.id]?[1], "Restored page")
 
         manager.removeWebView(for: service, sessionIndex: 1)
         XCTAssertNil(manager.sessionTitle(for: service, sessionIndex: 1))
-        XCTAssertNil(manager.getOpenSessionTitlesState()[service.url]?[1])
+        XCTAssertNil(manager.getOpenSessionTitlesState()[service.id]?[1])
     }
 
     func testLazyRestoredTitlePopulatesBothSelectorCaches() {

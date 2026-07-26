@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Quiper
 
+@MainActor
 struct PersistedSettingsMigrationTests {
     @Test func sourceCompatibilityCoversEveryPersistenceBoundary() {
         #expect(

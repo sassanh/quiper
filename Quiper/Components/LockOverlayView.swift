@@ -191,6 +191,7 @@ final class InteractiveLinkButton: NSButton {
 @MainActor
 final class LockOverlayView: NSView {
     var onUnlock: ((LAContext) -> Void)?
+    private let serviceName: String
 
     private var laContext = LAContext()
     private var laView: LAAuthenticationView?
@@ -234,6 +235,7 @@ final class LockOverlayView: NSView {
 
     init(frame frameRect: NSRect, serviceName: String, onUnlock: @escaping (LAContext) -> Void) {
         self.onUnlock = onUnlock
+        self.serviceName = serviceName
         super.init(frame: frameRect)
         autoresizingMask = [.width, .height]
         setupUI(serviceName: serviceName)
@@ -437,11 +439,12 @@ final class LockOverlayView: NSView {
         let fallbackContext = LAContext()
         self.activeFallbackContext = fallbackContext
         
-        Task {
+        Task { [weak self] in
+            guard let self = self else { return }
             do {
                 try await fallbackContext.evaluatePolicy(
                     .deviceOwnerAuthentication,
-                    localizedReason: "Authorize access to secure engine local storage"
+                    localizedReason: "Authorize access to \(self.serviceName) secure storage"
                 )
                 self.activeFallbackContext = nil
                 onUnlock?(fallbackContext)
@@ -480,11 +483,12 @@ final class LockOverlayView: NSView {
         NSLog(
             "[LockOverlay] unlockClicked fired, onUnlock is \(onUnlock == nil ? "nil" : "set")")
 
-        Task {
+        Task { [weak self] in
+            guard let self = self else { return }
             do {
                 try await laContext.evaluatePolicy(
                     .deviceOwnerAuthentication,
-                    localizedReason: "Authorize access to secure engine local storage"
+                    localizedReason: "Authorize access to \(self.serviceName) secure storage"
                 )
                 onUnlock?(laContext)
                 DispatchQueue.main.async {
@@ -826,10 +830,10 @@ struct BiometricUnlockView: NSViewRepresentable {
 
             Task { @MainActor in
                 do {
-                    try await context.evaluatePolicy(
-                        .deviceOwnerAuthentication,
-                        localizedReason: "Authorize access to \(serviceName ?? "engine") settings"
-                    )
+                try await context.evaluatePolicy(
+                    .deviceOwnerAuthentication,
+                    localizedReason: "Authorize access to \(serviceName ?? "engine") secure storage"
+                )
                     onSuccess?(context)
                 } catch {
                     let errString = error.localizedDescription

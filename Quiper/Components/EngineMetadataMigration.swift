@@ -10,7 +10,7 @@ struct SecuredEngineMetadata: Codable, Equatable {
     var focusSelector: String
     var iconBase64: String?
     var iconManuallyUnset: Bool?
-    var activationShortcut: HotkeyManager.Configuration?
+    var legacyActivationShortcut: HotkeyManager.Configuration?
     var customCSS: String?
     var routingRules: [RoutingRule]
     var actionScripts: [UUID: String]
@@ -21,7 +21,8 @@ struct SecuredEngineMetadata: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case url, focusSelector, iconBase64, iconManuallyUnset
-        case activationShortcut, customCSS, routingRules, actionScripts
+        case legacyActivationShortcut = "activationShortcut"
+        case customCSS, routingRules, actionScripts
         case preservePrompt, templateActionScriptSync
         case templatePromptInputSelectorSync, templateCustomCSSSync
     }
@@ -31,7 +32,7 @@ struct SecuredEngineMetadata: Codable, Equatable {
         self.focusSelector = service.focus_selector
         self.iconBase64 = service.iconBase64
         self.iconManuallyUnset = service.iconManuallyUnset
-        self.activationShortcut = service.activationShortcut
+        self.legacyActivationShortcut = nil
         self.customCSS = service.customCSS
         self.routingRules = service.routingRules
         self.actionScripts = service.actionScripts
@@ -46,7 +47,6 @@ struct SecuredEngineMetadata: Codable, Equatable {
         service.focus_selector = focusSelector
         service.iconBase64 = iconBase64
         service.iconManuallyUnset = iconManuallyUnset
-        service.activationShortcut = activationShortcut
         service.customCSS = customCSS
         service.routingRules = routingRules
         service.actionScripts = actionScripts
@@ -172,7 +172,6 @@ final class EngineMetadataMigrationManager {
         Settings.shared.services[index].focus_selector = ""
         Settings.shared.services[index].iconBase64 = nil
         Settings.shared.services[index].iconManuallyUnset = nil
-        Settings.shared.services[index].activationShortcut = nil
         Settings.shared.services[index].customCSS = nil
         Settings.shared.services[index].routingRules = []
         Settings.shared.services[index].actionScripts = [:]
@@ -199,6 +198,12 @@ final class EngineMetadataMigrationManager {
 
         if let metadata = readMetadataIfPresent(for: serviceID) {
             metadata.apply(to: &Settings.shared.services[index])
+            if Settings.shared.services[index].activationShortcut == nil {
+                Settings.shared.services[index].activationShortcut = metadata.legacyActivationShortcut
+            }
+            if metadata.legacyActivationShortcut != nil {
+                Settings.shared.saveSettings()
+            }
             NSLog("[MetadataMigration] Loaded metadata from bundle for service %@", serviceID.uuidString)
         }
     }

@@ -590,7 +590,7 @@ extension MainWindowController {
             hide()
             return
         }
-        _ = selectService(withURL: service.url)
+        _ = selectService(withID: service.id)
     }
 
     private func matches(_ lhs: HotkeyManager.Configuration, _ rhs: HotkeyManager.Configuration?) -> Bool {
@@ -652,14 +652,17 @@ extension MainWindowController {
     func performPendingHistorySwitch() {
         guard isCyclingHistory, let targetTab = highlightedTab else { return }
         
-        let service = currentService()
-        let activeIndex = service.map { activeIndicesByURL[$0.url] ?? 0 } ?? 0
-        let currentTab = TabIdentifier(serviceURL: currentServiceURL ?? "", sessionIndex: activeIndex)
+        guard let service = currentService() else { return }
+        let activeIndex = activeIndicesByID[service.id] ?? 0
+        let currentTab = TabIdentifier(serviceID: service.id, sessionIndex: activeIndex)
         if currentTab == targetTab { return }
         
         isExecutingHistoryNavigation = true
-        if currentServiceURL != targetTab.serviceURL {
-            _ = selectService(withURL: targetTab.serviceURL)
+        if service.id != targetTab.serviceID {
+            guard selectService(withID: targetTab.serviceID) else {
+                isExecutingHistoryNavigation = false
+                return
+            }
         }
         switchSession(to: targetTab.sessionIndex)
         isExecutingHistoryNavigation = false
@@ -675,8 +678,11 @@ extension MainWindowController {
         if effectiveRingSize == 2 {
             let targetTab = tabHistory[0]
             isExecutingHistoryNavigation = true
-            if currentServiceURL != targetTab.serviceURL {
-                _ = selectService(withURL: targetTab.serviceURL)
+            if currentService()?.id != targetTab.serviceID {
+                guard selectService(withID: targetTab.serviceID) else {
+                    isExecutingHistoryNavigation = false
+                    return
+                }
             }
             switchSession(to: targetTab.sessionIndex)
             isExecutingHistoryNavigation = false
@@ -703,8 +709,8 @@ extension MainWindowController {
             isCyclingHistory = true
             cyclingHistoryIndex = 0
             if let service = currentService() {
-                let activeIndex = activeIndicesByURL[service.url] ?? 0
-                cyclingStartTab = TabIdentifier(serviceURL: service.url, sessionIndex: activeIndex)
+                let activeIndex = activeIndicesByID[service.id] ?? 0
+                cyclingStartTab = TabIdentifier(serviceID: service.id, sessionIndex: activeIndex)
             }
             highlightedTab = cyclingStartTab
             showTabHistoryHUD()
@@ -737,8 +743,11 @@ extension MainWindowController {
         if effectiveRingSize == 2 {
             let targetTab = tabHistory[0]
             isExecutingHistoryNavigation = true
-            if currentServiceURL != targetTab.serviceURL {
-                _ = selectService(withURL: targetTab.serviceURL)
+            if currentService()?.id != targetTab.serviceID {
+                guard selectService(withID: targetTab.serviceID) else {
+                    isExecutingHistoryNavigation = false
+                    return
+                }
             }
             switchSession(to: targetTab.sessionIndex)
             isExecutingHistoryNavigation = false
@@ -764,8 +773,8 @@ extension MainWindowController {
         if !isCyclingHistory {
             isCyclingHistory = true
             if let service = currentService() {
-                let activeIndex = activeIndicesByURL[service.url] ?? 0
-                cyclingStartTab = TabIdentifier(serviceURL: service.url, sessionIndex: activeIndex)
+                let activeIndex = activeIndicesByID[service.id] ?? 0
+                cyclingStartTab = TabIdentifier(serviceID: service.id, sessionIndex: activeIndex)
             }
             
             var cycleTabs = tabHistory
@@ -883,8 +892,8 @@ extension MainWindowController {
             return
         }
         
-        let activeIndex = activeIndicesByURL[service.url] ?? 0
-        let currentTab = TabIdentifier(serviceURL: service.url, sessionIndex: activeIndex)
+        let activeIndex = activeIndicesByID[service.id] ?? 0
+        let currentTab = TabIdentifier(serviceID: service.id, sessionIndex: activeIndex)
         
         if startTab != currentTab {
             tabHistory.removeAll { $0 == startTab }

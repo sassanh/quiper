@@ -59,7 +59,7 @@ extension MainWindowController {
         }
         
         if let service = currentService() {
-            let activeIndex = activeIndicesByURL[service.url] ?? 0
+            let activeIndex = activeIndicesByID[service.id] ?? 0
             updateSessionTooltip(
                 for: service,
                 sessionIndex: activeIndex,
@@ -80,15 +80,13 @@ extension MainWindowController {
             loadingBorderView?.stopAnimating()
         }
         
-        guard let serviceUrlStr = serviceURL(for: webView)?.absoluteString,
-              serviceUrlStr == currentServiceURL,
-              let service = services.first(where: { $0.url == serviceUrlStr }),
+        guard let service = webViewManager.service(for: webView),
+              currentService()?.id == service.id,
               let sessionIndex = (0...9).first(where: { webViewManager.getWebView(for: service, sessionIndex: $0) == webView }) else { return }
         
         let preferredTitle: String?
         if let labelTitle = titleLabel?.stringValue, labelTitle.isEmpty,
-           let currentUrl = currentServiceURL,
-           let activeIdx = activeIndicesByURL[currentUrl],
+           let activeIdx = activeIndicesByID[service.id],
            activeIdx == sessionIndex {
             preferredTitle = ""
         } else {
@@ -115,7 +113,7 @@ extension MainWindowController {
         }
         
         if let service = currentService() {
-            let activeIndex = activeIndicesByURL[service.url] ?? 0
+            let activeIndex = activeIndicesByID[service.id] ?? 0
             updateSessionTooltip(
                 for: service,
                 sessionIndex: activeIndex,

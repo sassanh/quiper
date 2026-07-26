@@ -18,14 +18,14 @@ final class WebViewManager: NSObject {
     // Storage
     var webviewsByID: [UUID: [Int: WKWebView]] = [:]
     private var wrappersByID: [UUID: [Int: NSView]] = [:]
-    private var urlsByWebView: [ObjectIdentifier: String] = [:]
+    private var serviceIDsByWebView: [ObjectIdentifier: UUID] = [:]
     private var pendingLazyLoadURLs: [ObjectIdentifier: String] = [:]
     private var lastKnownTitlesByWebView: [ObjectIdentifier: String] = [:]
     private var activeDownloads: [Any] = []
     
     // State needed for logic
     private var services: [Service] = []
-    private var zoomLevels: [String: CGFloat] = [:]
+    private var zoomLevels: [UUID: CGFloat] = [:]
     
     // Dependencies
     private weak var containerView: NSView?
@@ -36,9 +36,9 @@ final class WebViewManager: NSObject {
     private var navigationContinuations: [ObjectIdentifier: CheckedContinuation<Void, Never>] = [:]
     private var initialLoadAwaitingFocus = Set<ObjectIdentifier>()
     private var notificationBridges: [ObjectIdentifier: WebNotificationBridge] = [:]
-    private var tabInputStates: [String: [Int: TabInputState]] = [:]
-    private var tabPromptHistories: [String: [Int: [PromptHistoryEntry]]] = [:]
-    private var tabPromptHistoryEnabledOverrides: [String: [Int: Bool]] = [:]
+    private var tabInputStates: [UUID: [Int: TabInputState]] = [:]
+    private var tabPromptHistories: [UUID: [Int: [PromptHistoryEntry]]] = [:]
+    private var tabPromptHistoryEnabledOverrides: [UUID: [Int: Bool]] = [:]
     private var approvedURLs = Set<URL>()
     private var cancellables = Set<AnyCancellable>()
 
@@ -66,7 +66,7 @@ final class WebViewManager: NSObject {
     func updateServices(_ newServices: [Service]) {
         let incomingIDs = Set(newServices.map { $0.id })
         let existingIDs = Set(webviewsByID.keys)
-        
+
         let removedIDs = existingIDs.subtracting(incomingIDs)
         for id in removedIDs {
             if let removedWebviews = webviewsByID[id] {
@@ -75,7 +75,7 @@ final class WebViewManager: NSObject {
             webviewsByID.removeValue(forKey: id)
             wrappersByID.removeValue(forKey: id)
         }
-        
+
         // Also check if any existing service has changed its encryption status!
         for newService in newServices {
             if let existingWebviews = webviewsByID[newService.id] {
@@ -95,37 +95,37 @@ final class WebViewManager: NSObject {
         }
         
         self.services = newServices
+        let incomingServiceIDs = Set(newServices.map { $0.id })
 
-        let incomingURLs = Set(newServices.map { $0.url })
-        for url in tabInputStates.keys {
-            if !incomingURLs.contains(url) {
-                tabInputStates.removeValue(forKey: url)
+        for serviceID in tabInputStates.keys {
+            if !incomingServiceIDs.contains(serviceID) {
+                tabInputStates.removeValue(forKey: serviceID)
             }
         }
-        for url in tabPromptHistories.keys {
-            if !incomingURLs.contains(url) {
-                tabPromptHistories.removeValue(forKey: url)
+        for serviceID in tabPromptHistories.keys {
+            if !incomingServiceIDs.contains(serviceID) {
+                tabPromptHistories.removeValue(forKey: serviceID)
             }
         }
-        for url in tabPromptHistoryEnabledOverrides.keys {
-            if !incomingURLs.contains(url) {
-                tabPromptHistoryEnabledOverrides.removeValue(forKey: url)
+        for serviceID in tabPromptHistoryEnabledOverrides.keys {
+            if !incomingServiceIDs.contains(serviceID) {
+                tabPromptHistoryEnabledOverrides.removeValue(forKey: serviceID)
             }
         }
     }
     
-    func updateZoomLevels(_ levels: [String: CGFloat]) {
+    func updateZoomLevels(_ levels: [UUID: CGFloat]) {
         self.zoomLevels = levels
         for service in services {
-            if let level = levels[service.url], let sessionMap = webviewsByID[service.id] {
+            if let level = levels[service.id], let sessionMap = webviewsByID[service.id] {
                 sessionMap.values.forEach { $0.pageZoom = level }
             }
         }
     }
     
-    func applyZoom(_ level: CGFloat, for serviceURL: String) {
-        zoomLevels[serviceURL] = level
-        for service in services where service.url == serviceURL {
+    func applyZoom(_ level: CGFloat, for serviceID: UUID) {
+        zoomLevels[serviceID] = level
+        for service in services where service.id == serviceID {
             if let sessionMap = webviewsByID[service.id] {
                 sessionMap.values.forEach { $0.pageZoom = level }
             }
@@ -156,13 +156,13 @@ final class WebViewManager: NSObject {
         tearDownWebView(webView)
         webviewsByID[service.id]?.removeValue(forKey: sessionIndex)
         wrappersByID[service.id]?.removeValue(forKey: sessionIndex)
-        tabInputStates[service.url]?.removeValue(forKey: sessionIndex)
-        tabPromptHistories[service.url]?.removeValue(forKey: sessionIndex)
-        tabPromptHistoryEnabledOverrides[service.url]?.removeValue(forKey: sessionIndex)
+        tabInputStates[service.id]?.removeValue(forKey: sessionIndex)
+        tabPromptHistories[service.id]?.removeValue(forKey: sessionIndex)
+        tabPromptHistoryEnabledOverrides[service.id]?.removeValue(forKey: sessionIndex)
     }
 
-    func getOpenSessionTitlesState() -> [String: [Int: String]] {
-        var state: [String: [Int: String]] = [:]
+    func getOpenSessionTitlesState() -> [UUID: [Int: String]] {
+        var state: [UUID: [Int: String]] = [:]
 
         for service in services {
             guard let sessionIndices = webviewsByID[service.id]?.keys else { continue }
@@ -172,15 +172,15 @@ final class WebViewManager: NSObject {
                 }
             }
             if !titles.isEmpty {
-                state[service.url] = titles
+                state[service.id] = titles
             }
         }
 
         return state
     }
 
-    func getOpenSessionsState() -> [String: [Int: String]] {
-        var state: [String: [Int: String]] = [:]
+    func getOpenSessionsState() -> [UUID: [Int: String]] {
+        var state: [UUID: [Int: String]] = [:]
         let currentSavedState = Settings.shared.persistedTabState?.openTabs
 
         for service in services {
@@ -189,91 +189,91 @@ final class WebViewManager: NSObject {
             for (idx, webView) in sessionMap {
                 if let urlString = webView.url?.absoluteString, !urlString.isEmpty, urlString != "about:blank" {
                     sessionURLs[idx] = urlString
-                } else if let previouslySavedURL = currentSavedState?[service.url]?[idx], !previouslySavedURL.isEmpty {
+                } else if let previouslySavedURL = currentSavedState?[service.id]?[idx], !previouslySavedURL.isEmpty {
                     sessionURLs[idx] = previouslySavedURL
                 } else {
                     sessionURLs[idx] = service.url
                 }
             }
             if !sessionURLs.isEmpty {
-                state[service.url] = sessionURLs
+                state[service.id] = sessionURLs
             }
         }
         return state
     }
 
-    func getOpenSessionsInputState() -> [String: [Int: TabInputState]] {
+    func getOpenSessionsInputState() -> [UUID: [Int: TabInputState]] {
         return tabInputStates
     }
 
-    func getTabInputState(for serviceURL: String, sessionIndex: Int) -> TabInputState? {
-        return tabInputStates[serviceURL]?[sessionIndex]
+    func getTabInputState(for serviceID: UUID, sessionIndex: Int) -> TabInputState? {
+        return tabInputStates[serviceID]?[sessionIndex]
     }
 
-    func setTabInputState(_ state: TabInputState, for serviceURL: String, sessionIndex: Int) {
-        if tabInputStates[serviceURL] == nil {
-            tabInputStates[serviceURL] = [:]
+    func setTabInputState(_ state: TabInputState, for serviceID: UUID, sessionIndex: Int) {
+        if tabInputStates[serviceID] == nil {
+            tabInputStates[serviceID] = [:]
         }
-        tabInputStates[serviceURL]?[sessionIndex] = state
+        tabInputStates[serviceID]?[sessionIndex] = state
     }
 
-    func restoreTabInputStates(_ states: [String: [Int: TabInputState]]) {
-        for (url, sessionMap) in states {
-            if self.tabInputStates[url] == nil {
-                self.tabInputStates[url] = [:]
+    func restoreTabInputStates(_ states: [UUID: [Int: TabInputState]]) {
+        for (id, sessionMap) in states {
+            if self.tabInputStates[id] == nil {
+                self.tabInputStates[id] = [:]
             }
             for (idx, state) in sessionMap {
-                self.tabInputStates[url]?[idx] = state
+                self.tabInputStates[id]?[idx] = state
             }
         }
     }
 
-    func getOpenSessionsPromptHistories() -> [String: [Int: [PromptHistoryEntry]]] {
+    func getOpenSessionsPromptHistories() -> [UUID: [Int: [PromptHistoryEntry]]] {
         return tabPromptHistories
     }
 
-    func getOpenSessionsPromptHistoryOverrides() -> [String: [Int: Bool]] {
+    func getOpenSessionsPromptHistoryOverrides() -> [UUID: [Int: Bool]] {
         return tabPromptHistoryEnabledOverrides
     }
 
-    func restoreTabPromptHistories(_ states: [String: [Int: [PromptHistoryEntry]]]) {
-        for (url, sessionMap) in states {
-            if self.tabPromptHistories[url] == nil {
-                self.tabPromptHistories[url] = [:]
+    func restoreTabPromptHistories(_ states: [UUID: [Int: [PromptHistoryEntry]]]) {
+        for (id, sessionMap) in states {
+            if self.tabPromptHistories[id] == nil {
+                self.tabPromptHistories[id] = [:]
             }
             for (idx, history) in sessionMap {
-                self.tabPromptHistories[url]?[idx] = Self.trimmedPromptHistory(history)
+                self.tabPromptHistories[id]?[idx] = Self.trimmedPromptHistory(history)
             }
         }
     }
 
-    func restoreTabPromptHistoryOverrides(_ states: [String: [Int: Bool]]) {
-        for (url, sessionMap) in states {
-            if self.tabPromptHistoryEnabledOverrides[url] == nil {
-                self.tabPromptHistoryEnabledOverrides[url] = [:]
+    func restoreTabPromptHistoryOverrides(_ states: [UUID: [Int: Bool]]) {
+        for (id, sessionMap) in states {
+            if self.tabPromptHistoryEnabledOverrides[id] == nil {
+                self.tabPromptHistoryEnabledOverrides[id] = [:]
             }
             for (idx, override) in sessionMap {
-                self.tabPromptHistoryEnabledOverrides[url]?[idx] = override
+                self.tabPromptHistoryEnabledOverrides[id]?[idx] = override
             }
         }
     }
 
-    func getPromptHistory(for serviceURL: String, sessionIndex: Int) -> [PromptHistoryEntry] {
-        return tabPromptHistories[serviceURL]?[sessionIndex] ?? []
+    func getPromptHistory(for serviceID: UUID, sessionIndex: Int) -> [PromptHistoryEntry] {
+        return tabPromptHistories[serviceID]?[sessionIndex] ?? []
     }
 
-    func addPromptHistoryEntry(_ entry: PromptHistoryEntry, for serviceURL: String, sessionIndex: Int) {
-        if tabPromptHistories[serviceURL] == nil {
-            tabPromptHistories[serviceURL] = [:]
+    func addPromptHistoryEntry(_ entry: PromptHistoryEntry, for serviceID: UUID, sessionIndex: Int) {
+        if tabPromptHistories[serviceID] == nil {
+            tabPromptHistories[serviceID] = [:]
         }
-        if tabPromptHistories[serviceURL]?[sessionIndex] == nil {
-            tabPromptHistories[serviceURL]?[sessionIndex] = []
+        if tabPromptHistories[serviceID]?[sessionIndex] == nil {
+            tabPromptHistories[serviceID]?[sessionIndex] = []
         }
         
-        tabPromptHistories[serviceURL]?[sessionIndex]?.removeAll(where: { $0.text == entry.text })
+        tabPromptHistories[serviceID]?[sessionIndex]?.removeAll(where: { $0.text == entry.text })
         
-        tabPromptHistories[serviceURL]?[sessionIndex]?.append(entry)
-        trimPromptHistory(for: serviceURL, sessionIndex: sessionIndex)
+        tabPromptHistories[serviceID]?[sessionIndex]?.append(entry)
+        trimPromptHistory(for: serviceID, sessionIndex: sessionIndex)
     }
 
     private static func trimmedPromptHistory(_ history: [PromptHistoryEntry]) -> [PromptHistoryEntry] {
@@ -282,48 +282,48 @@ final class WebViewManager: NSObject {
         return Array(history.suffix(limit))
     }
 
-    private func trimPromptHistory(for serviceURL: String, sessionIndex: Int) {
-        guard let history = tabPromptHistories[serviceURL]?[sessionIndex] else { return }
-        tabPromptHistories[serviceURL]?[sessionIndex] = Self.trimmedPromptHistory(history)
+    private func trimPromptHistory(for serviceID: UUID, sessionIndex: Int) {
+        guard let history = tabPromptHistories[serviceID]?[sessionIndex] else { return }
+        tabPromptHistories[serviceID]?[sessionIndex] = Self.trimmedPromptHistory(history)
     }
 
     private func trimAllPromptHistories() {
-        for serviceURL in tabPromptHistories.keys {
-            guard let sessionMap = tabPromptHistories[serviceURL] else { continue }
+        for serviceID in tabPromptHistories.keys {
+            guard let sessionMap = tabPromptHistories[serviceID] else { continue }
             for sessionIndex in sessionMap.keys {
-                trimPromptHistory(for: serviceURL, sessionIndex: sessionIndex)
+                trimPromptHistory(for: serviceID, sessionIndex: sessionIndex)
             }
         }
     }
 
-    func clearPromptHistory(for serviceURL: String, sessionIndex: Int) {
-        tabPromptHistories[serviceURL]?.removeValue(forKey: sessionIndex)
+    func clearPromptHistory(for serviceID: UUID, sessionIndex: Int) {
+        tabPromptHistories[serviceID]?.removeValue(forKey: sessionIndex)
     }
 
-    func deletePromptHistoryEntry(_ entry: PromptHistoryEntry, for serviceURL: String, sessionIndex: Int) {
-        guard var history = tabPromptHistories[serviceURL]?[sessionIndex] else { return }
+    func deletePromptHistoryEntry(_ entry: PromptHistoryEntry, for serviceID: UUID, sessionIndex: Int) {
+        guard var history = tabPromptHistories[serviceID]?[sessionIndex] else { return }
         if let idx = history.firstIndex(of: entry) {
             history.remove(at: idx)
-            tabPromptHistories[serviceURL]?[sessionIndex] = history
+            tabPromptHistories[serviceID]?[sessionIndex] = history
         }
     }
 
-    func isPromptHistoryEnabled(for serviceURL: String, sessionIndex: Int) -> Bool {
+    func isPromptHistoryEnabled(for serviceID: UUID, sessionIndex: Int) -> Bool {
         guard Settings.shared.enablePromptHistory else {
             return false
         }
-        if let override = tabPromptHistoryEnabledOverrides[serviceURL]?[sessionIndex] {
+        if let override = tabPromptHistoryEnabledOverrides[serviceID]?[sessionIndex] {
             return override
         }
         return true
     }
 
-    func setPromptHistoryEnabled(_ enabled: Bool, for serviceURL: String, sessionIndex: Int) {
-        if tabPromptHistoryEnabledOverrides[serviceURL] == nil {
-            tabPromptHistoryEnabledOverrides[serviceURL] = [:]
+    func setPromptHistoryEnabled(_ enabled: Bool, for serviceID: UUID, sessionIndex: Int) {
+        if tabPromptHistoryEnabledOverrides[serviceID] == nil {
+            tabPromptHistoryEnabledOverrides[serviceID] = [:]
         }
-        tabPromptHistoryEnabledOverrides[serviceURL]?[sessionIndex] = enabled
-        if let service = services.first(where: { $0.url == serviceURL }),
+        tabPromptHistoryEnabledOverrides[serviceID]?[sessionIndex] = enabled
+        if let service = services.first(where: { $0.id == serviceID }),
            let webView = webviewsByID[service.id]?[sessionIndex] {
             pushRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
         }
@@ -333,7 +333,7 @@ final class WebViewManager: NSObject {
     func shouldShowRecordingIndicator(for service: Service, sessionIndex: Int) -> Bool {
         Settings.shared.promptRecordingIndicatorStyle != .off
             && service.preservePrompt
-            && isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex)
+            && isPromptHistoryEnabled(for: service.id, sessionIndex: sessionIndex)
     }
 
     func pushRecordingIndicatorState(to webView: WKWebView) {
@@ -453,20 +453,20 @@ final class WebViewManager: NSObject {
             
             if shouldRecord {
                 let trimmed = wasSentText.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.count >= 2 && isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex) {
+                if trimmed.count >= 2 && isPromptHistoryEnabled(for: service.id, sessionIndex: sessionIndex) {
                     let newEntry = PromptHistoryEntry(text: wasSentText, timestamp: Date())
-                    addPromptHistoryEntry(newEntry, for: service.url, sessionIndex: sessionIndex)
+                    addPromptHistoryEntry(newEntry, for: service.id, sessionIndex: sessionIndex)
                     acknowledgePromptSaved(in: webView, service: service, sessionIndex: sessionIndex)
                     NSLog("[Quiper] [History] Successfully added entry to session \(sessionIndex) prompt history")
                     self.delegate?.inputStateRequestSave()
                 } else {
-                    NSLog("[Quiper] [History] Entry ignored. Trimmed length: \(trimmed.count), enabled: \(isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex))")
+                    NSLog("[Quiper] [History] Entry ignored. Trimmed length: \(trimmed.count), enabled: \(isPromptHistoryEnabled(for: service.id, sessionIndex: sessionIndex))")
                 }
             }
         }
 
         let inputState = TabInputState(text: text, isContentEditable: isContentEditable, start: start, end: end)
-        setTabInputState(inputState, for: service.url, sessionIndex: sessionIndex)
+        setTabInputState(inputState, for: service.id, sessionIndex: sessionIndex)
         
         if wasSent {
             self.delegate?.inputStateRequestSave()
@@ -526,15 +526,15 @@ final class WebViewManager: NSObject {
             
             if shouldRecord {
                 let trimmed = wasSentText.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.count >= 2 && isPromptHistoryEnabled(for: service.url, sessionIndex: sessionIndex) {
+                if trimmed.count >= 2 && isPromptHistoryEnabled(for: service.id, sessionIndex: sessionIndex) {
                     let newEntry = PromptHistoryEntry(text: wasSentText, timestamp: Date())
-                    addPromptHistoryEntry(newEntry, for: service.url, sessionIndex: sessionIndex)
+                    addPromptHistoryEntry(newEntry, for: service.id, sessionIndex: sessionIndex)
                 }
             }
         }
 
         let inputState = TabInputState(text: text, isContentEditable: isContentEditable, start: start, end: end)
-        setTabInputState(inputState, for: service.url, sessionIndex: sessionIndex)
+        setTabInputState(inputState, for: service.id, sessionIndex: sessionIndex)
     }
     #endif
 
@@ -1367,7 +1367,7 @@ final class WebViewManager: NSObject {
         }
         wrappersByID[service.id]?[sessionIndex] = wrapperView
         
-        urlsByWebView[ObjectIdentifier(webview)] = service.url
+        serviceIDsByWebView[ObjectIdentifier(webview)] = service.id
         
         let token = ObjectIdentifier(webview)
         retainTitle(restoredTitle, for: webview)
@@ -1480,7 +1480,7 @@ final class WebViewManager: NSObject {
                             webview.removeObserver(self, forKeyPath: "loading")
                             let oldToken = ObjectIdentifier(webview)
                             self.initialLoadAwaitingFocus.remove(oldToken)
-                            self.urlsByWebView.removeValue(forKey: oldToken)
+                            self.serviceIDsByWebView.removeValue(forKey: oldToken)
                             webview.configuration.userContentController.removeAllUserScripts()
                             webview.removeFromSuperview()
                             
@@ -1497,28 +1497,28 @@ final class WebViewManager: NSObject {
                             
                             // Update maps
                             self.webviewsByID[service.id]?[sessionIndex] = realWebView
-                            self.urlsByWebView[ObjectIdentifier(realWebView)] = service.url
+                            self.serviceIDsByWebView[ObjectIdentifier(realWebView)] = service.id
                             
-                             // Load real URL
-                             var targetURLString = serviceUrl
-                             if Settings.shared.tabSurvivalPolicy != .never {
-                                 let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceId).appendingPathComponent("quiper_tabs.json")
-                                 if let data = try? Data(contentsOf: stateURL),
-                                    let state = try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data) {
-                                     if let saved = state.openTabs[sessionIndex] {
-                                         targetURLString = saved
-                                     }
-                                     if let secureInputs = state.tabInputs {
-                                         self.restoreTabInputStates([service.url: secureInputs])
-                                     }
-                                     if let secureHistories = state.tabPromptHistories {
-                                         self.restoreTabPromptHistories([service.url: secureHistories])
-                                     }
-                                     if let secureOverrides = state.tabPromptHistoryEnabledOverrides {
-                                         self.restoreTabPromptHistoryOverrides([service.url: secureOverrides])
-                                     }
-                                 }
-                             }
+                            // Load real URL
+                            var targetURLString = serviceUrl
+                            if Settings.shared.tabSurvivalPolicy != .never {
+                                let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceId).appendingPathComponent("quiper_tabs.json")
+                                if let data = try? Data(contentsOf: stateURL),
+                                   let state = try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data) {
+                                    if let saved = state.openTabs[sessionIndex] {
+                                        targetURLString = saved
+                                    }
+                                    if let secureInputs = state.tabInputs {
+                                        self.restoreTabInputStates([service.id: secureInputs])
+                                    }
+                                    if let secureHistories = state.tabPromptHistories {
+                                        self.restoreTabPromptHistories([service.id: secureHistories])
+                                    }
+                                    if let secureOverrides = state.tabPromptHistoryEnabledOverrides {
+                                        self.restoreTabPromptHistoryOverrides([service.id: secureOverrides])
+                                    }
+                                }
+                            }
                             
                             if let url = URL(string: targetURLString) {
                                 NSLog("[LockOverlay] Loading URL: %@", targetURLString)
@@ -1631,7 +1631,7 @@ final class WebViewManager: NSObject {
         webview.uiDelegate = self
         webview.navigationDelegate = self
         webview.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-        webview.pageZoom = zoomLevels[service.url] ?? 1.0
+        webview.pageZoom = zoomLevels[service.id] ?? 1.0
         
         attachNotificationBridge(to: webview, service: service, sessionIndex: sessionIndex)
         
@@ -1763,10 +1763,14 @@ final class WebViewManager: NSObject {
     }
     
     func serviceURL(for webView: WKWebView) -> URL? {
-        if let urlString = urlsByWebView[ObjectIdentifier(webView)] {
-            return URL(string: urlString)
+        service(for: webView).flatMap { URL(string: $0.url) }
+    }
+
+    func service(for webView: WKWebView) -> Service? {
+        guard let serviceID = serviceIDsByWebView[ObjectIdentifier(webView)] else {
+            return nil
         }
-        return nil
+        return services.first(where: { $0.id == serviceID })
     }
     
     func waitForNavigation(on webView: WKWebView) async {
@@ -1817,7 +1821,7 @@ final class WebViewManager: NSObject {
             continuation.resume()
         }
         initialLoadAwaitingFocus.remove(token)
-        urlsByWebView.removeValue(forKey: token)
+        serviceIDsByWebView.removeValue(forKey: token)
         pendingLazyLoadURLs.removeValue(forKey: token)
         lastKnownTitlesByWebView.removeValue(forKey: token)
  
@@ -1847,7 +1851,7 @@ final class WebViewManager: NSObject {
         let identifier = ObjectIdentifier(webView)
         notificationBridges[identifier] = WebNotificationBridge(
             webView: webView,
-            serviceURL: service.url,
+            serviceID: service.id,
             serviceName: service.name,
             sessionIndex: sessionIndex
         )
@@ -2214,8 +2218,8 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         guard let url = navigationAction.request.url,
               let scheme = url.scheme?.lowercased(),
               allowedSchemes.contains(scheme),
-              let serviceURL = serviceURL(for: webView),
-              let service = services.first(where: { $0.url == serviceURL.absoluteString }) else {
+              let service = service(for: webView),
+              let serviceURL = URL(string: service.url) else {
             if let url = navigationAction.request.url {
                  NSWorkspace.shared.open(url)
             }
@@ -2315,8 +2319,8 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         guard let url = navigationAction.request.url,
               let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme),
-              let serviceURL = serviceURL(for: webView),
-              let service = services.first(where: { $0.url == serviceURL.absoluteString }) else {
+              let service = service(for: webView),
+              let serviceURL = URL(string: service.url) else {
             decisionHandler(.allow)
             return
         }
