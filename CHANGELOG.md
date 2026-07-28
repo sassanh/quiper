@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [4.6.0] - 2026-07-28
+
 ### Added
 
 - **About Command in Embedded Help Menu**: Added “About Quiper” to the Help submenu available from the in-window ellipsis menu when Quiper is configured to stay out of the Dock.
