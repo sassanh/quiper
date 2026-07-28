@@ -4,6 +4,7 @@
 
 ### Added
 
+- **About Command in Embedded Help Menu**: Added “About Quiper” to the Help submenu available from the in-window ellipsis menu when Quiper is configured to stay out of the Dock.
 - **Kimi Engine Template**: Added Kimi with synced prompt focusing, transparent page and content layers, authentication routing, and default shortcuts for starting chats, sharing conversations, and toggling history.
 - **Qwen Engine Template**: Added Qwen Studio with synced prompt focusing, transparent styling, authentication routing, and default shortcuts for starting new or temporary chats, sharing conversations, and toggling history.
 - **Engineering Blog**: Added an extensible VitePress blog at `/blog/` with automatic post listings, page-specific social metadata, and the first article, “Why I Built Spotlight for AI.”

@@ -245,7 +245,7 @@ extension MainWindowController {
         menu.addItem(windowItem)
         
         let helpItem = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
-        let helpMenu = MenuFactory.createHelpMenu()
+        let helpMenu = MenuFactory.createHelpMenu(includeAbout: true)
         helpItem.submenu = helpMenu
         menu.addItem(helpItem)
         
