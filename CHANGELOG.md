@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Documentation and Blog Browser Icons**: Documentation and blog pages now declare the Quiper logo as their browser favicon and Apple touch icon.
+
 ## [4.6.1] - 2026-07-28
 
 ### Fixed

@@ -18,6 +18,8 @@ export default defineConfig({
   description: 'Unified AI overlay for macOS — documentation and guides.',
 
   head: [
+    ['link', { rel: 'icon', type: 'image/png', href: `${siteBase}logo.png` }],
+    ['link', { rel: 'apple-touch-icon', href: `${siteBase}logo.png` }],
     ['meta', { name: 'theme-color', content: '#7c3aed' }],
   ],
 
