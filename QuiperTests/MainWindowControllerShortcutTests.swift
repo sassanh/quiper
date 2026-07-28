@@ -70,6 +70,90 @@ final class MainWindowControllerShortcutTests: XCTestCase {
         XCTAssertEqual(controller.activeSessionIndex, 2)
     }
 
+    func testDigitShortcutShowsFindBarOnlyForOwningSession() async throws {
+        let controller = makeController()
+        controller.switchSession(to: 0)
+        let window = try XCTUnwrap(controller.window)
+        await activateAndMakeKey(window)
+        defer {
+            controller.findBarViewControllers.values.forEach { $0.hide() }
+            window.orderOut(nil)
+        }
+
+        let firstFindBar = controller.findBarViewController!
+        firstFindBar.show()
+        XCTAssertTrue(firstFindBar.isVisible)
+        XCTAssertTrue(firstFindBar.hasInputFocus)
+
+        let handled = controller.handleCommandShortcut(event: digitEvent(number: 2, modifiers: [.command]))
+
+        XCTAssertTrue(handled)
+        XCTAssertEqual(controller.activeSessionIndex, 1)
+        XCTAssertFalse(controller.findBarViewController === firstFindBar)
+        XCTAssertEqual(firstFindBar.view.superview?.isHidden, true)
+        XCTAssertFalse(controller.findBarViewController.isVisible)
+
+        let returnHandled = controller.handleCommandShortcut(event: digitEvent(number: 1, modifiers: [.command]))
+
+        XCTAssertTrue(returnHandled)
+        XCTAssertEqual(controller.activeSessionIndex, 0)
+        XCTAssertTrue(controller.findBarViewController === firstFindBar)
+        XCTAssertEqual(firstFindBar.view.superview?.isHidden, false)
+        XCTAssertTrue(firstFindBar.isVisible)
+        XCTAssertTrue(firstFindBar.hasInputFocus)
+    }
+
+    func testReturningToSessionDoesNotFocusFindBarWhenItWasUnfocused() async throws {
+        let controller = makeController()
+        controller.switchSession(to: 0)
+        let window = try XCTUnwrap(controller.window)
+        await activateAndMakeKey(window)
+        defer {
+            controller.findBarViewControllers.values.forEach { $0.hide() }
+            window.orderOut(nil)
+        }
+
+        let firstFindBar = controller.findBarViewController!
+        firstFindBar.show()
+        window.makeFirstResponder(controller.activeWebView)
+        XCTAssertTrue(firstFindBar.isVisible)
+        XCTAssertFalse(firstFindBar.hasInputFocus)
+
+        _ = controller.handleCommandShortcut(event: digitEvent(number: 2, modifiers: [.command]))
+        _ = controller.handleCommandShortcut(event: digitEvent(number: 1, modifiers: [.command]))
+
+        XCTAssertEqual(controller.activeSessionIndex, 0)
+        XCTAssertTrue(controller.findBarViewController === firstFindBar)
+        XCTAssertTrue(firstFindBar.isVisible)
+        XCTAssertFalse(firstFindBar.hasInputFocus)
+    }
+
+    func testSwitchingBetweenSessionsWithOpenFindBarsUsesTabOwnedViews() {
+        let controller = makeController()
+        controller.switchSession(to: 0)
+        controller.window?.makeKeyAndOrderFront(nil)
+        defer {
+            controller.findBarViewControllers.values.forEach { $0.hide() }
+            controller.window?.orderOut(nil)
+        }
+
+        let firstFindBar = controller.findBarViewController!
+        firstFindBar.show()
+        _ = controller.handleCommandShortcut(event: digitEvent(number: 2, modifiers: [.command]))
+        let secondFindBar = controller.findBarViewController!
+        secondFindBar.show()
+
+        _ = controller.handleCommandShortcut(event: digitEvent(number: 1, modifiers: [.command]))
+
+        XCTAssertEqual(controller.activeSessionIndex, 0)
+        XCTAssertTrue(controller.findBarViewController === firstFindBar)
+        XCTAssertFalse(firstFindBar === secondFindBar)
+        XCTAssertTrue(firstFindBar.isVisible)
+        XCTAssertTrue(secondFindBar.isVisible)
+        XCTAssertEqual(firstFindBar.view.superview?.isHidden, false)
+        XCTAssertEqual(secondFindBar.view.superview?.isHidden, true)
+    }
+
     func testDigitShortcutSelectsService() {
         let controller = makeController()
 
@@ -105,6 +189,17 @@ final class MainWindowControllerShortcutTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    private func activateAndMakeKey(_ window: NSWindow) async {
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+
+        let keyWindowExpectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in window.isKeyWindow },
+            object: nil
+        )
+        await fulfillment(of: [keyWindowExpectation], timeout: 2.0)
+    }
 
     private func makeController() -> MainWindowController {
         let services = [

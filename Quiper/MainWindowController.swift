@@ -95,6 +95,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var webViewManager: WebViewManager!
     var emptyStateView: EmptyStateView!
     var findBarViewController: FindBarViewController!
+    var findBarViewControllers: [ObjectIdentifier: FindBarViewController] = [:]
     var draggingServiceIndex: Int?
     var activeIndicesByID: [UUID: Int] = [:]
     
@@ -917,10 +918,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         restoreTabsState()
 
-        findBarViewController = FindBarViewController()
-        findBarViewController.delegate = self
-        findBarViewController.addTo(parentWindow: window!, topOffset: Settings.shared.dragAreaPosition == .top ? Constants.DRAGGABLE_AREA_HEIGHT : 0)
-        
         contentView.addSubview(windowMarginView, positioned: .below, relativeTo: dragArea)
         contentView.addSubview(windowOutlineView, positioned: .above, relativeTo: nil)
 
@@ -1546,8 +1543,7 @@ struct SecureTabState: Codable {
         let otherChildWindows = window?.childWindows?.filter {
             $0 != settingsWindow &&
             $0 != UpdatePromptWindowController.shared.window &&
-            $0 != blurWindow &&
-            $0 != findBarViewController?.panel
+            $0 != blurWindow
         } ?? []
         if !otherChildWindows.isEmpty {
             return

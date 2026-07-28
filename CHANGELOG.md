@@ -22,6 +22,7 @@
 
 ### Fixed
 
+- **Session-scoped Find Bars**: Find bars now belong to their individual web sessions, preserving each session's search visibility and focus across tab switches without appearing over or searching another session.
 - **Lock Overlay Engine Name & Password Fallback ([LockOverlayView.swift](Quiper/Components/LockOverlayView.swift))**: Lock overlay now names the engine being unlocked and releases the active biometric context before falling back to password authentication, so the "Use Password... ⌘P" button works reliably.
 - **Qwen Template Transparency**: Made Qwen's full-window application layers transparent so the engine matches Quiper's overlay appearance.
 - **Digit Modifier Conflict Detection**: Recording a session or engine number modifier now detects existing modifier-plus-digit shortcuts, including global, engine-launch, app, custom-action, primary, and alternate bindings.

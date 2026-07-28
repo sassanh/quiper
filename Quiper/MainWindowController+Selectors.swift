@@ -97,10 +97,7 @@ extension MainWindowController {
               let title = titleLabel,
               let actionsBtn = sessionActionsButton else { return }
 
-        
         let isBottom = Settings.shared.dragAreaPosition == .bottom
-        findBarViewController?.layoutIn(parentWindow: window!, topOffset: isBottom ? 0 : Constants.DRAGGABLE_AREA_HEIGHT)
-
         let activeServiceSel = (serviceSelector?.isHidden == false) ? serviceSelector : (collapsibleServiceSelector?.isHidden == false ? collapsibleServiceSelector : nil)
         let activeSessionSel = (sessionSelector?.isHidden == false) ? sessionSelector : (collapsibleSessionSelector?.isHidden == false ? collapsibleSessionSelector : nil)
         

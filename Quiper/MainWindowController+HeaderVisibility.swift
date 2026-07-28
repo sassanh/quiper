@@ -16,7 +16,6 @@ extension MainWindowController {
         windowOutlineView?.setRevealed(false, edge: .none, animated: false)
         
         updateWindowMarginAndLayout()
-        findBarViewController?.layoutIn(parentWindow: window!, topOffset: Settings.shared.dragAreaPosition == .top ? Constants.DRAGGABLE_AREA_HEIGHT : 0)
         updateHeaderTrackingArea()
         updateHeaderVisibility(animated: false)
     }

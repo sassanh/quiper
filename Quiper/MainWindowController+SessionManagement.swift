@@ -25,15 +25,16 @@ extension MainWindowController {
             endHistoryCycling()
         }
         guard services.indices.contains(index) else { return }
-        
+        let selectedService = services[index]
+
         if let previousService = currentService() {
-            if services[index].id != previousService.id {
+            if selectedService.id != previousService.id {
                 handleSwitchAway(from: previousService)
             }
         }
         
-        currentServiceName = services[index].name
-        currentServiceID = services[index].id
+        currentServiceName = selectedService.name
+        currentServiceID = selectedService.id
         
         serviceSelector?.selectedSegment = index
         collapsibleServiceSelector?.selectedSegment = index
@@ -167,6 +168,13 @@ extension MainWindowController {
 
     func updateActiveWebview(focusWebView: Bool = true, forceCreate: Bool = false) {
         guard let service = currentService(), webViewManager != nil else { return }
+        let activeIndex = activeIndicesByID[service.id] ?? 0
+        let currentTab = TabIdentifier(serviceID: service.id, sessionIndex: activeIndex)
+        let existingTargetWebView = webViewManager.getWebView(for: service, sessionIndex: activeIndex)
+        if findBarViewController?.webView !== existingTargetWebView {
+            findBarViewController?.tabWillHide()
+        }
+
         if let oldTab = lastActiveTab,
            let oldService = services.first(where: { $0.id == oldTab.serviceID }),
            let oldWV = webViewManager.getWebView(for: oldService, sessionIndex: oldTab.sessionIndex) {
@@ -183,9 +191,6 @@ extension MainWindowController {
             return webViewManager.getWebView(for: svc, sessionIndex: tab.sessionIndex) != nil
         }
         
-        let activeIndex = activeIndicesByID[service.id] ?? 0
-        
-        let currentTab = TabIdentifier(serviceID: service.id, sessionIndex: activeIndex)
         if lastActiveTab != currentTab {
             if !isCyclingHistory {
                 tabHistory.removeAll { $0 == currentTab }
@@ -212,8 +217,10 @@ extension MainWindowController {
         webViewManager.hideAll()
         
         let activeWebview = getOrCreateWebview(for: service, sessionIndex: activeIndex)
-        
+        findBarViewController = findBarController(for: activeWebview)
+
         webViewManager.showSession(activeWebview)
+        let restoredFindBarFocus = findBarViewController.tabDidShow()
         
         if let zoom = Settings.shared.serviceZoomLevels[service.id] {
             webViewManager.applyZoom(zoom, for: service.id)
@@ -224,7 +231,7 @@ extension MainWindowController {
         
         observeNavigationState(of: activeWebview)
         
-        if focusWebView, !GhostOnboardingManager.shared.isActive {
+        if focusWebView, !restoredFindBarFocus, !GhostOnboardingManager.shared.isActive {
             window?.makeFirstResponder(activeWebview)
             focusInputInActiveWebview()
         }
@@ -452,6 +459,8 @@ extension MainWindowController {
     }
     
     func showEmptyState() {
+        findBarViewController?.tabWillHide()
+        findBarViewController = nil
         webViewManager.hideAll()
         
         canGoBackObservation = nil
@@ -532,5 +541,21 @@ extension MainWindowController {
 
     func handleServiceMouseDown(at index: Int) {
         selectService(at: index, focusWebView: false)
+    }
+
+    private func findBarController(for webView: WKWebView) -> FindBarViewController {
+        findBarViewControllers = findBarViewControllers.filter { $0.value.webView != nil }
+        let key = ObjectIdentifier(webView)
+        if let controller = findBarViewControllers[key], controller.webView === webView {
+            return controller
+        }
+
+        let controller = FindBarViewController()
+        controller.delegate = self
+        if let tabView = webView.superview {
+            controller.attach(to: webView, in: tabView)
+        }
+        findBarViewControllers[key] = controller
+        return controller
     }
 }

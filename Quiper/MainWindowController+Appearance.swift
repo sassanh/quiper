@@ -134,22 +134,9 @@ extension MainWindowController {
             window.removeChildWindow(bw)
             window.addChildWindow(bw, ordered: .below)
         }
-        
-        if let findBarPanel = findBarViewController?.panel {
-            let fbBehavior: NSWindow.CollectionBehavior = (Settings.shared.showOnAllSpaces || !isVisible)
-                ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-                : [.transient, .ignoresCycle, .fullScreenAuxiliary]
-            
-            findBarPanel.collectionBehavior = fbBehavior
-            if findBarPanel.isVisible {
-                window.removeChildWindow(findBarPanel)
-                window.addChildWindow(findBarPanel, ordered: .above)
-            }
-        }
     }
     
     @objc func handleShowOnAllSpacesChanged(_ notification: Notification) {
         updateCollectionBehaviorForVisibilityState()
     }
 }
-

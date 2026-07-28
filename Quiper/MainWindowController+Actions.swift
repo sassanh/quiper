@@ -509,11 +509,7 @@ extension MainWindowController: CollapsibleSelectorDelegate {
 }
 
 // MARK: - FindBarDelegate
-extension MainWindowController: FindBarDelegate {
-    func activeWebViewForFind() -> WKWebView? {
-        currentWebView()
-    }
-}
+extension MainWindowController: FindBarDelegate {}
 
 // MARK: - WebViewManagerDelegate
 extension MainWindowController: WebViewManagerDelegate {

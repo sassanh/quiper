@@ -2,7 +2,6 @@ import AppKit
 import WebKit
 
 protocol FindBarDelegate: AnyObject {
-    func activeWebViewForFind() -> WKWebView?
     func playErrorSound()
 }
 
@@ -17,10 +16,15 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     private var findNextButton: NSButton!
     private var closeButton: NSButton!
     
-    // Child window that hosts the find bar above the WKWebView
-    private var findBarPanel: NSPanel?
-    var panel: NSPanel? { findBarPanel }
-    private weak var parentWindow: NSWindow?
+    private weak var targetWebView: WKWebView?
+    var webView: WKWebView? { targetWebView }
+    private var wasFocusedWhenTabHidden = false
+    var isVisible: Bool { !view.isHidden }
+    var hasInputFocus: Bool {
+        guard let window = view.window, window.isKeyWindow else { return false }
+        return window.firstResponder === findField
+            || window.firstResponder === findField.currentEditor()
+    }
     
     // State
     private var isFindBarVisible = false
@@ -32,76 +36,27 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     private let barHeight: CGFloat = 46
     
     override func loadView() {
-        view = NSView()
+        view = FindBarEventView()
         view.wantsLayer = true
         setupFindBar()
     }
     
-    func addTo(parentWindow: NSWindow, topOffset: CGFloat) {
-        self.parentWindow = parentWindow
-        createPanelIfNeeded()
-        layoutIn(parentWindow: parentWindow, topOffset: topOffset)
-    }
-    
-    func layoutIn(parentWindow: NSWindow, topOffset: CGFloat) {
-        guard let panel = findBarPanel,
-              let contentView = parentWindow.contentView else { return }
-        
+    func attach(to webView: WKWebView, in tabView: NSView) {
+        targetWebView = webView
         let padding: CGFloat = 12
-        // Compute position in parent content view coordinates
-        let originX = contentView.bounds.width - barWidth - padding
-        let originY = contentView.bounds.height - topOffset - barHeight - padding
-        
-        // Convert from content view coords to screen coords
-        let rectInWindow = NSRect(x: originX, y: originY, width: barWidth, height: barHeight)
-        let rectInScreen = parentWindow.convertToScreen(rectInWindow)
-        
-        panel.setFrame(rectInScreen, display: true)
-    }
-    
-    // Legacy compatibility shim for callers using contentView-based API
-    func addTo(contentView: NSView, topOffset: CGFloat) {
-        guard let window = contentView.window else { return }
-        addTo(parentWindow: window, topOffset: topOffset)
-    }
-    
-    func layoutIn(contentView: NSView, topOffset: CGFloat) {
-        guard let window = contentView.window ?? parentWindow else { return }
-        layoutIn(parentWindow: window, topOffset: topOffset)
-    }
-    
-    private func createPanelIfNeeded() {
-        guard findBarPanel == nil, let parentWindow = parentWindow else { return }
-        
-        let panel = FindBarPanel(
-            contentRect: NSRect(x: 0, y: 0, width: barWidth, height: barHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
+        view.frame = NSRect(
+            x: tabView.bounds.width - barWidth - padding,
+            y: tabView.bounds.height - barHeight - padding,
+            width: barWidth,
+            height: barHeight
         )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.level = parentWindow.level
-        panel.collectionBehavior = Settings.shared.showOnAllSpaces
-            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-            : [.transient, .ignoresCycle, .fullScreenAuxiliary]
-        panel.hidesOnDeactivate = false
-        panel.becomesKeyOnlyIfNeeded = false
-        panel.isFloatingPanel = true
-        
-        // Set the find bar as the panel's content
-        panel.contentView = view
-        view.frame = NSRect(x: 0, y: 0, width: barWidth, height: barHeight)
-        
-        parentWindow.addChildWindow(panel, ordered: .above)
-        panel.orderOut(nil) // Start hidden
-        
-        findBarPanel = panel
+        view.autoresizingMask = [.minXMargin, .minYMargin]
+        view.isHidden = true
+        tabView.addSubview(view, positioned: .above, relativeTo: webView)
     }
     
     private func setupFindBar() {
-        let bar = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: barWidth, height: barHeight))
+        let bar = FindBarEventView(frame: NSRect(x: 0, y: 0, width: barWidth, height: barHeight))
         bar.material = .menu
         bar.state = .active
         bar.wantsLayer = true
@@ -190,6 +145,7 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         self.findPreviousButton = prevButton
         self.findNextButton = nextButton
         self.closeButton = closeBtn
+        self.view.isHidden = true
         
         findDebouncer.callback = { [weak self] in
             self?.performFind(forward: true, newSearch: true)
@@ -199,11 +155,10 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     // MARK: - API
     
     func show() {
-        createPanelIfNeeded()
-        findBarPanel?.orderFront(nil)
+        guard targetWebView != nil else { return }
+        view.isHidden = false
         isFindBarVisible = true
-        findBarPanel?.makeKey()
-        findBarPanel?.makeFirstResponder(findField)
+        view.window?.makeFirstResponder(findField)
         if findField.stringValue.isEmpty {
             findField.stringValue = currentFindString
         }
@@ -214,14 +169,33 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     }
     
     func hide() {
+        hide(restoreWebViewFocus: true)
+    }
+
+    func tabWillHide() {
+        wasFocusedWhenTabHidden = isFindBarVisible && hasInputFocus
+    }
+
+    @discardableResult
+    func tabDidShow() -> Bool {
+        guard isFindBarVisible, wasFocusedWhenTabHidden else {
+            return false
+        }
+        view.window?.makeFirstResponder(findField)
+        return hasInputFocus
+    }
+
+    func hide(restoreWebViewFocus: Bool) {
         currentFindString = findField.stringValue
-        findBarPanel?.orderOut(nil)
+        view.isHidden = true
         isFindBarVisible = false
+        wasFocusedWhenTabHidden = false
         findStatusLabel.stringValue = ""
-        resetFind()
-        if let webView = delegate?.activeWebViewForFind(),
-           let window = parentWindow, window.isVisible {
-            window.makeKeyAndOrderFront(nil)
+        findDebouncer.cancel()
+        resetFind(in: targetWebView)
+        if restoreWebViewFocus,
+           let webView = targetWebView,
+           let window = view.window, window.isVisible {
             window.makeFirstResponder(webView)
         }
     }
@@ -239,17 +213,15 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
             show()
             // Cmd+G (Find Next) implies you want to navigate results, not type.
             // The original code focuses the webview if opened via Cmd+G.
-             if let webView = delegate?.activeWebViewForFind() {
-                 parentWindow?.makeKeyAndOrderFront(nil)
-                 parentWindow?.makeFirstResponder(webView)
-             }
+            if let webView = targetWebView {
+                view.window?.makeFirstResponder(webView)
+            }
         }
         
         let trimmedField = findField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedField.isEmpty {
             if currentFindString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                findBarPanel?.makeKey()
-                findBarPanel?.makeFirstResponder(findField)
+                view.window?.makeFirstResponder(findField)
                 delegate?.playErrorSound()
                 return
             }
@@ -272,7 +244,7 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         hide()
     }
     
-    private func resetFind() {
+    private func resetFind(in webView: WKWebView?) {
         updateFindStatus(matchFound: nil, index: nil, total: nil)
         let script = """
         (() => {
@@ -285,11 +257,11 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
           if (sel) { sel.removeAllRanges(); }
         })();
         """
-        delegate?.activeWebViewForFind()?.evaluateJavaScript(script, completionHandler: nil)
+        webView?.evaluateJavaScript(script, completionHandler: nil)
     }
     
     private func performFind(forward: Bool, newSearch: Bool = false) {
-        guard let webView = delegate?.activeWebViewForFind() else { return }
+        guard isFindBarVisible, let webView = targetWebView else { return }
         
         let searchString = findField.stringValue
         if newSearch && searchString == currentFindString {
@@ -299,7 +271,7 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         currentFindString = searchString
         let trimmed = currentFindString.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            resetFind()
+            resetFind(in: webView)
             return
         }
         
@@ -384,17 +356,20 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         """
         
         webView.evaluateJavaScript(script) { [weak self] result, error in
+            guard let self,
+                  self.isFindBarVisible,
+                  self.targetWebView === webView else { return }
             guard error == nil else {
-                self?.updateFindStatus(matchFound: false, index: nil, total: nil)
+                self.updateFindStatus(matchFound: false, index: nil, total: nil)
                 return
             }
             if let dict = result as? [String: Any],
                let match = dict["match"] as? Bool {
                 let current = dict["current"] as? Int
                 let total = dict["total"] as? Int
-                self?.updateFindStatus(matchFound: match, index: current, total: total)
+                self.updateFindStatus(matchFound: match, index: current, total: total)
             } else {
-                self?.updateFindStatus(matchFound: false, index: nil, total: nil)
+                self.updateFindStatus(matchFound: false, index: nil, total: nil)
             }
         }
     }
@@ -461,14 +436,24 @@ private final class FindDebouncer: NSObject {
                                      userInfo: nil,
                                      repeats: false)
     }
+
+    func cancel() {
+        timer?.invalidate()
+        timer = nil
+    }
     
     @objc private func timerFired() {
+        timer = nil
         callback?()
     }
 }
 
-private final class FindBarPanel: NSPanel {
-    override var canBecomeKey: Bool {
-        return true
+private final class FindBarEventView: NSVisualEffectView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard bounds.contains(point), !isHidden else { return nil }
+        return super.hitTest(point) ?? self
     }
+
+    override func mouseMoved(with event: NSEvent) {}
+    override func scrollWheel(with event: NSEvent) {}
 }
