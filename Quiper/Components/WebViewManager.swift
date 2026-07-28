@@ -11,6 +11,22 @@ protocol WebViewManagerDelegate: AnyObject {
     func inputStateRequestSave()
 }
 
+final class WebViewWrapperView: NSView {
+    weak var interactiveOverlayView: NSView?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if let overlay = interactiveOverlayView, !overlay.isHidden {
+            let overlayPoint = convert(point, to: overlay)
+            if overlay.bounds.contains(overlayPoint),
+               let hitView = overlay.hitTest(overlayPoint) {
+                return hitView
+            }
+        }
+
+        return super.hitTest(point)
+    }
+}
+
 @MainActor
 final class WebViewManager: NSObject {
     weak var delegate: WebViewManagerDelegate?
@@ -1336,7 +1352,7 @@ final class WebViewManager: NSObject {
         }
         
         // Wrapper View (Holds WebView + Docked Inspector)
-        let wrapperView = NSView(frame: frame)
+        let wrapperView = WebViewWrapperView(frame: frame)
         wrapperView.autoresizingMask = []
         wrapperView.wantsLayer = true
         wrapperView.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS

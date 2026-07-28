@@ -154,6 +154,29 @@ final class MainWindowControllerShortcutTests: XCTestCase {
         XCTAssertEqual(secondFindBar.view.superview?.isHidden, true)
     }
 
+    func testFindBarControlsAndBackgroundWinHitTestingOverWebView() throws {
+        let controller = makeController()
+        controller.switchSession(to: 0)
+
+        let findBar = try XCTUnwrap(controller.findBarViewController)
+        let webView = try XCTUnwrap(findBar.webView)
+        let wrapper = try XCTUnwrap(webView.superview)
+        findBar.show()
+        defer { findBar.hide() }
+
+        for control in findBar.view.subviews.compactMap({ $0 as? NSControl }) {
+            let controlCenter = NSPoint(x: control.bounds.midX, y: control.bounds.midY)
+            let pointInWrapper = control.convert(controlCenter, to: wrapper)
+            let hitView = try XCTUnwrap(wrapper.hitTest(pointInWrapper))
+
+            XCTAssertFalse(hitView === webView)
+            XCTAssertTrue(hitView === control || hitView.isDescendant(of: control))
+        }
+
+        let backgroundPoint = findBar.view.convert(NSPoint(x: 4, y: 4), to: wrapper)
+        XCTAssertTrue(wrapper.hitTest(backgroundPoint) === findBar.view)
+    }
+
     func testDigitShortcutSelectsService() {
         let controller = makeController()
 

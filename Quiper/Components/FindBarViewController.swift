@@ -53,6 +53,7 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         view.autoresizingMask = [.minXMargin, .minYMargin]
         view.isHidden = true
         tabView.addSubview(view, positioned: .above, relativeTo: webView)
+        (tabView as? WebViewWrapperView)?.interactiveOverlayView = view
     }
     
     private func setupFindBar() {
@@ -451,7 +452,14 @@ private final class FindDebouncer: NSObject {
 private final class FindBarEventView: NSVisualEffectView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard bounds.contains(point), !isHidden else { return nil }
-        return super.hitTest(point) ?? self
+
+        for subview in subviews.reversed() where !subview.isHidden && subview.alphaValue > 0 {
+            let subviewPoint = convert(point, to: subview)
+            guard subview.bounds.contains(subviewPoint) else { continue }
+            return subview.hitTest(subviewPoint) ?? subview
+        }
+
+        return self
     }
 
     override func mouseMoved(with event: NSEvent) {}
