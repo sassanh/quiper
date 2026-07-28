@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [4.6.1] - 2026-07-28
+
+### Fixed
+
+- **Interactive Session Find Bars**: Find-bar fields and buttons now receive clicks correctly, while clicks on the bar background are consumed instead of passing through to the underlying webpage.
+
 ## [4.6.0] - 2026-07-28
 
 ### Added
