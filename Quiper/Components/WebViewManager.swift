@@ -11,8 +11,57 @@ protocol WebViewManagerDelegate: AnyObject {
     func inputStateRequestSave()
 }
 
+@MainActor
 final class WebViewWrapperView: NSView {
+    enum RenderMode: Equatable {
+        case webContent
+        case error
+    }
+
     weak var interactiveOverlayView: NSView?
+    private weak var managedWebView: WKWebView?
+    private weak var errorView: WebLoadErrorView?
+
+    private(set) var renderMode: RenderMode = .webContent {
+        didSet { renderSurface() }
+    }
+
+    var isShowingError: Bool { renderMode == .error }
+
+    func install(webView: WKWebView, errorView: WebLoadErrorView) {
+        managedWebView = webView
+        self.errorView = errorView
+        renderSurface()
+    }
+
+    func showWebContent() {
+        renderMode = .webContent
+    }
+
+    func showError(_ error: WebLoadError, retryAvailable: Bool) {
+        errorView?.configure(error: error, retryAvailable: retryAvailable)
+        renderMode = .error
+    }
+
+    func focusError() {
+        errorView?.focus()
+    }
+
+    func detachSessionSurface() {
+        errorView?.removeFromSuperview()
+        managedWebView = nil
+        errorView = nil
+        renderMode = .webContent
+    }
+
+    private func renderSurface() {
+        guard let managedWebView, let errorView else { return }
+
+        let showsError = renderMode == .error
+        managedWebView.isHidden = showsError
+        errorView.setVisible(showsError)
+        assert(managedWebView.isHidden != errorView.isHidden, "A session must render exactly one content surface.")
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         if let overlay = interactiveOverlayView, !overlay.isHidden {
@@ -37,6 +86,9 @@ final class WebViewManager: NSObject {
     private var serviceIDsByWebView: [ObjectIdentifier: UUID] = [:]
     private var pendingLazyLoadURLs: [ObjectIdentifier: String] = [:]
     private var lastKnownTitlesByWebView: [ObjectIdentifier: String] = [:]
+    private var activeRequestURLsByWebView: [ObjectIdentifier: URL] = [:]
+    private var failedRequestURLsByWebView: [ObjectIdentifier: URL] = [:]
+    private var processTerminationRetryStates: [ObjectIdentifier: WebProcessTerminationRetryState] = [:]
     private var activeDownloads: [Any] = []
     
     // State needed for logic
@@ -1365,6 +1417,7 @@ final class WebViewManager: NSObject {
         // WebView inside Wrapper (ephemeral/non-persistent if locked, persistent if unlocked)
         let webview = createWebViewInstance(for: service, sessionIndex: sessionIndex, bounds: wrapperView.bounds, isPersistent: isUnlocked)
         wrapperView.addSubview(webview)
+        installErrorView(for: webview, in: wrapperView)
 
         // Add Wrapper to Container
         if let dragArea = self.dragArea {
@@ -1407,6 +1460,8 @@ final class WebViewManager: NSObject {
                         } else {
                             webview.load(URLRequest(url: url))
                         }
+                    } else {
+                        showLoadError(WebLoadError(kind: .invalidURL), for: webview)
                     }
                 } else {
                     pendingLazyLoadURLs[token] = targetURL ?? service.url
@@ -1497,6 +1552,8 @@ final class WebViewManager: NSObject {
                             let oldToken = ObjectIdentifier(webview)
                             self.initialLoadAwaitingFocus.remove(oldToken)
                             self.serviceIDsByWebView.removeValue(forKey: oldToken)
+                            wrapperView.detachSessionSurface()
+                            self.removeLoadState(for: oldToken)
                             webview.configuration.userContentController.removeAllUserScripts()
                             webview.removeFromSuperview()
                             
@@ -1510,6 +1567,7 @@ final class WebViewManager: NSObject {
                             // Create the real persistent webview
                             let realWebView = self.createWebViewInstance(for: service, sessionIndex: sessionIndex, bounds: wrapperView.bounds, isPersistent: true)
                             wrapperView.addSubview(realWebView)
+                            self.installErrorView(for: realWebView, in: wrapperView)
                             
                             // Update maps
                             self.webviewsByID[service.id]?[sessionIndex] = realWebView
@@ -1543,6 +1601,8 @@ final class WebViewManager: NSObject {
                                 } else {
                                     realWebView.load(URLRequest(url: url))
                                 }
+                            } else {
+                                self.showLoadError(WebLoadError(kind: .invalidURL), for: realWebView)
                             }
                             
                             overlay.stopLoading()
@@ -1594,6 +1654,8 @@ final class WebViewManager: NSObject {
                     } else {
                         webview.load(URLRequest(url: url))
                     }
+                } else {
+                    showLoadError(WebLoadError(kind: .invalidURL), for: webview)
                 }
             } else {
                 pendingLazyLoadURLs[token] = targetURL ?? service.url
@@ -1657,7 +1719,80 @@ final class WebViewManager: NSObject {
         
         return webview
     }
-    
+
+    private func installErrorView(for webView: WKWebView, in wrapper: WebViewWrapperView) {
+        let errorView = WebLoadErrorView(frame: wrapper.bounds)
+        errorView.autoresizingMask = [.width, .height]
+        errorView.onRetry = { [weak self, weak webView] in
+            guard let self, let webView else { return }
+            self.retryFailedNavigation(for: webView)
+        }
+        wrapper.addSubview(errorView, positioned: .above, relativeTo: nil)
+        wrapper.install(webView: webView, errorView: errorView)
+    }
+
+    private func beginMainFrameNavigation(_ webView: WKWebView, to url: URL) {
+        let token = ObjectIdentifier(webView)
+        let wrapper = webView.superview as? WebViewWrapperView
+        let errorHadFocus = wrapper?.isShowingError == true && wrapper?.isHidden == false
+        failedRequestURLsByWebView.removeValue(forKey: token)
+        wrapper?.showWebContent()
+        activeRequestURLsByWebView[token] = url
+        if errorHadFocus {
+            webView.window?.makeFirstResponder(webView)
+        }
+    }
+
+    private func showLoadError(_ error: WebLoadError, for webView: WKWebView, fallbackURL: URL? = nil) {
+        let token = ObjectIdentifier(webView)
+        if let url = error.url ?? fallbackURL ?? activeRequestURLsByWebView[token] {
+            failedRequestURLsByWebView[token] = url
+        }
+        let wrapper = webView.superview as? WebViewWrapperView
+        wrapper?.showError(error, retryAvailable: failedRequestURLsByWebView[token] != nil)
+        if wrapper?.isHidden == false {
+            wrapper?.focusError()
+        }
+    }
+
+    private func clearLoadError(for webView: WKWebView) {
+        let token = ObjectIdentifier(webView)
+        failedRequestURLsByWebView.removeValue(forKey: token)
+        (webView.superview as? WebViewWrapperView)?.showWebContent()
+    }
+
+    private func handleNavigationFailure(_ error: Error, for webView: WKWebView) {
+        guard !WebLoadError.isCancellation(error) else { return }
+
+        let token = ObjectIdentifier(webView)
+        let loadError = WebLoadError(error: error, fallbackURL: activeRequestURLsByWebView[token])
+        showLoadError(loadError, for: webView)
+    }
+
+    private func retryFailedNavigation(for webView: WKWebView) {
+        let token = ObjectIdentifier(webView)
+        guard let url = failedRequestURLsByWebView[token] else { return }
+
+        beginMainFrameNavigation(webView, to: url)
+        if url.isFileURL {
+            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        } else {
+            webView.load(URLRequest(url: url))
+        }
+    }
+
+    func stopLoading(_ webView: WKWebView) {
+        webView.stopLoading()
+    }
+
+    func hasVisibleLoadError(for webView: WKWebView) -> Bool {
+        (webView.superview as? WebViewWrapperView)?.isShowingError == true
+    }
+
+    func focusLoadError(for webView: WKWebView) {
+        (webView.superview as? WebViewWrapperView)?.focusError()
+    }
+
     func hideAll() {
         webviewsByID.values.forEach { sessionMap in
             sessionMap.values.forEach { webView in
@@ -1766,12 +1901,16 @@ final class WebViewManager: NSObject {
         }
         
         let token = ObjectIdentifier(webView)
-        if let targetURLString = pendingLazyLoadURLs.removeValue(forKey: token), let url = URL(string: targetURLString) {
-            NSLog("[WebViewManager] Lazy loading background session webview: %@", targetURLString)
-            if url.isFileURL {
-                webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        if let targetURLString = pendingLazyLoadURLs.removeValue(forKey: token) {
+            if let url = URL(string: targetURLString) {
+                NSLog("[WebViewManager] Lazy loading background session webview: %@", targetURLString)
+                if url.isFileURL {
+                    webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+                } else {
+                    webView.load(URLRequest(url: url))
+                }
             } else {
-                webView.load(URLRequest(url: url))
+                showLoadError(WebLoadError(kind: .invalidURL), for: webView)
             }
         }
         
@@ -1821,6 +1960,8 @@ final class WebViewManager: NSObject {
     
     private func tearDownWebView(_ webView: WKWebView) {
         // Stop any in-progress loading to signal WebKit to release the content process
+        let token = ObjectIdentifier(webView)
+        let wrapper = webView.superview as? WebViewWrapperView
         webView.stopLoading()
  
         // Nil delegates to prevent callbacks during/after deallocation
@@ -1832,7 +1973,6 @@ final class WebViewManager: NSObject {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "quiperInputTrackerReady")
  
         // Resume and clear any pending navigation continuation to prevent CheckedContinuation leaks
-        let token = ObjectIdentifier(webView)
         if let continuation = navigationContinuations.removeValue(forKey: token) {
             continuation.resume()
         }
@@ -1840,15 +1980,16 @@ final class WebViewManager: NSObject {
         serviceIDsByWebView.removeValue(forKey: token)
         pendingLazyLoadURLs.removeValue(forKey: token)
         lastKnownTitlesByWebView.removeValue(forKey: token)
+        wrapper?.detachSessionSurface()
+        removeLoadState(for: token)
  
         // Clean user content controller to break configuration references
         webView.configuration.userContentController.removeAllUserScripts()
  
         webView.removeObserver(self, forKeyPath: "title")
         webView.removeObserver(self, forKeyPath: "loading")
- 
+
         // Remove the wrapper view (parent) from the view hierarchy, then the webview
-        let wrapper = webView.superview
         webView.removeFromSuperview()
         wrapper?.removeFromSuperview()
     }
@@ -1861,6 +2002,12 @@ final class WebViewManager: NSObject {
     private func retainTitle(_ title: String?, for webView: WKWebView) {
         guard let title = Self.normalizedTitle(title) else { return }
         lastKnownTitlesByWebView[ObjectIdentifier(webView)] = title
+    }
+
+    private func removeLoadState(for token: ObjectIdentifier) {
+        activeRequestURLsByWebView.removeValue(forKey: token)
+        failedRequestURLsByWebView.removeValue(forKey: token)
+        processTerminationRetryStates.removeValue(forKey: token)
     }
 
     private func attachNotificationBridge(to webView: WKWebView, service: Service, sessionIndex: Int) {
@@ -2332,6 +2479,11 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             }
         }
 
+        let targetFrameIsMain = navigationAction.targetFrame?.isMainFrame ?? true
+        if targetFrameIsMain, let requestURL = navigationAction.request.url {
+            beginMainFrameNavigation(webView, to: requestURL)
+        }
+
         guard let url = navigationAction.request.url,
               let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme),
@@ -2342,7 +2494,6 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         }
 
         // Only route main frame navigations (including new windows where targetFrame is nil)
-        let targetFrameIsMain = navigationAction.targetFrame?.isMainFrame ?? true
         if !targetFrameIsMain {
             decisionHandler(.allow)
             return
@@ -2414,10 +2565,17 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
 
     @MainActor
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
-        
-        
-        
-        
+        if navigationResponse.isForMainFrame,
+           let httpResponse = navigationResponse.response as? HTTPURLResponse,
+           (400...599).contains(httpResponse.statusCode) {
+            let token = ObjectIdentifier(webView)
+            let responseURL = httpResponse.url ?? activeRequestURLsByWebView[token]
+            let error = WebLoadError.http(statusCode: httpResponse.statusCode, url: responseURL)
+            showLoadError(error, for: webView, fallbackURL: responseURL)
+            decisionHandler(.cancel)
+            return
+        }
+
         if navigationResponse.canShowMIMEType {
             decisionHandler(.allow)
         } else {
@@ -2448,7 +2606,22 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        webView.reload()
+        let token = ObjectIdentifier(webView)
+        var retryState = processTerminationRetryStates[token] ?? WebProcessTerminationRetryState()
+        if retryState.shouldRetry() {
+            processTerminationRetryStates[token] = retryState
+            if let url = webView.url ?? activeRequestURLsByWebView[token] {
+                beginMainFrameNavigation(webView, to: url)
+                webView.reload()
+            } else {
+                showLoadError(WebLoadError(kind: .contentProcessTerminated), for: webView)
+            }
+        } else {
+            showLoadError(
+                WebLoadError(kind: .contentProcessTerminated, url: webView.url ?? activeRequestURLsByWebView[token]),
+                for: webView
+            )
+        }
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -2458,6 +2631,9 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         let token = ObjectIdentifier(webView)
+        processTerminationRetryStates[token]?.reset()
+        clearLoadError(for: webView)
+        activeRequestURLsByWebView[token] = webView.url ?? activeRequestURLsByWebView[token]
         
         if let continuation = navigationContinuations.removeValue(forKey: token) {
             continuation.resume()
@@ -2469,6 +2645,14 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             initialLoadAwaitingFocus.remove(token)
             delegate?.webViewDidFinishNavigation(webView) 
         }
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        handleNavigationFailure(error, for: webView)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        handleNavigationFailure(error, for: webView)
     }
     
     // MARK: WKDownloadDelegate

@@ -51,7 +51,7 @@ extension MainWindowController {
                     return nil // Swallow escape so it doesn't hide the main window
                 }
                 if let webView = self.currentWebView(), webView.isLoading {
-                    webView.stopLoading()
+                    self.webViewManager.stopLoading(webView)
                     return nil // Swallow escape so it stops loading
                 }
             }

@@ -232,8 +232,12 @@ extension MainWindowController {
         observeNavigationState(of: activeWebview)
         
         if focusWebView, !restoredFindBarFocus, !GhostOnboardingManager.shared.isActive {
-            window?.makeFirstResponder(activeWebview)
-            focusInputInActiveWebview()
+            if webViewManager.hasVisibleLoadError(for: activeWebview) {
+                webViewManager.focusLoadError(for: activeWebview)
+            } else {
+                window?.makeFirstResponder(activeWebview)
+                focusInputInActiveWebview()
+            }
         }
     }
     

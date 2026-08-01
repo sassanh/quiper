@@ -95,7 +95,7 @@ class LoadingBorderView: NSView {
         // Add animation to move the bright segment around the path using lineDashPhase
         let dashAnimation = CABasicAnimation(keyPath: "lineDashPhase")
         dashAnimation.fromValue = 0
-        dashAnimation.toValue = -pathLength // Negative to move clockwise
+        dashAnimation.toValue = pathLength // Positive to move clockwise
         dashAnimation.duration = 1.5
         dashAnimation.repeatCount = .infinity
         dashAnimation.timingFunction = CAMediaTimingFunction(name: .linear)

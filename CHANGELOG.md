@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Clockwise Loading Border**: The top-bar loading border now advances clockwise around the active session.
+
 ### Fixed
 
 - **Documentation and Blog Browser Icons**: Documentation and blog pages now declare the Quiper logo as their browser favicon and Apple touch icon.
+- **Categorized Web Load Errors**: Failed top-level navigations now show a session-persistent native error page with a friendly explanation and Retry action for network, DNS, timeout, security, redirect, HTTP, file, and WebKit process failures. The error page and web content use an exclusive session surface so they cannot render together.
 
 ## [4.6.1] - 2026-07-28
 
