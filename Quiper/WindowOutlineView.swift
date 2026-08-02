@@ -25,6 +25,11 @@ class WindowOutlineView: NSView {
     
     private var outlineWidth: CGFloat = 1.0
     private let outlineLayer = CAShapeLayer()
+    private let loadingBaseLayer = CAShapeLayer()
+    private let loadingSegmentLayer = CAShapeLayer()
+    private let loadingLineWidth: CGFloat = 4.0
+    private var isLoading = false
+    private var isRevealed = false
     
     // MARK: - Initialization
     
@@ -46,6 +51,17 @@ class WindowOutlineView: NSView {
         outlineLayer.lineWidth = 1.0
         outlineLayer.opacity = 1.0
         layer?.addSublayer(outlineLayer)
+
+        loadingBaseLayer.fillColor = nil
+        loadingBaseLayer.lineWidth = loadingLineWidth
+        loadingBaseLayer.opacity = 0.0
+        layer?.addSublayer(loadingBaseLayer)
+
+        loadingSegmentLayer.fillColor = nil
+        loadingSegmentLayer.lineWidth = loadingLineWidth
+        loadingSegmentLayer.lineCap = .round
+        loadingSegmentLayer.opacity = 0.0
+        layer?.addSublayer(loadingSegmentLayer)
         
         updateColors()
         
@@ -77,6 +93,8 @@ class WindowOutlineView: NSView {
         outlineWidth = settings.outlineWidth
         outlineLayer.lineWidth = outlineWidth
         outlineLayer.strokeColor = settings.outlineColor.nsColor.cgColor
+        loadingBaseLayer.strokeColor = NSColor.controlAccentColor.withAlphaComponent(0.2).cgColor
+        loadingSegmentLayer.strokeColor = NSColor.controlAccentColor.cgColor
     }
     
     // MARK: - Layout
@@ -90,6 +108,7 @@ class WindowOutlineView: NSView {
     
     func setRevealed(_ revealed: Bool, edge: WindowMarginView.ThickEdge, animated: Bool = true) {
         if edge != .none { barEdge = edge }
+        isRevealed = revealed
         
         // Outline layer stays visible but we update the path just in case
         updatePath(animated: false)
@@ -98,27 +117,66 @@ class WindowOutlineView: NSView {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.2
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                outlineLayer.opacity = revealed ? 0.0 : 1.0
+                updateLayerOpacity()
             }
         } else {
-            outlineLayer.opacity = revealed ? 0.0 : 1.0
+            updateLayerOpacity()
         }
     }
-    
+
+    func setLoading(_ loading: Bool) {
+        guard isLoading != loading else { return }
+        isLoading = loading
+        updatePath(animated: false)
+
+        if loading {
+            addLoadingAnimation()
+        } else {
+            loadingSegmentLayer.removeAnimation(forKey: "lineDashPhaseAnimation")
+        }
+
+        updateLayerOpacity()
+    }
+
     private func updatePath(animated: Bool) {
+        let outlinePath = path(for: outlineWidth)
+        let loadingPath = path(for: loadingLineWidth)
+        loadingBaseLayer.path = loadingPath
+        loadingSegmentLayer.path = loadingPath
+
+        if animated {
+            let outlineAnimation = CABasicAnimation(keyPath: "path")
+            outlineAnimation.duration = 0.2
+            outlineAnimation.fromValue = outlineLayer.path
+            outlineAnimation.toValue = outlinePath
+            outlineAnimation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            outlineLayer.add(outlineAnimation, forKey: "pathAnimation")
+        }
+
+        outlineLayer.path = outlinePath
+
+        let width = loadingPath.boundingBox.width
+        let height = loadingPath.boundingBox.height
+        let radius = cornerRadius + loadingLineWidth / 2.0
+        let pathLength = 2 * (width - 2 * radius) + 2 * (height - 2 * radius) + 2 * .pi * radius
+        let segmentLength = max(pathLength * 0.15, 1.0)
+        loadingSegmentLayer.lineDashPattern = [segmentLength, max(pathLength - segmentLength, 1.0)] as [NSNumber]
+
+        if isLoading {
+            addLoadingAnimation()
+        }
+    }
+
+    private func path(for lineWidth: CGFloat) -> CGPath {
         let isHiddenMode = Settings.shared.topBarVisibility == .hidden
         let margin = contentInset
         let barHeight = CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
-        
+
         // The border should stick to the edges of the visible area (the content)
         // and expand OUTWARDS into the transparent margin so it doesn't eat into the content area.
-        // A stroke is centered on its path. To make it expand entirely outwards,
-        // we offset the path by half the stroke width outwards from the content edge.
-        let pathOffset = margin - outlineWidth / 2.0
+        let pathOffset = margin - lineWidth / 2.0
         var outlineRect = bounds.insetBy(dx: pathOffset, dy: pathOffset)
-        
-        // In hidden mode, the bar slot must be excluded from the outline shape so it doesn't cross
-        // over the transparent slot where the bar slides in.
+
         if isHiddenMode {
             switch barEdge {
             case .top:
@@ -130,26 +188,41 @@ class WindowOutlineView: NSView {
                 break
             }
         }
-        
-        // Hide the outline completely if outlineWidth is 0
-        if outlineWidth <= 0 {
+
+        if lineWidth <= 0 {
             outlineRect = .zero
         }
-        
-        // The corner radius must be mathematically concentric with the content edge.
-        // The path is `outlineWidth / 2` further out than the content edge.
-        let outlineCornerRadius = cornerRadius + outlineWidth / 2.0
-        let outlinePath = CGPath(roundedRect: outlineRect, cornerWidth: outlineCornerRadius, cornerHeight: outlineCornerRadius, transform: nil)
-        
-        if animated {
-            let outlineAnimation = CABasicAnimation(keyPath: "path")
-            outlineAnimation.duration = 0.2
-            outlineAnimation.fromValue = outlineLayer.path
-            outlineAnimation.toValue = outlinePath
-            outlineAnimation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            outlineLayer.add(outlineAnimation, forKey: "pathAnimation")
+
+        let outlineCornerRadius = cornerRadius + lineWidth / 2.0
+        return CGPath(
+            roundedRect: outlineRect,
+            cornerWidth: outlineCornerRadius,
+            cornerHeight: outlineCornerRadius,
+            transform: nil
+        )
+    }
+
+    private func addLoadingAnimation() {
+        loadingSegmentLayer.removeAnimation(forKey: "lineDashPhaseAnimation")
+
+        guard let lineDashPattern = loadingSegmentLayer.lineDashPattern else { return }
+        let pathLength = lineDashPattern.reduce(0) { result, value in
+            result + value.doubleValue
         }
-        
-        outlineLayer.path = outlinePath
+        guard pathLength > 0 else { return }
+
+        let dashAnimation = CABasicAnimation(keyPath: "lineDashPhase")
+        dashAnimation.fromValue = 0
+        dashAnimation.toValue = pathLength
+        dashAnimation.duration = 1.5
+        dashAnimation.repeatCount = .infinity
+        dashAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
+        loadingSegmentLayer.add(dashAnimation, forKey: "lineDashPhaseAnimation")
+    }
+
+    private func updateLayerOpacity() {
+        outlineLayer.opacity = isLoading ? 0.0 : (isRevealed ? 0.0 : 1.0)
+        loadingBaseLayer.opacity = isLoading ? 1.0 : 0.0
+        loadingSegmentLayer.opacity = isLoading ? 1.0 : 0.0
     }
 }

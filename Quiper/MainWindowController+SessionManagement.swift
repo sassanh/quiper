@@ -466,6 +466,7 @@ extension MainWindowController {
         findBarViewController?.tabWillHide()
         findBarViewController = nil
         webViewManager.hideAll()
+        windowOutlineView?.setLoading(false)
         
         canGoBackObservation = nil
         canGoForwardObservation = nil

@@ -5,6 +5,7 @@
 ### Changed
 
 - **Clockwise Loading Border**: The top-bar loading border now advances clockwise around the active session.
+- **Contextual Loading Indicators**: Loading uses the titlebar spinner when the top bar is always visible and the maximum-weight outer border spinner when the top bar auto-hides.
 
 ### Fixed
 

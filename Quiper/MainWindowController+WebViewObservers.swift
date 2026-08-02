@@ -73,12 +73,14 @@ extension MainWindowController {
     
     func updateLoadingIndicator(for webView: WKWebView) {
         let isLoading = webView.isLoading
+        let isTopBarHidden = Settings.shared.topBarVisibility == .hidden
         
-        if isLoading {
+        if isLoading && !isTopBarHidden {
             loadingBorderView?.startAnimating()
         } else {
             loadingBorderView?.stopAnimating()
         }
+        windowOutlineView?.setLoading(isLoading && isTopBarHidden)
         
         guard let service = webViewManager.service(for: webView),
               currentService()?.id == service.id,
@@ -122,5 +124,6 @@ extension MainWindowController {
         }
         
         loadingBorderView?.stopAnimating()
+        windowOutlineView?.setLoading(false)
     }
 }

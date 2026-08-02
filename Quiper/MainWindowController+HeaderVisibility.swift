@@ -8,6 +8,13 @@ extension MainWindowController {
         updateWindowMarginAndLayout()
         updateHeaderTrackingArea()
         updateHeaderVisibility(animated: false)
+
+        if let webView = currentWebView() {
+            updateLoadingIndicator(for: webView)
+        } else {
+            loadingBorderView?.stopAnimating()
+            windowOutlineView?.setLoading(false)
+        }
     }
     
     @objc func dragAreaPositionChanged() {
