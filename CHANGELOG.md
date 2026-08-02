@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [4.6.2] - 2026-08-02
+
 ### Changed
 
 - **Clockwise Loading Border**: The top-bar loading border now advances clockwise around the active session.
