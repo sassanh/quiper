@@ -1244,7 +1244,7 @@ struct ServiceDetailView: View {
                     }
                 }
                 
-                EngineMetadataMigrationManager.shared.loadMetadataForUnlockedService(serviceID)
+                _ = try EngineMetadataMigrationManager.shared.loadMetadataForUnlockedService(serviceID)
                 
                 await MainActor.run {
                     isUnlockingEngine = false

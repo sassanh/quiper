@@ -42,7 +42,7 @@ final class SettingsDirectoryMigratorTests: XCTestCase {
         
         let newTestFile = newDir.appendingPathComponent("settings.json")
         XCTAssertTrue(fileManager.fileExists(atPath: newTestFile.path), "Contents should be moved")
-        let content = try String(contentsOf: newTestFile)
+        let content = try String(contentsOf: newTestFile, encoding: .utf8)
         XCTAssertEqual(content, "test data")
     }
 

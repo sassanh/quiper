@@ -1372,7 +1372,12 @@ final class WebViewManager: NSObject {
         return WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
     }
     
-    func getOrCreateWebView(for service: Service, sessionIndex: Int, dragArea: NSView?, targetURL: String? = nil, restoredTitle: String? = nil, loadImmediately: Bool = true) -> WKWebView {
+    private func resolvedService(for service: Service) -> Service {
+        Settings.shared.services.first(where: { $0.id == service.id }) ?? service
+    }
+
+    func getOrCreateWebView(for inputService: Service, sessionIndex: Int, dragArea: NSView?, targetURL: String? = nil, restoredTitle: String? = nil, loadImmediately: Bool = true) -> WKWebView {
+        let service = resolvedService(for: inputService)
         if let dragArea = dragArea {
             self.dragArea = dragArea
         }
@@ -1469,7 +1474,7 @@ final class WebViewManager: NSObject {
             } else {
                 // Show LockOverlayView on top of wrapper
                 let serviceId = service.id
-                let serviceUrl = targetURL ?? service.url
+                let requestedURL = targetURL
                 
                 var lockOverlayRef: LockOverlayView? = nil
                 let lockOverlay = LockOverlayView(frame: wrapperView.bounds, serviceName: service.name) { [weak self, weak webview, weak wrapperView] context in
@@ -1537,11 +1542,11 @@ final class WebViewManager: NSObject {
                                 }
                             }
                             
-                            // Load metadata from secure bundle for already-migrated engines
-                            if let currentService = Settings.shared.services.first(where: { $0.id == serviceId }),
-                               currentService.hasMigratedMetadata {
-                                EngineMetadataMigrationManager.shared.loadMetadataForUnlockedService(serviceId)
-                            }
+                            // Refresh the authoritative service model before creating the
+                            // persistent webview. The locked webview captured a pre-unlock
+                            // Service value, which intentionally omits migrated metadata.
+                            let unlockedService = try EngineMetadataMigrationManager.shared.loadMetadataForUnlockedService(serviceId)
+                            self.updateServices(Settings.shared.services)
                             
                             overlay.updateStatus("Loading secure session...")
                             try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -1565,16 +1570,16 @@ final class WebViewManager: NSObject {
                             }
                             
                             // Create the real persistent webview
-                            let realWebView = self.createWebViewInstance(for: service, sessionIndex: sessionIndex, bounds: wrapperView.bounds, isPersistent: true)
+                            let realWebView = self.createWebViewInstance(for: unlockedService, sessionIndex: sessionIndex, bounds: wrapperView.bounds, isPersistent: true)
                             wrapperView.addSubview(realWebView)
                             self.installErrorView(for: realWebView, in: wrapperView)
                             
                             // Update maps
-                            self.webviewsByID[service.id]?[sessionIndex] = realWebView
-                            self.serviceIDsByWebView[ObjectIdentifier(realWebView)] = service.id
+                            self.webviewsByID[unlockedService.id]?[sessionIndex] = realWebView
+                            self.serviceIDsByWebView[ObjectIdentifier(realWebView)] = unlockedService.id
                             
                             // Load real URL
-                            var targetURLString = serviceUrl
+                            var targetURLString = requestedURL ?? unlockedService.url
                             if Settings.shared.tabSurvivalPolicy != .never {
                                 let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceId).appendingPathComponent("quiper_tabs.json")
                                 if let data = try? Data(contentsOf: stateURL),
@@ -1583,13 +1588,13 @@ final class WebViewManager: NSObject {
                                         targetURLString = saved
                                     }
                                     if let secureInputs = state.tabInputs {
-                                        self.restoreTabInputStates([service.id: secureInputs])
+                                        self.restoreTabInputStates([unlockedService.id: secureInputs])
                                     }
                                     if let secureHistories = state.tabPromptHistories {
-                                        self.restoreTabPromptHistories([service.id: secureHistories])
+                                        self.restoreTabPromptHistories([unlockedService.id: secureHistories])
                                     }
                                     if let secureOverrides = state.tabPromptHistoryEnabledOverrides {
-                                        self.restoreTabPromptHistoryOverrides([service.id: secureOverrides])
+                                        self.restoreTabPromptHistoryOverrides([unlockedService.id: secureOverrides])
                                     }
                                 }
                             }

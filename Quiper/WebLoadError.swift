@@ -223,7 +223,12 @@ struct WebLoadError: Equatable {
     }
 
     private static func failingURL(from error: NSError) -> URL? {
-        if let urlString = error.userInfo[NSURLErrorFailingURLStringErrorKey] as? String {
+        if let url = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL {
+            return url
+        }
+        // Keep compatibility with older NSError payloads without referencing
+        // the deprecated Foundation constant.
+        if let urlString = error.userInfo["NSErrorFailingURLStringKey"] as? String {
             return URL(string: urlString)
         }
         return nil

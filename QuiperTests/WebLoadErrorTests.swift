@@ -55,7 +55,19 @@ final class WebLoadErrorTests: XCTestCase {
         let error = NSError(
             domain: NSURLErrorDomain,
             code: URLError.timedOut.rawValue,
-            userInfo: [NSURLErrorFailingURLStringErrorKey: failingURL.absoluteString]
+            userInfo: [NSURLErrorFailingURLErrorKey: failingURL]
+        )
+
+        XCTAssertEqual(WebLoadError(error: error, fallbackURL: fallbackURL).url, failingURL)
+    }
+
+    func testLegacyFailingURLStringIsStillPreferredOverFallbackURL() {
+        let failingURL = URL(string: "https://legacy-failed.example/page")!
+        let fallbackURL = URL(string: "https://fallback.example/page")!
+        let error = NSError(
+            domain: NSURLErrorDomain,
+            code: URLError.timedOut.rawValue,
+            userInfo: ["NSErrorFailingURLStringKey": failingURL.absoluteString]
         )
 
         XCTAssertEqual(WebLoadError(error: error, fallbackURL: fallbackURL).url, failingURL)

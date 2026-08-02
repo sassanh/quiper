@@ -178,23 +178,36 @@ final class EngineMetadataMigrationManager {
         NSLog("[MetadataMigration] Completed metadata migration for service %@", serviceID.uuidString)
     }
 
-    /// Loads metadata for an unlocked service from the secure bundle into the Service model.
-    func loadMetadataForUnlockedService(_ serviceID: UUID) {
+    /// Loads metadata for an unlocked service from the secure bundle and returns
+    /// the authoritative current Service value.
+    ///
+    /// Legacy, not-yet-migrated services already have their metadata in memory,
+    /// so they are returned unchanged. Migrated services must successfully read
+    /// their secure metadata before callers create a webview.
+    func loadMetadataForUnlockedService(_ serviceID: UUID) throws -> Service {
         guard let index = Settings.shared.services.firstIndex(where: { $0.id == serviceID }) else {
-            return
+            throw MetadataMigrationError.serviceNotFound
         }
-        guard Settings.shared.services[index].hasMigratedMetadata else { return }
+        guard Settings.shared.services[index].hasMigratedMetadata else {
+            return Settings.shared.services[index]
+        }
 
-        if let metadata = readMetadataIfPresent(for: serviceID) {
-            metadata.apply(to: &Settings.shared.services[index])
-            if Settings.shared.services[index].activationShortcut == nil {
-                Settings.shared.services[index].activationShortcut = metadata.legacyActivationShortcut
-            }
-            if metadata.legacyActivationShortcut != nil {
-                Settings.shared.saveSettings()
-            }
-            NSLog("[MetadataMigration] Loaded metadata from bundle for service %@", serviceID.uuidString)
+        let metadata: SecuredEngineMetadata
+        do {
+            metadata = try readMetadata(for: serviceID)
+        } catch {
+            throw MetadataMigrationError.readFailed(error.localizedDescription)
         }
+
+        metadata.apply(to: &Settings.shared.services[index])
+        if Settings.shared.services[index].activationShortcut == nil {
+            Settings.shared.services[index].activationShortcut = metadata.legacyActivationShortcut
+        }
+        if metadata.legacyActivationShortcut != nil {
+            Settings.shared.saveSettings()
+        }
+        NSLog("[MetadataMigration] Loaded metadata from bundle for service %@", serviceID.uuidString)
+        return Settings.shared.services[index]
     }
 
     /// Saves current in-memory metadata back to the secure bundle for a migrated service.
@@ -419,6 +432,7 @@ enum MetadataMigrationError: Error, LocalizedError {
     case serviceNotFound
     case writeFailed(String)
     case verificationFailed
+    case readFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -428,6 +442,8 @@ enum MetadataMigrationError: Error, LocalizedError {
             return "Failed to write metadata to secure storage: \(reason)"
         case .verificationFailed:
             return "Metadata verification failed after writing."
+        case .readFailed(let reason):
+            return "Failed to read metadata from secure storage: \(reason)"
         }
     }
 }

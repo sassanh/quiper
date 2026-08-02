@@ -556,6 +556,13 @@ extension MainWindowController: WebViewManagerDelegate {
     
     func engineDidUnlock(serviceID: UUID) {
         NSLog("[MainWindowController] Engine unlocked successfully: %@", serviceID.uuidString)
+
+        // Metadata loading updates Settings.shared.services. Refresh both of
+        // the controller's service snapshots before restoring any sessions so
+        // newly-created webviews receive the decrypted engine configuration.
+        services = Settings.shared.services
+        webViewManager.updateServices(services)
+        syncCurrentServiceSelection()
         
         if Settings.shared.tabSurvivalPolicy != .never,
            let service = services.first(where: { $0.id == serviceID }) {

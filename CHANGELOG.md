@@ -11,6 +11,7 @@
 
 - **Documentation and Blog Browser Icons**: Documentation and blog pages now declare the Quiper logo as their browser favicon and Apple touch icon.
 - **Categorized Web Load Errors**: Failed top-level navigations now show a session-persistent native error page with a friendly explanation and Retry action for network, DNS, timeout, security, redirect, HTTP, file, and WebKit process failures. The error page and web content use an exclusive session surface so they cannot render together.
+- **Secure Engine Unlock Injection**: Fixed the first session opened immediately after unlocking a secured engine missing custom CSS and Quiper's prompt/input scripts until it was reopened. Newly unlocked webviews now use refreshed encrypted engine metadata and report metadata read failures clearly.
 
 ## [4.6.1] - 2026-07-28
 
