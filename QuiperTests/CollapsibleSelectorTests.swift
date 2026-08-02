@@ -41,6 +41,18 @@ final class CollapsibleSelectorTests: XCTestCase {
         let size = selector.intrinsicContentSize
         XCTAssertGreaterThan(size.width, 0)
     }
+
+    func testExpandedPanelFrameIsClampedToVisibleFrame() {
+        let visibleFrame = NSRect(x: 100, y: 200, width: 800, height: 600)
+        let preferredFrame = NSRect(x: 850, y: 150, width: 200, height: 700)
+
+        let clamped = CollapsibleSelector.clampedPanelFrame(preferredFrame, to: visibleFrame)
+
+        XCTAssertEqual(clamped.minX, visibleFrame.maxX - clamped.width)
+        XCTAssertEqual(clamped.minY, visibleFrame.minY)
+        XCTAssertLessThanOrEqual(clamped.maxX, visibleFrame.maxX)
+        XCTAssertGreaterThanOrEqual(clamped.minY, visibleFrame.minY)
+    }
     
     func testSelectionUpdates() {
         selector.items = ["A", "B", "C"]

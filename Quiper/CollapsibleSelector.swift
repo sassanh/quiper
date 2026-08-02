@@ -342,6 +342,75 @@ class CollapsibleSelector: NSView {
     }
 
     // MARK: - Expansion Logic
+
+    /// Repositions the expanded panel after its host window moves or resizes.
+    /// The panel remains a child window, but its anchor must be recalculated
+    /// from the selector's current screen-space frame.
+    func repositionExpandedPanel() {
+        guard let panel = expandedPanel, let control = expandedControl else { return }
+        positionExpandedPanel(panel, control: control)
+    }
+
+    private func positionExpandedPanel(_ panel: NSPanel, control: SegmentedControl) {
+        guard let window else { return }
+
+        let collapsedRect = window.convertToScreen(convert(bounds, to: nil))
+        let collapsedCenter = collapsedRect.midX
+        let controlWidth = control.frame.width
+
+        let preferredX: CGFloat
+        if _selectedSegment >= 0, items.indices.contains(_selectedSegment) {
+            var currentX: CGFloat = 0
+            for i in 0..<_selectedSegment {
+                currentX += control.width(forSegment: i)
+            }
+            let selectedWidth = control.width(forSegment: _selectedSegment)
+            let selectedCenter = currentX + selectedWidth / 2
+            preferredX = collapsedCenter - selectedCenter
+        } else {
+            switch emptyStateAlignment {
+            case .center:
+                preferredX = collapsedCenter - controlWidth / 2
+            case .left:
+                preferredX = collapsedRect.minX - controlWidth - 4
+            case .right:
+                preferredX = collapsedRect.maxX + 4
+            }
+        }
+
+        let preferredFrame = NSRect(
+            x: preferredX,
+            y: collapsedRect.minY,
+            width: panel.frame.width,
+            height: panel.frame.height
+        )
+        let visibleFrame = window.screen?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? preferredFrame
+        panel.setFrame(Self.clampedPanelFrame(preferredFrame, to: visibleFrame), display: true)
+    }
+
+    static func clampedPanelFrame(_ frame: NSRect, to visibleFrame: NSRect) -> NSRect {
+        var clamped = frame
+        if clamped.width <= visibleFrame.width {
+            clamped.origin.x = min(
+                max(clamped.origin.x, visibleFrame.minX),
+                visibleFrame.maxX - clamped.width
+            )
+        } else {
+            clamped.origin.x = visibleFrame.minX
+        }
+
+        if clamped.height <= visibleFrame.height {
+            clamped.origin.y = min(
+                max(clamped.origin.y, visibleFrame.minY),
+                visibleFrame.maxY - clamped.height
+            )
+        } else {
+            clamped.origin.y = visibleFrame.minY
+        }
+        return clamped
+    }
     
     func expand() {
         guard !isExpanded, let window = window, !items.isEmpty else { return }
@@ -426,33 +495,8 @@ class CollapsibleSelector: NSView {
         
         control.setAccessibilityIdentifier("ExpandedSegmentedControl")
         
-        // 5. Calculate Position (Center Alignment)
-        let collapsedRect = window.convertToScreen(convert(bounds, to: nil))
-        let collapsedCenter = collapsedRect.midX
-        
-        let panelX: CGFloat
-        if _selectedSegment >= 0, items.indices.contains(_selectedSegment) {
-            var currentX: CGFloat = 0
-            for i in 0..<_selectedSegment {
-                currentX += control.width(forSegment: i)
-            }
-            let selectedWidth = control.width(forSegment: _selectedSegment)
-            let selectedCenter = currentX + selectedWidth / 2
-            panelX = collapsedCenter - selectedCenter
-        } else {
-            // No segment selected — position based on alignment preference
-            switch emptyStateAlignment {
-            case .center:
-                panelX = collapsedCenter - controlWidth / 2
-            case .left:
-                // Panel's right edge aligned with button's left edge
-                panelX = collapsedRect.minX - controlWidth - 4
-            case .right:
-                // Panel's left edge aligned with button's right edge
-                panelX = collapsedRect.maxX + 4
-            }
-        }
-        panel.setFrameOrigin(NSPoint(x: panelX, y: collapsedRect.minY))
+        // 5. Calculate Position (Center Alignment) and keep the panel on-screen.
+        positionExpandedPanel(panel, control: control)
         
         // Attaching the selector-owned panel is the single expanded-state transition.
         // Do this before notifying the delegate so reentrant callbacks see the same state.

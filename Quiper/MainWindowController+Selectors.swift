@@ -328,6 +328,13 @@ extension MainWindowController {
             height: titleHeight
         )
         title.isHidden = shouldHideTitleArea
+
+        repositionExpandedSelectors()
+    }
+
+    func repositionExpandedSelectors() {
+        collapsibleServiceSelector?.repositionExpandedPanel()
+        collapsibleSessionSelector?.repositionExpandedPanel()
     }
 
     func refreshServiceSegments() {

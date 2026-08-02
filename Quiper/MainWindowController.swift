@@ -1491,6 +1491,7 @@ struct SecureTabState: Codable {
     }
 
     func windowDidMove(_ notification: Notification) {
+        repositionExpandedSelectors()
         repositionVisibleHUDs()
     }
 
