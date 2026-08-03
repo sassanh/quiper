@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Element Fullscreen Support**: Web content can now use the browser Fullscreen API in regular and popup sessions, so embedded videos and slides play truly fullscreen instead of expanding only within Quiper's window.
+
+### Changed
+
+- **Fullscreen-aware Shortcuts**: While an element is fullscreen in its own space, global shortcuts only reveal Quiper in the current space; they no longer switch engines, sessions, or toggle the overlay, and Quiper stays hidden during fullscreen playback.
+
 ## [4.6.2] - 2026-08-02
 
 ### Changed

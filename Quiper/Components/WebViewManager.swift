@@ -204,6 +204,19 @@ final class WebViewManager: NSObject {
         webviewsByID[service.id]?[sessionIndex]
     }
 
+    // Authoritative element-fullscreen signal: WebKit reports the fullscreen state
+    // directly on the webview, so no window/space inference is involved.
+    func webViewInFullScreen() -> WKWebView? {
+        for sessionMap in webviewsByID.values {
+            for webView in sessionMap.values {
+                if webView.fullscreenState == .inFullscreen || webView.fullscreenState == .enteringFullscreen {
+                    return webView
+                }
+            }
+        }
+        return nil
+    }
+
     func sessionTitle(for service: Service, sessionIndex: Int) -> String? {
         guard let webView = getWebView(for: service, sessionIndex: sessionIndex) else { return nil }
         let token = ObjectIdentifier(webView)
@@ -1675,6 +1688,7 @@ final class WebViewManager: NSObject {
         let config = WKWebViewConfiguration()
         config.userContentController = userContentController
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        config.preferences.isElementFullscreenEnabled = true
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         
         let isRunningTests = NSClassFromString("XCTestCase") != nil || ProcessInfo.processInfo.environment["XCInjectBundleInto"] != nil
@@ -2087,6 +2101,7 @@ final class WebViewManager: NSObject {
 
     @MainActor
     private func openInPopup(url: URL, service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow) {
+        configuration.preferences.isElementFullscreenEnabled = true
         let popupWindow = ModalPopupWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
             parentWindow: parentWindow

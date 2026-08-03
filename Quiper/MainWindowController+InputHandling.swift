@@ -671,6 +671,10 @@ extension MainWindowController {
     }
     
     func handleGraveKeyDown() {
+        guard !isActiveSpaceWebFullscreen else {
+            showWebFullScreenBanner()
+            return
+        }
         guard !tabHistory.isEmpty else { return }
         
         let effectiveRingSize = tabHistory.count + 1
@@ -736,6 +740,10 @@ extension MainWindowController {
     }
     
     func handleGraveBackwardKeyDown() {
+        guard !isActiveSpaceWebFullscreen else {
+            showWebFullScreenBanner()
+            return
+        }
         guard !tabHistory.isEmpty else { return }
         
         let effectiveRingSize = tabHistory.count + 1

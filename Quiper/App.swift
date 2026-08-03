@@ -283,7 +283,7 @@ final class AppController: NSObject, NSWindowDelegate {
 
     @objc func showWindow(_ sender: Any?) {
         captureFrontmostNonQuiperApplication()
-        if isActiveSpaceFullscreen() {
+        if !windowController.isWebContentFullscreen && isActiveSpaceFullscreen() {
             NSApp.setActivationPolicy(.accessory)
         }
         windowController.show()
@@ -341,7 +341,7 @@ final class AppController: NSObject, NSWindowDelegate {
 
     @objc private func handleWindowDidShow(_ notification: Notification) {
         let visibility = Settings.shared.dockVisibility
-        if visibility == .always || visibility == .whenVisible {
+        if !windowController.isWebContentFullscreen, visibility == .always || visibility == .whenVisible {
             if !isActiveSpaceFullscreen() {
                 NSApp.setActivationPolicy(.regular)
             }
@@ -360,14 +360,16 @@ final class AppController: NSObject, NSWindowDelegate {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self = self else { return }
-            if visibility == .always {
-                if !self.isActiveSpaceFullscreen() {
-                    NSApp.setActivationPolicy(.regular)
-                } else {
+            if !self.windowController.isWebContentFullscreen {
+                if visibility == .always {
+                    if !self.isActiveSpaceFullscreen() {
+                        NSApp.setActivationPolicy(.regular)
+                    } else {
+                        NSApp.setActivationPolicy(.accessory)
+                    }
+                } else if visibility == .whenVisible {
                     NSApp.setActivationPolicy(.accessory)
                 }
-            } else if visibility == .whenVisible {
-                NSApp.setActivationPolicy(.accessory)
             }
             NotificationCenter.default.post(name: .appVisibilityChanged, object: false)
         }
@@ -486,6 +488,10 @@ final class AppController: NSObject, NSWindowDelegate {
     func focusMainWindowIfVisible() {
 
         guard windowController.window?.isVisible == true else { return }
+        guard !windowController.isActiveSpaceWebFullscreen else {
+            windowController.showWebFullScreenBanner()
+            return
+        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -569,6 +575,13 @@ final class AppController: NSObject, NSWindowDelegate {
     }
 
     @objc private func handleActiveSpaceDidChange(_ notification: Notification) {
+        // While web content is fullscreen (in its own space) Quiper must not run
+        // any app-global mutation on a space change: no activation-policy flips
+        // (a background app can't keep a dedicated fullscreen space) and no
+        // auto-focus of the overlay into the moving space. On any other app/
+        // space, only an explicit show shortcut may bring Quiper forward.
+        guard !windowController.isWebContentFullscreen else { return }
+
         let visibility = Settings.shared.dockVisibility
         if visibility == .always {
             if !isActiveSpaceFullscreen() {
@@ -649,7 +662,9 @@ final class AppController: NSObject, NSWindowDelegate {
     private func registerOverlayHotkey() {
         hotkeyManager.registerCurrentHotkey { [weak self] in
             guard let self else { return }
-            if self.isWindowVisible {
+            if self.windowController.isWebContentFullscreen {
+                self.showWindow(nil)
+            } else if self.isWindowVisible {
                 self.hideWindow(nil)
             } else {
                 self.showWindow(nil)
@@ -703,6 +718,11 @@ final class AppController: NSObject, NSWindowDelegate {
     private func activateService(for serviceID: UUID) {
         guard let index = Settings.shared.services.firstIndex(where: { $0.id == serviceID }) else {
             engineHotkeyManager.unregister(serviceID: serviceID)
+            return
+        }
+
+        if windowController.isWebContentFullscreen {
+            showWindow(nil)
             return
         }
 

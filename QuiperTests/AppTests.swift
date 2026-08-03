@@ -57,7 +57,14 @@ class MockMainWindowController: MainWindowControlling {
     var switchSessionCalled = false
     var showQuitOverlayCalled = false
     var saveTabsStateCalled = false
+    var showWebFullScreenBannerCalled = false
+    var isWebContentFullscreen = false
+    var isActiveSpaceWebFullscreen = false
     
+    func showWebFullScreenBanner() {
+        showWebFullScreenBannerCalled = true
+    }
+
     func showQuitOverlay() {
         showQuitOverlayCalled = true
     }

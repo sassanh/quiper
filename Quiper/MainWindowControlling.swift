@@ -10,6 +10,9 @@ protocol MainWindowControlling: AnyObject {
     var window: NSWindow? { get }
     var activeServiceID: UUID? { get }
     var activeWebView: WKWebView? { get }
+    var isWebContentFullscreen: Bool { get }
+    var isActiveSpaceWebFullscreen: Bool { get }
+    func showWebFullScreenBanner()
     func focusInputInActiveWebview()
     func focusInputInActiveWebviewWithFallback()
     func reloadServices()

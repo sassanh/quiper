@@ -38,6 +38,11 @@ struct CGSFuncs {
 }
 
 @MainActor
+final class PassthroughBannerView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+@MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     static let jsTools: [String: String] = [
         "waitFor": """
@@ -148,6 +153,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private var isCompactMode = false
     private var previousWindowFrame: NSRect?
+    var isWebContentFullscreen = false
+    private weak var webFullScreenWindow: NSWindow?
+    private var webFullScreenBannerView: NSView?
+    private var webFullScreenBannerTimer: Timer?
+
+    // True only when web content is fullscreen AND its fullscreen window is on
+    // the active space. Quiper may still show in a non-fullscreen space; it must
+    // only be blocked while the user is actually looking at the fullscreen space.
+    // During transitions the fullscreen window may be briefly unidentifiable; in
+    // that case stay conservative and block the show rather than risk revealing
+    // the overlay inside the fullscreen space.
+    var isActiveSpaceWebFullscreen: Bool {
+        guard isWebContentFullscreen else { return false }
+        guard let fullScreenWindow = webFullScreenWindow else { return true }
+        return fullScreenWindow.isOnActiveSpace
+    }
+
     let barBorderWidth: CGFloat = 8
     
     var currentMargin: CGFloat {
@@ -629,6 +651,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func show() {
+        reconcileWebContentFullScreen()
+        guard !isActiveSpaceWebFullscreen else {
+            showWebFullScreenBanner()
+            return
+        }
         checkInactivityLock()
         var didTeleport = false
         if let window = window {
@@ -668,6 +695,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func hide() {
+        reconcileWebContentFullScreen()
+        guard !isActiveSpaceWebFullscreen else {
+            showWebFullScreenBanner()
+            return
+        }
         if let sheet = window?.attachedSheet {
             window?.endSheet(sheet, returnCode: .cancel)
         }
@@ -1355,11 +1387,18 @@ struct SecureTabState: Codable {
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettings), name: .settingsWindowDidOpen, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleCloseSettings), name: .settingsWindowDidClose, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleServicesIconsUpdated), name: .servicesIconsUpdated, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleWindowEnteredWebFullScreen), name: NSWindow.didEnterFullScreenNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleWindowWillExitWebFullScreen), name: NSWindow.willExitFullScreenNotification, object: nil)
         
         if let window = self.window {
             NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidResize), name: NSWindow.didResizeNotification, object: window)
             window.addObserver(self, forKeyPath: "effectiveAppearance", options: [.new], context: nil)
         }
+        // Quiper must not be hidden while an element is fullscreen. Instead of
+        // guarding every hide pathway, listen for the hide events themselves:
+        // the app's own funneled hide notification, and OS-level app hiding.
+        NotificationCenter.default.addObserver(self, selector: #selector(handleMainWindowDidHide), name: .windowDidHide, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleMainWindowDidHide), name: NSApplication.didHideNotification, object: nil)
         
         applyColorScheme()
     }
@@ -1425,6 +1464,118 @@ struct SecureTabState: Codable {
     
     @objc private func handleServicesIconsUpdated(_ notification: Notification) {
         refreshServiceSegments()
+    }
+    
+    @objc private func handleWindowEnteredWebFullScreen(_ notification: Notification) {
+        // The notification's window is WebKit's element-fullscreen window (it is
+        // the only non-overlay window in the app that can enter fullscreen). Use
+        // it directly for identity; the webview read has a small timing lag.
+        guard let window = notification.object as? NSWindow, window !== self.window else { return }
+        webFullScreenWindow = window
+        isWebContentFullscreen = true
+    }
+    
+    @objc private func handleWindowWillExitWebFullScreen(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === webFullScreenWindow else { return }
+        webFullScreenWindow = nil
+        isWebContentFullscreen = false
+        removeWebFullScreenBanner()
+    }
+    
+    // The element-fullscreen state is owned by WebKit; the webview reports it
+    // directly. The AppKit fullscreen notifications are only the "when"; this
+    // reads the authoritative "what" from the webview and its fullscreen window.
+    // It self-heals missed events (e.g. a trigger pressed during the brief
+    // entering transition) without ever clobbering a positively identified
+    // fullscreen window with a transitional one.
+    private func reconcileWebContentFullScreen() {
+        guard let webView = webViewManager.webViewInFullScreen(), webView.window != nil else {
+            isWebContentFullscreen = false
+            webFullScreenWindow = nil
+            removeWebFullScreenBanner()
+            return
+        }
+
+        isWebContentFullscreen = true
+        if let fullScreenWindow = webView.window, fullScreenWindow !== self.window {
+            webFullScreenWindow = fullScreenWindow
+        }
+    }
+
+    // Event-driven backstop: any path that hides the Quiper window while an
+    // element is fullscreen (the overlay hotkey, an OS gesture, another app,
+    // etc.) is undone here by showing the window again. Instead of guarding each
+    // hide pathway, the hide itself is observed and reverted. Quiper must simply
+    // not be dismissable while fullscreen content is on screen.
+    @objc private func handleMainWindowDidHide(_ notification: Notification) {
+        guard isWebContentFullscreen else { return }
+        show()
+    }
+    
+    // While web content is in fullscreen (a site entered the Fullscreen API),
+    // Quiper stays in the space it was on and does not respond to global
+    // shortcuts. If the user tries to bring Quiper up anyway, surface a banner
+    // on the fullscreen window explaining how to get back.
+    func showWebFullScreenBanner() {
+        guard let fullScreenWindow = webFullScreenWindow, let contentView = fullScreenWindow.contentView else { return }
+        removeWebFullScreenBanner()
+        
+        let banner = PassthroughBannerView(frame: .zero)
+        banner.wantsLayer = true
+        banner.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
+        banner.layer?.cornerRadius = 10
+        banner.layer?.masksToBounds = true
+        
+        let label = NSTextField(labelWithString: "Exit the fullscreen window to get back to Quiper")
+        label.textColor = .white
+        label.font = .systemFont(ofSize: 14, weight: .medium)
+        label.alignment = .center
+        label.lineBreakMode = .byWordWrapping
+        banner.addSubview(label)
+        
+        let maxWidth: CGFloat = 440
+        let horizontalPadding: CGFloat = 18
+        let verticalPadding: CGFloat = 10
+        let textWidth = maxWidth - horizontalPadding * 2
+        let textHeight = label.sizeThatFits(NSSize(width: textWidth, height: 200)).height
+        let bannerWidth = min(maxWidth, textWidth + horizontalPadding * 2)
+        let bannerHeight = textHeight + verticalPadding * 2
+        banner.frame = NSRect(
+            x: (contentView.bounds.width - bannerWidth) / 2,
+            y: contentView.bounds.height - bannerHeight - 24,
+            width: bannerWidth,
+            height: bannerHeight
+        )
+        banner.autoresizingMask = [.minYMargin, .minXMargin, .maxXMargin]
+        label.frame = NSRect(x: horizontalPadding, y: verticalPadding / 2, width: bannerWidth - horizontalPadding * 2, height: textHeight)
+        label.autoresizingMask = [.width]
+        
+        contentView.addSubview(banner, positioned: .above, relativeTo: nil)
+        webFullScreenBannerView = banner
+        
+        webFullScreenBannerTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.webFullScreenBannerView === banner else { return }
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.25
+                    banner.animator().alphaValue = 0
+                } completionHandler: {
+                    MainActor.assumeIsolated {
+                        banner.removeFromSuperview()
+                        if self.webFullScreenBannerView === banner {
+                            self.webFullScreenBannerView = nil
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    func removeWebFullScreenBanner() {
+        webFullScreenBannerTimer?.invalidate()
+        webFullScreenBannerTimer = nil
+        webFullScreenBannerView?.removeFromSuperview()
+        webFullScreenBannerView = nil
     }
     
     @objc private func handleShowSettings(_ notification: Notification) {
