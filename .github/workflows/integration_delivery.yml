@@ -39,10 +39,10 @@ jobs:
           fi
 
           LATEST=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName,publishedAt \
-            --jq '[.[] | select(.tagName | startswith("nightly-"))][0]')
+            --jq '.[0]')
 
           if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
-            echo "No previous nightly release found. Proceeding with build."
+            echo "No previous release found. Proceeding with build."
             echo "should_run=true" >>"$GITHUB_OUTPUT"
             exit 0
           fi
@@ -55,6 +55,18 @@ jobs:
           if [ -z "$LAST_SHA" ]; then
             LAST_SHA=$(echo "$BODY" | grep -oE 'Commit: [a-f0-9]+' | head -1 | sed 's/Commit: //' || true)
           fi
+          if [ -z "$LAST_SHA" ]; then
+            REF_OBJECT=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object' 2>/dev/null || true)
+            if [ -n "$REF_OBJECT" ] && [ "$REF_OBJECT" != "null" ]; then
+              REF_TYPE=$(echo "$REF_OBJECT" | jq -r '.type')
+              REF_SHA=$(echo "$REF_OBJECT" | jq -r '.sha')
+              if [ "$REF_TYPE" = "commit" ]; then
+                LAST_SHA=$REF_SHA
+              elif [ "$REF_TYPE" = "tag" ]; then
+                LAST_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$REF_SHA" --jq '.object.sha' 2>/dev/null || true)
+              fi
+            fi
+          fi
 
           PUBLISHED_EPOCH=$(date -d "$PUBLISHED_AT" +%s)
           NOW_EPOCH=$(date +%s)
@@ -66,18 +78,18 @@ jobs:
           fi
 
           if [ "$HAS_CHANGES" = "true" ]; then
-            echo "Changes detected since last nightly ($TAG). Proceeding."
+            echo "Changes detected since last release ($TAG). Proceeding."
             echo "should_run=true" >>"$GITHUB_OUTPUT"
             exit 0
           fi
 
           if [ "$AGE_HOURS" -lt 72 ]; then
-            echo "No changes since last nightly ($TAG @ $LAST_SHA) and last release was ${AGE_HOURS}h ago (< 72h). Skipping."
+            echo "No changes since last release ($TAG @ $LAST_SHA) and last release was ${AGE_HOURS}h ago (< 72h). Skipping."
             echo "should_run=false" >>"$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "No changes since last nightly, but last release was ${AGE_HOURS}h ago (>= 72h). Proceeding with periodic rebuild."
+          echo "No changes since last release, but last release was ${AGE_HOURS}h ago (>= 72h). Proceeding with periodic rebuild."
           echo "should_run=true" >>"$GITHUB_OUTPUT"
 
   tests:
