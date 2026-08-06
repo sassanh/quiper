@@ -1008,7 +1008,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        statusBarController.appController.showWindow(nil)
+        let appController = statusBarController.appController
+        if NSApp.isActive && appController.isWindowVisible {
+            appController.hideWindow(nil)
+        } else {
+            appController.showWindow(nil)
+        }
         return true
     }
 
