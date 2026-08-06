@@ -375,6 +375,9 @@ extension MainWindowController {
                     togglePromptHistoryHUD()
                     return true
                 case ",":
+                    guard isShift else {
+                        break
+                    }
                     NotificationCenter.default.post(name: .showSettings, object: nil)
                     return true
                 default:
@@ -515,6 +518,9 @@ extension MainWindowController {
             findBarViewController.handleFindRepeat(shortcutShifted: isShift)
             return true
         case ",":
+            guard isShift else {
+                return false
+            }
             NotificationCenter.default.post(name: .showSettings, object: nil)
             return true
         case "=":

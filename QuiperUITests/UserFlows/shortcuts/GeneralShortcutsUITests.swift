@@ -10,15 +10,15 @@ final class GeneralShortcutsUITests: BaseUITest {
     }
 
     func testSettingsShortcut() {
-        // Test Cmd+, from the main window
+        // Test Cmd+Shift+, from the main window
         ensureWindowVisible()
         
-        // Shortcut under test: Cmd+,
-        app.typeKey(",", modifierFlags: .command)
+        // Shortcut under test: Cmd+Shift+,
+        app.typeKey(",", modifierFlags: [.command, .shift])
         
         // Verification
         let settingsWindow = app.windows["Quiper Settings"]
-        XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5.0), "Settings window should appear after Cmd+,")
+        XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5.0), "Settings window should appear after Cmd+Shift+,")
     }
     
     func testHideShortcut() throws {

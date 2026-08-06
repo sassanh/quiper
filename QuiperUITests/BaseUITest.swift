@@ -39,7 +39,7 @@ class BaseUITest: XCTestCase {
         _ = app.wait(for: .runningForeground, timeout: 2.0)
 
         let settingsWindow = app.windows["Quiper Settings"]
-        app.typeKey(",", modifierFlags: .command)
+        app.typeKey(",", modifierFlags: [.command, .shift])
         if settingsWindow.waitForExistence(timeout: 5.0) {
             return
         }

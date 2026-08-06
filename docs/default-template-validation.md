@@ -66,12 +66,16 @@ node scripts/validate-omlx-template.js
 node scripts/validate-llamacpp-template.js
 ```
 
-If a provider does not have a script yet, add one under `scripts/validate-<engine>-template.js` and keep it narrowly scoped:
+Each engine also ships an engine-Settings action (`Cmd+,`) that opens the provider's own settings page. Validate those scripts across engines with the generic Settings validator:
 
-- Select only the target engine through the bridge.
-- Probe bounded visible controls, focus-selector matches, and action postconditions.
-- Avoid opening private conversations or dumping full DOM content.
-- Ask for human help when login, CAPTCHA, 2FA, or visual confirmation is faster or safer.
+```sh
+node scripts/validate-settings-template.js
+node scripts/validate-settings-template.js claude gemini chatgpt
+```
+
+When the settings-panel probe shows no visible control, drill into the live DOM with the bridge's `settingsPanel` DOM probe to inspect selectors before adjusting the bundled script.
+
+If a provider does not have a script yet, add one under `scripts/validate-<engine>-template.js` and keep it narrowly scoped:
 
 ## Monthly Checklist
 
@@ -87,6 +91,7 @@ If a provider does not have a script yet, add one under `scripts/validate-<engin
 
 6. Manually check the affected shortcuts in both small and large windows.
 7. Re-run the provider validator and the static audit.
+8. When an engine-Settings (`Cmd+,`) script changed, re-run `node scripts/validate-settings-template.js <engine>` as well.
 
 The live validators are safety rails, not a replacement for manual confirmation. Some responsive drawer controls, notably `llama.cpp` history/sidebar, can be easier to verify visually than to infer perfectly from DOM geometry.
 
@@ -99,6 +104,8 @@ node scripts/apply-default-template-to-dev-storage.js --service Gemini --action 
 ```
 
 This updates `QuiperDev`'s saved action script files only. It does not affect production settings and does not restart the app or touch browser session data.
+
+**Keep "latest default" off for the action you are iterating on.** When an engine action is in sync (`templateActionScriptSync[action.id] == true`), `Settings.actionScript(for:)` resolves to the bundled template and ignores the injected `ActionScripts/…` file, so live injections would silently have no effect. Before bridge-injecting a script, turn the action's "latest default" toggle off (or ensure it was never in sync), then re-run the injection after every edit in `Quiper/Settings.swift`. Otherwise you can spend a while probing a page while the running app is still executing the old bundled script.
 
 The bridge's `POST /templates/apply-defaults` endpoint is the preferred option for validation automation. It can install a missing built-in template with `installIfMissing: true`, and accepts `focusSelector: true` and `customCSS: true` alongside an optional `actions` array. Installed templates automatically follow their bundled action scripts, prompt selector, and custom CSS. The endpoint only exists in the guarded Debug bridge described above.
 

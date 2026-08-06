@@ -47,7 +47,7 @@ final class ShortcutConflictsUITests: BaseUITest {
 
         verifyConflictInChain(key: String(UnicodeScalar(8)), modifiers: [.command])
 
-        verifyConflictInChain(key: ",", modifiers: [.command])
+        verifyConflictInChain(key: ",", modifiers: [.command, .shift])
         
         verifyConflictInChain(key: "/", modifiers: [.command, .shift])
         

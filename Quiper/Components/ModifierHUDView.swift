@@ -203,7 +203,7 @@ final class ModifierHUDView: NSView {
         col2.addSubview(shortcutsStack)
         
         let itemsData: [(String, String, String, () -> Void)] = [
-            ("Settings...", "gearshape", "⌘ ,", {
+            ("Settings...", "gearshape", "⌘ ⇧ ,", {
                 NotificationCenter.default.post(name: .showSettings, object: nil)
             }),
             ("Find in Page...", "magnifyingglass", "⌘ F", { [weak self] in

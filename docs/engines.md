@@ -7,7 +7,7 @@ Quiper does not restrict you to a single AI ecosystem. You can manage and organi
 ## Service Configuration Settings
 
 To add or configure an engine:
-1.  Open **Settings (`⌘ ,`)** and navigate to the **Engines** tab.
+1.  Open **Settings (`⌘ ⇧ ,`)** and navigate to the **Engines** tab.
 2.  Select an existing engine to edit, or click **Add Engine** at the bottom of the list.
 3.  Each engine exposes the following properties:
     *   **Name:** The label displayed in the switcher tab (e.g., "ChatGPT").
@@ -78,7 +78,7 @@ For built-in engine templates, enable **Use Latest Default** to follow selector 
 Since Quiper runs AI interfaces inside `WKWebView` wrappers, you can inject custom CSS styles directly into any engine's document head. This is most commonly used to hide sidebars, change scrollbars, and make backgrounds transparent so that your native macOS blur effects shine through.
 
 ### Setting Up Custom CSS
-1.  Open **Settings (`⌘ ,`) ➔ Engines**.
+1.  Open **Settings (`⌘ ⇧ ,`) ➔ Engines**.
 2.  Select the engine you want to style.
 3.  Scroll down to the **Custom CSS** text box.
 4.  Paste your CSS rules and click **Save**.

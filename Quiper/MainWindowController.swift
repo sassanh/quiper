@@ -573,6 +573,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func performCustomAction(_ action: CustomAction) {
         guard let service = currentService(), let webView = currentWebView() else { return }
+        if action.id == Settings.openSettingsActionID {
+            presentEngineSettingsShortcutNoticeIfNeeded()
+        }
         let effectiveService = Settings.shared.services.first(where: { $0.id == service.id }) ?? service
         let storedScript = Settings.shared.actionScript(for: effectiveService, action: action)
         let rawScript = storedScript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -611,6 +614,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 NSLog("[Quiper] Custom action script failed (error): \(error)")
                 self?.focusInputInActiveWebview()
                 return
+            }
+        }
+    }
+    
+    private func presentEngineSettingsShortcutNoticeIfNeeded() {
+        guard !AppController.isRunningTests,
+              !Constants.LaunchMode.shouldSuppressInterferenceUI,
+              !Settings.shared.hasDismissedEngineSettingsShortcutNotice,
+              let window else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Cmd+,"
+        alert.informativeText = "Cmd+, now opens the Settings of the engine you're using, not Quiper's Settings. To change Quiper's Settings, use Cmd+Shift+,."
+
+        let checkbox = NSButton(checkboxWithTitle: "Don't show this again", target: nil, action: nil)
+        checkbox.font = .systemFont(ofSize: 11)
+        alert.accessoryView = checkbox
+
+        alert.addButton(withTitle: "OK")
+        alert.beginSheetModal(for: window) { _ in
+            if checkbox.state == .on {
+                Settings.shared.hasDismissedEngineSettingsShortcutNotice = true
             }
         }
     }

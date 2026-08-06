@@ -5,9 +5,12 @@
 ### Added
 
 - **Element Fullscreen Support**: Web content can now use the browser Fullscreen API in regular and popup sessions, so embedded videos and slides play truly fullscreen instead of expanding only within Quiper's window.
+- **Engine Settings Shortcut**: `Cmd+,` now opens the active engine's own settings page, matching how the engine's other default shortcuts behave. Existing installs get a one-time prompt to enable it; new installs include it by default.
+- **One-Time `Cmd+,` Notice**: The first time `Cmd+,` is pressed after this update, a dialog explains that it now opens the active engine's settings rather than Quiper's, with a "Don't show this again" checkbox for users who expect Quiper's Settings there.
 
 ### Changed
 
+- **Settings Shortcut Moved**: Quiper's own Settings moved from `Cmd+,` to `Cmd+Shift+,` so `Cmd+,` can drive the engine Settings action. The status menu, in-app menu, Shortcuts settings reservation, and all documentation now reflect the new binding.
 - **Fullscreen-aware Shortcuts**: While an element is fullscreen in its own space, global shortcuts only reveal Quiper in the current space; they no longer switch engines, sessions, or toggle the overlay, and Quiper stays hidden during fullscreen playback.
 - **Release-aware Nightly Builds ([integration_delivery.yml](.github/workflows/integration_delivery.yml))**: Scheduled nightly builds now compare against the most recent release of any kind—nightly, beta, or stable—instead of only the previous nightly. A recent beta or stable release that already covers the latest code skips an unnecessary rebuild, and periodic rebuilds still run when the last release is older than 72 hours.
 
@@ -697,7 +700,7 @@
   - `ZoomShortcutsUITests`: Tests `Cmd+=`/`Cmd+-` with width-based relative zoom verification
   - `ReloadShortcutsUITests`: Tests `Cmd+r` with dynamic random ID change detection
   - `FindShortcutsUITests`: Tests `Cmd+f` (open), `Cmd+g`/`Enter` (forward), `Cmd+Shift+g`/`Shift+Enter` (backward), `Escape` (close), with custom HTML containing multiple search targets
-  - `GeneralShortcutsUITests`: Tests `Cmd+,` (Settings), `Cmd+h` (Hide), `Cmd+w` (Close)
+  - `GeneralShortcutsUITests`: Tests `Cmd+Shift+,` (Settings), `Cmd+h` (Hide), `Cmd+w` (Close)
 - **Test Infrastructure**: Added `--test-custom-engines-path` argument for file-based HTML content injection in UI tests
 
 ### Changed
@@ -793,7 +796,7 @@
 
 - Allowed bare F1–F20 keys to be recorded and used as shortcuts without requiring modifier keys; non-function keys still require Command/Option/Control/Shift.
 - Shortcut formatting now uses glyphs for Return/Escape/arrows and adds labels for F1–F20 plus punctuation/keypad symbols, matching macOS menus.
-- Status menu items now display proper modifier-aware shortcuts (e.g., Command+, for Settings, Command+Option+I for Inspector, Command+Q for Quit) and avoid unmodified key equivalents.
+- Status menu items now display proper modifier-aware shortcuts (e.g., Command+Shift+, for Settings, Command+Option+I for Inspector, Command+Q for Quit) and avoid unmodified key equivalents.
 - Settings window now defaults to the Engines tab, with the former Services tab relabeled to "Engines" and General moved to the end of the tab order.
 - Global show/hide hotkey (⌥Space, with ⌃Space fallback in Xcode) is now configurable directly in Settings → General without an overlay on the main window.
 - Engine launch hotkeys no longer override the global toggle, and ⌘W now hides the overlay in addition to the hotkey.

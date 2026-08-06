@@ -448,6 +448,13 @@ class Settings: ObservableObject {
     /// When true, pressing an engine's global launch shortcut while Quiper is already
     /// visible, focused, and showing that engine hides Quiper (toggle behavior).
     @Published var hideQuiperWhenRetriggeringActiveEngineShortcut: Bool = true
+    /// Set when the user dismissed the one-time notice explaining that Cmd+, opens
+    /// the engine's own Settings rather than Quiper's.
+    @Published var hasDismissedEngineSettingsShortcutNotice: Bool = false {
+        didSet {
+            saveSettings()
+        }
+    }
     /// Makes the primary Go to engine 1–10 modifier shortcuts available system-wide.
     @Published var globalEngineDigitShortcutsEnabled: Bool = false
     @Published var settingsColorStyle: SettingsColorStyle = .colorful {
@@ -518,6 +525,7 @@ class Settings: ObservableObject {
         services = []
         hotkeyConfiguration = HotkeyManager.defaultConfiguration
         customActions = []
+        didResolveEngineSettingsShortcutMigration = nil
         updatePreferences = UpdatePreferences()
         serviceZoomLevels = [:]
         appShortcutBindings = .defaults
@@ -583,6 +591,7 @@ class Settings: ObservableObject {
     private static let newTemporarySessionActionID = UUID()
     private static let shareActionID = UUID()
     private static let historyActionID = UUID()
+    static let openSettingsActionID = UUID()
 
     private let defaultActions: [CustomAction] = [
         CustomAction(
@@ -615,6 +624,14 @@ class Settings: ObservableObject {
             shortcut: HotkeyManager.Configuration(
                 keyCode: UInt32(kVK_ANSI_H),
                 modifierFlags: NSEvent.ModifierFlags([.command, .shift]).rawValue
+            )
+        ),
+        CustomAction(
+            id: Settings.openSettingsActionID,
+            name: "Settings",
+            shortcut: HotkeyManager.Configuration(
+                keyCode: UInt32(kVK_ANSI_Comma),
+                modifierFlags: NSEvent.ModifierFlags.command.rawValue
             )
         )
     ]
@@ -942,7 +959,23 @@ class Settings: ObservableObject {
                   ["Open sidebar", "Main menu", "Open navigation menu", "Menu"],
                   "Sidebar button not found"
                 );
-                """
+                """,
+                Settings.openSettingsActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function geminiSettingsVisible() {
+                  return quiperElements([".mat-mdc-menu-panel"]).some((element) =>
+                    quiperIsVisible(element)
+                  );
+                }
+
+                const settingsButton = quiperFind(["button[aria-label='Settings']"]);
+                await quiperClickElement(settingsButton, "Settings button not found");
+                if (geminiSettingsVisible()) {
+                  await waitFor(() => !geminiSettingsVisible(), 3000);
+                } else {
+                  await waitFor(geminiSettingsVisible, 3000);
+                }
+                """,
             ],
             routingRules: [
                 RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay)
@@ -1063,7 +1096,28 @@ class Settings: ObservableObject {
                   ["Open sidebar", "Close sidebar", "Sidebar", "Menu"],
                   "Sidebar button not found"
                 );
-                """
+                """,
+                Settings.openSettingsActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function claudeSettingsVisible() {
+                  return location.hash.includes("settings") || location.pathname.startsWith("/settings");
+                }
+
+                if (claudeSettingsVisible()) {
+                  if (location.hash.includes("settings")) {
+                    window.location.hash = "";
+                  } else {
+                    window.location.assign(new URL("/new", window.location.origin).href);
+                  }
+                } else {
+                  const userMenu = quiperFind(["[data-testid='user-menu-button']"]);
+                  await quiperClickElement(userMenu, "User menu button not found");
+                  await waitFor(() => quiperFind(["[data-testid='user-menu-settings']"]), 2000);
+                  const settingsItem = quiperFind(["[data-testid='user-menu-settings']"]);
+                  await quiperClickElement(settingsItem, "Settings menu item not found");
+                  await waitFor(claudeSettingsVisible, 4000);
+                }
+                """,
             ],
             routingRules: [
                 RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay)
@@ -1187,7 +1241,56 @@ class Settings: ObservableObject {
                   ["History"],
                   "History button not found"
                 );
-                """
+                """,
+                Settings.openSettingsActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                async function grokPointerClick(element) {
+                  if (!element) { throw new Error("Grok click target not found"); }
+                  const rect = element.getBoundingClientRect();
+                  const options = {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    clientX: rect.left + rect.width / 2,
+                    clientY: rect.top + rect.height / 2,
+                    button: 0
+                  };
+                  for (const type of ["pointerdown", "pointerup", "mousedown", "mouseup", "click"]) {
+                    element.dispatchEvent(new MouseEvent(type, options));
+                  }
+                  await new Promise((resolve) => window.requestAnimationFrame(resolve));
+                }
+
+                function grokSettingsVisible() {
+                  return quiperElements(["[role='dialog']"]).some((element) =>
+                    quiperIsVisible(element) && /General|Appearance/.test(quiperText(element))
+                  );
+                }
+
+                function grokSettingsDialog() {
+                  return quiperElements(["[role='dialog']"]).find((element) =>
+                    quiperIsVisible(element) && /General|Appearance/.test(quiperText(element))
+                  );
+                }
+
+                if (grokSettingsVisible()) {
+                  const dialog = grokSettingsDialog();
+                  const closeButton = dialog && Array.from(dialog.querySelectorAll("button"))
+                    .find((button) => button.getAttribute("title") === "Close");
+                  await grokPointerClick(closeButton);
+                  await waitFor(() => !grokSettingsVisible(), 3000);
+                } else {
+                  const profileButton = quiperClickable(quiperFind(["img[src*='profile-picture']"]));
+                  await grokPointerClick(profileButton);
+                  await waitFor(() => quiperFind(["[role='menu']"]), 2000);
+                  const menu = quiperFind(["[role='menu']"]);
+                  const settingsItem = menu && Array.from(menu.querySelectorAll("div"))
+                    .find((element) => quiperNormalize(element.innerText) === "Settings");
+                  if (!settingsItem) { throw new Error("Settings menu item not found"); }
+                  await grokPointerClick(settingsItem);
+                  await waitFor(grokSettingsVisible, 4000);
+                }
+                """,
             ],
             routingRules: [
                 RoutingRule(pattern: "^https?://([^/]*\\.)?x\\.com(/|$)", action: .internalStay),
@@ -1460,7 +1563,36 @@ class Settings: ObservableObject {
                 }
 
                 await chatGPTOpenSearch();
-                """
+                """,
+                Settings.openSettingsActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function chatGPTSettingsVisible() {
+                  if (location.hash.startsWith("#settings")) { return true; }
+                  return quiperElements([
+                    "[data-testid='settings-modal']",
+                    "[data-testid='settings']",
+                    "[role='dialog']",
+                    "[data-radix-popper-content-wrapper]"
+                  ]).some((element) => {
+                    if (!quiperIsVisible(element)) { return false; }
+                    return /settings/i.test(quiperText(element));
+                  });
+                }
+
+                if (chatGPTSettingsVisible()) {
+                  const closeButton = quiperFind(["[aria-label='Close']"], { visible: true });
+                  if (closeButton) {
+                    const target = quiperUsable(closeButton);
+                    if (!target) { throw new Error("Close settings button not found"); }
+                    target.click();
+                  } else {
+                    window.location.assign(new URL(window.location.pathname, window.location.origin).href);
+                  }
+                } else {
+                  window.location.assign(new URL("#settings", window.location.origin).href);
+                  await waitFor(chatGPTSettingsVisible, 4000);
+                }
+                """,
             ],
             routingRules: [
                 RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay),
@@ -1653,7 +1785,83 @@ class Settings: ObservableObject {
                   await quiperClickElement(historyButton, "Chat history button not found");
                   await waitFor(() => xHistoryPanelOpen(), 1600);
                 }
-                """
+                """,
+                 Settings.openSettingsActionID: """
+                 \(Settings.defaultActionScriptHelpers)
+                 async function xWaitFor(check, timeoutMs = 3000) {
+                   const start = Date.now();
+                   return new Promise((resolve, reject) => {
+                     const step = () => {
+                       try {
+                         if (check()) { resolve(true); return; }
+                       } catch (err) {
+                         reject(err);
+                         return;
+                       }
+                       if (Date.now() - start >= timeoutMs) {
+                         reject(new Error(`xWaitFor timed out after ${timeoutMs}ms`));
+                         return;
+                       }
+                       setTimeout(step, 50);
+                     };
+                     setTimeout(step, 0);
+                   });
+                 }
+
+                 async function xClick(element, errorMessage) {
+                   const target = quiperUsable(element);
+                   if (!target) { throw new Error(errorMessage); }
+                   target.scrollIntoView({ block: "center", inline: "center" });
+                   target.click();
+                   await new Promise((resolve) => setTimeout(resolve, 350));
+                   return target;
+                 }
+
+                 function xSettingsVisible() {
+                   return location.pathname.startsWith("/settings");
+                 }
+
+                 function xSettingsOrigin() {
+                   return sessionStorage.getItem("quiper.x.settings.origin") || "/i/grok";
+                 }
+
+                 if (xSettingsVisible()) {
+                   sessionStorage.removeItem("quiper.x.settings.origin");
+                   const originPath = new URL(xSettingsOrigin(), location.href).pathname;
+                   const originLink = quiperFind([
+                     `a[href='${originPath}']`,
+                     "a[aria-label='Grok']",
+                     "a[href='/i/grok']"
+                   ]);
+                   await xClick(originLink, "Settings return link not found");
+                   await xWaitFor(() => !xSettingsVisible(), 3000);
+                 } else {
+                   sessionStorage.setItem("quiper.x.settings.origin", location.href);
+                   const direct = quiperFind([
+                     "a[href='/settings']",
+                     "[data-testid='settings']",
+                     "[aria-label='Settings and privacy']"
+                   ]);
+                   if (direct) {
+                     await xClick(direct, "Settings link not found");
+                   } else {
+                     const moreButton = quiperFind([
+                       "button[aria-label='More menu items']",
+                       "[data-testid='AppTabBar_More_Menu']",
+                       "[data-testid='SideNav_More']"
+                     ]) || quiperFindByText(["More menu items", "More"]);
+                     await xClick(moreButton, "More menu button not found");
+                     await xWaitFor(
+                       () => quiperFind(["a[data-testid='settings']", "[data-testid='settings']"]) || quiperFindByText(["Settings and privacy"]),
+                       2000
+                     );
+                     const settingsItem = quiperFind(["a[data-testid='settings']", "[data-testid='settings']"]) ||
+                       quiperFindByText(["Settings and privacy"]);
+                     await xClick(settingsItem, "Settings menu item not found");
+                   }
+                   await xWaitFor(xSettingsVisible, 3500);
+                 }
+                 """,
             ],
             routingRules: [
                 RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay)
@@ -1781,7 +1989,41 @@ class Settings: ObservableObject {
 
                 await quiperClickElement(labelledToggle || chromeToggle, "Sidebar/history button not found");
                 await new Promise((resolve) => setTimeout(resolve, 250));
-                """
+                """,
+                Settings.openSettingsActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function openWebUISettingsVisible() {
+                  return quiperElements([
+                    "[role='dialog']"
+                  ]).some((element) => {
+                    if (!quiperIsVisible(element)) { return false; }
+                    return /settings/i.test(quiperText(element));
+                  });
+                }
+
+                if (openWebUISettingsVisible()) {
+                  const closeButton = quiperFind([
+                    "[aria-label='Close settings modal']",
+                    "[aria-label='Close']"
+                  ]);
+                  if (closeButton) {
+                    await quiperClickElement(closeButton, "Close settings button not found");
+                  }
+                } else {
+                  const userMenu = quiperFind([
+                    "img[aria-label='Open User Profile Menu']",
+                    "[aria-label='Open User Profile Menu']"
+                  ]);
+                  await quiperClickElement(userMenu, "User menu button not found");
+                  await waitFor(
+                    () => quiperFindByText(["Settings"]),
+                    2000
+                  );
+                  const settingsItem = quiperFindByText(["Settings"]);
+                  await quiperClickElement(settingsItem, "Settings menu item not found");
+                  await waitFor(openWebUISettingsVisible, 3000);
+                }
+                """,
             ],
             customCSS: """
             body, div.app>div, div.bg-white:has(form #chat-input-container) {
@@ -1910,7 +2152,55 @@ class Settings: ObservableObject {
                   });
                 await quiperClickElement(toggle, "Sidebar toggle button not found");
                 await waitFor(() => zaiSidebarExpanded() !== wasExpanded, 1800);
-                """
+                """,
+                Settings.openSettingsActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                const ZAI_ORIGIN_KEY = "quiper.zai.settingsOrigin";
+
+                function zaiSettingsVisible() {
+                  return location.pathname.startsWith("/settings");
+                }
+
+                function zaiSaveOrigin(url) {
+                  try { sessionStorage.setItem(ZAI_ORIGIN_KEY, url); } catch {}
+                }
+
+                function zaiGetOrigin() {
+                  try { return sessionStorage.getItem(ZAI_ORIGIN_KEY); } catch { return null; }
+                }
+
+                function zaiClearOrigin() {
+                  try { sessionStorage.removeItem(ZAI_ORIGIN_KEY); } catch {}
+                }
+
+                async function zaiSoftNavigate(url) {
+                  try {
+                    const target = new URL(url, window.location.origin);
+                    if (target.origin !== window.location.origin) { return; }
+                    history.pushState(null, "", target.href);
+                    window.dispatchEvent(new PopStateEvent("popstate"));
+                  } catch {}
+                }
+
+                if (zaiSettingsVisible()) {
+                  const origin = zaiGetOrigin();
+                  if (origin) {
+                    await zaiSoftNavigate(origin);
+                  }
+                  zaiClearOrigin();
+                } else {
+                  zaiSaveOrigin(location.href);
+                  const userMenu = quiperFind(["button[aria-label='Open User Menu']"]);
+                  await quiperClickElement(userMenu, "User menu button not found");
+                  await waitFor(
+                    () => quiperFind(["[role='menuitem']"]) || quiperFindByText(["Settings"]),
+                    1500
+                  );
+                  const settingsItem = quiperFind(["[role='menuitem']"]) || quiperFindByText(["Settings"]);
+                  await quiperClickElement(settingsItem, "Settings menu item not found");
+                  await waitFor(zaiSettingsVisible, 4000);
+                }
+                """,
             ],
             routingRules: [
                 RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay)
@@ -1988,7 +2278,70 @@ class Settings: ObservableObject {
                 }
                 target.click();
                 await waitFor(() => kimiSidebarExpanded() !== wasExpanded, 1500);
-                """
+                """,
+                 Settings.openSettingsActionID: """
+                 \(Settings.defaultActionScriptHelpers)
+                 const KIMI_ORIGIN_KEY = "quiper.kimi.settingsOrigin";
+
+                 function kimiSettingsVisible() {
+                   return location.pathname.startsWith("/settings");
+                 }
+
+                 function kimiSaveOrigin(url) {
+                   try { sessionStorage.setItem(KIMI_ORIGIN_KEY, url); } catch {}
+                 }
+
+                 function kimiGetOrigin() {
+                   try { return sessionStorage.getItem(KIMI_ORIGIN_KEY); } catch { return null; }
+                 }
+
+                 function kimiClearOrigin() {
+                   try { sessionStorage.removeItem(KIMI_ORIGIN_KEY); } catch {}
+                 }
+
+                 async function kimiSoftNavigate(url) {
+                   try {
+                     const target = new URL(url, window.location.origin);
+                     if (target.origin !== window.location.origin) { return; }
+                     history.pushState(null, "", target.href);
+                     window.dispatchEvent(new PopStateEvent("popstate"));
+                   } catch {}
+                 }
+
+                 async function kimiWaitFor(check, timeoutMs = 3000) {
+                   const start = Date.now();
+                   return new Promise((resolve, reject) => {
+                     const step = () => {
+                       try {
+                         if (check()) { resolve(true); return; }
+                       } catch (err) {
+                         reject(err);
+                         return;
+                       }
+                       if (Date.now() - start >= timeoutMs) {
+                         reject(new Error(`kimiWaitFor timed out after ${timeoutMs}ms`));
+                         return;
+                       }
+                       setTimeout(step, 50);
+                     };
+                     setTimeout(step, 0);
+                   });
+                 }
+
+                 if (kimiSettingsVisible()) {
+                   const origin = kimiGetOrigin();
+                   if (origin) {
+                     await kimiSoftNavigate(origin);
+                     await kimiWaitFor(() => !kimiSettingsVisible(), 3000);
+                   }
+                   kimiClearOrigin();
+                 } else {
+                   kimiSaveOrigin(location.href);
+                   const target = new URL("/settings", window.location.origin);
+                   await kimiSoftNavigate(target.href);
+                   await kimiWaitFor(kimiSettingsVisible, 3000);
+                 }
+                 """,
             ],
             routingRules: [
                 RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay),
@@ -2088,7 +2441,32 @@ class Settings: ObservableObject {
                   ["Toggle sidebar", "Expand sidebar", "Collapse sidebar"],
                   "Sidebar/history button not found"
                 );
-                """
+                """,
+                Settings.openSettingsActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function qwenSettingsVisible() {
+                  return location.pathname.startsWith("/settings");
+                }
+
+                if (qwenSettingsVisible()) {
+                  const backButton = quiperFind([
+                    "button[aria-label='Back']",
+                    "[aria-label='Back']"
+                  ]);
+                  await quiperClickElement(backButton, "Settings back button not found");
+                  await waitFor(() => !qwenSettingsVisible(), 3000);
+                } else {
+                  const userMenu = quiperFind(["button.user-menu-btn"]);
+                  await quiperClickElement(userMenu, "User menu button not found");
+                  await waitFor(
+                    () => quiperFindByText(["Settings"]) || quiperFind(["[role='menuitem']"]),
+                    1500
+                  );
+                  const settingsItem = quiperFind(["[role='menuitem']"]) || quiperFindByText(["Settings"]);
+                  await quiperClickElement(settingsItem, "Settings menu item not found");
+                  await waitFor(qwenSettingsVisible, 4000);
+                }
+                """,
             ],
             routingRules: [
                 RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay),
@@ -2240,7 +2618,60 @@ class Settings: ObservableObject {
 
                 await quiperClickElement(toggle, "Sidebar/history button not found");
                 await new Promise((resolve) => setTimeout(resolve, 350));
-                """
+                """,
+                Settings.openSettingsActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                async function deepseekWaitFor(check, timeoutMs = 3000) {
+                  const start = Date.now();
+                  return new Promise((resolve, reject) => {
+                    const step = () => {
+                      if (check()) { resolve(true); return; }
+                      if (Date.now() - start >= timeoutMs) {
+                        reject(new Error(`deepseekWaitFor timed out after ${timeoutMs}ms`));
+                        return;
+                      }
+                      setTimeout(step, 50);
+                    };
+                    setTimeout(step, 0);
+                  });
+                }
+
+                function deepseekSettingsVisible() {
+                  return !!quiperElements([".ds-modal"]).find((element) =>
+                    /settings|设置/i.test(quiperText(element))
+                  );
+                }
+
+                function deepseekUserMenu() {
+                  return quiperElements(["div[tabindex='0']"]).find((element) => {
+                    const text = quiperText(element);
+                    return text.includes("@") && !!element.querySelector(".ds-icon svg");
+                  });
+                }
+
+                function deepseekSettingsOption() {
+                  return quiperElements(["div.ds-dropdown-menu-option"]).find((element) =>
+                    /settings|设置/i.test(quiperText(element))
+                  );
+                }
+
+                if (deepseekSettingsVisible()) {
+                  const closeButton = quiperElements([".ds-modal-content__header-wrapper .ds-button--iconLabelPrimary"]).find(Boolean);
+                  if (closeButton) {
+                    closeButton.click();
+                  }
+                  await deepseekWaitFor(() => !deepseekSettingsVisible(), 3000);
+                } else {
+                  const userMenu = deepseekUserMenu();
+                  if (!userMenu) { throw new Error("User menu button not found"); }
+                  userMenu.click();
+                  await deepseekWaitFor(deepseekSettingsOption, 1500);
+                  const settingsItem = deepseekSettingsOption();
+                  if (!settingsItem) { throw new Error("Settings menu item not found"); }
+                  settingsItem.click();
+                  await deepseekWaitFor(deepseekSettingsVisible, 3000);
+                }
+                """,
             ],
             routingRules: [
                 RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay),
@@ -2271,7 +2702,25 @@ class Settings: ObservableObject {
                 if (!sidebarButton) { throw new Error("Sidebar/history button not found"); }
                 sidebarButton.click();
                 await new Promise((resolve) => window.requestAnimationFrame(resolve));
-                """
+                """,
+                Settings.openSettingsActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function llamacppSettingsVisible() {
+                  return location.hash.startsWith("#/settings/");
+                }
+
+                if (llamacppSettingsVisible()) {
+                  window.location.hash = "";
+                } else {
+                  const entry = quiperFind([
+                    "button[aria-label='Settings']",
+                    "button[aria-label='Open settings']",
+                    "[aria-label='Settings']"
+                  ]) || quiperFindByText(["Settings"]);
+                  await quiperClickElement(entry, "Settings button not found");
+                  await waitFor(llamacppSettingsVisible, 3000);
+                }
+                """,
             ],
             customCSS: """
             body {
@@ -2355,7 +2804,40 @@ class Settings: ObservableObject {
                     })
                     .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)[0]);
                 await quiperClickElement(sidebarToggle, "Sidebar/history button not found");
-                """
+                """,
+                Settings.openSettingsActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function omlxSettingsVisible() {
+                  return quiperFind([".right-sidebar-width"], { visible: true }) !== null ||
+                    quiperElements([
+                      "[role='dialog']",
+                      "[class*='settings']",
+                      "[data-testid*='settings']"
+                    ]).some((element) => {
+                      if (!quiperIsVisible(element)) { return false; }
+                      return /settings/i.test(quiperText(element));
+                    });
+                }
+
+                if (omlxSettingsVisible()) {
+                  const closeButton = quiperFind(["button[title='Close settings']"], { visible: true });
+                  if (closeButton) {
+                    const target = quiperUsable(closeButton);
+                    if (!target) { throw new Error("Close settings button not found"); }
+                    target.click();
+                  }
+                } else {
+                  const entry = quiperFind([
+                    "button[aria-label='Settings']",
+                    "button[aria-label='Open settings']",
+                    "button[title='Show settings']",
+                    "[aria-label='Settings']",
+                    "a[href*='settings']"
+                  ]) || quiperFindByText(["Settings"]);
+                  await quiperClickElement(entry, "Settings button not found");
+                  await waitFor(omlxSettingsVisible, 3000);
+                }
+                """,
             ],
             customCSS: """
             html {
@@ -2391,6 +2873,30 @@ class Settings: ObservableObject {
                   window.location.assign("https://www.google.com?referrer=https://github.io/sassanh/quiper");
                 }
                 """,
+                Settings.openSettingsActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function googleSettingsVisible() {
+                  if (location.pathname === "/preferences" || location.pathname.startsWith("/preferences")) { return true; }
+                  return quiperElements([
+                    "[role='menu']",
+                    "[class*='menu']",
+                    "[data-testid*='settings']"
+                  ]).some((element) => {
+                    if (!quiperIsVisible(element)) { return false; }
+                    return /search settings|advanced search|settings/i.test(quiperText(element));
+                  });
+                }
+
+                const settingsGear = quiperFind([
+                  "button[aria-label='Settings']",
+                  "a[aria-label='Settings']",
+                  "[aria-label='Settings']"
+                ]) || quiperFindByText(["Settings"]);
+                await quiperClickElement(settingsGear, "Settings button not found");
+                if (!googleSettingsVisible()) {
+                  await waitFor(googleSettingsVisible, 2000);
+                }
+                """,
             ],
             routingRules: [
                 RoutingRule(pattern: ".*", action: .internalStay)
@@ -2419,6 +2925,10 @@ class Settings: ObservableObject {
     private(set) var needsSparseBundleMigrationPrompt = false
     var needsEngineShortcutToggleMigrationPrompt: Bool {
         migrationDisposition(for: .engineShortcutToggle) == .awaitingPrompt
+    }
+    private var didResolveEngineSettingsShortcutMigration: Bool?
+    var needsEngineSettingsShortcutMigrationPrompt: Bool {
+        migrationDisposition(for: .engineSettingsShortcut) == .awaitingPrompt
     }
 
     init() {
@@ -2558,6 +3068,9 @@ class Settings: ObservableObject {
         persistedTabState = persisted.persistedTabState
         tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2
         configureTemplateActionSyncMigration()
+        applyEngineSettingsShortcutMigrationSetting(
+            persistedValue: persisted.didResolveEngineSettingsShortcutMigration
+        )
         needsSparseBundleMigrationPrompt =
             services.contains(where: { $0.isEncrypted })
             && EncryptedVolumeManager.shared.hasAnyLegacyBundles(in: services)
@@ -2638,6 +3151,8 @@ class Settings: ObservableObject {
                                             promptHistoryLimit: promptHistoryLimit,
                                             tabNavigationRingSize: tabNavigationRingSize,
                                             hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
+            didResolveEngineSettingsShortcutMigration: persistedEngineSettingsShortcutMigrationForSave(),
+                                            hasDismissedEngineSettingsShortcutNotice: hasDismissedEngineSettingsShortcutNotice,
                                             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
                                             quiperVersion: persistedQuiperVersionForSave())
             let data = try JSONEncoder().encode(payload)
@@ -2697,6 +3212,7 @@ class Settings: ObservableObject {
             promptHistoryLimit: promptHistoryLimit,
             tabNavigationRingSize: tabNavigationRingSize,
             hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
+            didResolveEngineSettingsShortcutMigration: persistedEngineSettingsShortcutMigrationForSave(),
             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
             quiperVersion: persistedQuiperVersionForSave()
         )
@@ -2714,6 +3230,10 @@ class Settings: ObservableObject {
         services = persisted.services
         customActions = persisted.customActions ?? []
         configureTemplateActionSyncMigration()
+        applyEngineSettingsShortcutMigrationSetting(
+            persistedValue: persisted.didResolveEngineSettingsShortcutMigration
+        )
+        hasDismissedEngineSettingsShortcutNotice = persisted.hasDismissedEngineSettingsShortcutNotice ?? false
         updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
         serviceZoomLevels = (persisted.serviceZoomLevels ?? [:]).mapValues { CGFloat($0) }
         appShortcutBindings = persisted.appShortcuts ?? .defaults
@@ -2946,6 +3466,28 @@ class Settings: ObservableObject {
         saveSettings()
     }
 
+    /// Installs (or declines) the Cmd+, engine-Settings shortcut for existing
+    /// settings that predate it. Opt-in, so the action and per-engine scripts are
+    /// added to the current schema only when the user accepts.
+    func resolveEngineSettingsShortcutMigration(add: Bool) {
+        if add,
+           let settingsAction = defaultActions.first(where: { $0.id == Settings.openSettingsActionID }) {
+            if !customActions.contains(where: { $0.id == settingsAction.id }) {
+                customActions.append(settingsAction)
+            }
+            for serviceIndex in services.indices
+            where isTemplateActionScript(services[serviceIndex], action: settingsAction) {
+                let serviceID = services[serviceIndex].id
+                services[serviceIndex].templateActionScriptSync[settingsAction.id] = true
+                services[serviceIndex].actionScripts.removeValue(forKey: settingsAction.id)
+                ActionScriptStorage.deleteScript(serviceID: serviceID, actionID: settingsAction.id)
+            }
+        }
+        didResolveEngineSettingsShortcutMigration = add
+        clearMigrationDisposition(for: .engineSettingsShortcut)
+        saveSettings()
+    }
+
     /// User-facing setter that also settles any pending migration for this preference.
     func setHideQuiperWhenRetriggeringActiveEngineShortcut(_ enabled: Bool) {
         hideQuiperWhenRetriggeringActiveEngineShortcut = enabled
@@ -2978,6 +3520,30 @@ class Settings: ObservableObject {
                 presentation: .prompted
             ),
             for: .engineShortcutToggle
+        )
+    }
+
+    private func applyEngineSettingsShortcutMigrationSetting(persistedValue: Bool?) {
+        if !persistedSettingsMigrationContext.isExistingSettings {
+            didResolveEngineSettingsShortcutMigration = nil
+            clearMigrationDisposition(for: .engineSettingsShortcut)
+            return
+        }
+        if let persistedValue {
+            didResolveEngineSettingsShortcutMigration = persistedValue
+            clearMigrationDisposition(for: .engineSettingsShortcut)
+            return
+        }
+
+        // Existing settings predating the Cmd+, engine-Settings action: offer to
+        // install it unless the user already added the action another way.
+        let settingsActionInstalled = customActions.contains { $0.id == Settings.openSettingsActionID }
+        setMigrationDisposition(
+            persistedSettingsMigrationContext.disposition(
+                whenDetected: !settingsActionInstalled,
+                presentation: .prompted
+            ),
+            for: .engineSettingsShortcut
         )
     }
 
@@ -3016,6 +3582,12 @@ class Settings: ObservableObject {
         migrationDisposition(for: .engineShortcutToggle).isUnresolved
             ? nil
             : hideQuiperWhenRetriggeringActiveEngineShortcut
+    }
+
+    private func persistedEngineSettingsShortcutMigrationForSave() -> Bool? {
+        migrationDisposition(for: .engineSettingsShortcut).isUnresolved
+            ? nil
+            : didResolveEngineSettingsShortcutMigration
     }
 
     private func migrationDisposition(

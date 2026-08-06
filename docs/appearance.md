@@ -9,7 +9,7 @@ Quiper allows you to customize the application’s visual style to match your de
 
 ## Native Theme & Styling Settings
 
-To customize Quiper's native frame and panel styling, open **Settings (`⌘ ,`)** and navigate to the **Appearance** tab. 
+To customize Quiper's native frame and panel styling, open **Settings (`⌘ ⇧ ,`)** and navigate to the **Appearance** tab. 
 You can customize styling properties for the **Light Theme** and **Dark Theme** independently, allowing the layout to adapt gracefully when your system changes modes.
 
 ## Selector Display

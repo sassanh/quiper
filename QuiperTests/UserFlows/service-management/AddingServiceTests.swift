@@ -67,7 +67,7 @@ final class AddingServiceTests: XCTestCase {
         
         let initialServiceCount = Settings.shared.services.count
         
-        // USER ACTION: Open Settings window (Cmd+,)
+        // USER ACTION: Open Settings window (Cmd+Shift+,)
         settingsWindow = SettingsWindow.shared
         settingsWindow.appController = nil
         settingsWindow.makeKeyAndOrderFront(nil)

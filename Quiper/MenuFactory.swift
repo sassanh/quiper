@@ -130,6 +130,7 @@ enum MenuFactory {
 
     static func createSettingsItem() -> NSMenuItem {
         let item = createMenuItem(title: "Settings...", iconName: "gearshape", action: #selector(AppController.showSettings(_:)), keyEquivalent: ",")
+        item.keyEquivalentModifierMask = [.command, .shift]
         return item
     }
     

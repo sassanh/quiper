@@ -60,7 +60,7 @@ The mount directory is then removed. The files become unreadable blocks of encry
 
 ## Lock Policies
 
-You can configure when Quiper locks your encrypted engines in **Settings (`⌘ ,`) ➔ Engines**:
+You can configure when Quiper locks your encrypted engines in **Settings (`⌘ ⇧ ,`) ➔ Engines**:
 
 1.  **Lock on Switch Away (Recommended):** The volume is immediately unmounted the moment you click away to another engine slot or minimize the Quiper window.
 2.  **Lock on Inactivity Timeout:** Keeps the volume mounted as long as you are active. If no mouse movement or keypresses are detected within your configured timeout (e.g. 5 minutes), the session is torn down and unmounted.

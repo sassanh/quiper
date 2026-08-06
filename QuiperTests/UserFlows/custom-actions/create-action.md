@@ -13,7 +13,7 @@ Users create custom JavaScript actions that can be triggered via keyboard shortc
 ### Steps
 
 1. **Navigate to Actions Settings**
-   - User opens Settings (Cmd+,)
+   - User opens Settings (Cmd+Shift+,)
    - Clicks on "Actions" tab
    - Sees list of existing custom actions (if any)
 

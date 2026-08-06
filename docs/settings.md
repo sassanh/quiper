@@ -1,6 +1,6 @@
 # Application Settings & Backups
 
-This page covers application-wide preferences under **Settings (`⌘ ,`)** including runtime behavior, configuration backups, updates management, and the danger zone.
+This page covers application-wide preferences under **Settings (`⌘ ⇧ ,`)** including runtime behavior, configuration backups, updates management, and the danger zone.
 
 ---
 

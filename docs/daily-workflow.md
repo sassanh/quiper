@@ -64,7 +64,7 @@ Below is the exhaustive reference of Quiper's keyboard shortcuts, grouped by cat
 | :--- | :--- | :--- | :--- |
 | **Summon / Dismiss Window** | `⌥ Space` | Global | Toggles the visibility of the overlay window. |
 | **Toggle Window Size** | `⌘ M` | In-App | Switches between a centered Standard layout and a top-right Compact layout. |
-| **Open Settings** | `⌘ ,` | In-App | Opens the native SwiftUI Settings panel. |
+| **Open Settings** | `⌘ ⇧ ,` | In-App | Opens the native SwiftUI Settings panel. |
 | **Toggle Prompt History HUD** | `⌘ Y` | In-App | Toggles the native Prompt History HUD overlay. |
 | **Cycle Tab History Forward** | `⌘ \`` | In-App | Opens the Tab History HUD and advances to the next most-recently-used tab. |
 | **Cycle Tab History Backward** | `⌘ ⇧ \`` | In-App | Moves the Tab History HUD selection back toward the most-recent tab. |
@@ -146,7 +146,7 @@ Quiper comes pre-configured with four powerful custom scripts triggered by defau
 
 ## Customizing Keyboard Shortcuts
 
-If you prefer to use your own shortcuts, open **Settings (`⌘ ,`) ➔ Shortcuts**:
+If you prefer to use your own shortcuts, open **Settings (`⌘ ⇧ ,`) ➔ Shortcuts**:
 
 *   **Global Summon Hotkey:** Bind a custom key combination to open Quiper from any screen.
 *   **App Shortcuts:** Modify the primary and alternate bindings for next/prev session/engine commands.

@@ -47,7 +47,7 @@ document.querySelector('button[aria-label="Temporary chat"]').click();
 
 ## Configuration & Keyboard Shortcuts
 
-1.  Open **Settings (`⌘ ,`)** and navigate to the **Actions** tab.
+1.  Open **Settings (`⌘ ⇧ ,`)** and navigate to the **Actions** tab.
 2.  Define a new Action template (e.g. "New Chat" or "Toggle Private Session") and assign it a global keyboard shortcut (e.g., `⌘ N`).
 3.  Go to the **Engines** tab, select an engine, and bind that Action template to a specific JavaScript snippet.
 4.  When you press the shortcut, Quiper will evaluate the script bound to the active service engine.

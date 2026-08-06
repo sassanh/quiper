@@ -153,7 +153,7 @@ enum ShortcutValidator {
              return nil
         }
         
-        if keyCode == UInt16(kVK_ANSI_Comma) && !hasOption && !hasControl && !hasShift { // Settings (Cmd+,)
+        if keyCode == UInt16(kVK_ANSI_Comma) && hasShift && !hasOption && !hasControl { // Settings (Cmd+Shift+,)
             return "Settings"
         }
         

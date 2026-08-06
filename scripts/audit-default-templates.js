@@ -12,6 +12,7 @@ const actionNames = {
   newTemporarySessionActionID: "New Temporary Session",
   shareActionID: "Share",
   historyActionID: "History",
+  openSettingsActionID: "Settings",
 };
 
 function parseServices(text) {

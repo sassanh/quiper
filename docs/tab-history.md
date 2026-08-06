@@ -78,7 +78,7 @@ Opening the Tab History HUD automatically closes any other Quiper HUD that may b
 
 ## Configuring the History Ring Size
 
-You can control how many past tabs Quiper remembers in **Settings (`⌘ ,`) ➔ Behavior ➔ Tab History Ring Size**.
+You can control how many past tabs Quiper remembers in **Settings (`⌘ ⇧ ,`) ➔ Behavior ➔ Tab History Ring Size**.
 
 - **Range:** 2–10 tabs.
 - **Default:** 2 (toggle mode — no HUD, direct switch between current and previous tab).

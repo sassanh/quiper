@@ -12,7 +12,7 @@ Users configure the main global keyboard shortcut that activates Quiper from any
 ### Steps
 
 1. **Navigate to Shortcuts Settings**
-   - User opens Settings (Cmd+,)
+   - User opens Settings (Cmd+Shift+,)
    - Clicks on "Shortcuts" tab
    - Sees "Global Hotkey" section at the top
 

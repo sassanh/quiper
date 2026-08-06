@@ -8,7 +8,7 @@ If you run into issues with shortcuts, stuck web views, or custom scripts inside
 
 If pressing `⌥ Space` (or your custom global hotkey) no longer summons the overlay window:
 1.  Click the **Quiper** icon in your macOS status menu bar.
-2.  Select **Settings** (or press `⌘ ,` if the app window is open).
+2.  Select **Settings** (or press `⌘ ⇧ ,` if the app window is open).
 3.  Go to the **Shortcuts** tab.
 4.  Click the **Global Hotkey** capture box and press your preferred hotkey combination again to re-bind it.
 5.  **macOS Accessibility Permissions:** Ensure Quiper has permission to monitor global keyboard events. Go to **System Settings ➔ Privacy & Security ➔ Accessibility** and verify that **Quiper** is enabled.

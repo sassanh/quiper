@@ -38,7 +38,7 @@ When you launch Quiper, it will run as a status bar application:
 ### Launch at Login
 *   To ensure Quiper is always active when you reboot your Mac:
     1.  Open the Quiper overlay (`⌥ Space`).
-    2.  Press **`⌘ ,`** (Command + Comma) to open Settings.
+    2.  Press **`⌘ ⇧ ,`** (Command + Shift + Comma) to open Settings.
     3.  Go to the **General** tab.
     4.  Toggle **Start at Login** to ON. This will write a standard LaunchAgent plist file under `~/Library/LaunchAgents/com.<username>.quiper.plist`.
 

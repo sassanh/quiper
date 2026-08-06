@@ -260,6 +260,16 @@ final class TemplateValidationServer {
             script = Self.buttonsScript(limit: (body["limit"] as? Int) ?? 80)
         case "geminiState":
             script = Self.geminiStateScript
+        case "settingsPanel":
+            guard let selector = argument, !selector.isEmpty else {
+                throw TemplateValidationError.badRequest("settingsPanel probe requires argument")
+            }
+            script = Self.settingsPanelScript(selector: selector)
+        case "custom":
+            guard let customScript = body["script"] as? String, !customScript.isEmpty else {
+                throw TemplateValidationError.badRequest("custom probe requires script")
+            }
+            script = customScript
         default:
             throw TemplateValidationError.badRequest("Unsupported DOM probe \(probe)")
         }
@@ -275,21 +285,25 @@ final class TemplateValidationServer {
         }
 
         let actionName = body["action"] as? String
+        let explicitScript = (body["script"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let action = actionName.flatMap { name in
             Settings.shared.customActions.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
         }
-        guard let action else {
+
+        let rawScript: String
+        if !explicitScript.isEmpty {
+            rawScript = explicitScript
+        } else if let action {
+            rawScript = ActionScriptStorage.loadScript(
+                serviceID: service.id,
+                actionID: action.id,
+                fallback: service.actionScripts[action.id] ?? ""
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
             throw TemplateValidationError.notFound("Action not found")
         }
-
-        let storedScript = (body["script"] as? String) ?? ActionScriptStorage.loadScript(
-            serviceID: service.id,
-            actionID: action.id,
-            fallback: service.actionScripts[action.id] ?? ""
-        )
-        let rawScript = storedScript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rawScript.isEmpty else {
-            throw TemplateValidationError.notFound("Action \(action.name) is not implemented for \(service.name)")
+            throw TemplateValidationError.notFound("Action \(actionName ?? "unknown") is not implemented for \(service.name)")
         }
 
         let wrappedScript = """
@@ -309,7 +323,7 @@ final class TemplateValidationServer {
             throw TemplateValidationError.scriptFailure(message)
         }
         return [
-            "action": action.name,
+            "action": action?.name ?? actionName ?? "unknown",
             "service": service.name,
             "scriptResult": result,
             "page": try await evaluateDictionary(Self.pageFactsScript, in: webView)
@@ -772,6 +786,59 @@ private extension TemplateValidationServer {
             return "\"\""
         }
         return String(encoded.dropFirst().dropLast())
+    }
+
+    static func settingsPanelScript(selector: String) -> String {
+        """
+        const selector = \(jsonString(selector));
+        const matches = Array.from(document.querySelectorAll(selector));
+        const visible = matches.filter(isVisible);
+        return {
+          selector,
+          count: matches.length,
+          visibleCount: visible.length,
+          firstVisible: elementSummary(visible[0] || null),
+          hasSettingsText: visible.some((element) => /settings/i.test(text(element)))
+        };
+
+        function isVisible(el) {
+          if (!el) { return false; }
+          const style = window.getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          return style.visibility !== 'hidden' &&
+            style.display !== 'none' &&
+            rect.width > 0 &&
+            rect.height > 0;
+        }
+
+        function text(el) {
+          return String((el && (el.innerText || el.textContent || el.getAttribute('aria-label') || '')) || '')
+            .replace(/\\s+/g, ' ')
+            .trim();
+        }
+
+        function elementSummary(el) {
+          if (!el) { return null; }
+          return {
+            tagName: el.tagName ? el.tagName.toLowerCase() : null,
+            role: el.getAttribute ? el.getAttribute('role') : null,
+            ariaLabel: shortText(el.getAttribute ? el.getAttribute('aria-label') : ''),
+            title: shortText(el.getAttribute ? el.getAttribute('title') : ''),
+            text: shortText(el.innerText || el.textContent || '')
+          };
+        }
+
+        function shortText(value) {
+          const text = sanitizeText(String(value || '').replace(/\\s+/g, ' ').trim());
+          return text.length > 80 ? `${text.slice(0, 77)}...` : text;
+        }
+
+        function sanitizeText(value) {
+          const text = String(value || '').replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi, '[email]');
+          if (/^Google Account:/i.test(text)) { return 'Google Account: [redacted]'; }
+          return text;
+        }
+        """
     }
 }
 
