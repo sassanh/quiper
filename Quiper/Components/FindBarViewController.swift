@@ -247,18 +247,7 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     
     private func resetFind(in webView: WKWebView?) {
         updateFindStatus(matchFound: nil, index: nil, total: nil)
-        let script = """
-        (() => {
-          if (window.__quiperFindState) {
-              window.__quiperFindState.search = "";
-              window.__quiperFindState.total = 0;
-              window.__quiperFindState.index = 0;
-          }
-          const sel = window.getSelection();
-          if (sel) { sel.removeAllRanges(); }
-        })();
-        """
-        webView?.evaluateJavaScript(script, completionHandler: nil)
+        webView?.evaluateJavaScript(WebScripts.makeResetFindScript(), completionHandler: nil)
     }
     
     private func performFind(forward: Bool, newSearch: Bool = false) {
@@ -277,84 +266,7 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         }
         
         let escaped = WebScripts.escapeForJavaScript(trimmed)
-        let resetSelection = newSearch ? "true" : "false"
-        let backwards = forward ? "false" : "true"
-        
-        // This large script block is identical to original
-        let script = """
-        (() => {
-            const search = "\(escaped)";
-            const backwards = \(backwards);
-            let forceReset = \(resetSelection);
-            const root = document.body || document.documentElement;
-            const selection = window.getSelection();
-            if (!root || !selection) {
-                return { match: false, current: 0, total: 0 };
-            }
-            if (!document.getElementById("__quiperFindSelectionStyle")) {
-                const style = document.createElement("style");
-                style.id = "__quiperFindSelectionStyle";
-                style.textContent = `
-                    ::selection {
-                        background-color: rgba(255, 210, 0, 0.95) !important;
-                        color: #000 !important;
-                    }
-                    ::-moz-selection {
-                        background-color: rgba(255, 210, 0, 0.95) !important;
-                        color: #000 !important;
-                    }
-                `;
-                (document.head || document.body || document.documentElement).appendChild(style);
-            }
-            const textContent = root.innerText || root.textContent || "";
-            const escapedPattern = search.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
-            const regex = escapedPattern ? new RegExp(escapedPattern, "gi") : null;
-            if (!window.__quiperFindState) {
-                window.__quiperFindState = { search: "", total: 0, index: 0 };
-            }
-            const state = window.__quiperFindState;
-            if (state.search !== search) {
-                state.search = search;
-                forceReset = true;
-            }
-            if (!search) {
-                state.total = 0;
-                state.index = 0;
-                selection.removeAllRanges();
-                return { match: false, current: 0, total: 0 };
-            }
-            if (forceReset) {
-                state.total = regex ? (textContent.match(regex) || []).length : 0;
-                state.index = backwards ? state.total + 1 : 0;
-                selection.removeAllRanges();
-                const range = document.createRange();
-                range.selectNodeContents(root);
-                range.collapse(!backwards);
-                selection.addRange(range);
-            }
-            const total = state.total;
-            if (!total) {
-                selection.removeAllRanges();
-                return { match: false, current: 0, total: 0 };
-            }
-            const match = window.find(search, false, backwards, true, false, true, false);
-            if (!match) {
-                return { match: false, current: 0, total };
-            }
-            if (backwards) {
-                state.index = state.index <= 1 ? total : state.index - 1;
-            } else {
-                state.index = state.index >= total ? 1 : state.index + 1;
-            }
-            const selectionNode = selection.focusNode && selection.focusNode.nodeType === Node.TEXT_NODE
-                ? selection.focusNode.parentElement
-                : selection.focusNode;
-            if (selectionNode && selectionNode.scrollIntoView) {
-                selectionNode.scrollIntoView({ block: 'center', inline: 'nearest' });
-            }
-            return { match: true, current: state.index, total };
-        })();
-        """
+        let script = WebScripts.makeFindScript(search: escaped, backwards: !forward, resetSelection: newSearch)
         
         webView.evaluateJavaScript(script) { [weak self] result, error in
             guard let self,

@@ -16,6 +16,8 @@ final class WebViewSession: ObservableObject {
     @Published var canGoBack: Bool = false
     @Published var canGoForward: Bool = false
     @Published var isBarCollapsed: Bool = false
+    @Published var findQuery: String = ""
+    @Published var findStatusText: String? = nil
 
     init(service: Service, sessionIndex: Int, initialURL: URL?, loadImmediately: Bool = true) {
         self.id = UUID()
@@ -80,6 +82,7 @@ final class WebViewSession: ObservableObject {
     private var downwardAccumulation: CGFloat = 0
     private var upwardAccumulation: CGFloat = 0
     private var scrollObservation: NSKeyValueObservation?
+    private var findDebounceTask: Task<Void, Never>?
 
     private static let collapseThreshold: CGFloat = 80
     private static let restoreThreshold: CGFloat = 40
@@ -180,5 +183,69 @@ final class WebViewSession: ObservableObject {
         downwardAccumulation = 0
         upwardAccumulation = 0
         isBarCollapsed = false
+    }
+
+    // MARK: - Find in page
+
+    func setFindQuery(_ query: String) {
+        findQuery = query
+        findDebounceTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            resetFind()
+            return
+        }
+        findDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            self?.performFind(forward: true, newSearch: true)
+        }
+    }
+
+    func stepFind(forward: Bool) {
+        findDebounceTask?.cancel()
+        guard !findQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        performFind(forward: forward, newSearch: false)
+    }
+
+    func resetFind() {
+        findDebounceTask?.cancel()
+        findStatusText = nil
+        webView.evaluateJavaScript(WebScripts.makeResetFindScript(), completionHandler: nil)
+    }
+
+    private func performFind(forward: Bool, newSearch: Bool) {
+        let trimmed = findQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            resetFind()
+            return
+        }
+        let escaped = WebScripts.escapeForJavaScript(trimmed)
+        let script = WebScripts.makeFindScript(search: escaped, backwards: !forward, resetSelection: newSearch)
+        webView.evaluateJavaScript(script) { [weak self] result, error in
+            guard let self else { return }
+            guard error == nil else {
+                self.findStatusText = "No matches"
+                return
+            }
+            if let dict = result as? [String: Any],
+               let match = dict["match"] as? Bool {
+                let current = dict["current"] as? Int
+                let total = dict["total"] as? Int
+                self.updateFindStatus(matchFound: match, index: current, total: total)
+            } else {
+                self.findStatusText = "No matches"
+            }
+        }
+    }
+
+    private func updateFindStatus(matchFound: Bool, index: Int?, total: Int?) {
+        if !matchFound {
+            findStatusText = "No matches"
+        } else if let idx = index, let total, total > 0 {
+            findStatusText = "\(idx) of \(total)"
+        } else {
+            findStatusText = "Match found"
+        }
     }
 }

@@ -10,15 +10,25 @@ struct EngineBrowserView: View {
     @State private var isKeyboardVisible = false
     @State private var keyboardHeight: CGFloat = 0
     @State private var isScrollCollapsed = false
+    @State private var isFindBarVisible = false
+    @FocusState private var isFindFieldFocused: Bool
+
+    private static let findBarBottomInset: CGFloat = 64
 
     var body: some View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height
             ZStack(alignment: .bottom) {
                 webContent
+                    .padding(.bottom, isFindBarVisible ? Self.findBarBottomInset : 0)
                 if !isMinimized {
-                    bottomControls(landscape: landscape)
-                        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottom)))
+                    if isFindBarVisible {
+                        findBar
+                            .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottom)))
+                    } else {
+                        bottomControls(landscape: landscape)
+                            .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottom)))
+                    }
                 }
                 if isMinimized {
                     island
@@ -27,7 +37,7 @@ struct EngineBrowserView: View {
                 }
             }
         }
-        .ignoresSafeArea(.keyboard)
+        .ignoresSafeArea(isFindBarVisible ? [] : .keyboard)
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
             let height = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect)?.height ?? 0
             withAnimation(islandAnimation) {
@@ -48,6 +58,9 @@ struct EngineBrowserView: View {
         }
         .onChange(of: activeSession?.id) {
             isScrollCollapsed = false
+            if isFindBarVisible {
+                closeFindBar()
+            }
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
@@ -65,7 +78,8 @@ struct EngineBrowserView: View {
     }
 
     private var isMinimized: Bool {
-        isKeyboardVisible || isScrollCollapsed
+        guard !isFindBarVisible else { return false }
+        return isKeyboardVisible || isScrollCollapsed
     }
 
     private func islandBottomPadding(bottomInset: CGFloat) -> CGFloat {
@@ -118,6 +132,23 @@ struct EngineBrowserView: View {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
+    private func openFindBar() {
+        isFindBarVisible = true
+        activeSession?.expandBar()
+        isFindFieldFocused = true
+    }
+
+    private func closeFindBar() {
+        isFindBarVisible = false
+        isFindFieldFocused = false
+        activeSession?.resetFind()
+        dismissKeyboard()
+    }
+
+    private func clearFindQuery() {
+        activeSession?.setFindQuery("")
+    }
+
     private func bottomControls(landscape: Bool) -> some View {
         VStack(spacing: 10) {
             if landscape {
@@ -153,6 +184,74 @@ struct EngineBrowserView: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var findBar: some View {
+        HStack(spacing: 10) {
+            findField
+            if let session = activeSession, let status = session.findStatusText {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            findIconButton(systemImage: "chevron.up", label: "Previous match") {
+                activeSession?.stepFind(forward: false)
+            }
+            findIconButton(systemImage: "chevron.down", label: "Next match") {
+                activeSession?.stepFind(forward: true)
+            }
+            findIconButton(systemImage: "xmark", label: "Close find") {
+                closeFindBar()
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .glassContainer()
+    }
+
+    private var findField: some View {
+        HStack(spacing: 2) {
+            TextField("Find in page", text: findQueryBinding)
+                .focused($isFindFieldFocused)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .padding(.leading, 10)
+            if !(activeSession?.findQuery.isEmpty ?? true) {
+                Button {
+                    clearFindQuery()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 8)
+                .accessibilityLabel("Clear find text")
+            } else {
+                Spacer().frame(width: 6)
+            }
+        }
+        .frame(height: 34)
+        .glassIsland(in: Capsule(), interactive: true)
+    }
+
+    private var findQueryBinding: Binding<String> {
+        Binding(
+            get: { activeSession?.findQuery ?? "" },
+            set: { activeSession?.setFindQuery($0) }
+        )
+    }
+
+    private func findIconButton(systemImage: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 16, weight: .medium))
+                .frame(width: 34, height: 34)
+                .glassIsland(in: Circle(), interactive: true)
+        }
+        .accessibilityLabel(label)
+    }
+
     @ViewBuilder
     private var navigationControls: some View {
         if let session = activeSession {
@@ -185,6 +284,11 @@ struct EngineBrowserView: View {
                 showingHistory = true
             } label: {
                 Label("Prompt History", systemImage: "clock.arrow.circlepath")
+            }
+            Button {
+                openFindBar()
+            } label: {
+                Label("Find in Page", systemImage: "magnifyingglass")
             }
         } label: {
             HStack(spacing: 8) {
