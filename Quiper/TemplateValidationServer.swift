@@ -135,6 +135,8 @@ final class TemplateValidationServer {
             return try await runAction(request.bodyDictionary)
         case ("POST", "/templates/apply-defaults"):
             return try applyDefaultTemplates(request.bodyDictionary)
+        case ("POST", "/actions/set-sync"):
+            return try setActionSync(request.bodyDictionary)
         default:
             throw TemplateValidationError.notFound("Unknown endpoint \(request.method) \(request.path)")
         }
@@ -424,6 +426,67 @@ final class TemplateValidationServer {
             "appliedCount": applied.count,
             "appliedFocusSelector": appliedFocusSelector,
             "appliedCustomCSS": appliedCustomCSS
+        ]
+    }
+
+    private func setActionSync(_ body: JSONDictionary) throws -> JSONDictionary {
+        guard let controller = windowController else {
+            throw TemplateValidationError.unavailable("Window controller is unavailable")
+        }
+
+        let settings = Settings.shared
+        let requestedServiceName = (body["service"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let service: Service
+        if let requestedServiceName, !requestedServiceName.isEmpty {
+            guard let match = settings.services.first(where: {
+                $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(requestedServiceName) == .orderedSame
+            }) else {
+                throw TemplateValidationError.notFound("Engine not found: \(requestedServiceName)")
+            }
+            service = match
+        } else if let current = controller.currentService() {
+            service = current
+        } else {
+            throw TemplateValidationError.notFound("No active engine")
+        }
+
+        let useLatestDefault = (body["useLatestDefault"] as? Bool) ?? true
+        let requestedActionName = (body["action"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var results: [[String: Any]] = []
+        for action in settings.customActions where settings.isTemplateActionScript(service, action: action) {
+            let actionName = action.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let requestedActionName, actionName.caseInsensitiveCompare(requestedActionName) != .orderedSame {
+                continue
+            }
+
+            if useLatestDefault {
+                settings.setTemplateActionScriptSync(true, serviceID: service.id, actionID: action.id)
+            } else {
+                let targetScript = ((body["script"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { !$0.isEmpty ? $0 : nil }
+                    ?? ActionScriptStorage.loadScript(
+                        serviceID: service.id,
+                        actionID: action.id,
+                        fallback: settings.actionScript(for: service, action: action)
+                    )
+                settings.saveCustomActionScript(targetScript, serviceID: service.id, actionID: action.id)
+            }
+
+            results.append([
+                "action": actionName,
+                "useLatestDefault": settings.isTemplateActionScriptInSync(serviceID: service.id, actionID: action.id),
+                "scriptURL": ActionScriptStorage.scriptURL(serviceID: service.id, actionID: action.id).path
+            ])
+        }
+
+        guard !results.isEmpty else {
+            throw TemplateValidationError.notFound("No template actions found for \(service.name)")
+        }
+
+        settings.saveSettings()
+        return [
+            "service": service.name,
+            "actions": results
         ]
     }
 

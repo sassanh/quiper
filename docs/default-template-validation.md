@@ -105,9 +105,36 @@ node scripts/apply-default-template-to-dev-storage.js --service Gemini --action 
 
 This updates `QuiperDev`'s saved action script files only. It does not affect production settings and does not restart the app or touch browser session data.
 
-**Keep "latest default" off for the action you are iterating on.** When an engine action is in sync (`templateActionScriptSync[action.id] == true`), `Settings.actionScript(for:)` resolves to the bundled template and ignores the injected `ActionScripts/…` file, so live injections would silently have no effect. Before bridge-injecting a script, turn the action's "latest default" toggle off (or ensure it was never in sync), then re-run the injection after every edit in `Quiper/Settings.swift`. Otherwise you can spend a while probing a page while the running app is still executing the old bundled script.
+**Keep "latest default" off for the action you are iterating on.** When an engine action is in sync (`templateActionScriptSync[action.id] == true`), `Settings.actionScript(for:)` resolves to the bundled template and ignores the injected `ActionScripts/…` file, so live injections would silently have no effect. Turn the action's "Use Latest Default" toggle off before bridge-injecting a script, then re-run the injection after every edit in `Quiper/Settings.swift`. Otherwise you can spend a while probing a page while the running app is still executing the old bundled script.
 
-The bridge's `POST /templates/apply-defaults` endpoint is the preferred option for validation automation. It can install a missing built-in template with `installIfMissing: true`, and accepts `focusSelector: true` and `customCSS: true` alongside an optional `actions` array. Installed templates automatically follow their bundled action scripts, prompt selector, and custom CSS. The endpoint only exists in the guarded Debug bridge described above.
+The bridge can toggle "Use Latest Default" per action via `POST /actions/set-sync`. This writes the change into the running dev profile without restarting:
+
+```sh
+# One action
+curl -s -X POST "http://127.0.0.1:<port>/actions/set-sync" \
+  -H "Content-Type: application/json" \
+  -d '{"service":"OpenClaw","action":"Share","useLatestDefault":false}'
+
+# Every template-backed action of an engine at once
+curl -s -X POST "http://127.0.0.1:<port>/actions/set-sync" \
+  -H "Content-Type: application/json" \
+  -d '{"service":"OpenClaw","useLatestDefault":false}'
+```
+
+Request body:
+
+- `service` — optional engine name; defaults to the currently selected engine.
+- `action` — optional action name; when omitted, applies to every template-backed action of the engine.
+- `useLatestDefault` — `true` re-syncs the action (deletes its `ActionScripts/…` file and follows the bundled template); `false` unsyncs it and materializes a copy into storage.
+- `script` — optional literal script; when supplied with `useLatestDefault: false`, it is saved verbatim to the action's `ActionScripts/…` file, which the app hot-reloads on every run.
+
+The response lists each affected action with its resulting `useLatestDefault` state and `scriptURL`. After unsyncing, push the repo default scripts into the filesystem:
+
+```sh
+node scripts/apply-default-template-to-dev-storage.js --service OpenClaw
+```
+
+The bridge's `POST /templates/apply-defaults` endpoint is the preferred option for validation automation. It can install a missing built-in template with `installIfMissing: true`, and accepts `focusSelector: true` and `customCSS: true` alongside an optional `actions` array. Installed templates automatically follow their bundled action scripts, prompt selector, and custom CSS. Note it re-syncs actions to "Use Latest Default", so call `/actions/set-sync` afterwards when you need filesystem scripts instead. The endpoint only exists in the guarded Debug bridge described above.
 
 ## Related Audit
 

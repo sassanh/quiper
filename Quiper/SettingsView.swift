@@ -497,7 +497,7 @@ struct ServicesSettingsView: View {
     @ObservedObject private var settings = Settings.shared
     @State private var selectedServiceID: Service.ID?
     @State private var pendingServiceDeletion: PendingServiceDeletion?
-    private let localTemplateNames: Set<String> = ["open webui", "llama.cpp", "omlx"]
+    private let localTemplateNames: Set<String> = ["open webui", "llama.cpp", "omlx", "openclaw"]
     
     init(appController: AppController?, initialServiceID: UUID?) {
         self.appController = appController

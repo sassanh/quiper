@@ -4,6 +4,8 @@
 
 ### Added
 
+- **OpenClaw Engine Template**: Quiper now ships a bundled OpenClaw template for running local agent sessions in the overlay, with default shortcuts to start a new session, toggle the session history rail, share conversations as markdown, and open OpenClaw's settings.
+- **Supported Engines Overview**: The README now lists every out-of-the-box engine with a per-engine description of the native macOS experience Quiper provides, so people searching for a desktop client for their engine can find Quiper.
 - **Element Fullscreen Support**: Web content can now use the browser Fullscreen API in regular and popup sessions, so embedded videos and slides play truly fullscreen instead of expanding only within Quiper's window.
 - **Engine Settings Shortcut**: `Cmd+,` now opens the active engine's own settings page, matching how the engine's other default shortcuts behave. Existing installs get a one-time prompt to enable it; new installs include it by default.
 - **One-Time `Cmd+,` Notice**: The first time `Cmd+,` is pressed after this update, a dialog explains that it now opens the active engine's settings rather than Quiper's, with a "Don't show this again" checkbox for users who expect Quiper's Settings there.

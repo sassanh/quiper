@@ -2850,6 +2850,101 @@ class Settings: ObservableObject {
             """
         ),
         Service(
+            name: "OpenClaw",
+            url: "http://127.0.0.1:18789",
+            focus_selector: ".agent-chat__composer-combobox > textarea, textarea",
+            actionScripts: [
+                Settings.newSessionActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                const newSession = quiperFind([
+                  "button[aria-label='New session']",
+                  "[aria-label='New session']",
+                  ".sidebar-new-session"
+                ]) || quiperFindByText(["New session", "New chat"]);
+                await quiperClickElement(newSession, "New session button not found");
+                """,
+                Settings.historyActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function openclawRailVisible() {
+                  return [...document.querySelectorAll(".sidebar-recent-session__link, [class*='recent-session']")]
+                    .some((el) => {
+                      if (!quiperIsVisible(el)) { return false; }
+                      return el.getBoundingClientRect().x >= 0;
+                    });
+                }
+
+                if (openclawRailVisible()) {
+                  const collapse = quiperFind([
+                    "button[aria-label='Collapse sidebar']",
+                    "[aria-label='Collapse sidebar']"
+                  ]);
+                  if (!collapse) {
+                    return;
+                  }
+                  await quiperClickElement(collapse, "Sidebar/collapse button not found");
+                  return;
+                }
+
+                const expand = quiperFind([
+                  "button[aria-label='Expand sidebar']",
+                  "[aria-label='Expand sidebar']"
+                ]);
+                if (!expand) {
+                  return;
+                }
+                await quiperClickElement(expand, "Sidebar/expand button not found");
+                try {
+                  await waitFor(openclawRailVisible, 2000);
+                } catch {}
+                """,
+                Settings.shareActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                const copy = quiperFind([
+                  "button[aria-label='Copy as markdown']",
+                  "[aria-label='Copy as markdown']",
+                  ".chat-copy-btn"
+                ], { visible: false });
+                if (!copy) {
+                  throw new Error("Copy/share button not found");
+                }
+                copy.click();
+                await new Promise((resolve) => window.requestAnimationFrame(resolve));
+                """,
+                Settings.openSettingsActionID: """
+                \(Settings.defaultActionScriptHelpers)
+                function openclawSettingsVisible() {
+                  return location.pathname.startsWith("/settings");
+                }
+
+                if (openclawSettingsVisible()) {
+                  const back = quiperFind([
+                    "a[href*='/chat']",
+                    "a[href='/chat']"
+                  ]) || quiperFindByText(["Back", "Chat"]);
+                  if (back) {
+                    await quiperClickElement(back, "Settings back link not found");
+                  } else {
+                    window.location.assign("/chat");
+                  }
+                } else {
+                  const entry = quiperFind([
+                    "a[aria-label='Settings']",
+                    "a[href*='/settings']",
+                    "button[aria-label='Settings']",
+                    "[aria-label='Settings']"
+                  ]) || quiperFindByText(["Settings"]);
+                  await quiperClickElement(entry, "Settings button not found");
+                  await waitFor(openclawSettingsVisible, 3000);
+                }
+                """,
+            ],
+            customCSS: """
+            body {
+              background-color: transparent !important;
+            }
+            """
+        ),
+        Service(
             name: "Google",
             url: "https://www.google.com?referrer=https://github.io/sassanh/quiper",
             focus_selector: "textarea[name='q'], input[name='q'], textarea[aria-label='Search'], input[aria-label='Search'], textarea[title='Search'], input[title='Search'], input[type='search']",
