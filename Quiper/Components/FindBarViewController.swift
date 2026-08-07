@@ -276,7 +276,7 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
             return
         }
         
-        let escaped = escapeForJavaScript(trimmed)
+        let escaped = WebScripts.escapeForJavaScript(trimmed)
         let resetSelection = newSearch ? "true" : "false"
         let backwards = forward ? "false" : "true"
         
@@ -392,12 +392,6 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
         } else {
             label.stringValue = "Match found"
         }
-    }
-    
-    private func escapeForJavaScript(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
     }
     
     // MARK: - NSSearchFieldDelegate

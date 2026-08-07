@@ -65,10 +65,12 @@ struct Constants {
         static let key: Int = 49      // Space bar
     }
 
+    #if os(macOS)
     static let logDir: URL = {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let logDir = home.appendingPathComponent("Library/Logs/quiper")
         try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true, attributes: nil)
         return logDir
     }()
+    #endif
 }

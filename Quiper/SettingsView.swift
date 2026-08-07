@@ -570,19 +570,8 @@ struct ServicesSettingsView: View {
                             .scaledToFit()
                             .frame(width: 12, height: 12)
                             .foregroundColor(.secondary)
-                    } else if let base64 = service.iconBase64,
-                       let data = Data(base64Encoded: base64),
-                       let nsImage = NSImage(data: data) {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 16, height: 16)
-                            .cornerRadius(3)
                     } else {
-                        Image(systemName: "globe")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 16, height: 16)
+                        EngineIconView(service: service, size: 16)
                     }
                     Text(service.name)
                     if EngineMetadataMigrationManager.shared.hasLegacyMetadata(for: service) {

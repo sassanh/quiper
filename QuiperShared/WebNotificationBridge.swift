@@ -1,7 +1,11 @@
 import Foundation
 import UserNotifications
 import WebKit
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 
 @MainActor
 final class WebNotificationBridge: NSObject {
@@ -22,10 +26,17 @@ final class WebNotificationBridge: NSObject {
         handlerProxy.delegate = self
         installBridge()
         
+        #if os(macOS)
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(appDidBecomeActive),
                                                name: NSApplication.didBecomeActiveNotification,
                                                object: nil)
+        #else
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(appDidBecomeActive),
+                                               name: UIApplication.didBecomeActiveNotification,
+                                               object: nil)
+        #endif
     }
     
     deinit {

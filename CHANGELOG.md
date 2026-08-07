@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Quiper for iOS**: Quiper is now a native iPhone and iPad app sharing the same engine library, custom actions, prompt history, session tabs, and engine icons as the Mac app. Each engine's tabs reopen at their last-visited URLs exactly as they were when the app was closed, matching the Mac app's session persistence.
+- **iOS Liquid Glass Interface**: On iOS 26 the bottom bar appears as floating glass control capsules over the page, with a translucent material fallback on earlier systems. The bar collapses into a compact island while the keyboard is open or the page scrolls down, and a loading ring traces the stop control while content loads.
 - **OpenClaw Engine Template**: Quiper now ships a bundled OpenClaw template for running local agent sessions in the overlay, with default shortcuts to start a new session, toggle the session history rail, share conversations as markdown, and open OpenClaw's settings.
 - **Supported Engines Overview**: The README now lists every out-of-the-box engine with a per-engine description of the native macOS experience Quiper provides, so people searching for a desktop client for their engine can find Quiper.
 - **Element Fullscreen Support**: Web content can now use the browser Fullscreen API in regular and popup sessions, so embedded videos and slides play truly fullscreen instead of expanding only within Quiper's window.

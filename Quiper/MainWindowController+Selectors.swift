@@ -397,7 +397,7 @@ extension MainWindowController {
                 return trimmedTitle
             }
         }
-        return "Session \(sessionIndex == 9 ? 0 : sessionIndex + 1)"
+        return SessionSlots.tooltipTitle(for: sessionIndex)
     }
 
     func updateSessionTooltip(

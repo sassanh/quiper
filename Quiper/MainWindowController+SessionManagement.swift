@@ -1,11 +1,6 @@
 import AppKit
 import WebKit
 
-struct TabIdentifier: Equatable, Codable, Hashable {
-    let serviceID: UUID
-    let sessionIndex: Int
-}
-
 extension MainWindowController {
     
     // MARK: - Session & Service Management

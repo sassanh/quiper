@@ -345,165 +345,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let selector = Settings.shared.promptInputSelector(for: service)
         guard !selector.isEmpty else { return }
         guard let webView = currentWebView() else { return }
-        let escapedSelector = escapeForJavaScript(selector)
-        
         let sessionIdx = activeIndicesByID[service.id] ?? 0
         let shouldRestore = service.preservePrompt
         let inputState = shouldRestore ? webViewManager?.getTabInputState(for: service.id, sessionIndex: sessionIdx) : nil
-        
+
         let hasSaved = inputState != nil
-        let textVal = inputState?.text ?? ""
-        let startVal = inputState?.start ?? 0
-        let endVal = inputState?.end ?? 0
-        let jsString = """
-        (function() {
-            const selector = "\(escapedSelector)";
-            const hasSaved = \(hasSaved);
-            const text = \(escapeForJavaScriptLiteral(textVal));
-            const start = \(startVal);
-            const end = \(endVal);
-            
-            function getContentEditableSelection(el) {
-                const selection = window.getSelection();
-                if (!selection.rangeCount) return { start: 0, end: 0 };
-                const range = selection.getRangeAt(0);
-                const preCaretRange = range.cloneRange();
-                preCaretRange.selectNodeContents(el);
-                preCaretRange.setEnd(range.startContainer, range.startOffset);
-                const startOffset = preCaretRange.toString().length;
-                preCaretRange.setEnd(range.endContainer, range.endOffset);
-                const endOffset = preCaretRange.toString().length;
-                return { start: startOffset, end: endOffset };
-            }
-
-            function setContentEditableSelection(el, start, end) {
-                const range = document.createRange();
-                const selection = window.getSelection();
-                
-                let currentOffset = 0;
-                let startNode = null;
-                let startNodeOffset = 0;
-                let endNode = null;
-                let endNodeOffset = 0;
-                
-                function traverse(node) {
-                    if (node.nodeType === Node.TEXT_NODE) {
-                        const len = node.length;
-                        if (!startNode && currentOffset + len >= start) {
-                            startNode = node;
-                            startNodeOffset = start - currentOffset;
-                        }
-                        if (!endNode && currentOffset + len >= end) {
-                            endNode = node;
-                            endNodeOffset = end - currentOffset;
-                        }
-                        currentOffset += len;
-                    } else {
-                        for (let i = 0; i < node.childNodes.length; i++) {
-                            traverse(node.childNodes[i]);
-                            if (startNode && endNode) break;
-                        }
-                    }
-                }
-                
-                traverse(el);
-                
-                if (!startNode) {
-                    startNode = el;
-                    startNodeOffset = el.childNodes.length;
-                }
-                if (!endNode) {
-                    endNode = el;
-                    endNodeOffset = el.childNodes.length;
-                }
-                
-                try {
-                    range.setStart(startNode, startNodeOffset);
-                    range.setEnd(endNode, endNodeOffset);
-                    selection.removeAllRanges();
-                    selection.addRange(range);
-                } catch (e) {
-                    console.error("Error setting contenteditable selection", e);
-                }
-            }
-
-            function tryFocusAndRestore(el) {
-                const isContentEditable = el.contentEditable === 'true' || el.getAttribute('contenteditable') === 'true';
-                
-                if (hasSaved) {
-                    window.__quiperHasSavedSelection = true;
-                    window.__quiperSavedStart = start;
-                    window.__quiperSavedEnd = end;
-                    
-                    if (isContentEditable) {
-                        if (typeof text === 'string' && el.innerText !== text) {
-                            el.innerText = text;
-                            el.dispatchEvent(new Event('input', { bubbles: true }));
-                            el.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-                    } else {
-                        if (typeof text === 'string' && el.value !== text) {
-                            el.value = text;
-                            el.dispatchEvent(new Event('input', { bubbles: true }));
-                            el.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-                    }
-                } else {
-                    window.__quiperHasSavedSelection = false;
-                }
-                
-                el.focus();
-                
-                if (hasSaved) {
-                    if (isContentEditable) {
-                        setContentEditableSelection(el, start, end);
-                    } else {
-                        el.setSelectionRange(start, end);
-                    }
-                }
-
-                // Register a focus listener to override programmatic focus resets
-                if (!el.__quiperFocusListenerAdded) {
-                    el.__quiperFocusListenerAdded = true;
-                    el.addEventListener('focus', () => {
-                        const lastInteract = window.__quiperLastInteractionTime || 0;
-                        if (hasSaved && (Date.now() - lastInteract > 300)) {
-                            if (isContentEditable) {
-                                setContentEditableSelection(el, start, end);
-                            } else {
-                                el.setSelectionRange(start, end);
-                            }
-                        }
-                    });
-                }
-            }
-
-            if (window.__quiperFocusInterval) {
-                clearInterval(window.__quiperFocusInterval);
-                window.__quiperFocusInterval = null;
-            }
-
-            const initialEl = document.querySelector(selector);
-            if (initialEl) {
-                tryFocusAndRestore(initialEl);
-                return;
-            }
-
-            const startTime = Date.now();
-            const timeout = 15000;
-            window.__quiperFocusInterval = setInterval(() => {
-                const polledEl = document.querySelector(selector);
-                if (polledEl) {
-                    clearInterval(window.__quiperFocusInterval);
-                    window.__quiperFocusInterval = null;
-                    tryFocusAndRestore(polledEl);
-                } else if (Date.now() - startTime > timeout) {
-                    clearInterval(window.__quiperFocusInterval);
-                    window.__quiperFocusInterval = null;
-                }
-            }, 100);
-        })();
-        """
+        let text = inputState?.text ?? ""
+        let start = inputState?.start ?? 0
+        let end = inputState?.end ?? 0
+        let jsString = WebScripts.makeFocusInputScript(
+            selector: selector,
+            hasSaved: hasSaved,
+            text: text,
+            start: start,
+            end: end
+        )
         
         webView.evaluateJavaScript(jsString, completionHandler: nil)
     }
@@ -573,7 +429,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func performCustomAction(_ action: CustomAction) {
         guard let service = currentService(), let webView = currentWebView() else { return }
-        if action.id == Settings.openSettingsActionID {
+        if action.id == DefaultEngineDefinitions.openSettingsActionID {
             presentEngineSettingsShortcutNoticeIfNeeded()
         }
         let effectiveService = Settings.shared.services.first(where: { $0.id == service.id }) ?? service
@@ -581,24 +437,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let rawScript = storedScript.trimmingCharacters(in: .whitespacesAndNewlines)
         let script: String
         if rawScript.isEmpty {
-            let message = "Action \(escapeForJavaScript(action.name.isEmpty ? "Action" : action.name)) not implemented for \(escapeForJavaScript(service.name))"
-            script = "console.log(\"\(message)\")"
+            script = WebScripts.makeActionFallbackScript(actionName: action.name, serviceName: service.name)
             playErrorSound()
         } else {
             script = rawScript
         }
 
-        let wrappedScript = """
-        try {
-          const wrapper = async () => {
-            \(script)
-          };
-          await wrapper();
-          return "ok";
-        } catch (err) {
-          return { quiperError: (err && err.message) ? err.message : String(err) };
-        }
-        """
+        let wrappedScript = WebScripts.makeActionRunnerScript(script: script)
 
         webView.callAsyncJavaScript(wrappedScript, in: nil, in: .page) { [weak self] result in
             switch (result) {
@@ -645,21 +490,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if ProcessInfo.processInfo.arguments.contains("--uitesting") {
             DistributedNotificationCenter.default().postNotificationName(NSNotification.Name("QuiperTestBeep"), object: nil, userInfo: nil, deliverImmediately: true)
         }
-    }
-
-    private func escapeForJavaScript(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-    }
-
-    private func escapeForJavaScriptLiteral(_ value: String) -> String {
-        let escaped = value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-            .replacingOccurrences(of: "\r", with: "\\r")
-        return "\"\(escaped)\""
     }
 
     var isEmptyStateActive: Bool {
@@ -1254,10 +1084,10 @@ struct SecureTabState: Codable {
         // Session Selector (Static)
         let sessionSel = SegmentedControl(frame: .zero)
         sessionSel.trackingMode = .selectOne
-        sessionSel.segmentCount = 10
-        sessionSel.customLabels = (0..<10).map { "\($0 == 9 ? 0 : $0 + 1)" }
-        for i in 0..<10 {
-            sessionSel.setLabel("\(i == 9 ? 0 : i + 1)", forSegment: i)
+        sessionSel.segmentCount = SessionSlots.count
+        sessionSel.customLabels = SessionSlots.range.map(SessionSlots.label(for:))
+        for i in SessionSlots.range {
+            sessionSel.setLabel(SessionSlots.label(for: i), forSegment: i)
         }
         
         sessionSel.target = self
@@ -1277,7 +1107,7 @@ struct SecureTabState: Codable {
         let collapsibleSessionSel = CollapsibleSelector()
         collapsibleSessionSel.target = self
         collapsibleSessionSel.action = #selector(sessionChanged(_:))
-        collapsibleSessionSel.setItems((0..<10).map { "\($0 == 9 ? 0 : $0 + 1)" })
+        collapsibleSessionSel.setItems(SessionSlots.range.map(SessionSlots.label(for:)))
         collapsibleSessionSel.placeholderLabel = "Sessions"
         collapsibleSessionSel.emptyStateAlignment = .left
         collapsibleSessionSel.delegate = self
