@@ -17,6 +17,9 @@
 - **One-Time `Cmd+,` Notice**: The first time `Cmd+,` is pressed after this update, a dialog explains that it now opens the active engine's settings rather than Quiper's, with a "Don't show this again" checkbox for users who expect Quiper's Settings there.
 - **iOS Draft and Cursor Persistence**: On iOS, the text you're typing in an engine's input box is now saved whenever you switch sessions or close the app, along with your cursor position, and restored when you come back—the same behavior as the Mac app. Session history and per-session prompt history are also preserved on iOS, and tabs opened in past sessions stay listed in the tab switcher's back-history just as they do on the Mac.
 - **iOS Routing Rules Editor**: Each engine's settings on iOS now include a Routing Rules editor, so link handling can be tuned without visiting a page. Rules are evaluated top to bottom and the first match wins, exactly like the Mac app; you can add, delete, and reorder rules and pick between open internally, open in a popup, ask each time, and open in Safari.
+- **iOS Settings Parity**: The iOS Settings app now exposes the same behavior controls as the Mac. You can choose whether tabs survive relaunch (with Never Restore booting clean), set how many recently active tabs stay in the switcher's back-history, auto-switch to the nearest engine when an engine's last session closes, auto-create a session when opening an empty engine, and purge a deleted engine's website data. Prompt-history recording now honors the same per-trigger rules as the Mac—on submit, on clearing a draft, and on selection clear.
+- **iOS Tab Switcher**: Double-tapping a page on iOS opens the recently active tabs ring—the same MRU switcher as the Mac's Tab History view. A quick double-tap jumps straight to the most recent tab; holding your finger down keeps the ring open so you can move to any recent tab, releasing over a card to switch with an expanding selection animation, or releasing outside to cancel. The second tap is intercepted before it reaches the page, so opening the ring never selects text or clicks a link. When the ring has more entries than fit on screen, holding your finger near the top or bottom edge scrolls through them. When the ring is set to two entries, a quick double-tap switches tabs directly with no ring shown.
+- **iOS JavaScript Alert Cancel**: Website `alert()` dialogs on iOS now include a Cancel button alongside OK, so they can be dismissed the same way as other confirmations instead of requiring a tap on OK.
 
 ### Changed
 
@@ -28,6 +31,7 @@
 ### Fixed
 
 - **Microphone and Camera Permission Prompts**: When a website requests microphone or camera access, Quiper now asks macOS for the matching system permission and only grants the page if the user allows it. Hardened-runtime camera and audio-input entitlements are restored so notarized builds can complete capture after approval.
+- **iOS Delete Confirmations Show Cancel**: The delete and discard-changes confirmations on iOS now present a proper Cancel option alongside the destructive action. On iOS 26 the system hides Cancel buttons in action sheets, so these confirmations use alerts instead, where both buttons are always visible.
 
 ## [4.6.2] - 2026-08-02
 

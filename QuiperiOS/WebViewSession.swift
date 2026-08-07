@@ -1,9 +1,10 @@
 import Combine
 import Foundation
+import UIKit
 import WebKit
 
 @MainActor
-final class WebViewSession: ObservableObject {
+final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDelegate {
     let id: UUID
     let serviceID: UUID
     let sessionIndex: Int
@@ -18,6 +19,7 @@ final class WebViewSession: ObservableObject {
     @Published var isBarCollapsed: Bool = false
     @Published var findQuery: String = ""
     @Published var findStatusText: String? = nil
+    @Published var snapshot: UIImage?
 
     init(service: Service, sessionIndex: Int, initialURL: URL?, loadImmediately: Bool = true) {
         self.id = UUID()
@@ -36,11 +38,14 @@ final class WebViewSession: ObservableObject {
             service: service,
             sessionIndex: sessionIndex
         )
+        super.init()
         webView.navigationDelegate = coordinator
         webView.uiDelegate = coordinator
         webView.allowsBackForwardNavigationGestures = true
 
+        installDoubleTapGesture()
         coordinator.installInputTracker()
+
         coordinator.onInputState = { [weak self] payload in
             self?.handleInputState(payload)
         }
@@ -64,6 +69,7 @@ final class WebViewSession: ObservableObject {
         }
         coordinator.onDidFinish = { [weak self] in
             self?.restoreInputStateIfNeeded()
+            self?.captureSnapshot()
         }
 
         installScrollObservation()
@@ -91,7 +97,7 @@ final class WebViewSession: ObservableObject {
     private static let restoreThreshold: CGFloat = 40
     private static let scrollNoiseFloor: CGFloat = 1
 
-    var onPromptRecorded: ((String) -> Void)?
+    var onPromptRecorded: ((_ text: String, _ clearType: String) -> Void)?
     var onURLChange: ((URL) -> Void)?
     var onTitleChange: ((String) -> Void)?
     var onRememberRoutingDecision: ((_ host: String, _ action: RoutingAction) -> Void)?
@@ -99,11 +105,102 @@ final class WebViewSession: ObservableObject {
     var onRequestRestoreInputState: (() -> TabInputState?)?
     var onInputStateCommitted: (() -> Void)?
 
+    var onRingSecondTapDown: ((CGPoint) -> Void)?
+    var onRingHoldBegan: (() -> Void)?
+    var onRingHoldUpdate: ((CGPoint) -> Void)?
+    var onRingQuickEnd: ((CGPoint) -> Void)?
+    var onRingHoldEnd: ((CGPoint) -> Void)?
+    var onRingCancel: (() -> Void)?
+    var onSnapshot: ((UIImage?) -> Void)?
+
+    private var ringGestureRecognizer: DoubleTapGestureRecognizer?
+    private var ringTouchShield: RingTouchShield?
+    private var suspendedWebViewRecognizers: [UIGestureRecognizer] = []
+
+    /// Installs the double-tap recognizer that drives the navigation ring and
+    /// disables WKWebView's built-in double-tap zoom so the two never fight. A
+    /// touch shield over the page swallows the second tap so the web view never
+    /// receives it (no text selection or click while the ring is open).
+    private func installDoubleTapGesture() {
+        disableWebViewDoubleTapZoom()
+
+        let shield = RingTouchShield()
+        shield.frame = webView.bounds
+        shield.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        webView.addSubview(shield)
+        ringTouchShield = shield
+
+        let recognizer = DoubleTapGestureRecognizer()
+        recognizer.delegate = self
+        recognizer.onFirstTapEnded = { [weak shield] location in
+            shield?.arm(at: location)
+        }
+        recognizer.onSecondTapDown = { [weak self, weak shield] location in
+            shield?.disarm()
+            self?.onRingSecondTapDown?(location)
+        }
+        recognizer.onHoldBegan = { [weak self] in
+            self?.onRingHoldBegan?()
+        }
+        recognizer.onHoldUpdate = { [weak self] location in
+            self?.onRingHoldUpdate?(location)
+        }
+        recognizer.onQuickEnd = { [weak self] location in
+            self?.onRingQuickEnd?(location)
+        }
+        recognizer.onHoldEnd = { [weak self] location in
+            self?.onRingHoldEnd?(location)
+        }
+        recognizer.onCancel = { [weak self, weak shield] in
+            shield?.disarm()
+            self?.onRingCancel?()
+        }
+        webView.addGestureRecognizer(recognizer)
+        ringGestureRecognizer = recognizer
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
+    }
+
+    /// WKWebView handles double-tap zoom inside its own content view; disabling
+    /// those recognizers leaves single-tap and scroll behavior untouched.
+    private func disableWebViewDoubleTapZoom() {
+        let recognizers = webView.scrollView.subviews
+            .compactMap { $0.gestureRecognizers }
+            .flatMap { $0 }
+        for recognizer in recognizers {
+            guard let tap = recognizer as? UITapGestureRecognizer,
+                  tap.numberOfTapsRequired == 2 else { continue }
+            tap.isEnabled = false
+        }
+    }
+
+    /// Freezes the page's own gestures while the ring is open so the held
+    /// finger does not scroll or select text in the web view.
+    func suspendWebViewInteraction() {
+        let recognizers = webView.scrollView.gestureRecognizers ?? []
+        suspendedWebViewRecognizers = recognizers.filter { $0.isEnabled && $0 !== ringGestureRecognizer }
+        for recognizer in suspendedWebViewRecognizers {
+            recognizer.isEnabled = false
+        }
+    }
+
+    func resumeWebViewInteraction() {
+        for recognizer in suspendedWebViewRecognizers {
+            recognizer.isEnabled = true
+        }
+        suspendedWebViewRecognizers = []
+    }
+
     func handleInputState(_ payload: [String: Any]) {
         let parsed = InputStatePayload(payload)
-        if parsed.wasSent, parsed.clearType == "submit",
+        if parsed.wasSent,
            PromptHistoryPolicy.makeEntryIfEligible(submittedText: parsed.wasSentText) != nil {
-            onPromptRecorded?(parsed.wasSentText)
+            onPromptRecorded?(parsed.wasSentText, parsed.clearType)
         }
         let inputState = TabInputState(
             text: parsed.text,
@@ -155,7 +252,55 @@ final class WebViewSession: ObservableObject {
     func goForward() {
         if webView.canGoForward { webView.goForward() }
     }
+    // MARK: - Ring previews
 
+    /// Captures the current page content so the navigation ring can show a
+    /// live preview of each tab instead of a static label card.
+    func captureSnapshot(completion: ((UIImage?) -> Void)? = nil) {
+        guard !isLoading, webView.url != nil else {
+            completion?(nil)
+            return
+        }
+        let configuration = WKSnapshotConfiguration()
+        configuration.snapshotWidth = 1024
+        webView.takeSnapshot(with: configuration) { [weak self] image, _ in
+            guard let image else {
+                completion?(nil)
+                return
+            }
+            Task { @MainActor [weak self] in
+                self?.snapshot = image
+                self?.onSnapshot?(image)
+                completion?(image)
+            }
+        }
+    }
+
+    /// Captures the current page content asynchronously and returns it, waiting
+    /// (by suspending, never blocking or spinning the run loop) for WebKit to
+    /// deliver the snapshot. The ring defers presentation until this returns so
+    /// it opens on the exact state on screen. Bounded by a safety timeout.
+    @MainActor
+    func captureFreshSnapshot() async -> UIImage? {
+        guard !isLoading, webView.url != nil else { return nil }
+        let configuration = WKSnapshotConfiguration()
+        configuration.snapshotWidth = 1024
+        let image: UIImage? = await withCheckedContinuation { continuation in
+            var resumed = false
+            webView.takeSnapshot(with: configuration) { result, _ in
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(returning: result)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(returning: nil)
+            }
+        }
+        snapshot = image
+        return image
+    }
     // MARK: - Scroll-collapse bar
 
     private func installScrollObservation() {

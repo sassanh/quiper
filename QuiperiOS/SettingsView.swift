@@ -3,6 +3,8 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @Environment(\.dismiss) private var dismiss
+    @State private var pendingEngineDeletion: Service?
+    @State private var pendingActionDeletion: CustomAction?
 
     var body: some View {
         NavigationStack {
@@ -10,6 +12,7 @@ struct SettingsView: View {
                 enginesSection
                 actionsSection
                 promptHistorySection
+                behaviorSection
                 appearanceSection
             }
             .navigationTitle("Settings")
@@ -18,7 +21,53 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .alert(
+                "Delete \(pendingEngineDeletion?.name ?? "Engine")?",
+                isPresented: engineDeletePresented
+            ) {
+                Button("Delete Engine", role: .destructive) {
+                    if let service = pendingEngineDeletion {
+                        environment.removeService(service.id)
+                    }
+                    pendingEngineDeletion = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingEngineDeletion = nil
+                }
+            } message: {
+                Text("This engine's sessions, drafts, and prompt history will be removed.")
+            }
+            .alert(
+                "Delete \(pendingActionDeletion?.name.isEmpty == false ? pendingActionDeletion!.name : "Action")?",
+                isPresented: actionDeletePresented
+            ) {
+                Button("Delete Action", role: .destructive) {
+                    if let action = pendingActionDeletion {
+                        environment.removeAction(id: action.id)
+                    }
+                    pendingActionDeletion = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingActionDeletion = nil
+                }
+            } message: {
+                Text("This action and its engine scripts will be removed.")
+            }
         }
+    }
+
+    private var engineDeletePresented: Binding<Bool> {
+        Binding(
+            get: { pendingEngineDeletion != nil },
+            set: { if !$0 { pendingEngineDeletion = nil } }
+        )
+    }
+
+    private var actionDeletePresented: Binding<Bool> {
+        Binding(
+            get: { pendingActionDeletion != nil },
+            set: { if !$0 { pendingActionDeletion = nil } }
+        )
     }
 
     private var enginesSection: some View {
@@ -35,9 +84,8 @@ struct SettingsView: View {
                 }
             }
             .onDelete { offsets in
-                for offset in offsets {
-                    let service = environment.services[offset]
-                    environment.removeService(service.id)
+                if let index = offsets.first, environment.services.indices.contains(index) {
+                    pendingEngineDeletion = environment.services[index]
                 }
             }
             Button {
@@ -71,8 +119,8 @@ struct SettingsView: View {
                 }
             }
             .onDelete { offsets in
-                for offset in offsets {
-                    environment.removeAction(id: environment.customActions[offset].id)
+                if let index = offsets.first, environment.customActions.indices.contains(index) {
+                    pendingActionDeletion = environment.customActions[index]
                 }
             }
             Menu {
@@ -105,11 +153,35 @@ struct SettingsView: View {
         Section {
             Toggle("Enable Prompt History", isOn: $environment.enablePromptHistory)
             Toggle("Record Submitted Prompts", isOn: $environment.promptHistoryRecordOnSubmit)
+            Toggle("Record Cleared Drafts", isOn: $environment.promptHistoryRecordOnCmdBackspace)
+            Toggle("Record on Selection Clear", isOn: $environment.promptHistoryRecordOnSelectionClear)
             Stepper(value: $environment.promptHistoryLimit, in: 10...500, step: 10) {
                 Text("History Limit: \(environment.promptHistoryLimit)")
             }
         } header: {
             Text("Prompt History")
+        } footer: {
+            Text("A prompt is saved when it's sent, when the draft is cleared with Cmd+Backspace, or when its text is replaced.")
+        }
+    }
+
+    private var behaviorSection: some View {
+        Section {
+            Picker("Tab Survival", selection: $environment.tabSurvivalPolicy) {
+                ForEach(TabSurvivalPolicy.allCases.filter { $0 != .askOnExit }) { policy in
+                    Text(policy.rawValue).tag(policy)
+                }
+            }
+            Stepper(value: $environment.tabNavigationRingSize, in: 2...10) {
+                Text("Tab Navigation Ring Size: \(environment.tabNavigationRingSize)")
+            }
+            Toggle("Automatically Switch Engine", isOn: $environment.automaticallySwitchEngineOnLastSessionClose)
+            Toggle("Auto-Create Session on Empty Engine", isOn: $environment.autoCreateSessionOnEmptyEngineActivation)
+            Toggle("Purge Dangling Web Data", isOn: $environment.shouldPurgeDanglingWebData)
+        } header: {
+            Text("Behavior")
+        } footer: {
+            Text("Closing the last session of an engine switches to the nearest engine with sessions. Tabs reopen on launch unless Tab Survival is set to Never Restore.")
         }
     }
 
@@ -131,6 +203,7 @@ struct EngineEditView: View {
     @State private var service: Service
     @State private var originalService: Service
     @State private var showingDiscardConfirmation = false
+    @State private var showingDeleteConfirmation = false
     @State private var isFetchingIcon = false
     @Environment(\.dismiss) private var dismiss
 
@@ -219,6 +292,14 @@ struct EngineEditView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .destructive) {
+                    showingDeleteConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .accessibilityLabel("Delete engine")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("Save") {
                     environment.updateService(service)
                     dismiss()
@@ -227,10 +308,21 @@ struct EngineEditView: View {
                 .disabled(!isDirty)
             }
         }
-        .confirmationDialog(
+        .alert(
+            "Delete \(service.name)?",
+            isPresented: $showingDeleteConfirmation
+        ) {
+            Button("Delete Engine", role: .destructive) {
+                environment.removeService(service.id)
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This engine's sessions, drafts, and prompt history will be removed.")
+        }
+        .alert(
             "Discard Changes?",
-            isPresented: $showingDiscardConfirmation,
-            titleVisibility: .visible
+            isPresented: $showingDiscardConfirmation
         ) {
             Button("Discard Changes", role: .destructive) {
                 dismiss()
@@ -258,6 +350,7 @@ struct ActionEditView: View {
     @State private var action: CustomAction
     @State private var originalName: String
     @State private var showingDiscardConfirmation = false
+    @State private var showingDeleteConfirmation = false
 
     init(action: CustomAction) {
         _action = State(initialValue: action)
@@ -302,6 +395,14 @@ struct ActionEditView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .destructive) {
+                    showingDeleteConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .accessibilityLabel("Delete action")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("Save") {
                     environment.renameAction(id: action.id, name: action.name)
                     dismiss()
@@ -310,10 +411,21 @@ struct ActionEditView: View {
                 .disabled(!isDirty)
             }
         }
-        .confirmationDialog(
+        .alert(
+            "Delete \(action.name.isEmpty ? "Action" : action.name)?",
+            isPresented: $showingDeleteConfirmation
+        ) {
+            Button("Delete Action", role: .destructive) {
+                environment.removeAction(id: action.id)
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This action and its engine scripts will be removed.")
+        }
+        .alert(
             "Discard Changes?",
-            isPresented: $showingDiscardConfirmation,
-            titleVisibility: .visible
+            isPresented: $showingDiscardConfirmation
         ) {
             Button("Discard Changes", role: .destructive) {
                 dismiss()

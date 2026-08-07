@@ -11,11 +11,19 @@ final class AppEnvironment: ObservableObject {
     @Published var customActions: [CustomAction] = []
     @Published var enablePromptHistory: Bool = true
     @Published var promptHistoryRecordOnSubmit: Bool = true
+    @Published var promptHistoryRecordOnCmdBackspace: Bool = true
+    @Published var promptHistoryRecordOnSelectionClear: Bool = false
     @Published var promptHistoryLimit: Int = 100
     @Published var tabNavigationRingSize: Int = 2
+    @Published var tabSurvivalPolicy: TabSurvivalPolicy = .always
+    @Published var automaticallySwitchEngineOnLastSessionClose: Bool = true
+    @Published var autoCreateSessionOnEmptyEngineActivation: Bool = true
+    @Published var shouldPurgeDanglingWebData: Bool = true
 
     private let settingsURL: URL
     private var webSessions: [UUID: [Int: WebViewSession]] = [:]
+    private(set) var sessionThumbnails: [TabIdentifier: UIImage] = [:]
+    @Published private(set) var thumbnailsRevision = 0
 
     init() {
         FaviconFetcher.configure(imageProcessor: UIKitFaviconImageProcessor.self)
@@ -34,8 +42,8 @@ final class AppEnvironment: ObservableObject {
             preconditionFailure("No service for \(serviceID)")
         }
         let session = WebViewSession(service: service, sessionIndex: sessionIndex, initialURL: initialURL, loadImmediately: loadImmediately)
-        session.onPromptRecorded = { [weak self] text in
-            self?.recordPrompt(text, for: serviceID, sessionIndex: sessionIndex)
+        session.onPromptRecorded = { [weak self] text, clearType in
+            self?.recordPrompt(text, clearType: clearType, for: serviceID, sessionIndex: sessionIndex)
         }
         session.onURLChange = { [weak self] url in
             self?.updateSessionURL(for: serviceID, sessionIndex: sessionIndex, url: url)
@@ -54,6 +62,9 @@ final class AppEnvironment: ObservableObject {
         }
         session.onRequestRestoreInputState = { [weak self] in
             self?.tabInputState(for: serviceID, sessionIndex: sessionIndex)
+        }
+        session.onSnapshot = { [weak self] image in
+            self?.storeThumbnail(image, for: serviceID, sessionIndex: sessionIndex)
         }
         var serviceMap = webSessions[serviceID] ?? [:]
         serviceMap[sessionIndex] = session
@@ -92,13 +103,29 @@ final class AppEnvironment: ObservableObject {
         return !urlString.isEmpty
     }
 
+    /// Returns the live session for a tab if it has already been created,
+    /// without instantiating a new one (used for ring previews).
+    func existingSession(for serviceID: UUID, sessionIndex: Int) -> WebViewSession? {
+        webSessions[serviceID]?[sessionIndex]
+    }
+
     // MARK: - Service management
 
     func setActiveService(_ id: UUID) {
         let newTab = TabIdentifier(serviceID: id, sessionIndex: activeSessionIndex(for: id))
         recordTabHistory(switchingTo: newTab)
         persistedTabState.activeServiceID = id
+        if autoCreateSessionOnEmptyEngineActivation, hasNoSessions(for: id) {
+            ensureSessions(for: id)
+        }
         save()
+    }
+
+    /// Mirrors macOS `updateActiveWebview`: when the activated engine has no
+    /// sessions and auto-create is disabled, the engine is shown empty unless a
+    /// session is explicitly requested (e.g. tapping a session slot).
+    func hasNoSessions(for serviceID: UUID) -> Bool {
+        (persistedTabState.openTabs[serviceID] ?? [:]).isEmpty
     }
 
     func updateService(_ service: Service) {
@@ -159,6 +186,7 @@ final class AppEnvironment: ObservableObject {
     }
 
     func removeService(_ serviceID: UUID) {
+        guard let removed = services.first(where: { $0.id == serviceID }) else { return }
         services.removeAll { $0.id == serviceID }
         persistedTabState.openTabs[serviceID] = nil
         persistedTabState.tabTitles[serviceID] = nil
@@ -166,6 +194,7 @@ final class AppEnvironment: ObservableObject {
         persistedTabState.tabInputs[serviceID] = nil
         persistedTabState.activeIndicesByID[serviceID] = nil
         persistedTabState.tabHistory?.removeAll { $0.serviceID == serviceID }
+        sessionThumbnails = sessionThumbnails.filter { $0.key.serviceID != serviceID }
         if lastActiveTab?.serviceID == serviceID {
             lastActiveTab = nil
         }
@@ -173,6 +202,20 @@ final class AppEnvironment: ObservableObject {
             persistedTabState.activeServiceID = services.first?.id
         }
         save()
+        purgeWebDataIfNeeded(for: removed)
+    }
+
+    /// Purges the removed engine's website data from the shared data store when
+    /// the user enabled the setting, mirroring macOS's `WebKitCacheCleaner`.
+    private func purgeWebDataIfNeeded(for service: Service) {
+        guard shouldPurgeDanglingWebData, let host = URL(string: service.url)?.host else { return }
+        let store = WKWebsiteDataStore.default()
+        let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+        store.fetchDataRecords(ofTypes: dataTypes) { records in
+            let matching = records.filter { $0.displayName == host }
+            guard !matching.isEmpty else { return }
+            store.removeData(ofTypes: dataTypes, for: matching) { }
+        }
     }
 
     // MARK: - Session management
@@ -195,6 +238,7 @@ final class AppEnvironment: ObservableObject {
         persistedTabState.tabInputs[serviceID]?.removeValue(forKey: index)
         let closedTab = TabIdentifier(serviceID: serviceID, sessionIndex: index)
         persistedTabState.tabHistory?.removeAll { $0 == closedTab }
+        sessionThumbnails.removeValue(forKey: closedTab)
         if lastActiveTab == closedTab {
             lastActiveTab = nil
         }
@@ -203,12 +247,49 @@ final class AppEnvironment: ObservableObject {
             let remaining = (persistedTabState.openTabs[serviceID] ?? [:]).keys.sorted()
             persistedTabState.activeIndicesByID[serviceID] = remaining.min(by: { abs($0 - index) < abs($1 - index) }) ?? 0
         }
+        if hasNoSessions(for: serviceID),
+           persistedTabState.activeServiceID == serviceID,
+           automaticallySwitchEngineOnLastSessionClose,
+           let fallback = nearestEngineWithSessions(from: serviceID) {
+            persistedTabState.activeServiceID = fallback
+            persistedTabState.activeIndicesByID[fallback] = preferredSessionIndex(for: fallback)
+        }
         save()
+    }
+
+    /// Mirrors macOS `closeCurrentTab`'s fallback: when the active engine loses
+    /// its last session, search previous engines first, then next, and switch to
+    /// the first engine that still has a session.
+    private func nearestEngineWithSessions(from serviceID: UUID) -> UUID? {
+        guard let currentIndex = services.firstIndex(where: { $0.id == serviceID }) else { return nil }
+        let left = stride(from: currentIndex - 1, through: 0, by: -1).map { services[$0].id }
+        let right = stride(from: currentIndex + 1, to: services.count, by: 1).map { services[$0].id }
+        for candidate in left + right where !hasNoSessions(for: candidate) {
+            return candidate
+        }
+        return nil
+    }
+
+    /// Prefers the engine's remembered active session when it is still loaded,
+    /// otherwise the lowest live session, mirroring macOS.
+    private func preferredSessionIndex(for serviceID: UUID) -> Int {
+        let remembered = activeSessionIndex(for: serviceID)
+        if webSessions[serviceID]?[remembered] != nil {
+            return remembered
+        }
+        return (persistedTabState.openTabs[serviceID] ?? [:]).keys.min() ?? 0
     }
 
     func setActiveSession(for serviceID: UUID, index: Int) {
         let slot = SessionSlots.range.contains(index) ? index : 0
-        recordTabHistory(switchingTo: TabIdentifier(serviceID: serviceID, sessionIndex: slot))
+        let newTab = TabIdentifier(serviceID: serviceID, sessionIndex: slot)
+        if let oldService = activeService {
+            let oldTab = TabIdentifier(serviceID: oldService.id, sessionIndex: activeSessionIndex(for: oldService.id))
+            if oldTab != newTab {
+                captureThumbnailWhenLeaving(oldTab)
+            }
+        }
+        recordTabHistory(switchingTo: newTab)
         if persistedTabState.openTabs[serviceID] == nil {
             persistedTabState.openTabs[serviceID] = [:]
         }
@@ -348,8 +429,21 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: - Prompt history
 
-    func recordPrompt(_ text: String, for serviceID: UUID, sessionIndex: Int) {
-        guard enablePromptHistory, promptHistoryRecordOnSubmit else { return }
+    /// Mirrors macOS `didReceiveInputStateMessage`: each clearing trigger records
+    /// only when its own setting is enabled, and no other clear type records.
+    func recordPrompt(_ text: String, clearType: String, for serviceID: UUID, sessionIndex: Int) {
+        let shouldRecord: Bool
+        switch clearType {
+        case "submit":
+            shouldRecord = enablePromptHistory && promptHistoryRecordOnSubmit
+        case "cmdBackspace":
+            shouldRecord = enablePromptHistory && promptHistoryRecordOnCmdBackspace
+        case "selectionClear":
+            shouldRecord = enablePromptHistory && promptHistoryRecordOnSelectionClear
+        default:
+            shouldRecord = false
+        }
+        guard shouldRecord else { return }
         guard let service = services.first(where: { $0.id == serviceID }), service.preservePrompt else { return }
         guard let entry = PromptHistoryPolicy.makeEntryIfEligible(submittedText: text) else { return }
         var current = persistedTabState.tabPromptHistories[serviceID] ?? [:]
@@ -408,6 +502,66 @@ final class AppEnvironment: ObservableObject {
         lastActiveTab = newTab
     }
 
+    /// Ordered navigation ring shown by the double-tap HUD: the currently active
+    /// tab first, then the MRU history (deduped), capped at `tabNavigationRingSize`.
+    func navigationRingItems() -> [TabIdentifier] {
+        var items: [TabIdentifier] = []
+        if let service = activeService {
+            items.append(TabIdentifier(serviceID: service.id, sessionIndex: activeSessionIndex(for: service.id)))
+        }
+        for tab in persistedTabState.tabHistory ?? [] {
+            guard services.contains(where: { $0.id == tab.serviceID }) else { continue }
+            if !items.contains(tab) {
+                items.append(tab)
+            }
+        }
+        let ringSize = max(2, tabNavigationRingSize)
+        return Array(items.prefix(ringSize))
+    }
+
+    /// Display title for a ring item, falling back to the session slot label.
+    func ringTitle(for tab: TabIdentifier) -> String {
+        let title = persistedTabState.tabTitles[tab.serviceID]?[tab.sessionIndex]
+        if let title, !title.isEmpty {
+            return title
+        }
+        return "Session \(SessionSlots.label(for: tab.sessionIndex))"
+    }
+
+    // MARK: - Session thumbnails
+
+    /// Remembers the last page state of a tab as an image. Captured when the
+    /// session is left and refreshed whenever a page finishes loading, so ring
+    /// previews are instant without re-screenshotting every web view.
+    func storeThumbnail(_ image: UIImage?, for serviceID: UUID, sessionIndex: Int) {
+        guard let image else { return }
+        sessionThumbnails[TabIdentifier(serviceID: serviceID, sessionIndex: sessionIndex)] = image
+        thumbnailsRevision += 1
+    }
+
+    /// Takes a fresh snapshot of a session as it is being left, so the ring
+    /// always shows the exact state we last saw before the web view unloads.
+    private func captureThumbnailWhenLeaving(_ tab: TabIdentifier) {
+        guard let session = webSessions[tab.serviceID]?[tab.sessionIndex] else { return }
+        if let existing = session.snapshot {
+            sessionThumbnails[tab] = existing
+        }
+        session.captureSnapshot { [weak self] image in
+            self?.storeThumbnail(image, for: tab.serviceID, sessionIndex: tab.sessionIndex)
+        }
+    }
+
+    /// Preferred preview for a ring item: the live snapshot for the active tab,
+    /// otherwise the stored thumbnail captured when the tab was last left.
+    func ringThumbnail(for tab: TabIdentifier) -> UIImage? {
+        if activeService?.id == tab.serviceID,
+           activeSessionIndex(for: tab.serviceID) == tab.sessionIndex,
+           let live = webSessions[tab.serviceID]?[tab.sessionIndex]?.snapshot {
+            return live
+        }
+        return sessionThumbnails[tab] ?? webSessions[tab.serviceID]?[tab.sessionIndex]?.snapshot
+    }
+
     // MARK: - Persistence
 
     private static func makeSettingsURL() -> URL {
@@ -441,27 +595,58 @@ final class AppEnvironment: ObservableObject {
         if let promptHistoryRecordOnSubmit = persisted.promptHistoryRecordOnSubmit {
             self.promptHistoryRecordOnSubmit = promptHistoryRecordOnSubmit
         }
+        if let promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace {
+            self.promptHistoryRecordOnCmdBackspace = promptHistoryRecordOnCmdBackspace
+        }
+        if let promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear {
+            self.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear
+        }
         if let promptHistoryLimit = persisted.promptHistoryLimit {
             self.promptHistoryLimit = promptHistoryLimit
         }
         if let tabNavigationRingSize = persisted.tabNavigationRingSize {
             self.tabNavigationRingSize = max(2, min(10, tabNavigationRingSize))
         }
+        if let tabSurvivalPolicy = persisted.tabSurvivalPolicy {
+            self.tabSurvivalPolicy = tabSurvivalPolicy
+        }
+        if let automaticallySwitchEngineOnLastSessionClose = persisted.automaticallySwitchEngineOnLastSessionClose {
+            self.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
+        }
+        if let autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation {
+            self.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
+        }
+        if let shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData {
+            self.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
+        }
 
-        if let tabState = persisted.persistedTabState {
-            persistedTabState = tabState
-        } else {
+        if tabSurvivalPolicy == .never {
+            // Mirror macOS `.never`: boot clean, never write or restore tab state.
             persistedTabState = PersistedTabState()
-        }
-        if persistedTabState.activeServiceID == nil ||
-           !services.contains(where: { $0.id == persistedTabState.activeServiceID }) {
             persistedTabState.activeServiceID = services.first?.id
+            if let activeID = persistedTabState.activeServiceID {
+                lastActiveTab = TabIdentifier(serviceID: activeID, sessionIndex: activeSessionIndex(for: activeID))
+            }
+        } else {
+            if let tabState = persisted.persistedTabState {
+                persistedTabState = tabState
+            } else {
+                persistedTabState = PersistedTabState()
+            }
+            if persistedTabState.activeServiceID == nil ||
+               !services.contains(where: { $0.id == persistedTabState.activeServiceID }) {
+                persistedTabState.activeServiceID = services.first?.id
+            }
+            if let activeID = persistedTabState.activeServiceID {
+                lastActiveTab = TabIdentifier(serviceID: activeID, sessionIndex: activeSessionIndex(for: activeID))
+            }
+            for service in services {
+                if autoCreateSessionOnEmptyEngineActivation {
+                    ensureSessions(for: service.id)
+                }
+            }
+            restoreTabsState()
         }
-        lastActiveTab = persistedTabState.tabHistory?.first
-        for service in services {
-            ensureSessions(for: service.id)
-        }
-        restoreTabsState()
         if persisted.didDecodeLegacyServiceIdentifiers {
             save()
         }
@@ -488,9 +673,15 @@ final class AppEnvironment: ObservableObject {
             services: services,
             customActions: customActions,
             colorScheme: colorScheme,
-            persistedTabState: persistedTabState,
+            automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
+            autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation,
+            shouldPurgeDanglingWebData: shouldPurgeDanglingWebData,
+            tabSurvivalPolicy: tabSurvivalPolicy,
+            persistedTabState: tabSurvivalPolicy == .never ? nil : persistedTabState,
             enablePromptHistory: enablePromptHistory,
             promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
+            promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
+            promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
             promptHistoryLimit: promptHistoryLimit,
             tabNavigationRingSize: tabNavigationRingSize,
             version: 1

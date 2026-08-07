@@ -245,6 +245,7 @@ extension WebSessionCoordinator: WKUIDelegate {
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler() })
         topViewController()?.present(alert, animated: true)
     }
 

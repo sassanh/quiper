@@ -13,6 +13,23 @@ struct EngineBrowserView: View {
     @State private var isFindBarVisible = false
     @FocusState private var isFindFieldFocused: Bool
 
+    @State private var isRingVisible = false
+    @State private var ringItems: [RingDisplayItem] = []
+    @State private var ringHighlightedTab: TabIdentifier?
+    @State private var ringCardFrames: [TabIdentifier: CGRect] = [:]
+    @State private var ringPreviews: [TabIdentifier: UIImage] = [:]
+    @State private var ringSelection: RingSelectionState?
+    @State private var ringSelectionProgress: CGFloat = 0
+    @State private var isRingSelectionAnimating = false
+    @State private var isRingPresentationPending = false
+    @State private var isRingQuickEndPending = false
+    @State private var ringMountedTab: TabIdentifier?
+    @State private var ringScrollOffset: CGFloat = 0
+    @State private var ringMaxScrollOffset: CGFloat = 0
+    @State private var ringScrollVelocityTarget: CGFloat = 0
+    @State private var ringAutoScrollTimer: Timer?
+    @State private var ringScrollDwellTask: Task<Void, Never>?
+
     private static let findBarBottomInset: CGFloat = 64
 
     var body: some View {
@@ -20,6 +37,8 @@ struct EngineBrowserView: View {
             let landscape = geo.size.width > geo.size.height
             ZStack(alignment: .bottom) {
                 webContent
+                    .background(Color.black)
+                    .opacity(selectionDimOpacity)
                     .padding(.bottom, isFindBarVisible ? Self.findBarBottomInset : 0)
                 if !isMinimized {
                     if isFindBarVisible {
@@ -34,6 +53,15 @@ struct EngineBrowserView: View {
                     island
                         .padding(.bottom, islandBottomPadding(bottomInset: geo.safeAreaInsets.bottom))
                         .transition(.scale(scale: 0.6, anchor: .bottom).combined(with: .opacity))
+                }
+                if isRingVisible {
+                    ringOverlay
+                        .zIndex(20)
+                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                }
+                if let selection = ringSelection {
+                    ringSelectionOverlay(selection)
+                        .zIndex(30)
                 }
             }
         }
@@ -58,9 +86,19 @@ struct EngineBrowserView: View {
         }
         .onChange(of: activeSession?.id) {
             isScrollCollapsed = false
+            dismissRing()
             if isFindBarVisible {
                 closeFindBar()
             }
+            wireRingGestureCallbacks()
+        }
+        .onChange(of: environment.thumbnailsRevision) {
+            if isRingVisible {
+                loadRingPreviews()
+            }
+        }
+        .onAppear {
+            wireRingGestureCallbacks()
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
@@ -105,6 +143,10 @@ struct EngineBrowserView: View {
 
     private var activeSession: WebViewSession? {
         guard let service = environment.activeService else { return nil }
+        if !environment.autoCreateSessionOnEmptyEngineActivation,
+           environment.hasNoSessions(for: service.id) {
+            return nil
+        }
         return environment.webViewSession(
             for: service.id,
             sessionIndex: activeSessionIndex,
@@ -112,8 +154,23 @@ struct EngineBrowserView: View {
         )
     }
 
+    /// True only when a real session is active; when the engine is empty (no
+    /// session auto-created) no slot should appear selected in the selector.
+    private var hasActiveSession: Bool {
+        activeSession != nil
+    }
+
     private var islandAnimation: Animation {
         .spring(response: 0.45, dampingFraction: 0.68)
+    }
+
+    /// Fades the current web view itself toward black while the ring selection
+    /// zooms in, so the page we are transitioning from reliably darkens (a
+    /// SwiftUI color overlay alone can fail to dim a WKWebView's composited
+    /// layer).
+    private var selectionDimOpacity: CGFloat {
+        guard isRingSelectionAnimating, ringSelection != nil else { return 1 }
+        return 1 - 0.9 * min(1, ringSelectionProgress * 3)
     }
 
     @ViewBuilder
@@ -147,6 +204,513 @@ struct EngineBrowserView: View {
 
     private func clearFindQuery() {
         activeSession?.setFindQuery("")
+    }
+
+    // MARK: - Double-tap navigation ring
+
+    private func wireRingGestureCallbacks() {
+        guard let session = activeSession else { return }
+        session.onRingSecondTapDown = { [self] location in
+            self.ringSecondTapDown(at: location)
+        }
+        session.onRingHoldBegan = { [self] in
+            self.ringHoldBegan()
+        }
+        session.onRingHoldUpdate = { [self] location in
+            self.ringHoldUpdate(at: location)
+        }
+        session.onRingQuickEnd = { [self] location in
+            self.ringQuickEnd(at: location)
+        }
+        session.onRingHoldEnd = { [self] location in
+            self.ringHoldEnd(at: location)
+        }
+        session.onRingCancel = { [self] in
+            self.cancelRing()
+        }
+    }
+
+    private func ringSecondTapDown(at location: CGPoint) {
+        dismissKeyboard()
+        let items = environment.navigationRingItems()
+        guard items.count > 1 else { return }
+        guard environment.tabNavigationRingSize > 2 else { return }
+        isRingPresentationPending = true
+        activeSession?.suspendWebViewInteraction()
+        Task { @MainActor [self] in
+            let fresh = await activeSession?.captureFreshSnapshot()
+            guard isRingPresentationPending else { return }
+            presentRing(items: items, highlighted: items[1], currentThumbnail: fresh)
+            if isRingQuickEndPending {
+                isRingQuickEndPending = false
+                ringSelect(highlighted: ringHighlightedTab)
+            }
+        }
+    }
+
+    /// Ring size 2: a quick double-tap switches straight to the MRU tab, no HUD.
+    private func ringSwitchToNext() {
+        guard let next = environment.navigationRingItems().dropFirst().first else { return }
+        environment.setActiveSession(for: next.serviceID, index: next.sessionIndex)
+    }
+
+    private func ringHoldBegan() {
+        guard !isRingVisible, !isRingPresentationPending else { return }
+        dismissKeyboard()
+        let items = environment.navigationRingItems()
+        guard items.count > 1 else { return }
+        presentRing(items: items, highlighted: items[1])
+        activeSession?.suspendWebViewInteraction()
+    }
+
+    private func ringHoldUpdate(at location: CGPoint) {
+        guard isRingVisible else { return }
+        guard let webView = activeSession?.webView else { return }
+        let point = webView.convert(location, to: nil)
+        if let item = ringItem(atGlobal: point) {
+            ringHighlightedTab = item.tab
+        }
+        handleRingAutoScroll(at: point)
+    }
+
+    private func ringQuickEnd(at location: CGPoint) {
+        activeSession?.resumeWebViewInteraction()
+        guard !isRingPresentationPending else {
+            isRingQuickEndPending = true
+            return
+        }
+        if !isRingVisible {
+            ringSwitchToNext()
+            return
+        }
+        ringSelect(highlighted: ringHighlightedTab)
+    }
+
+    private func ringHoldEnd(at location: CGPoint) {
+        guard !isRingPresentationPending else {
+            isRingPresentationPending = false
+            isRingQuickEndPending = false
+            activeSession?.resumeWebViewInteraction()
+            return
+        }
+        guard isRingVisible else {
+            activeSession?.resumeWebViewInteraction()
+            return
+        }
+        activeSession?.resumeWebViewInteraction()
+        if let tab = ringItem(at: location)?.tab {
+            ringSelect(tab: tab)
+        } else {
+            dismissRing()
+        }
+    }
+
+    private func cancelRing() {
+        activeSession?.resumeWebViewInteraction()
+        dismissRing()
+    }
+
+    // MARK: - Ring edge auto-scroll
+
+    private static let ringEdgeZone: CGFloat = 80
+    private static let ringMaxScrollSpeed: CGFloat = 700
+    private static let ringScrollDwell: UInt64 = 300_000_000
+
+    private func ringAutoScrollVelocity(at point: CGPoint) -> CGFloat {
+        let screenHeight = UIScreen.main.bounds.height
+        let topDistance = point.y
+        let bottomDistance = screenHeight - point.y
+        if topDistance < Self.ringEdgeZone {
+            return Self.ringMaxScrollSpeed * (1 - topDistance / Self.ringEdgeZone)
+        }
+        if bottomDistance < Self.ringEdgeZone {
+            return -Self.ringMaxScrollSpeed * (1 - bottomDistance / Self.ringEdgeZone)
+        }
+        return 0
+    }
+
+    private func handleRingAutoScroll(at point: CGPoint) {
+        let velocity = ringAutoScrollVelocity(at: point)
+        guard velocity != 0 else {
+            stopRingAutoScroll()
+            return
+        }
+        ringScrollVelocityTarget = velocity
+        guard ringAutoScrollTimer == nil else { return }
+        guard ringScrollDwellTask == nil else { return }
+        ringScrollDwellTask = Task { @MainActor [self] in
+            try? await Task.sleep(nanoseconds: Self.ringScrollDwell)
+            self.ringScrollDwellTask = nil
+            guard self.ringScrollVelocityTarget != 0, self.ringAutoScrollTimer == nil else { return }
+            self.startRingAutoScrollTimer()
+        }
+    }
+
+    private func startRingAutoScrollTimer() {
+        guard ringAutoScrollTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [self] _ in
+            self.stepRingAutoScroll()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        ringAutoScrollTimer = timer
+    }
+
+    private func stepRingAutoScroll() {
+        let maxOffset = ringMaxScrollOffset
+        guard maxOffset > 0 else {
+            stopRingAutoScroll()
+            return
+        }
+        ringScrollOffset += ringScrollVelocityTarget * (1.0 / 60.0)
+        ringScrollOffset = min(0, max(-maxOffset, ringScrollOffset))
+    }
+
+    private func stopRingAutoScroll() {
+        ringScrollDwellTask?.cancel()
+        ringScrollDwellTask = nil
+        ringAutoScrollTimer?.invalidate()
+        ringAutoScrollTimer = nil
+        ringScrollVelocityTarget = 0
+    }
+
+    private func ringSelect(highlighted tab: TabIdentifier?) {
+        if let tab {
+            ringSelect(tab: tab)
+        } else {
+            dismissRing()
+        }
+    }
+
+    private func ringSelect(tab: TabIdentifier) {
+        stopRingAutoScroll()
+        dismissKeyboard()
+        guard let service = environment.services.first(where: { $0.id == tab.serviceID }) else {
+            dismissRing()
+            return
+        }
+        let fromFrame: CGRect
+        if let frame = ringCardFrames[tab] {
+            fromFrame = frame
+        } else if let webView = activeSession?.webView {
+            fromFrame = webView.convert(webView.bounds, to: nil)
+        } else {
+            fromFrame = .zero
+        }
+        ringSelection = RingSelectionState(
+            tab: tab,
+            service: service,
+            title: environment.ringTitle(for: tab),
+            fromFrame: fromFrame,
+            preview: ringPreviews[tab]
+        )
+        isRingSelectionAnimating = true
+        isRingVisible = false
+        refreshSelectionThumbnailIfNeeded(tab: tab)
+        mountTargetForLoading(tab: tab)
+        withAnimation(
+            .spring(response: 0.375, dampingFraction: 0.8),
+            completionCriteria: .logicallyComplete
+        ) {
+            ringSelectionProgress = 1
+        } completion: {
+            guard self.ringSelection?.tab == tab else { return }
+            self.unmountMountedTarget()
+            self.environment.setActiveSession(for: tab.serviceID, index: tab.sessionIndex)
+            withAnimation(.easeOut(duration: 0.25)) {
+                self.ringSelection = nil
+                self.ringSelectionProgress = 0
+            }
+            self.isRingSelectionAnimating = false
+        }
+    }
+
+    private func ringItem(at location: CGPoint) -> RingDisplayItem? {
+        guard let webView = activeSession?.webView else { return nil }
+        return ringItem(atGlobal: webView.convert(location, to: nil))
+    }
+
+    private func ringItem(atGlobal point: CGPoint) -> RingDisplayItem? {
+        for item in ringItems {
+            guard let frame = ringCardFrames[item.tab] else { continue }
+            if frame.contains(point) {
+                return item
+            }
+        }
+        return nil
+    }
+
+    private func presentRing(items: [TabIdentifier], highlighted: TabIdentifier?, currentThumbnail: UIImage? = nil) {
+        ringItems = items.compactMap { tab in
+            guard let service = environment.services.first(where: { $0.id == tab.serviceID }) else { return nil }
+            return RingDisplayItem(tab: tab, service: service, title: environment.ringTitle(for: tab))
+        }
+        ringHighlightedTab = highlighted
+        ringCardFrames = [:]
+        ringPreviews = [:]
+        ringSelection = nil
+        ringSelectionProgress = 0
+        isRingSelectionAnimating = false
+        isRingPresentationPending = false
+        unmountMountedTarget()
+        ringScrollOffset = 0
+        ringMaxScrollOffset = 0
+        isRingVisible = true
+        loadRingPreviews()
+        if let currentThumbnail, let tab = currentActiveTab {
+            ringPreviews[tab] = currentThumbnail
+        }
+    }
+
+    /// Fills ring previews from the stored thumbnails, which are captured when
+    /// each session is left and refreshed on page load. The current session's
+    /// fresh snapshot is seeded by the deferred ring presentation.
+    private func loadRingPreviews() {
+        for item in ringItems {
+            if let image = environment.ringThumbnail(for: item.tab) {
+                ringPreviews[item.tab] = image
+            }
+        }
+    }
+
+    private func dismissRing() {
+        stopRingAutoScroll()
+        activeSession?.resumeWebViewInteraction()
+        isRingVisible = false
+        isRingPresentationPending = false
+        isRingQuickEndPending = false
+        ringHighlightedTab = nil
+        ringCardFrames = [:]
+        ringPreviews = [:]
+        ringScrollOffset = 0
+        ringMaxScrollOffset = 0
+        if !isRingSelectionAnimating {
+            ringSelection = nil
+            ringSelectionProgress = 0
+            unmountMountedTarget()
+        }
+    }
+
+    private var currentActiveTab: TabIdentifier? {
+        guard let service = environment.activeService else { return nil }
+        return TabIdentifier(serviceID: service.id, sessionIndex: environment.activeSessionIndex(for: service.id))
+    }
+
+    /// When the selected tab is the live page itself, capture it fresh so the
+    /// animation morphs the exact on-screen state instead of a stored thumbnail.
+    private func refreshSelectionThumbnailIfNeeded(tab: TabIdentifier) {
+        guard tab == currentActiveTab, let session = activeSession else { return }
+        session.captureSnapshot { [self] image in
+            if let image {
+                self.ringPreviews[tab] = image
+            }
+        }
+    }
+
+    /// Attaches the target session's web view (hidden, behind the current one)
+    /// as soon as a selection starts, so it re-attaches and resumes loading while
+    /// the thumbnail animation plays, instead of starting cold at reveal time.
+    private func mountTargetForLoading(tab: TabIdentifier) {
+        guard tab != currentActiveTab else { return }
+        unmountMountedTarget()
+        let target = environment.webViewSession(
+            for: tab.serviceID,
+            sessionIndex: tab.sessionIndex,
+            initialURL: environment.sessionURL(for: tab.serviceID, slot: tab.sessionIndex)
+        )
+        target.loadIfNeeded()
+        guard let host = activeSession?.webView.superview,
+              target.webView.superview !== host else { return }
+        target.webView.isHidden = true
+        host.insertSubview(target.webView, at: 0)
+        ringMountedTab = tab
+    }
+
+    private func unmountMountedTarget() {
+        defer { ringMountedTab = nil }
+        guard let tab = ringMountedTab,
+              let target = environment.existingSession(for: tab.serviceID, sessionIndex: tab.sessionIndex),
+              target.webView.superview != nil else { return }
+        target.webView.removeFromSuperview()
+        target.webView.isHidden = false
+    }
+
+    private static let ringTopInset: CGFloat = 40
+    private static let ringRowSpacing: CGFloat = 12
+    private static let ringMinCardWidth: CGFloat = 150
+    private static let ringVerticalPadding: CGFloat = 24
+
+    private var ringOverlay: some View {
+        GeometryReader { geo in
+            let containerWidth = geo.size.width - 40
+            let columns = Self.ringGridColumns(containerWidth: containerWidth)
+            let rows = max(1, (ringItems.count + columns.count - 1) / columns.count)
+            let gridViewportHeight = geo.size.height - Self.ringTopInset
+            let rowsVisible: CGFloat = ringItems.count <= 4 ? 2 : 2.3
+            let cardHeight = max(80, (gridViewportHeight - Self.ringVerticalPadding * 2 - Self.ringRowSpacing) / rowsVisible)
+            let contentHeight = CGFloat(rows) * cardHeight
+                + CGFloat(max(0, rows - 1)) * Self.ringRowSpacing
+                + Self.ringVerticalPadding * 2
+            let maxOffset = max(0, contentHeight - gridViewportHeight)
+
+            ZStack {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                VStack(spacing: 0) {
+                    Color.clear
+                        .frame(height: Self.ringTopInset)
+                    ZStack(alignment: .top) {
+                        LazyVGrid(columns: columns, spacing: Self.ringRowSpacing) {
+                            ForEach(ringItems) { item in
+                                ringCard(item, targetHeight: cardHeight)
+                            }
+                        }
+                        .padding(.vertical, Self.ringVerticalPadding)
+                        .offset(y: ringScrollOffset)
+                    }
+                    .padding(.horizontal, 20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .onPreferenceChange(RingFrameKey.self) { frames in
+                ringCardFrames = frames
+            }
+            .onAppear {
+                ringMaxScrollOffset = maxOffset
+            }
+            .onChange(of: geo.size.height) {
+                ringMaxScrollOffset = maxOffset
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private static func ringGridColumns(containerWidth: CGFloat) -> [GridItem] {
+        let count = max(1, Int((containerWidth + Self.ringRowSpacing) / (Self.ringMinCardWidth + Self.ringRowSpacing)))
+        return Array(repeating: GridItem(.flexible(), spacing: Self.ringRowSpacing), count: count)
+    }
+
+    private func ringCard(_ item: RingDisplayItem, targetHeight: CGFloat) -> some View {
+        let isHighlighted = item.tab == ringHighlightedTab
+        let preview = ringPreviews[item.tab]
+        return ZStack(alignment: .bottom) {
+            if let preview {
+                GeometryReader { proxy in
+                    Image(uiImage: preview)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .clipped()
+                }
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(uiColor: .systemBackground))
+            }
+            LinearGradient(
+                colors: [.black.opacity(0), .black.opacity(0.75)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+            VStack(alignment: .leading, spacing: 6) {
+                Spacer()
+                HStack {
+                    EngineIconView(service: item.service, size: 16)
+                    Text(SessionSlots.label(for: item.tab.sessionIndex))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(isHighlighted ? .white : .white.opacity(0.9))
+                    Spacer()
+                }
+                Text(item.title)
+                    .font(.caption)
+                    .foregroundStyle(isHighlighted ? .white : .white.opacity(0.85))
+                    .lineLimit(2)
+            }
+            .padding(10)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: targetHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.white.opacity(isHighlighted ? 1 : 0.25), lineWidth: isHighlighted ? 3 : 1)
+        )
+        .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+        .background(
+            GeometryReader { innerProxy in
+                Color.clear.preference(
+                    key: RingFrameKey.self,
+                    value: [item.tab: innerProxy.frame(in: .global)]
+                )
+            }
+        )
+    }
+
+    private static func ringScale(from rect: CGRect, to size: CGSize) -> CGFloat {
+        guard rect.width > 0, rect.height > 0 else { return 1 }
+        return min(size.width / rect.width, size.height / rect.height)
+    }
+
+    private func ringSelectionOverlay(_ selection: RingSelectionState) -> some View {
+        GeometryReader { geo in
+            let localOrigin = geo.frame(in: .global).origin
+            let size = geo.size
+            let fromLocal = CGRect(
+                x: selection.fromFrame.minX - localOrigin.x,
+                y: selection.fromFrame.minY - localOrigin.y,
+                width: selection.fromFrame.width,
+                height: selection.fromFrame.height
+            )
+            let scale = Self.ringScale(from: fromLocal, to: size)
+            let progress = ringSelectionProgress
+            let interpolated = CGRect(
+                x: fromLocal.midX + (size.width / 2 - fromLocal.midX) * progress - (fromLocal.width / 2) * (1 + (scale - 1) * progress),
+                y: fromLocal.midY + (size.height / 2 - fromLocal.midY) * progress - (fromLocal.height / 2) * (1 + (scale - 1) * progress),
+                width: fromLocal.width * (1 + (scale - 1) * progress),
+                height: fromLocal.height * (1 + (scale - 1) * progress)
+            )
+            ZStack {
+                Color.black.opacity(0.75 * min(1, progress * 3))
+                ZStack(alignment: .bottom) {
+                    if let preview = ringPreviews[selection.tab] ?? selection.preview {
+                        Image(uiImage: preview)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: interpolated.width, height: interpolated.height)
+                            .clipped()
+                    } else {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color(uiColor: .systemBackground))
+                    }
+                    LinearGradient(
+                        colors: [.black.opacity(0), .black.opacity(0.75)],
+                        startPoint: .center,
+                        endPoint: .bottom
+                    )
+                    VStack(alignment: .leading, spacing: 6) {
+                        Spacer()
+                        HStack {
+                            EngineIconView(service: selection.service, size: 16)
+                            Text(SessionSlots.label(for: selection.tab.sessionIndex))
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                            Spacer()
+                        }
+                        Text(selection.title)
+                            .font(.caption)
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                    }
+                    .padding(10)
+                }
+                .frame(width: interpolated.width, height: interpolated.height)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .position(x: interpolated.midX, y: interpolated.midY)
+            }
+            .opacity(progress < 0.05 ? 0 : 1)
+            .frame(width: size.width, height: size.height)
+        }
+        .allowsHitTesting(false)
     }
 
     private func bottomControls(landscape: Bool) -> some View {
@@ -328,7 +892,7 @@ struct EngineBrowserView: View {
     private func sessionSelector(flexible: Bool) -> some View {
         HStack(spacing: 6) {
             ForEach(SessionSlots.range, id: \.self) { slot in
-                let isActive = slot == activeSessionIndex
+                let isActive = hasActiveSession && slot == activeSessionIndex
                 let isLoaded = environment.isSessionLoaded(for: activeServiceID, slot: slot)
                 Button {
                     environment.setActiveSession(for: activeServiceID, index: slot)
@@ -370,12 +934,52 @@ struct EngineBrowserView: View {
             if let session = activeSession {
                 WebKitBrowserView(session: session)
                     .id(session.id)
-            } else {
+            } else if environment.services.isEmpty {
                 ContentUnavailableView("No Engines", systemImage: "globe", description: Text("Add an engine in Settings."))
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "square.stack.3d.up")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.secondary)
+                    Text("No Open Session")
+                        .font(.headline)
+                    Text("Start a session for \(environment.activeService?.name ?? "this engine").")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Button("New Session") {
+                        if let serviceID = environment.activeService?.id ?? environment.services.first?.id {
+                            environment.setActiveSession(for: serviceID, index: 0)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+    }
+}
+
+private struct RingDisplayItem: Identifiable {
+    let tab: TabIdentifier
+    let service: Service?
+    let title: String
+    var id: String { "\(tab.serviceID.uuidString)-\(tab.sessionIndex)" }
+}
+
+private struct RingSelectionState {
+    let tab: TabIdentifier
+    let service: Service?
+    let title: String
+    let fromFrame: CGRect
+    let preview: UIImage?
+}
+
+private struct RingFrameKey: PreferenceKey {
+    static var defaultValue: [TabIdentifier: CGRect] = [:]
+    static func reduce(value: inout [TabIdentifier: CGRect], nextValue: () -> [TabIdentifier: CGRect]) {
+        value.merge(nextValue()) { $1 }
     }
 }
 
