@@ -2387,7 +2387,10 @@ fileprivate final class PopupUIDelegate: NSObject, WKUIDelegate {
     @available(macOS 12.0, *)
     @MainActor
     func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void) {
-        decisionHandler(.grant)
+        Task { @MainActor in
+            let granted = await MediaCapturePermission.ensureAccess(for: type)
+            decisionHandler(granted ? .grant : .deny)
+        }
     }
 }
 

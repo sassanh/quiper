@@ -17,6 +17,10 @@
 - **Fullscreen-aware Shortcuts**: While an element is fullscreen in its own space, global shortcuts only reveal Quiper in the current space; they no longer switch engines, sessions, or toggle the overlay, and Quiper stays hidden during fullscreen playback.
 - **Release-aware Nightly Builds ([integration_delivery.yml](.github/workflows/integration_delivery.yml))**: Scheduled nightly builds now compare against the most recent release of any kind—nightly, beta, or stable—instead of only the previous nightly. A recent beta or stable release that already covers the latest code skips an unnecessary rebuild, and periodic rebuilds still run when the last release is older than 72 hours.
 
+### Fixed
+
+- **Microphone and Camera Permission Prompts**: When a website requests microphone or camera access, Quiper now asks macOS for the matching system permission and only grants the page if the user allows it. Hardened-runtime camera and audio-input entitlements are restored so notarized builds can complete capture after approval.
+
 ## [4.6.2] - 2026-08-02
 
 ### Changed
