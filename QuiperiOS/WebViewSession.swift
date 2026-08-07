@@ -62,6 +62,9 @@ final class WebViewSession: ObservableObject {
         coordinator.onRememberRoutingDecision = { [weak self] host, action in
             self?.onRememberRoutingDecision?(host, action)
         }
+        coordinator.onDidFinish = { [weak self] in
+            self?.restoreInputStateIfNeeded()
+        }
 
         installScrollObservation()
 
@@ -92,12 +95,25 @@ final class WebViewSession: ObservableObject {
     var onURLChange: ((URL) -> Void)?
     var onTitleChange: ((String) -> Void)?
     var onRememberRoutingDecision: ((_ host: String, _ action: RoutingAction) -> Void)?
+    var onInputStateChanged: ((TabInputState) -> Void)?
+    var onRequestRestoreInputState: (() -> TabInputState?)?
+    var onInputStateCommitted: (() -> Void)?
 
     func handleInputState(_ payload: [String: Any]) {
         let parsed = InputStatePayload(payload)
         if parsed.wasSent, parsed.clearType == "submit",
            PromptHistoryPolicy.makeEntryIfEligible(submittedText: parsed.wasSentText) != nil {
             onPromptRecorded?(parsed.wasSentText)
+        }
+        let inputState = TabInputState(
+            text: parsed.text,
+            isContentEditable: parsed.isContentEditable,
+            start: parsed.start,
+            end: parsed.end
+        )
+        onInputStateChanged?(inputState)
+        if parsed.wasSent {
+            onInputStateCommitted?()
         }
     }
 
@@ -106,7 +122,16 @@ final class WebViewSession: ObservableObject {
     }
 
     func focusInput() {
-        coordinator.focusInput()
+        coordinator.focusInput(restoring: onRequestRestoreInputState?())
+    }
+
+    /// Mirrors macOS: once the page finishes loading, re-apply the tab's saved
+    /// input state (text + selection) into the composer so drafts survive reloads.
+    func restoreInputStateIfNeeded() {
+        guard let state = onRequestRestoreInputState?() else { return }
+        let hasContent = !state.text.isEmpty || state.start != 0 || state.end != 0
+        guard hasContent else { return }
+        coordinator.focusInput(restoring: state)
     }
 
     func reload() {

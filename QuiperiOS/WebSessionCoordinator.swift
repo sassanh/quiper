@@ -16,6 +16,7 @@ final class WebSessionCoordinator: NSObject {
     var onURL: ((URL) -> Void)?
     var onNavigationState: ((_ canGoBack: Bool, _ canGoForward: Bool) -> Void)?
     var onRememberRoutingDecision: ((_ host: String, _ action: RoutingAction) -> Void)?
+    var onDidFinish: (() -> Void)?
 
     init(webView: WKWebView, service: Service, sessionIndex: Int) {
         self.webView = webView
@@ -57,14 +58,16 @@ final class WebSessionCoordinator: NSObject {
 
     // MARK: - JS injection
 
-    func focusInput() {
+    func focusInput(restoring state: TabInputState?) {
         guard let webView, !service.focus_selector.isEmpty else { return }
+        let shouldRestore = service.preservePrompt
+        let inputState = shouldRestore ? state : nil
         let jsString = WebScripts.makeFocusInputScript(
             selector: service.focus_selector,
-            hasSaved: false,
-            text: "",
-            start: 0,
-            end: 0
+            hasSaved: inputState != nil,
+            text: inputState?.text ?? "",
+            start: inputState?.start ?? 0,
+            end: inputState?.end ?? 0
         )
         webView.evaluateJavaScript(jsString, completionHandler: nil)
     }
@@ -188,6 +191,7 @@ extension WebSessionCoordinator: WKNavigationDelegate {
         }
         onTitle?(webView.title ?? "")
         notifyNavigationState(for: webView)
+        onDidFinish?()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation?, withError error: Error) {

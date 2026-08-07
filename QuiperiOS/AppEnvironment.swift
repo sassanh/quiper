@@ -12,6 +12,7 @@ final class AppEnvironment: ObservableObject {
     @Published var enablePromptHistory: Bool = true
     @Published var promptHistoryRecordOnSubmit: Bool = true
     @Published var promptHistoryLimit: Int = 100
+    @Published var tabNavigationRingSize: Int = 2
 
     private let settingsURL: URL
     private var webSessions: [UUID: [Int: WebViewSession]] = [:]
@@ -44,6 +45,15 @@ final class AppEnvironment: ObservableObject {
         }
         session.onRememberRoutingDecision = { [weak self] host, action in
             self?.rememberRoutingDecision(host: host, action: action, serviceID: serviceID)
+        }
+        session.onInputStateChanged = { [weak self] state in
+            self?.updateTabInputState(state, for: serviceID, sessionIndex: sessionIndex)
+        }
+        session.onInputStateCommitted = { [weak self] in
+            self?.save()
+        }
+        session.onRequestRestoreInputState = { [weak self] in
+            self?.tabInputState(for: serviceID, sessionIndex: sessionIndex)
         }
         var serviceMap = webSessions[serviceID] ?? [:]
         serviceMap[sessionIndex] = session
@@ -85,6 +95,8 @@ final class AppEnvironment: ObservableObject {
     // MARK: - Service management
 
     func setActiveService(_ id: UUID) {
+        let newTab = TabIdentifier(serviceID: id, sessionIndex: activeSessionIndex(for: id))
+        recordTabHistory(switchingTo: newTab)
         persistedTabState.activeServiceID = id
         save()
     }
@@ -151,7 +163,12 @@ final class AppEnvironment: ObservableObject {
         persistedTabState.openTabs[serviceID] = nil
         persistedTabState.tabTitles[serviceID] = nil
         persistedTabState.tabPromptHistories[serviceID] = nil
+        persistedTabState.tabInputs[serviceID] = nil
         persistedTabState.activeIndicesByID[serviceID] = nil
+        persistedTabState.tabHistory?.removeAll { $0.serviceID == serviceID }
+        if lastActiveTab?.serviceID == serviceID {
+            lastActiveTab = nil
+        }
         if persistedTabState.activeServiceID == serviceID {
             persistedTabState.activeServiceID = services.first?.id
         }
@@ -175,6 +192,12 @@ final class AppEnvironment: ObservableObject {
         persistedTabState.openTabs[serviceID]?.removeValue(forKey: index)
         persistedTabState.tabTitles[serviceID]?.removeValue(forKey: index)
         persistedTabState.tabPromptHistories[serviceID]?.removeValue(forKey: index)
+        persistedTabState.tabInputs[serviceID]?.removeValue(forKey: index)
+        let closedTab = TabIdentifier(serviceID: serviceID, sessionIndex: index)
+        persistedTabState.tabHistory?.removeAll { $0 == closedTab }
+        if lastActiveTab == closedTab {
+            lastActiveTab = nil
+        }
         webSessions[serviceID]?.removeValue(forKey: index)
         if persistedTabState.activeIndicesByID[serviceID] == index {
             let remaining = (persistedTabState.openTabs[serviceID] ?? [:]).keys.sorted()
@@ -185,6 +208,7 @@ final class AppEnvironment: ObservableObject {
 
     func setActiveSession(for serviceID: UUID, index: Int) {
         let slot = SessionSlots.range.contains(index) ? index : 0
+        recordTabHistory(switchingTo: TabIdentifier(serviceID: serviceID, sessionIndex: slot))
         if persistedTabState.openTabs[serviceID] == nil {
             persistedTabState.openTabs[serviceID] = [:]
         }
@@ -343,6 +367,47 @@ final class AppEnvironment: ObservableObject {
         persistedTabState.tabPromptHistories[serviceID]?[sessionIndex] ?? []
     }
 
+    // MARK: - Per-tab input state
+
+    func tabInputState(for serviceID: UUID, sessionIndex: Int) -> TabInputState? {
+        guard let service = services.first(where: { $0.id == serviceID }), service.preservePrompt else { return nil }
+        return persistedTabState.tabInputs[serviceID]?[sessionIndex]
+    }
+
+    func updateTabInputState(_ state: TabInputState, for serviceID: UUID, sessionIndex: Int) {
+        guard let service = services.first(where: { $0.id == serviceID }), service.preservePrompt else { return }
+        if persistedTabState.tabInputs[serviceID] == nil {
+            persistedTabState.tabInputs[serviceID] = [:]
+        }
+        persistedTabState.tabInputs[serviceID]?[sessionIndex] = state
+    }
+
+    // MARK: - Tab history ring
+
+    private var lastActiveTab: TabIdentifier?
+
+    /// Mirrors macOS `switchTab`'s MRU bookkeeping: the previously active tab is
+    /// pushed to the front of the ring (capped at `tabNavigationRingSize - 1`) and
+    /// the tab being activated is removed from history.
+    private func recordTabHistory(switchingTo newTab: TabIdentifier) {
+        var history = persistedTabState.tabHistory ?? []
+        history = history.filter { tab in
+            services.contains(where: { $0.id == tab.serviceID })
+        }
+        guard lastActiveTab != newTab else { return }
+        history.removeAll { $0 == newTab }
+        if let oldTab = lastActiveTab {
+            history.removeAll { $0 == oldTab }
+            history.insert(oldTab, at: 0)
+            let ringSize = max(2, tabNavigationRingSize)
+            if history.count > ringSize - 1 {
+                history = Array(history.prefix(ringSize - 1))
+            }
+        }
+        persistedTabState.tabHistory = history
+        lastActiveTab = newTab
+    }
+
     // MARK: - Persistence
 
     private static func makeSettingsURL() -> URL {
@@ -379,6 +444,9 @@ final class AppEnvironment: ObservableObject {
         if let promptHistoryLimit = persisted.promptHistoryLimit {
             self.promptHistoryLimit = promptHistoryLimit
         }
+        if let tabNavigationRingSize = persisted.tabNavigationRingSize {
+            self.tabNavigationRingSize = max(2, min(10, tabNavigationRingSize))
+        }
 
         if let tabState = persisted.persistedTabState {
             persistedTabState = tabState
@@ -389,10 +457,14 @@ final class AppEnvironment: ObservableObject {
            !services.contains(where: { $0.id == persistedTabState.activeServiceID }) {
             persistedTabState.activeServiceID = services.first?.id
         }
+        lastActiveTab = persistedTabState.tabHistory?.first
         for service in services {
             ensureSessions(for: service.id)
         }
         restoreTabsState()
+        if persisted.didDecodeLegacyServiceIdentifiers {
+            save()
+        }
     }
 
     /// Mirrors the macOS `restoreTabsState`: re-instantiates every persisted open
@@ -420,6 +492,7 @@ final class AppEnvironment: ObservableObject {
             enablePromptHistory: enablePromptHistory,
             promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
             promptHistoryLimit: promptHistoryLimit,
+            tabNavigationRingSize: tabNavigationRingSize,
             version: 1
         )
         guard let data = try? JSONEncoder().encode(payload) else { return }
