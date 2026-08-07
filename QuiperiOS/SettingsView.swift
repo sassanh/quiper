@@ -184,6 +184,25 @@ struct EngineEditView: View {
             } footer: {
                 Text("The CSS selector Quiper uses to find the prompt input on this engine's page.")
             }
+            Section {
+                NavigationLink {
+                    RoutingRulesEditView(service: $service)
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.triangle.branch")
+                        Text("Routing Rules")
+                        Spacer()
+                        if !service.routingRules.isEmpty {
+                            Text("\(service.routingRules.count)")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: {
+                Text("Link Routing")
+            } footer: {
+                Text("Rules decide how links are opened. They run from top to bottom and the first match wins; unmatched links open externally.")
+            }
         }
         .navigationTitle(service.name)
         .navigationBarBackButtonHidden(isDirty)
@@ -346,6 +365,47 @@ struct ActionScriptEditView: View {
                 }
                 .font(.body.weight(.semibold))
                 .disabled(code == originalCode)
+            }
+        }
+    }
+}
+
+struct RoutingRulesEditView: View {
+    @Binding var service: Service
+
+    var body: some View {
+        Form {
+            Section {
+                if service.routingRules.isEmpty {
+                    Text("No routing rules defined. Links will open externally by default.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(Array(service.routingRules.indices), id: \.self) { index in
+                        RoutingRuleField(rule: $service.routingRules[index])
+                    }
+                    .onDelete { offsets in
+                        service.routingRules.remove(atOffsets: offsets)
+                    }
+                    .onMove { source, destination in
+                        service.routingRules.move(fromOffsets: source, toOffset: destination)
+                    }
+                }
+                Button {
+                    service.routingRules.append(RoutingRule(pattern: "", action: .internalStay))
+                } label: {
+                    Label("Add Routing Rule", systemImage: "plus")
+                }
+            } header: {
+                Text("Rules")
+            } footer: {
+                Text("Rules are evaluated from top to bottom. The first matching pattern determines the action. Reorder rules to adjust their priority.")
+            }
+        }
+        .navigationTitle("Routing Rules")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                EditButton()
             }
         }
     }

@@ -16,6 +16,7 @@
 - **Engine Settings Shortcut**: `Cmd+,` now opens the active engine's own settings page, matching how the engine's other default shortcuts behave. Existing installs get a one-time prompt to enable it; new installs include it by default.
 - **One-Time `Cmd+,` Notice**: The first time `Cmd+,` is pressed after this update, a dialog explains that it now opens the active engine's settings rather than Quiper's, with a "Don't show this again" checkbox for users who expect Quiper's Settings there.
 - **iOS Draft and Cursor Persistence**: On iOS, the text you're typing in an engine's input box is now saved whenever you switch sessions or close the app, along with your cursor position, and restored when you come back—the same behavior as the Mac app. Session history and per-session prompt history are also preserved on iOS, and tabs opened in past sessions stay listed in the tab switcher's back-history just as they do on the Mac.
+- **iOS Routing Rules Editor**: Each engine's settings on iOS now include a Routing Rules editor, so link handling can be tuned without visiting a page. Rules are evaluated top to bottom and the first match wins, exactly like the Mac app; you can add, delete, and reorder rules and pick between open internally, open in a popup, ask each time, and open in Safari.
 
 ### Changed
 

@@ -1606,19 +1606,8 @@ struct ServiceDetailView: View {
             }
             .frame(width: 14)
             
-            // Pattern TextField
-            TextField("e.g. ^https?://([^/]*\\.)?google\\.com", text: rule.pattern)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: .infinity)
-            
-            // Action Picker
-            Picker("", selection: rule.action) {
-                ForEach(RoutingAction.allCases) { act in
-                    Text(act.rawValue).tag(act)
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(width: 90)
+            // Pattern field + action picker (shared with iOS)
+            RoutingRuleField(rule: rule)
             
             // Delete button
             Button(role: .destructive, action: onDelete) {
