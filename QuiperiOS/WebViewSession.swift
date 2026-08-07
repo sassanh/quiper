@@ -57,6 +57,9 @@ final class WebViewSession: ObservableObject {
             self?.canGoBack = canGoBack
             self?.canGoForward = canGoForward
         }
+        coordinator.onRememberRoutingDecision = { [weak self] host, action in
+            self?.onRememberRoutingDecision?(host, action)
+        }
 
         installScrollObservation()
 
@@ -85,6 +88,7 @@ final class WebViewSession: ObservableObject {
     var onPromptRecorded: ((String) -> Void)?
     var onURLChange: ((URL) -> Void)?
     var onTitleChange: ((String) -> Void)?
+    var onRememberRoutingDecision: ((_ host: String, _ action: RoutingAction) -> Void)?
 
     func handleInputState(_ payload: [String: Any]) {
         let parsed = InputStatePayload(payload)

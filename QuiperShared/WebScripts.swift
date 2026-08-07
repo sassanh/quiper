@@ -25,6 +25,17 @@ enum WebScripts {
 
     // MARK: - Value-setter interceptor (document start)
 
+    /// Injects a `<style>` element with the engine's custom CSS at document end,
+    /// mirroring the macOS `WebViewManager` CSS injection.
+    static func makeCustomCSSInjectionScript(css: String) -> String {
+        """
+        const style = document.createElement('style');
+        style.textContent = `/* Custom CSS */
+        \(css)`;
+        document.head.appendChild(style);
+        """
+    }
+
     /// Intercepts programmatic `value` writes on textarea/input so the tracker can
     /// react to framework-managed composers that bypass native events.
     static func makeValueSetterInterceptorScript() -> WKUserScript {

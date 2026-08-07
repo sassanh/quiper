@@ -700,6 +700,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Quiper;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Quiper needs microphone access so websites you use can capture audio.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Quiper needs camera access so websites you use can capture video.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -735,6 +737,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Quiper;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Quiper needs microphone access so websites you use can capture audio.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Quiper needs camera access so websites you use can capture video.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

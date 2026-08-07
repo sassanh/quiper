@@ -99,6 +99,23 @@ enum ActionScripts {
         }
     }
 
+    /// The default custom CSS a service ships with, if its template provides one.
+    static func defaultCustomCSS(for service: Service) -> String? {
+        guard let template = defaultServiceTemplate(for: service),
+              let css = template.customCSS?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !css.isEmpty else {
+            return nil
+        }
+        return css
+    }
+
+    /// The bundled default custom CSS when the engine tracks the template's value,
+    /// mirroring macOS `Settings.customCSS(for:)` resolution.
+    static func syncedCustomCSS(for service: Service) -> String? {
+        guard service.templateCustomCSSSync else { return nil }
+        return defaultCustomCSS(for: service)
+    }
+
     /// The default script an action ships with for a service, if a template provides one.
     static func defaultScript(for service: Service, action: CustomAction) -> String? {
         guard let template = defaultServiceTemplate(for: service),

@@ -927,13 +927,7 @@ final class WebViewManager: NSObject {
 
         let cssToInject = Settings.shared.customCSS(for: service)
         if !cssToInject.isEmpty {
-            let cssScript = """
-            const style = document.createElement('style');
-            style.textContent = `/* Custom CSS */
-            \(cssToInject)`;
-            document.head.appendChild(style);
-            """
-            let userScript = WKUserScript(source: cssScript, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+            let userScript = WKUserScript(source: WebScripts.makeCustomCSSInjectionScript(css: cssToInject), injectionTime: .atDocumentEnd, forMainFrameOnly: false)
             userContentController.addUserScript(userScript)
         }
 
@@ -1275,60 +1269,6 @@ final class WebViewManager: NSObject {
         notificationBridges.removeValue(forKey: identifier)
     }
     
-    enum DomainRoutingAction {
-        case openHere
-        case openNewWindow
-        case openExternal
-        case showPrompt
-        case cancel
-    }
-
-    private func matchesPattern(targetString: String, pattern: String) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return false }
-        let range = NSRange(location: 0, length: targetString.utf16.count)
-        return regex.firstMatch(in: targetString, options: [], range: range) != nil
-    }
-
-    private func determineRouting(for url: URL, service: Service, serviceURL: URL) -> DomainRoutingAction {
-        // 1. Same-origin check (Absolute priority: always open here)
-        let targetHost = url.host?.lowercased()
-        let serviceHost = serviceURL.host?.lowercased()
-        if let tHost = targetHost, let sHost = serviceHost {
-            if tHost == sHost {
-                return .openHere
-            }
-            let rootServiceHost = sHost.hasPrefix("www.") ? String(sHost.dropFirst(4)) : sHost
-            if tHost == rootServiceHost || tHost.hasSuffix("." + rootServiceHost) {
-                return .openHere
-            }
-        } else if url.scheme?.lowercased() == serviceURL.scheme?.lowercased() && (url.isFileURL || url.scheme == "data") {
-            return .openHere
-        } else if url.isFileURL && ProcessInfo.processInfo.arguments.contains("--uitesting") {
-            return .openHere
-        }
-        
-        let targetString = url.absoluteString
-        
-        // 2. Evaluate top-to-bottom routing rules
-        for rule in service.routingRules {
-            let pattern = rule.pattern.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !pattern.isEmpty && matchesPattern(targetString: targetString, pattern: pattern) {
-                switch rule.action {
-                case .internalStay:
-                    return .openHere
-                case .popup:
-                    return .openNewWindow
-                case .prompt:
-                    return .showPrompt
-                case .external:
-                    return .openExternal
-                }
-            }
-        }
-        
-        return .openExternal
-    }
-
     @MainActor
     private func openInPopup(url: URL, service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow) {
         configuration.preferences.isElementFullscreenEnabled = true
@@ -1351,7 +1291,7 @@ final class WebViewManager: NSObject {
     }
 
     @MainActor
-    private func presentRoutingPrompt(for url: URL, service: Service, webView: WKWebView, completion: @escaping @MainActor @Sendable (DomainRoutingAction, Bool) -> Void) {
+    private func presentRoutingPrompt(for url: URL, service: Service, webView: WKWebView, completion: @escaping @MainActor @Sendable (RoutingResolver.Decision, Bool) -> Void) {
         guard let window = webView.window else {
             completion(.openExternal, false)
             return
@@ -1372,7 +1312,7 @@ final class WebViewManager: NSObject {
         alert.accessoryView = checkbox
         
         alert.beginSheetModal(for: window) { response in
-            let action: DomainRoutingAction
+            let action: RoutingResolver.Decision
             switch response {
             case .alertFirstButtonReturn:
                 action = .openHere
@@ -1389,17 +1329,10 @@ final class WebViewManager: NSObject {
     }
 
     @MainActor
-    private func rememberDecision(for host: String, action: DomainRoutingAction, service: Service) {
+    private func rememberDecision(for host: String, action: RoutingResolver.Decision, service: Service) {
         guard !host.isEmpty else { return }
         
         guard let index = Settings.shared.services.firstIndex(where: { $0.id == service.id }) else { return }
-        
-        var updated = Settings.shared.services[index]
-        
-        // Remove any existing rule matching this exact host (case-insensitive)
-        updated.routingRules.removeAll { rule in
-            rule.pattern.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == host.lowercased()
-        }
         
         let routingAction: RoutingAction
         switch action {
@@ -1413,10 +1346,7 @@ final class WebViewManager: NSObject {
             return
         }
         
-        let newRule = RoutingRule(pattern: host, action: routingAction)
-        updated.routingRules.insert(newRule, at: 0) // Insert at top of list
-        
-        Settings.shared.services[index] = updated
+        Settings.shared.services[index] = RoutingResolver.applyingRememberedRule(host: host, action: routingAction, to: Settings.shared.services[index])
         Settings.shared.saveSettings()
     }
     
@@ -1643,7 +1573,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         }
         
         let optionPressed = navigationAction.modifierFlags.contains(.option)
-        var action = determineRouting(for: url, service: service, serviceURL: serviceURL)
+        var action = RoutingResolver.route(for: url, service: service, serviceURL: serviceURL)
         if action == .openExternal && optionPressed {
             action = .showPrompt
         }
@@ -1761,7 +1691,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         }
 
         let optionPressed = navigationAction.modifierFlags.contains(.option)
-        var action = determineRouting(for: url, service: service, serviceURL: serviceURL)
+        var action = RoutingResolver.route(for: url, service: service, serviceURL: serviceURL)
         if action == .openExternal && optionPressed {
             action = .showPrompt
         }

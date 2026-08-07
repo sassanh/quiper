@@ -1,13 +1,13 @@
 import AVFoundation
 import WebKit
 
-/// Bridges website media-capture requests to macOS TCC (camera / microphone).
+/// Bridges website media-capture requests to the system camera / microphone
+/// permission (macOS TCC / iOS). Shared by both targets.
 ///
 /// WebKit's `requestMediaCapturePermissionFor` only covers the page-level grant.
 /// Without an explicit `AVCaptureDevice.requestAccess`, the system never prompts
 /// and capture fails silently for first-time use.
 enum MediaCapturePermission {
-    @available(macOS 12.0, *)
     static func ensureAccess(for type: WKMediaCaptureType) async -> Bool {
         switch type {
         case .camera:

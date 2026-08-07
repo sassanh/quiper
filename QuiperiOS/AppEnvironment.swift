@@ -42,6 +42,9 @@ final class AppEnvironment: ObservableObject {
         session.onTitleChange = { [weak self] title in
             self?.updateSessionTitle(for: serviceID, sessionIndex: sessionIndex, title: title)
         }
+        session.onRememberRoutingDecision = { [weak self] host, action in
+            self?.rememberRoutingDecision(host: host, action: action, serviceID: serviceID)
+        }
         var serviceMap = webSessions[serviceID] ?? [:]
         serviceMap[sessionIndex] = session
         webSessions[serviceID] = serviceMap
@@ -89,6 +92,15 @@ final class AppEnvironment: ObservableObject {
     func updateService(_ service: Service) {
         guard let index = services.firstIndex(where: { $0.id == service.id }) else { return }
         services[index] = service
+        save()
+    }
+
+    /// Persists a remembered routing choice for a host at the top of the engine's
+    /// routing rules, mirroring macOS `rememberDecision`.
+    func rememberRoutingDecision(host: String, action: RoutingAction, serviceID: UUID) {
+        guard !host.isEmpty,
+              let index = services.firstIndex(where: { $0.id == serviceID }) else { return }
+        services[index] = RoutingResolver.applyingRememberedRule(host: host, action: action, to: services[index])
         save()
     }
 

@@ -743,12 +743,7 @@ class Settings: ObservableObject {
     }
 
     func defaultCustomCSS(for service: Service) -> String? {
-        guard let template = defaultServiceTemplate(for: service),
-              let css = template.customCSS?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !css.isEmpty else {
-            return nil
-        }
-        return css
+        ActionScripts.defaultCustomCSS(for: service)
     }
 
     func isTemplatePromptInputSelector(_ service: Service) -> Bool {
@@ -781,9 +776,8 @@ class Settings: ObservableObject {
     }
 
     func customCSS(for service: Service) -> String {
-        if service.templateCustomCSSSync,
-           let defaultCSS = defaultCustomCSS(for: service) {
-            return defaultCSS
+        if let syncedCSS = ActionScripts.syncedCustomCSS(for: service) {
+            return syncedCSS
         }
         return CustomCSSStorage.loadCSS(
             serviceID: service.id,
