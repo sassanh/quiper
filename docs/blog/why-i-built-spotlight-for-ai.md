@@ -36,7 +36,7 @@ The same model applies across engines. Quiper includes templates for services su
 
 Their interfaces remain their own. I am not trying to make Gemini look like Claude, or a local `llama.cpp` frontend look like ChatGPT. I am trying to make the experience around those interfaces consistent: the same intent should be available through the same command, even when each service implements it differently.
 
-Quiper's four default custom actions are a small example. `⌘N` starts a new session. `⌘⇧N` starts a temporary or private session when the engine supports one. `⌘⇧S` shares the active thread, and `⌘⇧H` opens its history. Behind each shortcut is an engine-specific script because the underlying pages do not share a common DOM structure or API. Those scripts can be adjusted or replaced, but the keyboard vocabulary stays familiar when I switch engines.
+Quiper's five default custom actions are a small example. `⌘N` starts a new session. `⌘⇧N` starts a temporary or private session when the engine supports one. `⌘⇧S` shares the active thread, `⌘⇧H` opens its history, and `⌘,` opens the active engine's settings. Behind each shortcut is an engine-specific script because the underlying pages do not share a common DOM structure or API. Those scripts can be adjusted or replaced, but the keyboard vocabulary stays familiar when I switch engines.
 
 This matters because different tasks call for different tools. It also avoids turning the overlay itself into another AI platform. Quiper manages access and sessions; the provider still provides the service.
 
