@@ -88,10 +88,50 @@ struct SettingsView: View {
                     pendingEngineDeletion = environment.services[index]
                 }
             }
-            Button {
-                environment.addService(
-                    Service(name: "New Engine", url: "https://example.com", focus_selector: "")
+            let availableTemplates = environment.defaultServiceTemplates.filter { template in
+                !environment.services.contains {
+                    $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        == template.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                }
+            }
+            let cloudTemplates = availableTemplates.filter {
+                !DefaultEngineDefinitions.localTemplateNames.contains(
+                    $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 )
+            }
+            let localTemplates = availableTemplates.filter {
+                DefaultEngineDefinitions.localTemplateNames.contains(
+                    $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                )
+            }
+            Menu {
+                Button("Blank Engine") {
+                    environment.addService(
+                        Service(name: "New Engine", url: "https://example.com", focus_selector: "")
+                    )
+                }
+                if !cloudTemplates.isEmpty || !localTemplates.isEmpty {
+                    Divider()
+                    ForEach(cloudTemplates) { template in
+                        Button(template.name) {
+                            environment.addService(from: template)
+                        }
+                    }
+                    if !cloudTemplates.isEmpty && !localTemplates.isEmpty {
+                        Divider()
+                    }
+                    ForEach(localTemplates) { template in
+                        Button(template.name) {
+                            environment.addService(from: template)
+                        }
+                    }
+                    Divider()
+                    Button {
+                        environment.addAllServiceTemplates()
+                    } label: {
+                        Label("Add All Templates", systemImage: "plus.rectangle.on.rectangle")
+                    }
+                }
             } label: {
                 Label("Add Engine", systemImage: "plus")
             }
@@ -276,6 +316,28 @@ struct EngineEditView: View {
             } footer: {
                 Text("Rules decide how links are opened. They run from top to bottom and the first match wins; unmatched links open externally.")
             }
+            Section {
+                NavigationLink {
+                    CustomCSSEditView(service: $service)
+                } label: {
+                    HStack {
+                        Image(systemName: "paintpalette.fill")
+                        Text("Custom CSS")
+                        Spacer()
+                        if service.templateCustomCSSSync {
+                            Text("Latest Default")
+                                .foregroundStyle(.secondary)
+                        } else if let css = service.customCSS, !css.isEmpty {
+                            Text("Custom")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: {
+                Text("Styling")
+            } footer: {
+                Text("Inject custom CSS into this engine's pages to adjust colors, fonts, or hide unwanted UI, or follow Quiper's bundled stylesheet for the engine.")
+            }
         }
         .navigationTitle(service.name)
         .navigationBarBackButtonHidden(isDirty)
@@ -443,25 +505,48 @@ struct ActionScriptEditView: View {
     let action: CustomAction
     let service: Service
     @State private var code: String
-    @State private var originalCode: String
+    @State private var savedCode: String
+    @State private var isInSync: Bool
+    @State private var isTemplateBacked: Bool
 
     init(action: CustomAction, service: Service, environment: AppEnvironment) {
         self.action = action
         self.service = service
+        let defaultScript = ActionScripts.defaultScript(for: service, action: action)
         let initial = environment.actionScript(for: service, action: action)
+        _isTemplateBacked = State(initialValue: defaultScript != nil)
+        _isInSync = State(initialValue: defaultScript != nil && service.templateActionScriptSync[action.id] == true)
         _code = State(initialValue: initial)
-        _originalCode = State(initialValue: initial)
+        _savedCode = State(initialValue: initial)
+    }
+
+    private var isDirty: Bool {
+        !isInSync && code != savedCode
     }
 
     var body: some View {
         Form {
+            if isTemplateBacked {
+                Section {
+                    LatestDefaultToggle(
+                        isInSync: isInSync,
+                        syncedDescription: "This action runs Quiper's bundled template script and updates automatically.",
+                        customDescription: "This action uses a custom editable script.",
+                        setInSync: toggleSync
+                    )
+                } header: {
+                    Text("Source")
+                }
+            }
             Section {
-                CodeEditorView(code: $code, language: .javaScript)
+                CodeEditorView(code: $code, language: .javaScript, isReadOnly: isInSync)
                     .frame(minHeight: 300)
             } header: {
                 Text("Script")
             } footer: {
-                Text("JavaScript executed in \(service.name) when this action runs.")
+                Text(isInSync
+                     ? "This action runs Quiper's bundled template script and updates automatically. Disable latest default to edit it."
+                     : "JavaScript executed in \(service.name) when this action runs.")
             }
         }
         .navigationTitle("\(action.name.isEmpty ? "Action" : action.name) · \(service.name)")
@@ -473,9 +558,17 @@ struct ActionScriptEditView: View {
                     dismiss()
                 }
                 .font(.body.weight(.semibold))
-                .disabled(code == originalCode)
+                .disabled(!isDirty)
             }
         }
+    }
+
+    private func toggleSync(_ newValue: Bool) {
+        guard let defaultScript = ActionScripts.defaultScript(for: service, action: action) else { return }
+        environment.setTemplateActionScriptSync(newValue, serviceID: service.id, actionID: action.id)
+        isInSync = newValue
+        code = defaultScript
+        savedCode = defaultScript
     }
 }
 
@@ -517,5 +610,68 @@ struct RoutingRulesEditView: View {
                 EditButton()
             }
         }
+    }
+}
+
+struct CustomCSSEditView: View {
+    @Binding var service: Service
+    @State private var code: String
+    @State private var isInSync: Bool
+    @State private var isTemplateBacked: Bool
+
+    init(service: Binding<Service>) {
+        _service = service
+        let defaultCSS = ActionScripts.defaultCustomCSS(for: service.wrappedValue)
+        _isTemplateBacked = State(initialValue: defaultCSS != nil)
+        _isInSync = State(initialValue: defaultCSS != nil && service.wrappedValue.templateCustomCSSSync)
+        _code = State(initialValue: ActionScripts.resolvedCustomCSS(for: service.wrappedValue))
+    }
+
+    var body: some View {
+        Form {
+            if isTemplateBacked {
+                Section {
+                    LatestDefaultToggle(
+                        isInSync: isInSync,
+                        syncedDescription: "This stylesheet follows Quiper's bundled engine template and updates automatically.",
+                        customDescription: "This engine uses a custom editable stylesheet.",
+                        setInSync: toggleSync
+                    )
+                } header: {
+                    Text("Source")
+                } footer: {
+                    Text("Use Latest Default keeps this engine's stylesheet in sync with Quiper's bundled template. Disable it to edit a custom stylesheet.")
+                }
+            }
+            Section {
+                CodeEditorView(code: $code, language: .css, isReadOnly: isInSync)
+                    .frame(minHeight: 300)
+            } header: {
+                Text("Custom CSS")
+            } footer: {
+                Text(isInSync
+                     ? "This engine follows Quiper's bundled stylesheet and cannot be edited."
+                     : "Custom CSS injected into this engine's pages to adjust colors, fonts, or hide unwanted UI.")
+            }
+        }
+        .navigationTitle("Custom CSS")
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: code) { _, newValue in
+            guard !isInSync else { return }
+            service.customCSS = newValue
+            service.templateCustomCSSSync = false
+        }
+    }
+
+    private func toggleSync(_ newValue: Bool) {
+        guard let defaultCSS = ActionScripts.defaultCustomCSS(for: service) else { return }
+        isInSync = newValue
+        service.templateCustomCSSSync = newValue
+        if newValue {
+            service.customCSS = nil
+        } else {
+            service.customCSS = defaultCSS
+        }
+        code = defaultCSS
     }
 }

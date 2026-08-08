@@ -10,6 +10,11 @@ enum DefaultEngineDefinitions {
     static let historyActionID = UUID()
     static let openSettingsActionID = UUID()
 
+    /// Names of bundled templates that run locally on the user's machine rather
+    /// than as cloud services. Used to group the Add Engine menu into cloud and
+    /// local templates, matching macOS.
+    static let localTemplateNames: Set<String> = ["open webui", "llama.cpp", "omlx", "openclaw"]
+
     static let actionScriptHelpers = """
     function waitFor(check, timeoutMs = 1000) {
       return new Promise((resolve, reject) => {

@@ -44,15 +44,18 @@ struct EngineBrowserView: View {
                     if isFindBarVisible {
                         findBar
                             .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottom)))
+                            .zIndex(ringSelection != nil ? 40 : 0)
                     } else {
                         bottomControls(landscape: landscape)
                             .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottom)))
+                            .zIndex(ringSelection != nil ? 40 : 0)
                     }
                 }
                 if isMinimized {
                     island
                         .padding(.bottom, islandBottomPadding(bottomInset: geo.safeAreaInsets.bottom))
                         .transition(.scale(scale: 0.6, anchor: .bottom).combined(with: .opacity))
+                        .zIndex(ringSelection != nil ? 40 : 0)
                 }
                 if isRingVisible {
                     ringOverlay
@@ -495,6 +498,13 @@ struct EngineBrowserView: View {
         return TabIdentifier(serviceID: service.id, sessionIndex: environment.activeSessionIndex(for: service.id))
     }
 
+    /// The tab the bottom chrome presents as active while a ring selection zooms
+    /// in, so the engine and session buttons reflect the target immediately at
+    /// selection time instead of only after the zoom animation completes.
+    private var chromeActiveTab: TabIdentifier? {
+        ringSelection?.tab ?? currentActiveTab
+    }
+
     /// When the selected tab is the live page itself, capture it fresh so the
     /// animation morphs the exact on-screen state instead of a stored thumbnail.
     private func refreshSelectionThumbnailIfNeeded(tab: TabIdentifier) {
@@ -870,12 +880,15 @@ struct EngineBrowserView: View {
     }
 
     private var engineSelectorButton: some View {
-        Button {
+        let service = chromeActiveTab.flatMap { tab in
+            environment.services.first { $0.id == tab.serviceID }
+        }
+        return Button {
             showingEnginePicker = true
         } label: {
             HStack(spacing: 8) {
-                EngineIconView(service: environment.activeService, size: 18)
-                Text(environment.activeService?.name ?? "Select Engine")
+                EngineIconView(service: service, size: 18)
+                Text(service?.name ?? "Select Engine")
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
@@ -890,12 +903,14 @@ struct EngineBrowserView: View {
     }
 
     private func sessionSelector(flexible: Bool) -> some View {
-        HStack(spacing: 6) {
+        let serviceID = chromeActiveTab?.serviceID ?? activeServiceID
+        let activeSlot = chromeActiveTab?.sessionIndex ?? activeSessionIndex
+        return HStack(spacing: 6) {
             ForEach(SessionSlots.range, id: \.self) { slot in
-                let isActive = hasActiveSession && slot == activeSessionIndex
-                let isLoaded = environment.isSessionLoaded(for: activeServiceID, slot: slot)
+                let isActive = hasActiveSession && slot == activeSlot
+                let isLoaded = environment.isSessionLoaded(for: serviceID, slot: slot)
                 Button {
-                    environment.setActiveSession(for: activeServiceID, index: slot)
+                    environment.setActiveSession(for: serviceID, index: slot)
                 } label: {
                     Text(SessionSlots.label(for: slot))
                         .font(.system(size: 13, weight: isActive ? .semibold : .regular))

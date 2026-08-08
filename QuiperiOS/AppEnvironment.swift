@@ -150,6 +150,53 @@ final class AppEnvironment: ObservableObject {
         enrichMissingIconsIfNeeded()
     }
 
+    var defaultServiceTemplates: [Service] {
+        DefaultEngineDefinitions.definitions
+    }
+
+    /// Mirrors macOS `addService(from:enrichIcons:)`: copies a bundled template,
+    /// seeds the template-sync flags, and pre-wires default action scripts for
+    /// every custom action the template provides.
+    func addService(from template: Service, enrichIcons: Bool = true) {
+        var service = template
+        service.id = UUID()
+        service.actionScripts = [:]
+        if ActionScripts.defaultCustomCSS(for: service) != nil {
+            service.templateCustomCSSSync = true
+            service.customCSS = nil
+        }
+        applyDefaultScripts(from: template, to: &service)
+        services.append(service)
+        ensureSessions(for: service.id)
+        save()
+        if enrichIcons {
+            enrichMissingIconsIfNeeded()
+        }
+    }
+
+    func addAllServiceTemplates() {
+        var knownNames = Set(services.map { $0.name.lowercased() })
+        for template in defaultServiceTemplates {
+            let key = template.name.lowercased()
+            guard !knownNames.contains(key) else { continue }
+            addService(from: template, enrichIcons: false)
+            knownNames.insert(key)
+        }
+        enrichMissingIconsIfNeeded()
+    }
+
+    private func applyDefaultScripts(from template: Service, to service: inout Service) {
+        for action in customActions {
+            guard let defaultID = ActionScripts.defaultActionID(matching: action.name),
+                  let templateScript = template.actionScripts[defaultID],
+                  !templateScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                continue
+            }
+            service.templateActionScriptSync[action.id] = true
+            service.actionScripts.removeValue(forKey: action.id)
+        }
+    }
+
     private func enrichMissingIconsIfNeeded() {
         var localUpdated = false
         for idx in 0..<services.count {
@@ -406,6 +453,47 @@ final class AppEnvironment: ObservableObject {
         guard let serviceIndex = services.firstIndex(where: { $0.id == serviceID }) else { return }
         services[serviceIndex].templateActionScriptSync[actionID] = false
         services[serviceIndex].actionScripts[actionID] = script
+        save()
+    }
+
+    /// Mirrors macOS `setTemplateActionScriptSync`: turning on follows the bundled
+    /// template script (dropping the stored custom one), turning off hands control
+    /// back, seeding the custom script with the default when none exists.
+    func setTemplateActionScriptSync(_ isInSync: Bool, serviceID: UUID, actionID: UUID) {
+        guard let serviceIndex = services.firstIndex(where: { $0.id == serviceID }),
+              let action = customActions.first(where: { $0.id == actionID }),
+              let defaultScript = ActionScripts.defaultScript(for: services[serviceIndex], action: action) else {
+            return
+        }
+
+        services[serviceIndex].templateActionScriptSync[actionID] = isInSync
+        if isInSync {
+            services[serviceIndex].actionScripts.removeValue(forKey: actionID)
+        } else {
+            let existingScript = services[serviceIndex].actionScripts[actionID]?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if existingScript.isEmpty {
+                services[serviceIndex].actionScripts[actionID] = defaultScript
+            }
+        }
+        save()
+    }
+
+    /// Mirrors macOS `setTemplateCustomCSSSync`: turning on follows the bundled
+    /// template stylesheet (dropping the stored custom one), turning off hands
+    /// control back, seeding the stylesheet with the default.
+    func setTemplateCustomCSSSync(_ isInSync: Bool, serviceID: UUID) {
+        guard let serviceIndex = services.firstIndex(where: { $0.id == serviceID }),
+              let defaultCSS = ActionScripts.defaultCustomCSS(for: services[serviceIndex]) else {
+            return
+        }
+
+        services[serviceIndex].templateCustomCSSSync = isInSync
+        if isInSync {
+            services[serviceIndex].customCSS = nil
+        } else {
+            services[serviceIndex].customCSS = defaultCSS
+        }
         save()
     }
 

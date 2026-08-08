@@ -21,6 +21,8 @@
 - **iOS Tab Switcher**: Double-tapping a page on iOS opens the recently active tabs ring—the same MRU switcher as the Mac's Tab History view. A quick double-tap jumps straight to the most recent tab; holding your finger down keeps the ring open so you can move to any recent tab, releasing over a card to switch with an expanding selection animation, or releasing outside to cancel. The second tap is intercepted before it reaches the page, so opening the ring never selects text or clicks a link. When the ring has more entries than fit on screen, holding your finger near the top or bottom edge scrolls through them. When the ring is set to two entries, a quick double-tap switches tabs directly with no ring shown.
 - **iOS JavaScript Alert Cancel**: Website `alert()` dialogs on iOS now include a Cancel button alongside OK, so they can be dismissed the same way as other confirmations instead of requiring a tap on OK.
 - **iOS Code Editor**: The action script editor on iOS now uses the same CodeMirror code editor as the Mac app, with JavaScript syntax highlighting, line numbers, code folding, and Quiper helper autocompletion, so custom action scripts are as easy to write on iPhone and iPad as they are on the Mac.
+- **iOS Use Latest Default**: Action scripts and custom stylesheets on iOS can now follow Quiper's bundled engine templates. Turning on Use Latest Default keeps the script or stylesheet in sync with Quiper's version and locks the editor; turning it off hands control back, seeding your editable copy from the template.
+- **iOS Add Engine from Templates**: The Add Engine button on iOS now offers a blank engine, Quiper's bundled engine templates—cloud and local-run engines grouped separately—or adding every remaining template at once, matching the Mac app's Add Service menu.
 
 ### Changed
 
@@ -33,6 +35,7 @@
 
 - **Microphone and Camera Permission Prompts**: When a website requests microphone or camera access, Quiper now asks macOS for the matching system permission and only grants the page if the user allows it. Hardened-runtime camera and audio-input entitlements are restored so notarized builds can complete capture after approval.
 - **iOS Delete Confirmations Show Cancel**: The delete and discard-changes confirmations on iOS now present a proper Cancel option alongside the destructive action. On iOS 26 the system hides Cancel buttons in action sheets, so these confirmations use alerts instead, where both buttons are always visible.
+- **iOS Bottom Bar During Tab Switch**: The bottom bar now appears the moment an engine is selected in the tab switcher, before the zoom transition begins, instead of only after it finishes. Its engine name and active session slot reflect the selected tab immediately, so the bar shows the tab that is coming into view rather than the one being left.
 
 ## [4.6.2] - 2026-08-02
 

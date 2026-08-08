@@ -51,7 +51,7 @@ final class WebSessionCoordinator: NSObject {
     /// Mirrors the macOS `customCSS(for:)` resolution: a synced template uses the
     /// bundled default, otherwise the engine's own stored CSS.
     private static func resolvedCustomCSS(for service: Service) -> String {
-        ActionScripts.syncedCustomCSS(for: service) ?? service.customCSS ?? ""
+        ActionScripts.resolvedCustomCSS(for: service)
     }
 
     func installInputTracker() {}

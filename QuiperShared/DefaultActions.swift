@@ -116,6 +116,16 @@ enum ActionScripts {
         return defaultCustomCSS(for: service)
     }
 
+    /// The custom CSS actually applied to a service's pages, mirroring macOS
+    /// `Settings.customCSS(for:)`: a synced template wins, otherwise the engine's
+    /// own stored stylesheet.
+    static func resolvedCustomCSS(for service: Service) -> String {
+        if let syncedCSS = syncedCustomCSS(for: service) {
+            return syncedCSS
+        }
+        return service.customCSS ?? ""
+    }
+
     /// The default script an action ships with for a service, if a template provides one.
     static func defaultScript(for service: Service, action: CustomAction) -> String? {
         guard let template = defaultServiceTemplate(for: service),

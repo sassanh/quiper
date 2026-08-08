@@ -497,7 +497,7 @@ struct ServicesSettingsView: View {
     @ObservedObject private var settings = Settings.shared
     @State private var selectedServiceID: Service.ID?
     @State private var pendingServiceDeletion: PendingServiceDeletion?
-    private let localTemplateNames: Set<String> = ["open webui", "llama.cpp", "omlx", "openclaw"]
+    private let localTemplateNames: Set<String> = DefaultEngineDefinitions.localTemplateNames
     
     init(appController: AppController?, initialServiceID: UUID?) {
         self.appController = appController
@@ -2321,36 +2321,6 @@ private struct PendingServiceDeletion: Identifiable {
     let id = UUID()
     let ids: [Service.ID]
     let title: String
-}
-
-private struct LatestDefaultToggle: View {
-    var isInSync: Bool
-    var syncedDescription: String
-    var customDescription: String
-    var setInSync: (Bool) -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Use Latest Default")
-                    .font(.body)
-                Text(isInSync ? syncedDescription : customDescription)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2, reservesSpace: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Toggle("", isOn: Binding(
-                get: { isInSync },
-                set: { setInSync($0) }
-            ))
-            .toggleStyle(.switch)
-            .labelsHidden()
-            .frame(width: 112, height: 32, alignment: .topTrailing)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 }
 
 private struct ActionScriptEditor: View {
