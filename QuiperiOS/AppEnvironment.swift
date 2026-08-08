@@ -22,6 +22,8 @@ final class AppEnvironment: ObservableObject {
     private(set) var isRingOverlayActive = false
 
     private let settingsURL: URL
+    // Keep fields owned by the other platform intact when iOS saves shared settings.
+    private var persistedSettingsSnapshot: PersistedSettings?
     private var webSessions: [UUID: [Int: WebViewSession]] = [:]
     private(set) var sessionThumbnails: [TabIdentifier: UIImage] = [:]
     @Published private(set) var thumbnailsRevision = 0
@@ -687,6 +689,7 @@ final class AppEnvironment: ObservableObject {
     private func load() {
         guard let data = try? Data(contentsOf: settingsURL),
               let persisted = try? JSONDecoder().decode(PersistedSettings.self, from: data) else {
+            persistedSettingsSnapshot = nil
             services = DefaultEngineDefinitions.definitions
             customActions = DefaultActions.defaults
             persistedTabState.activeServiceID = services.first?.id
@@ -697,6 +700,7 @@ final class AppEnvironment: ObservableObject {
             return
         }
 
+        persistedSettingsSnapshot = persisted
         services = persisted.services
         customActions = persisted.customActions ?? []
         if let colorScheme = persisted.colorScheme {
@@ -787,24 +791,28 @@ final class AppEnvironment: ObservableObject {
     }
 
     func save() {
-        let payload = PersistedSettings(
-            services: services,
-            customActions: customActions,
-            colorScheme: colorScheme,
-            automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
-            autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation,
-            shouldPurgeDanglingWebData: shouldPurgeDanglingWebData,
-            tabSurvivalPolicy: tabSurvivalPolicy,
-            persistedTabState: tabSurvivalPolicy == .never ? nil : persistedTabState,
-            enablePromptHistory: enablePromptHistory,
-            promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
-            promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
-            promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
-            promptHistoryLimit: promptHistoryLimit,
-            tabNavigationRingSize: tabNavigationRingSize,
-            version: 1
-        )
+        var payload = persistedSettingsSnapshot ?? PersistedSettings(services: services)
+        payload.services = services
+        payload.customActions = customActions
+        payload.colorScheme = colorScheme
+        payload.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
+        payload.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
+        payload.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
+        payload.tabSurvivalPolicy = tabSurvivalPolicy
+        payload.persistedTabState = tabSurvivalPolicy == .never ? nil : persistedTabState
+        payload.enablePromptHistory = enablePromptHistory
+        payload.promptHistoryRecordOnSubmit = promptHistoryRecordOnSubmit
+        payload.promptHistoryRecordOnCmdBackspace = promptHistoryRecordOnCmdBackspace
+        payload.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear
+        payload.promptHistoryLimit = promptHistoryLimit
+        payload.tabNavigationRingSize = tabNavigationRingSize
+        payload.version = 1
         guard let data = try? JSONEncoder().encode(payload) else { return }
-        try? data.write(to: settingsURL, options: .atomic)
+        do {
+            try data.write(to: settingsURL, options: .atomic)
+        } catch {
+            return
+        }
+        persistedSettingsSnapshot = payload
     }
 }
