@@ -762,20 +762,25 @@ final class AppEnvironment: ObservableObject {
         }
     }
 
-    /// Mirrors the macOS `restoreTabsState`: re-instantiates every persisted open
-    /// tab with its saved URL, loading only the active session immediately.
+    /// Restores only the active persisted session. Other tabs remain represented
+    /// by `PersistedTabState` and are instantiated when the user selects them.
     private func restoreTabsState() {
-        for tab in persistedTabState.restoredTabs(
-            services: services,
-            activeIndexProvider: { activeSessionIndex(for: $0) }
-        ) {
-            _ = webViewSession(
-                for: tab.serviceID,
-                sessionIndex: tab.sessionIndex,
-                initialURL: tab.url,
-                loadImmediately: tab.loadImmediately
-            )
-        }
+        guard let serviceID = persistedTabState.activeServiceID,
+              let sessions = persistedTabState.openTabs[serviceID],
+              !sessions.isEmpty else { return }
+        let preferredIndex = activeSessionIndex(for: serviceID)
+        let sessionIndex = sessions[preferredIndex] != nil
+            ? preferredIndex
+            : sessions.keys.min() ?? preferredIndex
+        guard let urlString = sessions[sessionIndex],
+              !urlString.isEmpty,
+              let url = URL(string: urlString) else { return }
+        _ = webViewSession(
+            for: serviceID,
+            sessionIndex: sessionIndex,
+            initialURL: url,
+            loadImmediately: true
+        )
     }
 
     func save() {
