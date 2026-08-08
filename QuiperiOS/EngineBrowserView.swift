@@ -11,6 +11,7 @@ struct EngineBrowserView: View {
     @State private var keyboardHeight: CGFloat = 0
     @State private var isScrollCollapsed = false
     @State private var isFindBarVisible = false
+    @State private var displayedFindStatus: String?
     @FocusState private var isFindFieldFocused: Bool
 
     @State private var isRingVisible = false
@@ -70,6 +71,10 @@ struct EngineBrowserView: View {
         }
         .ignoresSafeArea(isFindBarVisible ? [] : .keyboard)
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
+            guard !environment.isRingOverlayActive else {
+                dismissKeyboard()
+                return
+            }
             let height = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect)?.height ?? 0
             withAnimation(islandAnimation) {
                 isKeyboardVisible = true
@@ -86,6 +91,9 @@ struct EngineBrowserView: View {
             withAnimation(islandAnimation) {
                 isScrollCollapsed = collapsed
             }
+        }
+        .onReceive(activeSession?.$findStatusText.eraseToAnyPublisher() ?? Just<String?>(nil).eraseToAnyPublisher()) { status in
+            displayedFindStatus = status
         }
         .onChange(of: activeSession?.id) {
             isScrollCollapsed = false
@@ -196,6 +204,16 @@ struct EngineBrowserView: View {
         isFindBarVisible = true
         activeSession?.expandBar()
         isFindFieldFocused = true
+        Task { @MainActor in
+            await Task.yield()
+            guard isFindBarVisible, isFindFieldFocused else { return }
+            UIApplication.shared.sendAction(
+                #selector(UIResponderStandardEditActions.selectAll(_:)),
+                to: nil,
+                from: nil,
+                for: nil
+            )
+        }
     }
 
     private func closeFindBar() {
@@ -238,6 +256,7 @@ struct EngineBrowserView: View {
         let items = environment.navigationRingItems()
         guard items.count > 1 else { return }
         guard environment.tabNavigationRingSize > 2 else { return }
+        environment.setRingOverlayActive(true)
         isRingPresentationPending = true
         activeSession?.suspendWebViewInteraction()
         Task { @MainActor [self] in
@@ -262,6 +281,7 @@ struct EngineBrowserView: View {
         dismissKeyboard()
         let items = environment.navigationRingItems()
         guard items.count > 1 else { return }
+        environment.setRingOverlayActive(true)
         presentRing(items: items, highlighted: items[1])
         activeSession?.suspendWebViewInteraction()
     }
@@ -294,6 +314,7 @@ struct EngineBrowserView: View {
             isRingPresentationPending = false
             isRingQuickEndPending = false
             activeSession?.resumeWebViewInteraction()
+            environment.setRingOverlayActive(false)
             return
         }
         guard isRingVisible else {
@@ -424,6 +445,7 @@ struct EngineBrowserView: View {
                 self.ringSelectionProgress = 0
             }
             self.isRingSelectionAnimating = false
+            self.environment.setRingOverlayActive(false)
         }
     }
 
@@ -490,6 +512,7 @@ struct EngineBrowserView: View {
             ringSelection = nil
             ringSelectionProgress = 0
             unmountMountedTarget()
+            environment.setRingOverlayActive(false)
         }
     }
 
@@ -761,7 +784,7 @@ struct EngineBrowserView: View {
     private var findBar: some View {
         HStack(spacing: 10) {
             findField
-            if let session = activeSession, let status = session.findStatusText {
+            if let status = displayedFindStatus {
                 Text(status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -921,12 +944,14 @@ struct EngineBrowserView: View {
                         )
                         .frame(height: 30)
                         .foregroundStyle(segmentForeground(isActive: isActive, isLoaded: isLoaded))
-                        .glassIsland(
-                            in: RoundedRectangle(cornerRadius: 8),
-                            tint: isActive ? Color.accentColor : nil,
-                            interactive: true
+                        .background(
+                            isActive ? Color.accentColor : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 8)
                         )
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
                 .contextMenu {
                     Button("Close Session", role: .destructive) {
                         environment.closeSession(for: activeServiceID, at: slot)
@@ -936,6 +961,8 @@ struct EngineBrowserView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .padding(.vertical, 5)
+        .glassIsland(in: RoundedRectangle(cornerRadius: 14), interactive: true)
     }
 
     private func segmentForeground(isActive: Bool, isLoaded: Bool) -> Color {

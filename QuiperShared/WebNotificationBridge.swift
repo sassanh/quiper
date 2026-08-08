@@ -14,7 +14,7 @@ final class WebNotificationBridge: NSObject {
     private weak var webView: WKWebView?
     private let handlerProxy = WeakScriptMessageHandler()
     private let serviceID: UUID
-    private let serviceName: String
+    private var serviceName: String
     private let sessionIndex: Int
 
     init(webView: WKWebView, serviceID: UUID, serviceName: String, sessionIndex: Int) {
@@ -46,6 +46,18 @@ final class WebNotificationBridge: NSObject {
     func invalidate() {
         guard let controller = webView?.configuration.userContentController else { return }
         controller.removeScriptMessageHandler(forName: Self.handlerName)
+    }
+
+    /// Reinstalls the bridge after a coordinator rebuilds the page's user scripts.
+    /// The same proxy is retained so pending permission requests remain associated
+    /// with this bridge instance.
+    func reinstall() {
+        invalidate()
+        installBridge()
+    }
+
+    func updateServiceName(_ name: String) {
+        serviceName = name
     }
 
     private func installBridge() {

@@ -52,6 +52,81 @@ enum WebScripts {
         """
     }
 
+    /// Counts visible-text occurrences for the iOS native find UI. WebKit's
+    /// native find API performs the selection and scrolling but does not expose
+    /// a total, so this supplies the denominator for the status label.
+    static func makeFindMatchCountScript(search: String) -> String {
+        """
+        (() => {
+            const root = document.body || document.documentElement;
+            const needle = "\(search)".toLocaleLowerCase();
+            if (!root || !needle) return 0;
+            const text = (root.innerText || root.textContent || "").toLocaleLowerCase();
+            let total = 0;
+            let offset = 0;
+            while ((offset = text.indexOf(needle, offset)) !== -1) {
+                total += 1;
+                offset += Math.max(needle.length, 1);
+            }
+            return total;
+        })();
+        """
+    }
+
+    /// Centers WebKit's selected find result. If the native find selection is
+    /// not exposed through `window.getSelection()`, falls back to the indexed
+    /// visible-text occurrence so pages with nested scrollers still move.
+    static func makeScrollToFindMatchScript(search: String, index: Int) -> String {
+        """
+        (() => {
+            const root = document.body || document.documentElement;
+            const needle = "\(search)".toLocaleLowerCase();
+            const targetIndex = \(index);
+            if (!root || !needle || targetIndex < 1) return false;
+
+            const scrollNode = (node) => {
+                const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+                if (!element?.scrollIntoView) return false;
+                element.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+                return true;
+            };
+
+            const selection = window.getSelection();
+            if (selection?.rangeCount && !selection.isCollapsed) {
+                const range = selection.getRangeAt(0);
+                if (scrollNode(range.startContainer)) return true;
+            }
+
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+                acceptNode(node) {
+                    const parent = node.parentElement;
+                    if (!parent || !node.nodeValue) return NodeFilter.FILTER_REJECT;
+                    if (["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName)) {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    const style = getComputedStyle(parent);
+                    if (style.display === "none" || style.visibility === "hidden") {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+            });
+            let matchIndex = 0;
+            let node;
+            while ((node = walker.nextNode())) {
+                const text = node.nodeValue.toLocaleLowerCase();
+                let offset = 0;
+                while ((offset = text.indexOf(needle, offset)) !== -1) {
+                    matchIndex += 1;
+                    if (matchIndex === targetIndex) return scrollNode(node);
+                    offset += Math.max(needle.length, 1);
+                }
+            }
+            return false;
+        })();
+        """
+    }
+
     /// Finds the next (or previous) occurrence of `search` in the page and returns
     /// `{ match, current, total }`. Identical to the macOS `FindBarViewController`
     /// find script. `search` must already be JavaScript-escaped.

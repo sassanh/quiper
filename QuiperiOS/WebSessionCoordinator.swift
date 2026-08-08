@@ -5,10 +5,11 @@ import WebKit
 @MainActor
 final class WebSessionCoordinator: NSObject {
     private weak var webView: WKWebView?
-    private let service: Service
+    private var service: Service
     private let sessionIndex: Int
     private var notificationBridge: WebNotificationBridge?
     private var userApprovedURLs = Set<URL>()
+    private var keyboardSuppressed = false
 
     var onInputState: (([String: Any]) -> Void)?
     var onTitle: ((String) -> Void)?
@@ -56,10 +57,54 @@ final class WebSessionCoordinator: NSObject {
 
     func installInputTracker() {}
 
+    func setKeyboardSuppressed(_ suppressed: Bool) {
+        keyboardSuppressed = suppressed
+        guard suppressed, let webView else { return }
+        webView.endEditing(true)
+        webView.resignFirstResponder()
+        webView.evaluateJavaScript(
+            "document.activeElement?.blur?.();",
+            completionHandler: nil
+        )
+    }
+
+    /// Applies engine settings to an already-live session. Routing and prompt
+    /// behavior take effect immediately; changes to document-start/end scripts
+    /// reload the page so the new selector and stylesheet are actually installed.
+    func updateService(_ updatedService: Service) {
+        let oldService = service
+        service = updatedService
+        notificationBridge?.updateServiceName(updatedService.name)
+
+        let scriptsChanged = oldService.focus_selector != updatedService.focus_selector
+            || Self.resolvedCustomCSS(for: oldService) != Self.resolvedCustomCSS(for: updatedService)
+        guard scriptsChanged, let webView else { return }
+
+        let userContentController = webView.configuration.userContentController
+        userContentController.removeAllUserScripts()
+        notificationBridge?.reinstall()
+        userContentController.addUserScript(WebScripts.makeValueSetterInterceptorScript())
+        userContentController.addUserScript(WebScripts.makeInputStateTrackerScript(
+            selector: updatedService.focus_selector,
+            initiallyActive: true
+        ))
+        let cssToInject = Self.resolvedCustomCSS(for: updatedService)
+        if !cssToInject.isEmpty {
+            userContentController.addUserScript(
+                WKUserScript(
+                    source: WebScripts.makeCustomCSSInjectionScript(css: cssToInject),
+                    injectionTime: .atDocumentEnd,
+                    forMainFrameOnly: false
+                )
+            )
+        }
+        webView.reload()
+    }
+
     // MARK: - JS injection
 
     func focusInput(restoring state: TabInputState?) {
-        guard let webView, !service.focus_selector.isEmpty else { return }
+        guard !keyboardSuppressed, let webView, !service.focus_selector.isEmpty else { return }
         let shouldRestore = service.preservePrompt
         let inputState = shouldRestore ? state : nil
         let jsString = WebScripts.makeFocusInputScript(

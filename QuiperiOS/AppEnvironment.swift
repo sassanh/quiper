@@ -19,6 +19,7 @@ final class AppEnvironment: ObservableObject {
     @Published var automaticallySwitchEngineOnLastSessionClose: Bool = true
     @Published var autoCreateSessionOnEmptyEngineActivation: Bool = true
     @Published var shouldPurgeDanglingWebData: Bool = true
+    private(set) var isRingOverlayActive = false
 
     private let settingsURL: URL
     private var webSessions: [UUID: [Int: WebViewSession]] = [:]
@@ -69,7 +70,18 @@ final class AppEnvironment: ObservableObject {
         var serviceMap = webSessions[serviceID] ?? [:]
         serviceMap[sessionIndex] = session
         webSessions[serviceID] = serviceMap
+        session.setKeyboardSuppressed(isRingOverlayActive)
         return session
+    }
+
+    func setRingOverlayActive(_ active: Bool) {
+        guard isRingOverlayActive != active else { return }
+        isRingOverlayActive = active
+        for sessions in webSessions.values {
+            for session in sessions.values {
+                session.setKeyboardSuppressed(active)
+            }
+        }
     }
 
     // MARK: - Accessors
@@ -131,6 +143,7 @@ final class AppEnvironment: ObservableObject {
     func updateService(_ service: Service) {
         guard let index = services.firstIndex(where: { $0.id == service.id }) else { return }
         services[index] = service
+        updateCachedSessions(for: service)
         save()
     }
 
@@ -140,7 +153,15 @@ final class AppEnvironment: ObservableObject {
         guard !host.isEmpty,
               let index = services.firstIndex(where: { $0.id == serviceID }) else { return }
         services[index] = RoutingResolver.applyingRememberedRule(host: host, action: action, to: services[index])
+        updateCachedSessions(for: services[index])
         save()
+    }
+
+    private func updateCachedSessions(for service: Service) {
+        guard let sessions = webSessions[service.id] else { return }
+        for session in sessions.values {
+            session.updateService(service)
+        }
     }
 
     func addService(_ service: Service) {
@@ -337,6 +358,7 @@ final class AppEnvironment: ObservableObject {
             }
         }
         recordTabHistory(switchingTo: newTab)
+        persistedTabState.activeServiceID = serviceID
         if persistedTabState.openTabs[serviceID] == nil {
             persistedTabState.openTabs[serviceID] = [:]
         }

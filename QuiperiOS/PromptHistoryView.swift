@@ -88,7 +88,15 @@ struct PromptHistoryView: View {
             sessionIndex: index,
             initialURL: environment.activeSessionURL(for: serviceID)
         )
-        session.submitPrompt(draftText)
+        let inputState = TabInputState(
+            text: draftText,
+            isContentEditable: false,
+            start: draftText.utf16.count,
+            end: draftText.utf16.count
+        )
+        environment.updateTabInputState(inputState, for: serviceID, sessionIndex: index)
+        environment.save()
+        session.focusInput()
         dismiss()
     }
 }

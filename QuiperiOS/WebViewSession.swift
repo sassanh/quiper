@@ -92,6 +92,10 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
     private var upwardAccumulation: CGFloat = 0
     private var scrollObservation: NSKeyValueObservation?
     private var findDebounceTask: Task<Void, Never>?
+    private var findSearch = ""
+    private var findCurrentIndex = 0
+    private var findTotal = 0
+    private var findRequestID = 0
 
     private static let collapseThreshold: CGFloat = 80
     private static let restoreThreshold: CGFloat = 40
@@ -220,6 +224,14 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
 
     func focusInput() {
         coordinator.focusInput(restoring: onRequestRestoreInputState?())
+    }
+
+    func setKeyboardSuppressed(_ suppressed: Bool) {
+        coordinator.setKeyboardSuppressed(suppressed)
+    }
+
+    func updateService(_ service: Service) {
+        coordinator.updateService(service)
     }
 
     /// Mirrors macOS: once the page finishes loading, re-apply the tab's saved
@@ -360,6 +372,8 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
     func setFindQuery(_ query: String) {
         findQuery = query
         findDebounceTask?.cancel()
+        findRequestID += 1
+        findStatusText = nil
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             resetFind()
@@ -380,7 +394,13 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
 
     func resetFind() {
         findDebounceTask?.cancel()
+        findRequestID += 1
+        findSearch = ""
+        findCurrentIndex = 0
+        findTotal = 0
         findStatusText = nil
+        webView.find("", configuration: WKFindConfiguration()) { _ in }
+        webView.findInteraction?.dismissFindNavigator()
         webView.evaluateJavaScript(WebScripts.makeResetFindScript(), completionHandler: nil)
     }
 
@@ -390,23 +410,69 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
             resetFind()
             return
         }
+        findRequestID += 1
+        let requestID = findRequestID
         let escaped = WebScripts.escapeForJavaScript(trimmed)
-        let script = WebScripts.makeFindScript(search: escaped, backwards: !forward, resetSelection: newSearch)
-        webView.evaluateJavaScript(script) { [weak self] result, error in
+        let countScript = WebScripts.makeFindMatchCountScript(search: escaped)
+        webView.evaluateJavaScript(countScript) { [weak self] result, error in
             guard let self else { return }
+            guard requestID == self.findRequestID,
+                  trimmed == self.findQuery.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
             guard error == nil else {
                 self.findStatusText = "No matches"
                 return
             }
-            if let dict = result as? [String: Any],
-               let match = dict["match"] as? Bool {
-                let current = dict["current"] as? Int
-                let total = dict["total"] as? Int
-                self.updateFindStatus(matchFound: match, index: current, total: total)
-            } else {
-                self.findStatusText = "No matches"
+            let total = (result as? NSNumber)?.intValue ?? 0
+            let configuration = WKFindConfiguration()
+            configuration.backwards = !forward
+            configuration.caseSensitive = false
+            configuration.wraps = true
+            self.webView.find(trimmed, configuration: configuration) { [weak self] result in
+                guard let self,
+                      requestID == self.findRequestID,
+                      trimmed == self.findQuery.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+                self.updateNativeFindStatus(
+                    matchFound: result.matchFound,
+                    search: trimmed,
+                    total: total,
+                    forward: forward,
+                    resetIndex: newSearch
+                )
             }
         }
+    }
+
+    private func updateNativeFindStatus(
+        matchFound: Bool,
+        search: String,
+        total: Int,
+        forward: Bool,
+        resetIndex: Bool
+    ) {
+        guard matchFound else {
+            findSearch = search
+            findCurrentIndex = 0
+            findTotal = total
+            findStatusText = "No matches"
+            return
+        }
+
+        let shouldReset = resetIndex || findSearch != search || findTotal != total || findCurrentIndex == 0
+        findSearch = search
+        findTotal = total
+        if shouldReset {
+            findCurrentIndex = forward ? 1 : max(total, 1)
+        } else if forward {
+            findCurrentIndex = findCurrentIndex >= total ? 1 : findCurrentIndex + 1
+        } else {
+            findCurrentIndex = findCurrentIndex <= 1 ? max(total, 1) : findCurrentIndex - 1
+        }
+        updateFindStatus(matchFound: true, index: findCurrentIndex, total: total)
+        let escaped = WebScripts.escapeForJavaScript(search)
+        webView.evaluateJavaScript(
+            WebScripts.makeScrollToFindMatchScript(search: escaped, index: findCurrentIndex),
+            completionHandler: nil
+        )
     }
 
     private func updateFindStatus(matchFound: Bool, index: Int?, total: Int?) {
