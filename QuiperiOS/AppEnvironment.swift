@@ -375,6 +375,23 @@ final class AppEnvironment: ObservableObject {
         save()
     }
 
+    /// Activates the engine and session associated with a web notification.
+    /// The URL fallback keeps notifications created by older app versions usable.
+    func activateNotification(serviceID: UUID?, serviceURL: String?, sessionIndex: Int?) {
+        let resolvedServiceID = serviceID.flatMap { id in
+            services.contains(where: { $0.id == id }) ? id : nil
+        } ?? serviceURL.flatMap { url in
+            services.first(where: { $0.url == url })?.id
+        }
+        guard let resolvedServiceID else { return }
+
+        if let sessionIndex, SessionSlots.range.contains(sessionIndex) {
+            setActiveSession(for: resolvedServiceID, index: sessionIndex)
+        } else {
+            setActiveService(resolvedServiceID)
+        }
+    }
+
     func updateSessionURL(for serviceID: UUID, sessionIndex: Int, url: URL) {
         let urlString = url.absoluteString
         guard !urlString.isEmpty, urlString != "about:blank" else { return }
