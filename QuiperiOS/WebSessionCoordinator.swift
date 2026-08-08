@@ -10,6 +10,7 @@ final class WebSessionCoordinator: NSObject {
     private var notificationBridge: WebNotificationBridge?
     private var userApprovedURLs = Set<URL>()
     private var keyboardSuppressed = false
+    private var activeDownloads: [ObjectIdentifier: WKDownload] = [:]
 
     var onInputState: (([String: Any]) -> Void)?
     var onTitle: ((String) -> Void)?
@@ -249,8 +250,78 @@ extension WebSessionCoordinator: WKNavigationDelegate {
         notifyNavigationState(for: webView)
     }
 
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        retain(download)
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        retain(download)
+    }
+
     private func notifyNavigationState(for webView: WKWebView) {
         onNavigationState?(webView.canGoBack, webView.canGoForward)
+    }
+}
+
+// MARK: - WKDownloadDelegate
+
+extension WebSessionCoordinator: WKDownloadDelegate {
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
+                  suggestedFilename: String, completionHandler: @escaping @MainActor (URL?) -> Void) {
+        let fileManager = FileManager.default
+        guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            release(download)
+            completionHandler(nil)
+            return
+        }
+
+        let downloadsURL = documentsURL.appendingPathComponent("Downloads", isDirectory: true)
+        do {
+            try fileManager.createDirectory(at: downloadsURL, withIntermediateDirectories: true)
+        } catch {
+            release(download)
+            completionHandler(nil)
+            return
+        }
+
+        let responseFilename = response.url?.lastPathComponent ?? ""
+        let requestedFilename = suggestedFilename.isEmpty ? responseFilename : suggestedFilename
+        let filename = URL(fileURLWithPath: requestedFilename).lastPathComponent
+        let safeFilename = filename.isEmpty ? "download" : filename
+        var destination = downloadsURL.appendingPathComponent(safeFilename)
+        if fileManager.fileExists(atPath: destination.path) {
+            let name = destination.deletingPathExtension().lastPathComponent
+            let extensionSuffix = destination.pathExtension.isEmpty ? "" : ".\(destination.pathExtension)"
+            destination = downloadsURL.appendingPathComponent("\(name)-\(UUID().uuidString.prefix(8))\(extensionSuffix)")
+        }
+        completionHandler(destination)
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        release(download)
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        release(download)
+    }
+
+    func download(_ download: WKDownload, willPerformHTTPRedirection response: HTTPURLResponse,
+                  newRequest request: URLRequest, decisionHandler: @escaping @MainActor (WKDownload.RedirectPolicy) -> Void) {
+        decisionHandler(.allow)
+    }
+
+    func download(_ download: WKDownload, didReceive challenge: URLAuthenticationChallenge,
+                  completionHandler: @escaping @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        completionHandler(.performDefaultHandling, nil)
+    }
+
+    private func retain(_ download: WKDownload) {
+        activeDownloads[ObjectIdentifier(download)] = download
+        download.delegate = self
+    }
+
+    private func release(_ download: WKDownload) {
+        activeDownloads.removeValue(forKey: ObjectIdentifier(download))
     }
 }
 
