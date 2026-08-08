@@ -277,7 +277,9 @@ final class AppEnvironment: ObservableObject {
     /// Purges the removed engine's website data from the shared data store when
     /// the user enabled the setting, mirroring macOS's `WebKitCacheCleaner`.
     private func purgeWebDataIfNeeded(for service: Service) {
-        guard shouldPurgeDanglingWebData, let host = URL(string: service.url)?.host else { return }
+        guard shouldPurgeDanglingWebData,
+              let host = URL(string: service.url)?.host?.lowercased(),
+              !services.contains(where: { URL(string: $0.url)?.host?.lowercased() == host }) else { return }
         let store = WKWebsiteDataStore.default()
         let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
         store.fetchDataRecords(ofTypes: dataTypes) { records in
