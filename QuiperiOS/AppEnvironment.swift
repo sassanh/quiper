@@ -697,7 +697,7 @@ final class AppEnvironment: ObservableObject {
             return
         }
 
-        services = persisted.services.isEmpty ? DefaultEngineDefinitions.definitions : persisted.services
+        services = persisted.services
         customActions = persisted.customActions ?? []
         if let colorScheme = persisted.colorScheme {
             self.colorScheme = colorScheme
