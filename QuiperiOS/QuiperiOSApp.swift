@@ -5,8 +5,16 @@ import UserNotifications
 @main
 struct QuiperiOSApp: App {
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var environment = AppEnvironment()
+    @StateObject private var environment: AppEnvironment
     @StateObject private var notificationDelegate = IOSNotificationDelegate()
+
+    init() {
+        _environment = StateObject(
+            wrappedValue: UITestSupport.isEnabled
+                ? UITestSupport.makeEnvironment()
+                : AppEnvironment()
+        )
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -14,6 +22,7 @@ struct QuiperiOSApp: App {
                 .environmentObject(environment)
                 .preferredColorScheme(environment.colorScheme.colorScheme)
                 .task {
+                    guard !UITestSupport.isEnabled else { return }
                     notificationDelegate.configure(environment: environment)
                     _ = try? await UNUserNotificationCenter.current().requestAuthorization(
                         options: [.alert, .badge, .sound]

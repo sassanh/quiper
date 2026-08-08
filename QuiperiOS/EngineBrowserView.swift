@@ -67,6 +67,10 @@ struct EngineBrowserView: View {
                     ringSelectionOverlay(selection)
                         .zIndex(30)
                 }
+                if UITestSupport.isEnabled {
+                    uiTestControls
+                        .zIndex(100)
+                }
             }
         }
         .ignoresSafeArea(isFindBarVisible ? [] : .keyboard)
@@ -617,6 +621,9 @@ struct EngineBrowserView: View {
             }
         }
         .allowsHitTesting(false)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("navigation-ring-overlay")
+        .accessibilityLabel("Navigation ring")
     }
 
     private static func ringGridColumns(containerWidth: CGFloat) -> [GridItem] {
@@ -677,6 +684,8 @@ struct EngineBrowserView: View {
                 )
             }
         )
+        .accessibilityIdentifier("ring-session-\(item.tab.sessionIndex)")
+        .accessibilityLabel("Ring \(SessionSlots.tooltipTitle(for: item.tab.sessionIndex))")
     }
 
     private static func ringScale(from rect: CGRect, to size: CGSize) -> CGFloat {
@@ -788,6 +797,7 @@ struct EngineBrowserView: View {
                 Text(status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("find-status")
             }
             findIconButton(systemImage: "chevron.up", label: "Previous match") {
                 activeSession?.stepFind(forward: false)
@@ -811,6 +821,7 @@ struct EngineBrowserView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .padding(.leading, 10)
+                .accessibilityIdentifier("find-field")
             if !(activeSession?.findQuery.isEmpty ?? true) {
                 Button {
                     clearFindQuery()
@@ -900,6 +911,7 @@ struct EngineBrowserView: View {
             .glassIsland(in: Capsule(), interactive: true)
         }
         .accessibilityLabel("Actions")
+        .accessibilityIdentifier("actions-menu")
     }
 
     private var engineSelectorButton: some View {
@@ -958,6 +970,8 @@ struct EngineBrowserView: View {
                     }
                 }
                 .accessibilityLabel(SessionSlots.tooltipTitle(for: slot))
+                .accessibilityIdentifier("session-\(slot)")
+                .accessibilityValue(isActive ? "active" : isLoaded ? "loaded" : "empty")
             }
         }
         .frame(maxWidth: .infinity)
@@ -1000,6 +1014,26 @@ struct EngineBrowserView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+        .accessibilityIdentifier("web-content")
+    }
+
+    private var uiTestControls: some View {
+        VStack {
+            HStack {
+                Spacer()
+                Button {
+                    ringHoldBegan()
+                } label: {
+                    Image(systemName: "testtube.2")
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityLabel("Open navigation ring")
+                .accessibilityIdentifier("ui-test-open-ring")
+            }
+            Spacer()
+        }
+        .padding(8)
     }
 }
 
