@@ -263,6 +263,7 @@ final class AppEnvironment: ObservableObject {
         persistedTabState.activeIndicesByID[serviceID] = nil
         persistedTabState.tabHistory?.removeAll { $0.serviceID == serviceID }
         sessionThumbnails = sessionThumbnails.filter { $0.key.serviceID != serviceID }
+        webSessions[serviceID] = nil
         if lastActiveTab?.serviceID == serviceID {
             lastActiveTab = nil
         }
