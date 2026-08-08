@@ -51,18 +51,13 @@ private final class IOSNotificationDelegate: NSObject, ObservableObject, UNUserN
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        let serviceID = (userInfo[NotificationMetadata.serviceIDKey] as? String)
-            .flatMap(UUID.init(uuidString:))
-        let serviceURL = (userInfo[NotificationMetadata.serviceURLKey]
-            ?? userInfo[NotificationMetadata.legacyServiceURLKey]) as? String
-        let sessionIndex = (userInfo[NotificationMetadata.sessionIndexKey]
-            ?? userInfo[NotificationMetadata.legacySessionIndexKey]) as? Int
+        let destination = NotificationDestination(userInfo: userInfo)
 
-        Task { @MainActor [weak self, serviceID, serviceURL, sessionIndex] in
+        Task { @MainActor [weak self, destination] in
             self?.environment?.activateNotification(
-                serviceID: serviceID,
-                serviceURL: serviceURL,
-                sessionIndex: sessionIndex
+                serviceID: destination.serviceID,
+                serviceURL: destination.serviceURL,
+                sessionIndex: destination.sessionIndex
             )
         }
         completionHandler()

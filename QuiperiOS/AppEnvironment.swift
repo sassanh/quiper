@@ -4,6 +4,26 @@ import SwiftUI
 import WebKit
 
 @MainActor
+protocol WebDataPurger {
+    func purgeWebsiteData(forHost host: String)
+}
+
+final class DefaultWebDataPurger: WebDataPurger {
+    nonisolated init() { }
+
+    @MainActor
+    func purgeWebsiteData(forHost host: String) {
+        let store = WKWebsiteDataStore.default()
+        let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+        store.fetchDataRecords(ofTypes: dataTypes) { records in
+            let matching = records.filter { $0.displayName == host }
+            guard !matching.isEmpty else { return }
+            store.removeData(ofTypes: dataTypes, for: matching) { }
+        }
+    }
+}
+
+@MainActor
 final class AppEnvironment: ObservableObject {
     @Published var services: [Service] = []
     @Published var persistedTabState = PersistedTabState()
@@ -22,17 +42,26 @@ final class AppEnvironment: ObservableObject {
     private(set) var isRingOverlayActive = false
 
     private let settingsURL: URL
+    private let webDataPurger: any WebDataPurger
     // Keep fields owned by the other platform intact when iOS saves shared settings.
     private var persistedSettingsSnapshot: PersistedSettings?
+    private var persistedSettingsJSON: [String: Any]?
     private var webSessions: [UUID: [Int: WebViewSession]] = [:]
     private(set) var sessionThumbnails: [TabIdentifier: UIImage] = [:]
     @Published private(set) var thumbnailsRevision = 0
 
-    init() {
+    init(
+        settingsURL: URL? = nil,
+        enrichMissingIcons: Bool = true,
+        webDataPurger: any WebDataPurger = DefaultWebDataPurger()
+    ) {
         FaviconFetcher.configure(imageProcessor: UIKitFaviconImageProcessor.self)
-        settingsURL = Self.makeSettingsURL()
+        self.settingsURL = settingsURL ?? Self.makeSettingsURL()
+        self.webDataPurger = webDataPurger
         load()
-        enrichMissingIconsIfNeeded()
+        if enrichMissingIcons {
+            enrichMissingIconsIfNeeded()
+        }
     }
 
     // MARK: - Web view sessions
@@ -282,13 +311,7 @@ final class AppEnvironment: ObservableObject {
         guard shouldPurgeDanglingWebData,
               let host = URL(string: service.url)?.host?.lowercased(),
               !services.contains(where: { URL(string: $0.url)?.host?.lowercased() == host }) else { return }
-        let store = WKWebsiteDataStore.default()
-        let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
-        store.fetchDataRecords(ofTypes: dataTypes) { records in
-            let matching = records.filter { $0.displayName == host }
-            guard !matching.isEmpty else { return }
-            store.removeData(ofTypes: dataTypes, for: matching) { }
-        }
+        webDataPurger.purgeWebsiteData(forHost: host)
     }
 
     // MARK: - Session management
@@ -707,6 +730,7 @@ final class AppEnvironment: ObservableObject {
         guard let data = try? Data(contentsOf: settingsURL),
               let persisted = try? JSONDecoder().decode(PersistedSettings.self, from: data) else {
             persistedSettingsSnapshot = nil
+            persistedSettingsJSON = nil
             services = DefaultEngineDefinitions.definitions
             customActions = DefaultActions.defaults
             persistedTabState.activeServiceID = services.first?.id
@@ -718,6 +742,7 @@ final class AppEnvironment: ObservableObject {
         }
 
         persistedSettingsSnapshot = persisted
+        persistedSettingsJSON = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         services = persisted.services
         customActions = persisted.customActions ?? []
         if let colorScheme = persisted.colorScheme {
@@ -824,12 +849,54 @@ final class AppEnvironment: ObservableObject {
         payload.promptHistoryLimit = promptHistoryLimit
         payload.tabNavigationRingSize = tabNavigationRingSize
         payload.version = 1
-        guard let data = try? JSONEncoder().encode(payload) else { return }
+        guard let encodedPayload = try? JSONEncoder().encode(payload),
+              let encodedObject = try? JSONSerialization.jsonObject(with: encodedPayload) as? [String: Any]
+        else { return }
+
+        var settingsObject = persistedSettingsJSON ?? [:]
+        for key in Self.iosOwnedSettingKeys {
+            settingsObject.removeValue(forKey: key)
+        }
+        for key in Self.knownLegacySettingKeys {
+            settingsObject.removeValue(forKey: key)
+        }
+        for key in Self.iosOwnedSettingKeys where encodedObject[key] != nil {
+            settingsObject[key] = encodedObject[key]
+        }
+
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: settingsObject,
+            options: [.prettyPrinted, .sortedKeys]
+        ) else { return }
         do {
             try data.write(to: settingsURL, options: .atomic)
         } catch {
             return
         }
         persistedSettingsSnapshot = payload
+        persistedSettingsJSON = settingsObject
     }
+
+    private static let iosOwnedSettingKeys: Set<String> = [
+        "services",
+        "customActions",
+        "colorScheme",
+        "automaticallySwitchEngineOnLastSessionClose",
+        "autoCreateSessionOnEmptyEngineActivation",
+        "shouldPurgeDanglingWebData",
+        "tabSurvivalPolicy",
+        "persistedTabState",
+        "enablePromptHistory",
+        "promptHistoryRecordOnSubmit",
+        "promptHistoryRecordOnCmdBackspace",
+        "promptHistoryRecordOnSelectionClear",
+        "promptHistoryLimit",
+        "tabNavigationRingSize",
+        "version"
+    ]
+
+    private static let knownLegacySettingKeys: Set<String> = [
+        "selectorDisplayMode",
+        "showPromptRecordingGlow"
+    ]
 }
