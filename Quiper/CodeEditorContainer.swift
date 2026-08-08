@@ -2,12 +2,6 @@ import AppKit
 import SwiftUI
 import WebKit
 
-enum CodeEditorLanguage: String, Equatable {
-    case javaScript = "javascript"
-    case css
-    case cssSelector
-}
-
 @MainActor
 struct CodeEditorContainer: View {
     @Binding private var code: String

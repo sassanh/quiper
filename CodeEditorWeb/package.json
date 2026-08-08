@@ -5,7 +5,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "esbuild src/editor.js --bundle --minify --platform=browser --target=safari17 --outfile=../Quiper/quiper-code-editor.js --legal-comments=none"
+    "build": "esbuild src/editor.js --bundle --minify --platform=browser --target=safari17 --outfile=../QuiperShared/quiper-code-editor.js --legal-comments=none"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.3",

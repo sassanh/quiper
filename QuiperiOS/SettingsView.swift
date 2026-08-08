@@ -456,11 +456,8 @@ struct ActionScriptEditView: View {
     var body: some View {
         Form {
             Section {
-                TextEditor(text: $code)
-                    .font(.system(.caption, design: .monospaced))
+                CodeEditorView(code: $code, language: .javaScript)
                     .frame(minHeight: 300)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
             } header: {
                 Text("Script")
             } footer: {
