@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @EnvironmentObject private var environment: AppEnvironment
@@ -508,6 +509,7 @@ struct ActionScriptEditView: View {
     @State private var savedCode: String
     @State private var isInSync: Bool
     @State private var isTemplateBacked: Bool
+    @State private var showingDiscardConfirmation = false
 
     init(action: CustomAction, service: Service, environment: AppEnvironment) {
         self.action = action
@@ -551,7 +553,19 @@ struct ActionScriptEditView: View {
         }
         .navigationTitle("\(action.name.isEmpty ? "Action" : action.name) · \(service.name)")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(isDirty)
+        .interactiveDismissDisabled(isDirty)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if isDirty {
+                    Button {
+                        showingDiscardConfirmation = true
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .accessibilityLabel("Back")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Save") {
                     environment.saveCustomActionScript(code, serviceID: service.id, actionID: action.id)
@@ -561,6 +575,21 @@ struct ActionScriptEditView: View {
                 .disabled(!isDirty)
             }
         }
+        .background {
+            NavigationPopGestureLock(isLocked: isDirty)
+                .frame(width: 0, height: 0)
+        }
+        .alert(
+            "Discard Changes?",
+            isPresented: $showingDiscardConfirmation
+        ) {
+            Button("Discard Changes", role: .destructive) {
+                dismiss()
+            }
+            Button("Keep Editing", role: .cancel) {}
+        } message: {
+            Text("Your unsaved script changes will be lost.")
+        }
     }
 
     private func toggleSync(_ newValue: Bool) {
@@ -569,6 +598,25 @@ struct ActionScriptEditView: View {
         isInSync = newValue
         code = defaultScript
         savedCode = defaultScript
+    }
+}
+
+private struct NavigationPopGestureLock: UIViewControllerRepresentable {
+    let isLocked: Bool
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        UIViewController()
+    }
+
+    func updateUIViewController(_ controller: UIViewController, context: Context) {
+        let isLocked = isLocked
+        DispatchQueue.main.async { [weak controller] in
+            controller?.navigationController?.interactivePopGestureRecognizer?.isEnabled = !isLocked
+        }
+    }
+
+    static func dismantleUIViewController(_ controller: UIViewController, coordinator: ()) {
+        controller.navigationController?.interactivePopGestureRecognizer?.isEnabled = true
     }
 }
 
