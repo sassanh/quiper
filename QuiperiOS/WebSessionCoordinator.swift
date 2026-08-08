@@ -9,7 +9,7 @@ final class WebSessionCoordinator: NSObject {
     private let sessionIndex: Int
     private var notificationBridge: WebNotificationBridge?
     private var userApprovedURLs = Set<URL>()
-    private var keyboardSuppressed = false
+    private(set) var keyboardSuppressed = false
     private var activeDownloads: [ObjectIdentifier: WKDownload] = [:]
 
     var onInputState: (([String: Any]) -> Void)?

@@ -230,6 +230,10 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         coordinator.setKeyboardSuppressed(suppressed)
     }
 
+    var isKeyboardSuppressed: Bool {
+        coordinator.keyboardSuppressed
+    }
+
     func updateService(_ service: Service) {
         coordinator.updateService(service)
     }

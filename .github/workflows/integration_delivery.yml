@@ -150,10 +150,47 @@ jobs:
           path: build/DerivedData/TestResult.xcresult
           if-no-files-found: ignore
 
+  ios-tests:
+    name: iOS Tests
+    needs: nightly-preflight
+    if: needs.nightly-preflight.outputs.should_run == 'true'
+    runs-on: macos-26
+    environment:
+      name: test
+      url: https://app.codecov.io/gh/${{ github.repository }}/
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Toolchain info
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: Run iOS tests with coverage
+        run: bash ./tests-ios.sh -retry-tests-on-failure -test-iterations 2
+
+      - name: Upload iOS coverage to Codecov
+        uses: codecov/codecov-action@v6
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage-ios.lcov
+          fail_ci_if_error: true
+          flags: ios-unittests
+          root_dir: ${{ github.workspace }}
+
+      - name: Upload iOS test result bundle
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: iOS-TestResult.xcresult
+          path: build/DerivedData-iOS/TestResult.xcresult
+          if-no-files-found: ignore
+
   build:
     name: Build
     runs-on: macos-26
-    needs: tests
+    needs: [tests, ios-tests]
     steps:
       - uses: actions/checkout@v6
         with:

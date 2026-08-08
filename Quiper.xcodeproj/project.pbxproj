@@ -25,6 +25,13 @@
 			remoteGlobalIDString = 915536992EDAE8C30024996F;
 			remoteInfo = Quiper;
 		};
+		9155381F2EDAE8C30024996F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 915536922EDAE8C20024996F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 915538132EDAE8C30024996F;
+			remoteInfo = QuiperiOS;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +39,7 @@
 		915536A92EDAE8C50024996F /* QuiperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuiperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		915536B32EDAE8C50024996F /* QuiperUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuiperUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		915538122EDAE8C30024996F /* QuiperiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuiperiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9155381A2EDAE8C30024996F /* QuiperiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuiperiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -58,6 +66,11 @@
 		915538112EDAE8C30024996F /* QuiperiOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = QuiperiOS;
+			sourceTree = "<group>";
+		};
+		9155381B2EDAE8C30024996F /* QuiperiOSTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = QuiperiOSTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -92,6 +105,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		915538212EDAE8C30024996F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -101,6 +121,7 @@
 				9155369C2EDAE8C30024996F /* Quiper */,
 				915536AC2EDAE8C50024996F /* QuiperTests */,
 				915536B62EDAE8C50024996F /* QuiperUITests */,
+				9155381B2EDAE8C30024996F /* QuiperiOSTests */,
 				9155379E2EDAEB700024996F /* Frameworks */,
 				9155369B2EDAE8C30024996F /* Products */,
 				915538102EDAE8C30024996F /* QuiperShared */,
@@ -115,6 +136,7 @@
 				915536A92EDAE8C50024996F /* QuiperTests.xctest */,
 				915536B32EDAE8C50024996F /* QuiperUITests.xctest */,
 				915538122EDAE8C30024996F /* QuiperiOS.app */,
+				9155381A2EDAE8C30024996F /* QuiperiOSTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -222,6 +244,29 @@
 			productReference = 915538122EDAE8C30024996F /* QuiperiOS.app */;
 			productType = "com.apple.product-type.application";
 		};
+		9155381D2EDAE8C30024996F /* QuiperiOSTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 915538252EDAE8C30024996F /* Build configuration list for PBXNativeTarget "QuiperiOSTests" */;
+			buildPhases = (
+				9155381C2EDAE8C30024996F /* Sources */,
+				915538212EDAE8C30024996F /* Frameworks */,
+				9155381E2EDAE8C30024996F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				915538202EDAE8C30024996F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				9155381B2EDAE8C30024996F /* QuiperiOSTests */,
+			);
+			name = QuiperiOSTests;
+			packageProductDependencies = (
+			);
+			productName = QuiperiOSTests;
+			productReference = 9155381A2EDAE8C30024996F /* QuiperiOSTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -246,6 +291,10 @@
 					915538132EDAE8C30024996F = {
 						CreatedOnToolsVersion = 26.1.1;
 					};
+					9155381D2EDAE8C30024996F = {
+						CreatedOnToolsVersion = 26.1.1;
+						TestTargetID = 915538132EDAE8C30024996F;
+					};
 				};
 			};
 			buildConfigurationList = 915536952EDAE8C20024996F /* Build configuration list for PBXProject "Quiper" */;
@@ -269,6 +318,7 @@
 				915536A82EDAE8C50024996F /* QuiperTests */,
 				915536B22EDAE8C50024996F /* QuiperUITests */,
 				915538132EDAE8C30024996F /* QuiperiOS */,
+				9155381D2EDAE8C30024996F /* QuiperiOSTests */,
 			);
 		};
 /* End PBXProject section */
@@ -296,6 +346,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		915538162EDAE8C30024996F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9155381E2EDAE8C30024996F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -333,6 +390,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9155381C2EDAE8C30024996F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -345,6 +409,11 @@
 			isa = PBXTargetDependency;
 			target = 915536992EDAE8C30024996F /* Quiper */;
 			targetProxy = 915536B42EDAE8C50024996F /* PBXContainerItemProxy */;
+		};
+		915538202EDAE8C30024996F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 915538132EDAE8C30024996F /* QuiperiOS */;
+			targetProxy = 9155381F2EDAE8C30024996F /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -698,13 +767,13 @@
 				ENABLE_APPINTENTS_METADATA_GENERATION = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = QuiperiOSInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Quiper;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Quiper needs camera access so websites you use can capture video.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Quiper connects to AI engines on your local network.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Quiper needs microphone access so websites you use can capture audio.";
-				INFOPLIST_FILE = QuiperiOSInfo.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -738,13 +807,13 @@
 				ENABLE_APPINTENTS_METADATA_GENERATION = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = QuiperiOSInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Quiper;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Quiper needs camera access so websites you use can capture video.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Quiper connects to AI engines on your local network.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Quiper needs microphone access so websites you use can capture audio.";
-				INFOPLIST_FILE = QuiperiOSInfo.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -764,6 +833,50 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		915538232EDAE8C30024996F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = WZQY49K84N;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.sassanh.quiper.QuiperiOSTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/QuiperiOS.app/QuiperiOS";
+			};
+			name = Debug;
+		};
+		915538242EDAE8C30024996F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = WZQY49K84N;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.sassanh.quiper.QuiperiOSTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/QuiperiOS.app/QuiperiOS";
 			};
 			name = Release;
 		};
@@ -811,6 +924,15 @@
 			buildConfigurations = (
 				915538172EDAE8C30024996F /* Debug */,
 				915538182EDAE8C30024996F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		915538252EDAE8C30024996F /* Build configuration list for PBXNativeTarget "QuiperiOSTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				915538232EDAE8C30024996F /* Debug */,
+				915538242EDAE8C30024996F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
