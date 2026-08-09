@@ -13,6 +13,8 @@ final class SessionSwitchingTests: XCTestCase {
     }
     
     override func tearDown() async throws {
+        windowController?.window?.orderOut(nil)
+        windowController = nil
         TestServer.shared.stop()
         Settings.shared.reset()
     }
@@ -30,7 +32,7 @@ final class SessionSwitchingTests: XCTestCase {
         XCTAssertNotNil(windowController.window, "Window should be initialized")
         XCTAssertNotNil(windowController.window?.contentView, "Window contentView should exist")
         
-        windowController.show()
+        windowController.window?.orderFront(nil)
         
         // Get WebView and wait for initial navigation to complete
         guard let webView1 = windowController.activeWebView else {

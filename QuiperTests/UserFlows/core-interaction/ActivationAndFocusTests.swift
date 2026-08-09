@@ -26,6 +26,8 @@ final class ActivationAndFocusTests: XCTestCase {
     }
     
     override func tearDown() async throws {
+        windowController?.window?.orderOut(nil)
+        windowController = nil
         TestServer.shared.stop()
         Settings.shared.reset()
     }

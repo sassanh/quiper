@@ -13,6 +13,8 @@ final class FindInPageTests: XCTestCase {
     }
     
     override func tearDown() async throws {
+        windowController?.window?.orderOut(nil)
+        windowController = nil
         TestServer.shared.stop()
         Settings.shared.reset()
     }
@@ -26,7 +28,7 @@ final class FindInPageTests: XCTestCase {
         Settings.shared.services = [testService]
         windowController.reloadServices([testService])
         
-        windowController.show()
+        windowController.window?.orderFront(nil)
         try await Task.sleep(nanoseconds: 2_000_000_000)
         
         // Trigger Find

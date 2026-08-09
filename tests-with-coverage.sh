@@ -1,154 +1,173 @@
 #!/bin/bash
 set -euo pipefail
 
-PROJECT="Quiper.xcodeproj"
-SCHEME="Quiper"
-DERIVED_DATA_PATH="build/DerivedData"
+project="Quiper.xcodeproj"
+category="${1:-macos-all}"
 
-echo "🧪 Running tests with coverage..."
+case "$category" in
+    macos-unit|macos-ui|ios-unit|macos-all)
+        shift
+        ;;
+    *)
+        # Preserve the original no-category interface for local full-suite runs.
+        category="macos-all"
+        ;;
+esac
 
-# Define explicit result bundle path to avoid ambiguity
-RESULT_BUNDLE="$DERIVED_DATA_PATH/TestResult.xcresult"
-rm -rf "$RESULT_BUNDLE"
+scheme=""
+test_target=""
+app_name=""
+destination=""
+derived_data_path=""
+coverage_path=""
+coverage_html_path=""
 
-echo "� Running tests with coverage..."
-echo "   (This may take a moment to build if incremental changes are detected)"
+case "$category" in
+    macos-unit)
+        scheme="Quiper"
+        test_target="QuiperTests"
+        app_name="Quiper"
+        destination="${MACOS_TEST_DESTINATION:-platform=macOS}"
+        derived_data_path="${MACOS_UNIT_DERIVED_DATA_PATH:-build/DerivedData-macos-unit}"
+        coverage_path="${MACOS_UNIT_COVERAGE_PATH:-coverage-macos-unit.lcov}"
+        coverage_html_path="${MACOS_UNIT_COVERAGE_HTML_PATH:-coverage-html-macos-unit}"
+        ;;
+    macos-ui)
+        scheme="Quiper"
+        test_target="QuiperUITests"
+        app_name="Quiper"
+        destination="${MACOS_TEST_DESTINATION:-platform=macOS}"
+        derived_data_path="${MACOS_UI_DERIVED_DATA_PATH:-build/DerivedData-macos-ui}"
+        coverage_path="${MACOS_UI_COVERAGE_PATH:-coverage-macos-ui.lcov}"
+        coverage_html_path="${MACOS_UI_COVERAGE_HTML_PATH:-coverage-html-macos-ui}"
+        ;;
+    ios-unit)
+        scheme="QuiperiOS"
+        app_name="QuiperiOS"
+        derived_data_path="${IOS_UNIT_DERIVED_DATA_PATH:-${IOS_DERIVED_DATA_PATH:-build/DerivedData-ios-unit}}"
+        coverage_path="${IOS_UNIT_COVERAGE_PATH:-${IOS_COVERAGE_PATH:-coverage-ios-unit.lcov}}"
+        coverage_html_path="${IOS_UNIT_COVERAGE_HTML_PATH:-${IOS_COVERAGE_HTML_PATH:-coverage-html-ios-unit}}"
 
-# Run tests (handles building and testing in one command for correctness)
-xcodebuild test \
-    -project "$PROJECT" \
-    -scheme "$SCHEME" \
-    -derivedDataPath "$DERIVED_DATA_PATH" \
-    -resultBundlePath "$RESULT_BUNDLE" \
-    -enableCodeCoverage YES \
-    CLANG_COVERAGE_MAPPING=YES \
-    COPY_PHASE_STRIP=NO \
-    -parallel-testing-enabled NO \
-    "$@"
-
-echo ""
-echo "📊 Generating coverage report..."
-
-XCRESULT="$RESULT_BUNDLE"
-if [ ! -d "$XCRESULT" ]; then
-    echo "❌ Error: Result bundle not found at $XCRESULT"
-    exit 1
-fi
-
-# Locate Profile Data
-PROFDATA=$(find "$DERIVED_DATA_PATH" -name "Coverage.profdata" -print -quit)
-if [ -z "$PROFDATA" ]; then
-    echo "❌ Error: Coverage.profdata not found in $DERIVED_DATA_PATH"
-    exit 1
-fi
-
-# Find instrumented binaries
-BINARIES=()
-
-BUILD_PATH="$DERIVED_DATA_PATH/Build/Products/Debug"
-
-# Check main app binary
-APP_BINARY="$BUILD_PATH/Quiper.app/Contents/MacOS/Quiper"
-if [ -f "$APP_BINARY" ]; then
-    if otool -l "$APP_BINARY" | grep -q "__llvm_covmap"; then
-        echo "✅ Found instrumented app binary: $APP_BINARY"
-        BINARIES+=("-object" "$APP_BINARY")
-    else
-        echo "⚠️  App binary exists but missing coverage map (skipping): $APP_BINARY"
-    fi
-fi
-
-# Check frameworks
-if [ -d "$BUILD_PATH/PackageFrameworks" ]; then
-    for f in "$BUILD_PATH/PackageFrameworks/"*.framework/*; do
-        # Use simple basename check to avoid checking resources/symlinks if possible, 
-        # but otool check is robust enough.
-        if [ -f "$f" ] && [ ! -L "$f" ]; then
-             if otool -l "$f" 2>/dev/null | grep -q "__llvm_covmap"; then
-                 echo "✅ Found instrumented framework: $f"
-                 BINARIES+=("-object" "$f")
-             fi
+        destination="${IOS_TEST_DESTINATION:-}"
+        if [[ -z "$destination" ]]; then
+            preferred_id=$(xcrun simctl list devices available --json \
+                | jq -r '[.devices | to_entries[] | .value[]
+                    | select(.isAvailable == true and (.name | startswith("iPhone 17")))]
+                    | .[0].udid // empty')
+            fallback_id=$(xcrun simctl list devices available --json \
+                | jq -r '[.devices | to_entries[] | .value[]
+                    | select(.isAvailable == true and (.name | startswith("iPhone")))]
+                    | .[0].udid // empty')
+            simulator_id="${preferred_id:-$fallback_id}"
+            if [[ -z "$simulator_id" ]]; then
+                echo "No available iPhone simulator was found." >&2
+                exit 1
+            fi
+            destination="platform=iOS Simulator,id=$simulator_id"
         fi
-    done
+        ;;
+    macos-all)
+        scheme="Quiper"
+        app_name="Quiper"
+        destination="${MACOS_TEST_DESTINATION:-platform=macOS}"
+        derived_data_path="${MACOS_DERIVED_DATA_PATH:-build/DerivedData}"
+        coverage_path="${MACOS_COVERAGE_PATH:-coverage.lcov}"
+        coverage_html_path="${MACOS_COVERAGE_HTML_PATH:-coverage-html}"
+        ;;
+esac
+
+result_bundle="$derived_data_path/TestResult.xcresult"
+rm -rf "$result_bundle"
+
+echo "Running $category tests on: $destination"
+
+xcode_arguments=(
+    test
+    -project "$project"
+    -scheme "$scheme"
+    -destination "$destination"
+    -derivedDataPath "$derived_data_path"
+    -resultBundlePath "$result_bundle"
+    -enableCodeCoverage YES
+    CLANG_COVERAGE_MAPPING=YES
+    COPY_PHASE_STRIP=NO
+    -parallel-testing-enabled NO
+)
+
+if [[ -n "$test_target" ]]; then
+    xcode_arguments+=("-only-testing:$test_target")
 fi
 
-# Check for standalone object files (products)
-for f in "$BUILD_PATH/"*.o; do
-    if [ -f "$f" ]; then
-         if otool -l "$f" 2>/dev/null | grep -q "__llvm_covmap"; then
-             echo "✅ Found instrumented object file: $f"
-             BINARIES+=("-object" "$f")
-         fi
+if [[ "$category" == macos-* ]]; then
+    macos_test_identity="${MACOS_TEST_CODE_SIGN_IDENTITY:--}"
+    macos_test_team="${MACOS_TEST_DEVELOPMENT_TEAM:-}"
+    xcode_arguments+=(
+        CODE_SIGN_IDENTITY="$macos_test_identity"
+        DEVELOPMENT_TEAM="$macos_test_team"
+    )
+fi
+
+xcodebuild "${xcode_arguments[@]}" "$@"
+
+if [[ ! -d "$result_bundle" ]]; then
+    echo "Result bundle not found at $result_bundle" >&2
+    exit 1
+fi
+
+profdata=$(find "$derived_data_path" -name Coverage.profdata -print -quit)
+if [[ -z "$profdata" ]]; then
+    echo "Coverage.profdata not found in $derived_data_path" >&2
+    exit 1
+fi
+
+products_path="$derived_data_path/Build/Products"
+app_bundle=$(find "$products_path" -path "*/$app_name.app" -type d -print -quit)
+if [[ -z "$app_bundle" ]]; then
+    echo "$app_name app bundle not found in $products_path" >&2
+    exit 1
+fi
+
+coverage_object=""
+coverage_candidates=(
+    "$app_bundle/Contents/MacOS/$app_name.debug.dylib"
+    "$app_bundle/Contents/MacOS/$app_name"
+    "$app_bundle/$app_name.debug.dylib"
+    "$app_bundle/$app_name"
+)
+
+for candidate in "${coverage_candidates[@]}"; do
+    if [[ -f "$candidate" ]] && otool -l "$candidate" 2>/dev/null | grep "__llvm_covmap" >/dev/null; then
+        coverage_object="$candidate"
+        break
     fi
 done
 
-# Check for intermediate object files (App source objects)
-# This handles cases where the main binary is stripped but individual objects retain coverage.
-INTERMEDIATES_PATH="$DERIVED_DATA_PATH/Build/Intermediates.noindex/Quiper.build/Debug/Quiper.build/Objects-normal"
-if [ -d "$INTERMEDIATES_PATH" ]; then
-    echo "🔍 Searching for intermediate object files in $INTERMEDIATES_PATH..."
-    # recursively find .o files
-    while IFS= read -r f; do
-         if otool -l "$f" 2>/dev/null | grep -q "__llvm_covmap"; then
-             # Only show first few to avoid spamming log
-             # echo "✅ Found instrumented intermediate: $(basename "$f")" 
-             BINARIES+=("-object" "$f")
-         fi
-    done < <(find "$INTERMEDIATES_PATH" -name "*.o")
-    echo "✅ Added $(find "$INTERMEDIATES_PATH" -name "*.o" | wc -l | xargs) intermediate object files."
-fi
-
-if [ ${#BINARIES[@]} -eq 0 ]; then
-    echo "❌ Error: No instrumented binaries found. Cannot generate report."
+if [[ -z "$coverage_object" ]]; then
+    echo "Instrumented $app_name binary not found in $app_bundle" >&2
     exit 1
 fi
 
-echo "📊 Generating textual summary..."
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Exporting coverage from: $coverage_object"
+
 xcrun llvm-cov report \
-    -instr-profile "$PROFDATA" \
-    "${BINARIES[@]}" \
-    -ignore-filename-regex=".build|Tests" \
-    -use-color
+    -instr-profile "$profdata" \
+    -object "$coverage_object" \
+    -ignore-filename-regex='.build|Tests'
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-echo ""
-echo "📊 Generating LCOV report for Codecov..."
 xcrun llvm-cov export \
-    -format="lcov" \
-    -instr-profile "$PROFDATA" \
-    "${BINARIES[@]}" \
-    -path-equivalence "$(pwd)/","." \
-    -ignore-filename-regex=".build|Tests" > coverage.lcov
+    -format=lcov \
+    -instr-profile "$profdata" \
+    -object "$coverage_object" \
+    -path-equivalence "$(pwd)/,." \
+    -ignore-filename-regex='.build|Tests' > "$coverage_path"
 
-echo "✅ LCOV report generated at coverage.lcov"
-
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-echo ""
-echo "📊 Generating HTML report..."
-
-OUTPUT_DIR="coverage-html"
-rm -rf "$OUTPUT_DIR"
-
+rm -rf "$coverage_html_path"
 xcrun llvm-cov show \
     -format=html \
-    -output-dir "$OUTPUT_DIR" \
-    -instr-profile "$PROFDATA" \
-    "${BINARIES[@]}" \
-    -ignore-filename-regex=".build|Tests"
+    -output-dir "$coverage_html_path" \
+    -instr-profile "$profdata" \
+    -object "$coverage_object" \
+    -ignore-filename-regex='.build|Tests'
 
-echo "✅ HTML report generated at $OUTPUT_DIR/index.html"
-
-echo ""
-echo "✅ Coverage reports generated!"
-echo "   📄 LCOV report: coverage.lcov"
-echo "   🌐 HTML report: coverage-html/index.html"
-echo ""
-echo "To open HTML report:"
-echo "   open coverage-html/index.html"
-echo ""
-echo "To view detailed coverage in Xcode:"
-echo "   Product → Show Code Coverage"
-
+echo "Coverage written to $coverage_path"
+echo "HTML coverage report written to $coverage_html_path/index.html"

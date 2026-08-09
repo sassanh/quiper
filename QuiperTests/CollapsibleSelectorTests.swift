@@ -19,6 +19,8 @@ final class CollapsibleSelectorTests: XCTestCase {
     }
     
     override func tearDown() async throws {
+        selector?.expandedPanel?.orderOut(nil)
+        window?.orderOut(nil)
         selector = nil
         window = nil
     }
@@ -76,7 +78,7 @@ final class CollapsibleSelectorTests: XCTestCase {
         
         // Ensure layout and visibility for addChildWindow to work
         selector.layoutSubtreeIfNeeded()
-        window.makeKeyAndOrderFront(nil)
+        window.orderFront(nil)
         
         let event = NSEvent.enterExitEvent(with: .mouseEntered,
                                            location: .zero,
@@ -140,7 +142,7 @@ final class CollapsibleSelectorTests: XCTestCase {
         selector.items = ["A", "B"]
         // Initial setup
         selector.layoutSubtreeIfNeeded()
-        window.makeKeyAndOrderFront(nil)
+        window.orderFront(nil)
         
         // Simulate rapid toggle
         // 1. Expand

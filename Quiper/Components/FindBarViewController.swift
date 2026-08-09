@@ -19,9 +19,10 @@ final class FindBarViewController: NSViewController, NSSearchFieldDelegate {
     private weak var targetWebView: WKWebView?
     var webView: WKWebView? { targetWebView }
     private var wasFocusedWhenTabHidden = false
+    var windowKeyStateProvider: (NSWindow) -> Bool = { $0.isKeyWindow }
     var isVisible: Bool { !view.isHidden }
     var hasInputFocus: Bool {
-        guard let window = view.window, window.isKeyWindow else { return false }
+        guard let window = view.window, windowKeyStateProvider(window) else { return false }
         return window.firstResponder === findField
             || window.firstResponder === findField.currentEditor()
     }

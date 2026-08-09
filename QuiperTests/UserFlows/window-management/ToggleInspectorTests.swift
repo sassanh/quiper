@@ -13,6 +13,8 @@ final class ToggleInspectorTests: XCTestCase {
     }
     
     override func tearDown() async throws {
+        windowController?.window?.orderOut(nil)
+        windowController = nil
         TestServer.shared.stop()
         Settings.shared.reset()
     }
@@ -26,7 +28,7 @@ final class ToggleInspectorTests: XCTestCase {
         Settings.shared.services = [testService]
         windowController.reloadServices([testService])
         
-        windowController.show()
+        windowController.window?.orderFront(nil)
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Toggle Inspector

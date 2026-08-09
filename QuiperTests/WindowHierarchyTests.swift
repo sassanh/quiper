@@ -9,7 +9,8 @@ final class WindowHierarchyTests: XCTestCase {
         // Setup
         let controller = MainWindowController(services: [])
         controller.window?.setFrame(NSRect(x: 0, y: 0, width: 800, height: 600), display: false)
-        controller.window?.makeKeyAndOrderFront(nil)
+        controller.window?.orderFront(nil)
+        defer { controller.window?.orderOut(nil) }
         
         // Ensure we start in macOS Effects mode to verify initial hierarchy contains effect view
         Settings.shared.windowAppearance.light.mode = .macOSEffects

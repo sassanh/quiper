@@ -70,17 +70,18 @@ final class MainWindowControllerShortcutTests: XCTestCase {
         XCTAssertEqual(controller.activeSessionIndex, 2)
     }
 
-    func testDigitShortcutShowsFindBarOnlyForOwningSession() async throws {
+    func testDigitShortcutShowsFindBarOnlyForOwningSession() throws {
         let controller = makeController()
         controller.switchSession(to: 0)
         let window = try XCTUnwrap(controller.window)
-        await activateAndMakeKey(window)
+        window.orderFront(nil)
         defer {
             controller.findBarViewControllers.values.forEach { $0.hide() }
             window.orderOut(nil)
         }
 
         let firstFindBar = controller.findBarViewController!
+        firstFindBar.windowKeyStateProvider = { _ in true }
         firstFindBar.show()
         XCTAssertTrue(firstFindBar.isVisible)
         XCTAssertTrue(firstFindBar.hasInputFocus)
@@ -103,17 +104,18 @@ final class MainWindowControllerShortcutTests: XCTestCase {
         XCTAssertTrue(firstFindBar.hasInputFocus)
     }
 
-    func testReturningToSessionDoesNotFocusFindBarWhenItWasUnfocused() async throws {
+    func testReturningToSessionDoesNotFocusFindBarWhenItWasUnfocused() throws {
         let controller = makeController()
         controller.switchSession(to: 0)
         let window = try XCTUnwrap(controller.window)
-        await activateAndMakeKey(window)
+        window.orderFront(nil)
         defer {
             controller.findBarViewControllers.values.forEach { $0.hide() }
             window.orderOut(nil)
         }
 
         let firstFindBar = controller.findBarViewController!
+        firstFindBar.windowKeyStateProvider = { _ in true }
         firstFindBar.show()
         window.makeFirstResponder(controller.activeWebView)
         XCTAssertTrue(firstFindBar.isVisible)
@@ -131,7 +133,7 @@ final class MainWindowControllerShortcutTests: XCTestCase {
     func testSwitchingBetweenSessionsWithOpenFindBarsUsesTabOwnedViews() {
         let controller = makeController()
         controller.switchSession(to: 0)
-        controller.window?.makeKeyAndOrderFront(nil)
+        controller.window?.orderFront(nil)
         defer {
             controller.findBarViewControllers.values.forEach { $0.hide() }
             controller.window?.orderOut(nil)
@@ -212,17 +214,6 @@ final class MainWindowControllerShortcutTests: XCTestCase {
     }
 
     // MARK: - Helpers
-
-    private func activateAndMakeKey(_ window: NSWindow) async {
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-
-        let keyWindowExpectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in window.isKeyWindow },
-            object: nil
-        )
-        await fulfillment(of: [keyWindowExpectation], timeout: 2.0)
-    }
 
     private func makeController() -> MainWindowController {
         let services = [

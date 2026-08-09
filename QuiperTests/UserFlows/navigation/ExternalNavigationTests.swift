@@ -13,6 +13,8 @@ final class ExternalNavigationTests: XCTestCase {
     }
     
     override func tearDown() async throws {
+        windowController?.window?.orderOut(nil)
+        windowController = nil
         TestServer.shared.stop()
         Settings.shared.reset()
     }
@@ -26,7 +28,7 @@ final class ExternalNavigationTests: XCTestCase {
         Settings.shared.services = [testService]
         windowController.reloadServices([testService])
         
-        windowController.show()
+        windowController.window?.orderFront(nil)
         
         if let webView = windowController.activeWebView {
             await windowController.waitForNavigation(on: webView)

@@ -13,6 +13,8 @@ final class ServiceSwitchingTests: XCTestCase {
     }
     
     override func tearDown() async throws {
+        windowController?.window?.orderOut(nil)
+        windowController = nil
         TestServer.shared.stop()
         Settings.shared.reset()
     }
@@ -32,7 +34,7 @@ final class ServiceSwitchingTests: XCTestCase {
         Settings.shared.services = [service1, service2]
         windowController.reloadServices([service1, service2])
         
-        windowController.show()
+        windowController.window?.orderFront(nil)
         
         // Wait for initial load
         if let webView = windowController.activeWebView {

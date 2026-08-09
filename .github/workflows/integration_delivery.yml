@@ -93,10 +93,35 @@ jobs:
           echo "should_run=true" >>"$GITHUB_OUTPUT"
 
   tests:
-    name: Tests
+    name: ${{ matrix.name }}
     needs: nightly-preflight
     if: needs.nightly-preflight.outputs.should_run == 'true'
     runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - category: macos-unit
+            name: macOS Unit Tests
+            coverage_path: coverage-macos-unit.lcov
+            coverage_html_path: coverage-html-macos-unit
+            codecov_flag: macos-unittests
+            result_bundle: build/DerivedData-macos-unit/TestResult.xcresult
+            result_artifact: macOS-Unit-TestResult.xcresult
+          - category: macos-ui
+            name: macOS UI Tests
+            coverage_path: coverage-macos-ui.lcov
+            coverage_html_path: coverage-html-macos-ui
+            codecov_flag: macos-uitests
+            result_bundle: build/DerivedData-macos-ui/TestResult.xcresult
+            result_artifact: macOS-UI-TestResult.xcresult
+          - category: ios-unit
+            name: iOS Unit Tests
+            coverage_path: coverage-ios-unit.lcov
+            coverage_html_path: coverage-html-ios-unit
+            codecov_flag: ios-unittests
+            result_bundle: build/DerivedData-ios-unit/TestResult.xcresult
+            result_artifact: iOS-Unit-TestResult.xcresult
     environment:
       name: test
       url: https://app.codecov.io/gh/${{ github.repository }}/
@@ -105,9 +130,11 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Select Xcode 26.1.1
+        if: startsWith(matrix.category, 'macos-')
         run: sudo xcode-select -s /Applications/Xcode_26.1.1.app
 
       - name: Set up Node.js
+        if: startsWith(matrix.category, 'macos-')
         uses: actions/setup-node@v4
         with:
           node-version: 26
@@ -115,82 +142,47 @@ jobs:
           cache-dependency-path: CodeEditorWeb/package-lock.json
 
       - name: Verify settings code editor bundle
+        if: startsWith(matrix.category, 'macos-')
         run: ./scripts/build-code-editor.sh --check
 
       - name: Toolchain info
         run: |
-          node --version
-          npm --version
           swift --version
           xcodebuild -version
+          if [ "${{ matrix.category }}" = "ios-unit" ]; then
+            xcrun simctl list runtimes
+          fi
 
       - name: Run tests with coverage
-        run: ./tests-with-coverage.sh CODE_SIGN_IDENTITY="-" DEVELOPMENT_TEAM="" -retry-tests-on-failure -test-iterations 2
+        run: ./tests-with-coverage.sh "${{ matrix.category }}" -retry-tests-on-failure -test-iterations 2
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.lcov
+          files: ./${{ matrix.coverage_path }}
           fail_ci_if_error: true
-          flags: unittests
+          flags: ${{ matrix.codecov_flag }}
           root_dir: ${{ github.workspace }}
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-report
-          path: coverage-html
+          name: ${{ matrix.category }}-coverage-report
+          path: ${{ matrix.coverage_html_path }}
 
-      - name: Upload Test Result Bundle
+      - name: Upload test result bundle
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: TestResult.xcresult
-          path: build/DerivedData/TestResult.xcresult
-          if-no-files-found: ignore
-
-  ios-tests:
-    name: iOS Tests
-    needs: nightly-preflight
-    if: needs.nightly-preflight.outputs.should_run == 'true'
-    runs-on: macos-26
-    environment:
-      name: test
-      url: https://app.codecov.io/gh/${{ github.repository }}/
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Toolchain info
-        run: |
-          xcodebuild -version
-          xcrun simctl list runtimes
-
-      - name: Run iOS tests with coverage
-        run: bash ./tests-ios.sh -retry-tests-on-failure -test-iterations 2
-
-      - name: Upload iOS coverage to Codecov
-        uses: codecov/codecov-action@v6
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage-ios.lcov
-          fail_ci_if_error: true
-          flags: ios-unittests
-          root_dir: ${{ github.workspace }}
-
-      - name: Upload iOS test result bundle
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: iOS-TestResult.xcresult
-          path: build/DerivedData-iOS/TestResult.xcresult
+          name: ${{ matrix.result_artifact }}
+          path: ${{ matrix.result_bundle }}
           if-no-files-found: ignore
 
   build:
     name: Build
     runs-on: macos-26
-    needs: [tests, ios-tests]
+    needs: tests
     steps:
       - uses: actions/checkout@v6
         with:

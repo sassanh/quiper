@@ -47,6 +47,8 @@ final class AddingServiceTests: XCTestCase {
         if settingsWindow?.isVisible == true {
             settingsWindow?.close()
         }
+        windowController?.window?.orderOut(nil)
+        windowController = nil
         TestServer.shared.stop()
         Settings.shared.reset()
     }
@@ -62,7 +64,7 @@ final class AddingServiceTests: XCTestCase {
         windowController.reloadServices([service1])
         
         // USER ACTION: Open main window
-        windowController.show()
+        windowController.window?.orderFront(nil)
         try await Task.sleep(nanoseconds: 500_000_000)
         
         let initialServiceCount = Settings.shared.services.count
@@ -70,7 +72,7 @@ final class AddingServiceTests: XCTestCase {
         // USER ACTION: Open Settings window (Cmd+Shift+,)
         settingsWindow = SettingsWindow.shared
         settingsWindow.appController = nil
-        settingsWindow.makeKeyAndOrderFront(nil)
+        settingsWindow.orderFront(nil)
         settingsWindow.center()
         
         // Wait for window to fully render
