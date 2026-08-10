@@ -12,6 +12,7 @@ struct EngineBrowserView: View {
     @State private var isScrollCollapsed = false
     @State private var isFindBarVisible = false
     @State private var displayedFindStatus: String?
+    @State private var toolbarExtent: CGFloat = 0
     @FocusState private var isFindFieldFocused: Bool
 
     @State private var isRingVisible = false
@@ -31,31 +32,36 @@ struct EngineBrowserView: View {
     @State private var ringAutoScrollTimer: Timer?
     @State private var ringScrollDwellTask: Task<Void, Never>?
 
-    private static let findBarBottomInset: CGFloat = 64
-
     var body: some View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height
-            ZStack(alignment: .bottom) {
-                webContent
+            ZStack(alignment: toolbarAlignment) {
+                webContent(
+                    viewportLayout: browserViewportLayout(
+                        safeAreaInsets: geo.safeAreaInsets
+                    )
+                )
                     .background(Color.black)
                     .opacity(selectionDimOpacity)
-                    .padding(.bottom, isFindBarVisible ? Self.findBarBottomInset : 0)
+                    .ignoresSafeArea(.container)
                 if !isMinimized {
                     if isFindBarVisible {
                         findBar
-                            .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottom)))
+                            .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: toolbarAnchor)))
+                            .reportsToolbarExtent()
                             .zIndex(ringSelection != nil ? 40 : 0)
                     } else {
-                        bottomControls(landscape: landscape)
-                            .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottom)))
+                        toolbarControls(landscape: landscape)
+                            .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: toolbarAnchor)))
+                            .reportsToolbarExtent()
                             .zIndex(ringSelection != nil ? 40 : 0)
                     }
                 }
                 if isMinimized {
                     island
-                        .padding(.bottom, islandBottomPadding(bottomInset: geo.safeAreaInsets.bottom))
-                        .transition(.scale(scale: 0.6, anchor: .bottom).combined(with: .opacity))
+                        .padding(toolbarEdge, islandEdgePadding(bottomInset: geo.safeAreaInsets.bottom))
+                        .transition(.scale(scale: 0.6, anchor: toolbarAnchor).combined(with: .opacity))
+                        .reportsToolbarExtent()
                         .zIndex(ringSelection != nil ? 40 : 0)
                 }
                 if isRingVisible {
@@ -71,6 +77,9 @@ struct EngineBrowserView: View {
                     uiTestControls
                         .zIndex(100)
                 }
+            }
+            .onPreferenceChange(ToolbarExtentPreferenceKey.self) { extent in
+                toolbarExtent = extent
             }
         }
         .ignoresSafeArea(isFindBarVisible ? [] : .keyboard)
@@ -132,11 +141,56 @@ struct EngineBrowserView: View {
 
     private var isMinimized: Bool {
         guard !isFindBarVisible else { return false }
-        return isKeyboardVisible || isScrollCollapsed
+        return isScrollCollapsed || (environment.dragAreaPosition == .bottom && isKeyboardVisible)
     }
 
-    private func islandBottomPadding(bottomInset: CGFloat) -> CGFloat {
-        isKeyboardVisible ? max(0, keyboardHeight - bottomInset) : 12
+    private var toolbarAlignment: Alignment {
+        environment.dragAreaPosition == .top ? .top : .bottom
+    }
+
+    private var toolbarEdge: Edge.Set {
+        environment.dragAreaPosition == .top ? .top : .bottom
+    }
+
+    private var toolbarAnchor: UnitPoint {
+        environment.dragAreaPosition == .top ? .top : .bottom
+    }
+
+    private func browserViewportLayout(safeAreaInsets: EdgeInsets) -> BrowserViewportLayout {
+        switch environment.dragAreaPosition {
+        case .top:
+            return BrowserViewportLayout(
+                contentFrameTopInset: safeAreaInsets.top + toolbarExtent,
+                obscuredContentInsets: UIEdgeInsets(
+                    top: safeAreaInsets.top + toolbarExtent,
+                    left: 0,
+                    bottom: safeAreaInsets.bottom,
+                    right: 0
+                ),
+                fallbackAdditionalSafeAreaInsets: .zero
+            )
+        case .bottom:
+            return BrowserViewportLayout(
+                contentFrameTopInset: 0,
+                obscuredContentInsets: UIEdgeInsets(
+                    top: safeAreaInsets.top,
+                    left: 0,
+                    bottom: safeAreaInsets.bottom + toolbarExtent,
+                    right: 0
+                ),
+                fallbackAdditionalSafeAreaInsets: UIEdgeInsets(
+                    top: 0,
+                    left: 0,
+                    bottom: toolbarExtent,
+                    right: 0
+                )
+            )
+        }
+    }
+
+    private func islandEdgePadding(bottomInset: CGFloat) -> CGFloat {
+        guard environment.dragAreaPosition == .bottom else { return 12 }
+        return isKeyboardVisible ? max(0, keyboardHeight - bottomInset) : 12
     }
 
     private var islandTapAction: () -> Void {
@@ -525,7 +579,7 @@ struct EngineBrowserView: View {
         return TabIdentifier(serviceID: service.id, sessionIndex: environment.activeSessionIndex(for: service.id))
     }
 
-    /// The tab the bottom chrome presents as active while a ring selection zooms
+    /// The tab the toolbar chrome presents as active while a ring selection zooms
     /// in, so the engine and session buttons reflect the target immediately at
     /// selection time instead of only after the zoom animation completes.
     private var chromeActiveTab: TabIdentifier? {
@@ -755,7 +809,7 @@ struct EngineBrowserView: View {
         .allowsHitTesting(false)
     }
 
-    private func bottomControls(landscape: Bool) -> some View {
+    private func toolbarControls(landscape: Bool) -> some View {
         VStack(spacing: 10) {
             if landscape {
                 landscapeControls
@@ -985,10 +1039,13 @@ struct EngineBrowserView: View {
         return .primary
     }
 
-    private var webContent: some View {
+    private func webContent(viewportLayout: BrowserViewportLayout) -> some View {
         ZStack {
             if let session = activeSession {
-                WebKitBrowserView(session: session)
+                WebKitBrowserView(
+                    session: session,
+                    viewportLayout: viewportLayout
+                )
                     .id(session.id)
             } else if environment.services.isEmpty {
                 ContentUnavailableView("No Engines", systemImage: "globe", description: Text("Add an engine in Settings."))
@@ -1056,6 +1113,27 @@ private struct RingFrameKey: PreferenceKey {
     static var defaultValue: [TabIdentifier: CGRect] = [:]
     static func reduce(value: inout [TabIdentifier: CGRect], nextValue: () -> [TabIdentifier: CGRect]) {
         value.merge(nextValue()) { $1 }
+    }
+}
+
+private struct ToolbarExtentPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private extension View {
+    func reportsToolbarExtent() -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: ToolbarExtentPreferenceKey.self,
+                    value: proxy.size.height
+                )
+            }
+        }
     }
 }
 

@@ -28,6 +28,7 @@ final class AppEnvironment: ObservableObject {
     @Published var services: [Service] = []
     @Published var persistedTabState = PersistedTabState()
     @Published var colorScheme: AppColorScheme = .system
+    @Published var dragAreaPosition: DragAreaPosition = .bottom
     @Published var customActions: [CustomAction] = []
     @Published var enablePromptHistory: Bool = true
     @Published var promptHistoryRecordOnSubmit: Bool = true
@@ -748,6 +749,9 @@ final class AppEnvironment: ObservableObject {
         if let colorScheme = persisted.colorScheme {
             self.colorScheme = colorScheme
         }
+        if let dragAreaPosition = persisted.dragAreaPosition {
+            self.dragAreaPosition = dragAreaPosition
+        }
         if let enablePromptHistory = persisted.enablePromptHistory {
             self.enablePromptHistory = enablePromptHistory
         }
@@ -837,6 +841,7 @@ final class AppEnvironment: ObservableObject {
         payload.services = services
         payload.customActions = customActions
         payload.colorScheme = colorScheme
+        payload.dragAreaPosition = dragAreaPosition
         payload.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
         payload.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
         payload.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
@@ -881,6 +886,7 @@ final class AppEnvironment: ObservableObject {
         "services",
         "customActions",
         "colorScheme",
+        "dragAreaPosition",
         "automaticallySwitchEngineOnLastSessionClose",
         "autoCreateSessionOnEmptyEngineActivation",
         "shouldPurgeDanglingWebData",

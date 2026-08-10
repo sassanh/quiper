@@ -10,6 +10,7 @@ struct IOSAuditTests {
         let service = makeService()
         let settings = PersistedSettings(
             services: [service],
+            dragAreaPosition: .top,
             colorScheme: .dark,
             persistedTabState: PersistedTabState(activeServiceID: service.id),
             version: 1
@@ -24,7 +25,9 @@ struct IOSAuditTests {
         defer { removeSettings(at: url) }
 
         let environment = AppEnvironment(settingsURL: url, enrichMissingIcons: false)
+        #expect(environment.dragAreaPosition == .top)
         environment.colorScheme = .light
+        environment.dragAreaPosition = .bottom
         environment.save()
         let firstSave = try Data(contentsOf: url)
         environment.save()
@@ -36,6 +39,7 @@ struct IOSAuditTests {
         #expect((object["futureSetting"] as? [String: Any])?["revision"] as? Int == 7)
         #expect(object["selectorDisplayMode"] == nil)
         #expect((try? JSONDecoder().decode(PersistedSettings.self, from: JSONSerialization.data(withJSONObject: object)))?.colorScheme == .light)
+        #expect((try? JSONDecoder().decode(PersistedSettings.self, from: JSONSerialization.data(withJSONObject: object)))?.dragAreaPosition == .bottom)
         #expect(firstSave == secondSave)
     }
 
@@ -53,6 +57,7 @@ struct IOSAuditTests {
 
         let environment = AppEnvironment(settingsURL: url, enrichMissingIcons: false)
         #expect(environment.services.isEmpty)
+        #expect(environment.dragAreaPosition == .bottom)
         environment.save()
 
         let object = try settingsObject(at: url)

@@ -186,7 +186,7 @@ struct SettingsView: View {
         } header: {
             Text("Actions")
         } footer: {
-            Text("Actions run JavaScript in the active engine. iOS has no keyboard, so trigger them from the Actions button in the bottom bar.")
+            Text("Actions run JavaScript in the active engine. iOS has no keyboard, so trigger them from the Actions button in the toolbar.")
         }
     }
 
@@ -233,9 +233,74 @@ struct SettingsView: View {
                     Text(scheme.rawValue).tag(scheme)
                 }
             }
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Toolbar Position")
+                ToolbarPositionPicker(selection: toolbarPositionBinding)
+            }
         } header: {
             Text("Appearance")
+        } footer: {
+            Text("Places the browsing controls at the top or bottom edge.")
         }
+    }
+
+    private var toolbarPositionBinding: Binding<DragAreaPosition> {
+        Binding(
+            get: { environment.dragAreaPosition },
+            set: { position in
+                environment.dragAreaPosition = position
+                environment.save()
+            }
+        )
+    }
+}
+
+private struct ToolbarPositionPicker: View {
+    @Binding var selection: DragAreaPosition
+
+    var body: some View {
+        HStack(spacing: 12) {
+            positionButton(.top)
+            positionButton(.bottom)
+        }
+    }
+
+    private func positionButton(_ position: DragAreaPosition) -> some View {
+        let isSelected = selection == position
+        return Button {
+            selection = position
+        } label: {
+            VStack(spacing: 8) {
+                ZStack(alignment: position == .top ? .top : .bottom) {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.45), lineWidth: 1)
+                        .frame(width: 44, height: 76)
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.8))
+                        .frame(width: 36, height: 9)
+                        .padding(.vertical, 4)
+                }
+                Text(position.rawValue)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.accentColor.opacity(isSelected ? 0.12 : 0.035))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(
+                        isSelected ? Color.accentColor : Color.secondary.opacity(0.2),
+                        lineWidth: isSelected ? 2 : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Toolbar at \(position.rawValue.lowercased())")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
