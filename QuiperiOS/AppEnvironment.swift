@@ -1,30 +1,22 @@
 import Combine
 import Foundation
 import SwiftUI
+import UIKit
+import UserNotifications
 import WebKit
 
 @MainActor
-protocol WebDataPurger {
-    func purgeWebsiteData(forHost host: String)
-}
-
-final class DefaultWebDataPurger: WebDataPurger {
-    nonisolated init() { }
-
-    @MainActor
-    func purgeWebsiteData(forHost host: String) {
-        let store = WKWebsiteDataStore.default()
-        let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
-        store.fetchDataRecords(ofTypes: dataTypes) { records in
-            let matching = records.filter { $0.displayName == host }
-            guard !matching.isEmpty else { return }
-            store.removeData(ofTypes: dataTypes, for: matching) { }
-        }
-    }
-}
-
-@MainActor
 final class AppEnvironment: ObservableObject {
+    enum StartupState: Equatable {
+        case loading
+        case waitingForProtectedData
+        case needsWebsiteDataReset
+        case ready
+        case failed(String)
+    }
+
+    static let websiteDataStoreVersion = 1
+
     @Published var services: [Service] = []
     @Published var persistedTabState = PersistedTabState()
     @Published var colorScheme: AppColorScheme = .system
@@ -40,13 +32,31 @@ final class AppEnvironment: ObservableObject {
     @Published var automaticallySwitchEngineOnLastSessionClose: Bool = true
     @Published var autoCreateSessionOnEmptyEngineActivation: Bool = true
     @Published var shouldPurgeDanglingWebData: Bool = true
+    @Published private(set) var startupState: StartupState = .loading
+    @Published private(set) var unlockedServiceIDs: Set<UUID> = []
+    @Published private(set) var securityOperationServiceIDs: Set<UUID> = []
+    @Published private(set) var securityErrorByServiceID: [UUID: String] = [:]
+    @Published private(set) var isPrivacyShieldVisible = false
+    @Published private(set) var shouldDismissSensitiveUI = false
     private(set) var isRingOverlayActive = false
 
     private let settingsURL: URL
-    private let webDataPurger: any WebDataPurger
+    private let websiteDataStoreManager: any WebsiteDataStoreManaging
+    private let engineKeyStore: any EngineKeyStoring
+    private let secureProfileStore: any SecureProfileStoring
+    private let requiresWebsiteDataMigration: Bool
+    private let isProtectedDataAvailable: () -> Bool
+    private let enrichMissingIcons: Bool
+    private let allowsNetworkWork: Bool
     // Keep fields owned by the other platform intact when iOS saves shared settings.
     private var persistedSettingsSnapshot: PersistedSettings?
     private var persistedSettingsJSON: [String: Any]?
+    private var storedWebsiteDataStoreVersion: Int?
+    private var unlockedKeys: [UUID: Data] = [:]
+    private var lastActivityTime = Date()
+    private var currentScenePhase: ScenePhase = .active
+    private var inactivityTimer: Timer?
+    private var didStartIconEnrichment = false
     private var webSessions: [UUID: [Int: WebViewSession]] = [:]
     private(set) var sessionThumbnails: [TabIdentifier: UIImage] = [:]
     @Published private(set) var thumbnailsRevision = 0
@@ -54,15 +64,29 @@ final class AppEnvironment: ObservableObject {
     init(
         settingsURL: URL? = nil,
         enrichMissingIcons: Bool = true,
-        webDataPurger: any WebDataPurger = DefaultWebDataPurger()
+        websiteDataStoreManager: (any WebsiteDataStoreManaging)? = nil,
+        engineKeyStore: (any EngineKeyStoring)? = nil,
+        secureProfileStore: (any SecureProfileStoring)? = nil,
+        requiresWebsiteDataMigration: Bool? = nil,
+        isProtectedDataAvailable: (() -> Bool)? = nil,
+        allowsNetworkWork: Bool = true
     ) {
         FaviconFetcher.configure(imageProcessor: UIKitFaviconImageProcessor.self)
-        self.settingsURL = settingsURL ?? Self.makeSettingsURL()
-        self.webDataPurger = webDataPurger
+        let resolvedSettingsURL = settingsURL ?? Self.makeSettingsURL()
+        self.settingsURL = resolvedSettingsURL
+        self.websiteDataStoreManager = websiteDataStoreManager ?? DefaultWebsiteDataStoreManager()
+        self.engineKeyStore = engineKeyStore ?? IOSKeychainEngineKeyStore.shared
+        self.secureProfileStore = secureProfileStore ?? FileSecureProfileStore(
+            directoryURL: resolvedSettingsURL.deletingLastPathComponent().appendingPathComponent(
+                "SecureProfiles",
+                isDirectory: true
+            )
+        )
+        self.requiresWebsiteDataMigration = requiresWebsiteDataMigration ?? (settingsURL == nil)
+        self.isProtectedDataAvailable = isProtectedDataAvailable ?? { UIApplication.shared.isProtectedDataAvailable }
+        self.enrichMissingIcons = enrichMissingIcons
+        self.allowsNetworkWork = allowsNetworkWork
         load()
-        if enrichMissingIcons {
-            enrichMissingIconsIfNeeded()
-        }
     }
 
     // MARK: - Web view sessions
@@ -74,7 +98,14 @@ final class AppEnvironment: ObservableObject {
         guard let service = services.first(where: { $0.id == serviceID }) else {
             preconditionFailure("No service for \(serviceID)")
         }
-        let session = WebViewSession(service: service, sessionIndex: sessionIndex, initialURL: initialURL, loadImmediately: loadImmediately)
+        precondition(!isServiceLocked(serviceID), "A locked engine cannot create a web session")
+        let session = WebViewSession(
+            service: service,
+            sessionIndex: sessionIndex,
+            initialURL: initialURL,
+            websiteDataStore: websiteDataStoreManager.dataStore(for: serviceID),
+            loadImmediately: loadImmediately && allowsNetworkWork
+        )
         session.onPromptRecorded = { [weak self] text, clearType in
             self?.recordPrompt(text, clearType: clearType, for: serviceID, sessionIndex: sessionIndex)
         }
@@ -91,6 +122,7 @@ final class AppEnvironment: ObservableObject {
             self?.updateTabInputState(state, for: serviceID, sessionIndex: sessionIndex)
         }
         session.onInputStateCommitted = { [weak self] in
+            self?.registerUserActivity()
             self?.save()
         }
         session.onRequestRestoreInputState = { [weak self] in
@@ -98,6 +130,9 @@ final class AppEnvironment: ObservableObject {
         }
         session.onSnapshot = { [weak self] image in
             self?.storeThumbnail(image, for: serviceID, sessionIndex: sessionIndex)
+        }
+        session.onUserActivity = { [weak self] in
+            self?.registerUserActivity()
         }
         var serviceMap = webSessions[serviceID] ?? [:]
         serviceMap[sessionIndex] = session
@@ -121,6 +156,19 @@ final class AppEnvironment: ObservableObject {
     var activeService: Service? {
         guard let activeServiceID = persistedTabState.activeServiceID else { return services.first }
         return services.first { $0.id == activeServiceID }
+    }
+
+    func isServiceLocked(_ serviceID: UUID) -> Bool {
+        guard let service = services.first(where: { $0.id == serviceID }) else { return false }
+        return service.isEncrypted && !unlockedServiceIDs.contains(serviceID)
+    }
+
+    func securityError(for serviceID: UUID) -> String? {
+        securityErrorByServiceID[serviceID]
+    }
+
+    func clearSecurityError(for serviceID: UUID) {
+        securityErrorByServiceID[serviceID] = nil
     }
 
     func activeSessionIndex(for serviceID: UUID) -> Int {
@@ -153,13 +201,348 @@ final class AppEnvironment: ObservableObject {
         webSessions[serviceID]?[sessionIndex]
     }
 
+    // MARK: - Secure engine lifecycle
+
+    func completeWebsiteDataReset() async {
+        guard startupState == .needsWebsiteDataReset else { return }
+        startupState = .loading
+        await websiteDataStoreManager.resetLegacyDefaultStore()
+        storedWebsiteDataStoreVersion = Self.websiteDataStoreVersion
+        guard save(flushSecureProfiles: false) else {
+            startupState = .failed("Quiper reset the old website sessions but could not record the migration. Try again before browsing.")
+            return
+        }
+        finishLoadingReadyState()
+    }
+
+    func retryStartup() {
+        guard startupState != .ready else { return }
+        load()
+    }
+
+    func enableProtection(for serviceID: UUID) async {
+        guard !securityOperationServiceIDs.contains(serviceID),
+              var index = services.firstIndex(where: { $0.id == serviceID }),
+              !services[index].isEncrypted else { return }
+        securityOperationServiceIDs.insert(serviceID)
+        securityErrorByServiceID[serviceID] = nil
+        defer { securityOperationServiceIDs.remove(serviceID) }
+
+        var originalService = services[index]
+        var originalTabState = persistedTabState
+        var keyWasPrepared = false
+        do {
+            let key = try await engineKeyStore.createKey(
+                for: serviceID,
+                reason: "Protect \(originalService.name) with your device authentication"
+            )
+            keyWasPrepared = true
+            guard let refreshedIndex = services.firstIndex(where: { $0.id == serviceID }),
+                  !services[refreshedIndex].isEncrypted else {
+                throw SecurityOperationError.operationInterrupted
+            }
+            index = refreshedIndex
+            originalService = services[index]
+            originalTabState = persistedTabState
+            let profile = IOSSecuredEngineProfile(
+                service: originalService,
+                state: persistedTabState,
+                includeTabState: tabSurvivalPolicy != .never
+            )
+            try secureProfileStore.saveProfile(profile, key: key)
+
+            services[index].isEncrypted = true
+            services[index].hasMigratedMetadata = true
+            services[index].usesDiskutilSparseBundle = false
+            unlockedKeys[serviceID] = key
+            unlockedServiceIDs.insert(serviceID)
+            updateCachedSessions(for: services[index])
+            guard save() else {
+                services[index] = originalService
+                persistedTabState = originalTabState
+                unlockedKeys[serviceID] = nil
+                unlockedServiceIDs.remove(serviceID)
+                updateCachedSessions(for: originalService)
+                throw SecurityOperationError.settingsWriteFailed
+            }
+            if currentScenePhase == .background, services[index].lockOnSwitchAway {
+                lockService(serviceID)
+            }
+            await removeSensitiveNotifications(for: serviceID)
+        } catch {
+            let isNowProtected = services.first(where: { $0.id == serviceID })?.isEncrypted == true
+            if keyWasPrepared, !isNowProtected {
+                try? secureProfileStore.removeProfile(for: serviceID)
+                try? engineKeyStore.removeKey(for: serviceID)
+            }
+            if services.contains(where: { $0.id == serviceID }) {
+                securityErrorByServiceID[serviceID] = error.localizedDescription
+            }
+        }
+    }
+
+    func disableProtection(for serviceID: UUID) async {
+        guard !securityOperationServiceIDs.contains(serviceID),
+              var index = services.firstIndex(where: { $0.id == serviceID }),
+              services[index].isEncrypted else { return }
+        securityOperationServiceIDs.insert(serviceID)
+        securityErrorByServiceID[serviceID] = nil
+        defer { securityOperationServiceIDs.remove(serviceID) }
+
+        var originalService = services[index]
+        var originalTabState = persistedTabState
+        do {
+            let key = try await engineKeyStore.retrieveKey(
+                for: serviceID,
+                reason: "Remove protection from \(originalService.name)"
+            )
+            guard let refreshedIndex = services.firstIndex(where: { $0.id == serviceID }),
+                  services[refreshedIndex].isEncrypted else {
+                throw SecurityOperationError.operationInterrupted
+            }
+            index = refreshedIndex
+            originalService = services[index]
+            originalTabState = persistedTabState
+            let profile = try secureProfileStore.loadProfile(for: serviceID, key: key)
+            var restoredService = profile.metadata.applying(to: originalService)
+            restoredService.isEncrypted = false
+            restoredService.hasMigratedMetadata = false
+            restoredService.usesDiskutilSparseBundle = false
+            services[index] = restoredService
+            if tabSurvivalPolicy != .never {
+                profile.tabState?.applying(to: &persistedTabState, serviceID: serviceID)
+            }
+
+            guard save(flushSecureProfiles: false) else {
+                services[index] = originalService
+                persistedTabState = originalTabState
+                throw SecurityOperationError.settingsWriteFailed
+            }
+            unlockedKeys[serviceID] = nil
+            unlockedServiceIDs.remove(serviceID)
+            var cleanupErrors: [String] = []
+            do {
+                try secureProfileStore.removeProfile(for: serviceID)
+            } catch {
+                cleanupErrors.append("encrypted profile")
+            }
+            do {
+                try engineKeyStore.removeKey(for: serviceID)
+            } catch {
+                cleanupErrors.append("device key")
+            }
+            updateCachedSessions(for: restoredService)
+            if !cleanupErrors.isEmpty {
+                securityErrorByServiceID[serviceID] = "Protection was removed, but Quiper could not clean up the old \(cleanupErrors.joined(separator: " and "))."
+            }
+        } catch {
+            if services.contains(where: { $0.id == serviceID }) {
+                securityErrorByServiceID[serviceID] = error.localizedDescription
+            }
+        }
+    }
+
+    func unlockService(_ serviceID: UUID) async {
+        guard !securityOperationServiceIDs.contains(serviceID),
+              isServiceLocked(serviceID),
+              var index = services.firstIndex(where: { $0.id == serviceID }) else { return }
+        securityOperationServiceIDs.insert(serviceID)
+        securityErrorByServiceID[serviceID] = nil
+        defer { securityOperationServiceIDs.remove(serviceID) }
+
+        do {
+            let key = try await engineKeyStore.retrieveKey(
+                for: serviceID,
+                reason: "Unlock \(services[index].name)"
+            )
+            guard let refreshedIndex = services.firstIndex(where: { $0.id == serviceID }),
+                  isServiceLocked(serviceID) else { return }
+            index = refreshedIndex
+            guard currentScenePhase != .background || !services[index].lockOnSwitchAway else {
+                return
+            }
+            let profile = try secureProfileStore.loadProfile(for: serviceID, key: key)
+            var restoredService = profile.metadata.applying(to: services[index])
+            let validActionIDs = Set(customActions.map(\.id))
+            restoredService.actionScripts = restoredService.actionScripts.filter { validActionIDs.contains($0.key) }
+            restoredService.templateActionScriptSync = restoredService.templateActionScriptSync.filter {
+                validActionIDs.contains($0.key)
+            }
+            services[index] = restoredService
+            if tabSurvivalPolicy != .never {
+                profile.tabState?.applying(to: &persistedTabState, serviceID: serviceID)
+            }
+            unlockedKeys[serviceID] = key
+            unlockedServiceIDs.insert(serviceID)
+            registerUserActivity()
+            if autoCreateSessionOnEmptyEngineActivation, hasNoSessions(for: serviceID) {
+                ensureSessions(for: serviceID)
+            }
+            if persistedTabState.activeServiceID == serviceID {
+                restoreTabsState()
+            }
+        } catch {
+            securityErrorByServiceID[serviceID] = error.localizedDescription
+        }
+    }
+
+    func lockService(_ serviceID: UUID) {
+        guard unlockedServiceIDs.contains(serviceID),
+              let index = services.firstIndex(where: { $0.id == serviceID }),
+              let key = unlockedKeys[serviceID] else { return }
+        let service = services[index]
+        let profile = IOSSecuredEngineProfile(
+            service: service,
+            state: persistedTabState,
+            includeTabState: tabSurvivalPolicy != .never
+        )
+        do {
+            try secureProfileStore.saveProfile(profile, key: key)
+        } catch {
+            securityErrorByServiceID[serviceID] = "The latest in-memory changes could not be saved before locking. The previously saved protected profile remains intact."
+        }
+
+        invalidateSessions(for: serviceID)
+        stripSensitiveState(for: serviceID)
+        services[index] = securedStub(from: service)
+        unlockedKeys[serviceID] = nil
+        unlockedServiceIDs.remove(serviceID)
+        _ = save(flushSecureProfiles: false)
+    }
+
+    func handleScenePhase(_ phase: ScenePhase) {
+        currentScenePhase = phase
+        switch phase {
+        case .active:
+            isPrivacyShieldVisible = false
+            shouldDismissSensitiveUI = false
+            checkInactivityLocks()
+        case .inactive:
+            isPrivacyShieldVisible = true
+            save()
+        case .background:
+            isPrivacyShieldVisible = true
+            shouldDismissSensitiveUI = true
+            save()
+            for service in services where service.isEncrypted && service.lockOnSwitchAway {
+                lockService(service.id)
+            }
+        @unknown default:
+            isPrivacyShieldVisible = true
+        }
+    }
+
+    func registerUserActivity() {
+        lastActivityTime = Date()
+    }
+
+    func checkInactivityLocks(now: Date = Date()) {
+        let elapsed = now.timeIntervalSince(lastActivityTime)
+        for service in services where service.isEncrypted && service.lockAfterInactivity {
+            guard unlockedServiceIDs.contains(service.id) else { continue }
+            if elapsed >= TimeInterval(max(1, service.autoLockInactivityTimeout) * 60) {
+                lockService(service.id)
+            }
+        }
+    }
+
+    private enum SecurityOperationError: LocalizedError {
+        case settingsWriteFailed
+        case operationInterrupted
+
+        var errorDescription: String? {
+            switch self {
+            case .settingsWriteFailed:
+                "Quiper could not safely update settings, so the security change was rolled back."
+            case .operationInterrupted:
+                "The engine changed while Quiper was authenticating, so the security operation was cancelled."
+            }
+        }
+    }
+
+    private func securedStub(from service: Service) -> Service {
+        var stub = service
+        stub.url = ""
+        stub.focus_selector = ""
+        stub.actionScripts = [:]
+        stub.customCSS = nil
+        stub.routingRules = []
+        stub.iconBase64 = nil
+        stub.iconManuallyUnset = nil
+        stub.preservePrompt = true
+        stub.templateActionScriptSync = [:]
+        stub.templatePromptInputSelectorSync = false
+        stub.templateCustomCSSSync = false
+        stub.isEncrypted = true
+        stub.hasMigratedMetadata = true
+        stub.usesDiskutilSparseBundle = false
+        return stub
+    }
+
+    private func stripSensitiveState(for serviceID: UUID) {
+        persistedTabState.activeIndicesByID[serviceID] = nil
+        persistedTabState.openTabs[serviceID] = nil
+        persistedTabState.tabTitles[serviceID] = nil
+        persistedTabState.tabInputs[serviceID] = nil
+        persistedTabState.tabPromptHistories[serviceID] = nil
+        persistedTabState.tabPromptHistoryEnabledOverrides[serviceID] = nil
+        persistedTabState.tabHistory?.removeAll { $0.serviceID == serviceID }
+        if lastActiveTab?.serviceID == serviceID {
+            lastActiveTab = nil
+        }
+        sessionThumbnails = sessionThumbnails.filter { $0.key.serviceID != serviceID }
+        thumbnailsRevision += 1
+    }
+
+    private func invalidateSessions(for serviceID: UUID) {
+        if let sessions = webSessions[serviceID] {
+            for session in sessions.values {
+                session.invalidate()
+            }
+        }
+        webSessions[serviceID] = nil
+    }
+
+    private func removeSensitiveNotifications(for serviceID: UUID) async {
+        let center = UNUserNotificationCenter.current()
+        let serviceIDString = serviceID.uuidString
+        let delivered = await center.deliveredNotifications()
+        let deliveredIDs = delivered.compactMap { notification in
+            notification.request.content.userInfo[NotificationMetadata.serviceIDKey] as? String == serviceIDString
+                ? notification.request.identifier
+                : nil
+        }
+        if !deliveredIDs.isEmpty {
+            center.removeDeliveredNotifications(withIdentifiers: deliveredIDs)
+        }
+        let pending = await center.pendingNotificationRequests()
+        let pendingIDs = pending.compactMap { request in
+            request.content.userInfo[NotificationMetadata.serviceIDKey] as? String == serviceIDString
+                ? request.identifier
+                : nil
+        }
+        if !pendingIDs.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: pendingIDs)
+        }
+    }
+
     // MARK: - Service management
 
     func setActiveService(_ id: UUID) {
+        guard services.contains(where: { $0.id == id }) else { return }
+        registerUserActivity()
+        if let current = activeService, current.id != id {
+            captureThumbnailWhenLeaving(
+                TabIdentifier(serviceID: current.id, sessionIndex: activeSessionIndex(for: current.id))
+            )
+            if current.isEncrypted && current.lockOnSwitchAway {
+                lockService(current.id)
+            }
+        }
         let newTab = TabIdentifier(serviceID: id, sessionIndex: activeSessionIndex(for: id))
         recordTabHistory(switchingTo: newTab)
         persistedTabState.activeServiceID = id
-        if autoCreateSessionOnEmptyEngineActivation, hasNoSessions(for: id) {
+        if autoCreateSessionOnEmptyEngineActivation, !isServiceLocked(id), hasNoSessions(for: id) {
             ensureSessions(for: id)
         }
         save()
@@ -174,6 +557,14 @@ final class AppEnvironment: ObservableObject {
 
     func updateService(_ service: Service) {
         guard let index = services.firstIndex(where: { $0.id == service.id }) else { return }
+        if isServiceLocked(service.id) {
+            services[index].name = service.name
+            services[index].lockOnSwitchAway = service.lockOnSwitchAway
+            services[index].lockAfterInactivity = service.lockAfterInactivity
+            services[index].autoLockInactivityTimeout = max(1, service.autoLockInactivityTimeout)
+            save(flushSecureProfiles: false)
+            return
+        }
         services[index] = service
         updateCachedSessions(for: service)
         save()
@@ -183,6 +574,7 @@ final class AppEnvironment: ObservableObject {
     /// routing rules, mirroring macOS `rememberDecision`.
     func rememberRoutingDecision(host: String, action: RoutingAction, serviceID: UUID) {
         guard !host.isEmpty,
+              !isServiceLocked(serviceID),
               let index = services.firstIndex(where: { $0.id == serviceID }) else { return }
         services[index] = RoutingResolver.applyingRememberedRule(host: host, action: action, to: services[index])
         updateCachedSessions(for: services[index])
@@ -253,6 +645,7 @@ final class AppEnvironment: ObservableObject {
     private func enrichMissingIconsIfNeeded() {
         var localUpdated = false
         for idx in 0..<services.count {
+            guard !isServiceLocked(services[idx].id) else { continue }
             if let defaultB64 = EngineIconService.defaultIcon(for: services[idx], defaults: DefaultEngineDefinitions.definitions) {
                 services[idx].iconBase64 = defaultB64
                 localUpdated = true
@@ -272,6 +665,7 @@ final class AppEnvironment: ObservableObject {
                 var updated = false
                 for (id, base64) in fetchedIcons {
                     if let idx = services.firstIndex(where: { $0.id == id }),
+                       !isServiceLocked(id),
                        services[idx].iconBase64 == nil,
                        services[idx].iconManuallyUnset != true {
                         services[idx].iconBase64 = base64
@@ -286,16 +680,26 @@ final class AppEnvironment: ObservableObject {
     }
 
     func removeService(_ serviceID: UUID) {
+        guard !securityOperationServiceIDs.contains(serviceID) else {
+            securityErrorByServiceID[serviceID] = "Wait for the current security operation to finish before deleting this engine."
+            return
+        }
         guard let removed = services.first(where: { $0.id == serviceID }) else { return }
+        invalidateSessions(for: serviceID)
         services.removeAll { $0.id == serviceID }
         persistedTabState.openTabs[serviceID] = nil
         persistedTabState.tabTitles[serviceID] = nil
         persistedTabState.tabPromptHistories[serviceID] = nil
         persistedTabState.tabInputs[serviceID] = nil
+        persistedTabState.tabPromptHistoryEnabledOverrides[serviceID] = nil
         persistedTabState.activeIndicesByID[serviceID] = nil
         persistedTabState.tabHistory?.removeAll { $0.serviceID == serviceID }
         sessionThumbnails = sessionThumbnails.filter { $0.key.serviceID != serviceID }
-        webSessions[serviceID] = nil
+        unlockedKeys[serviceID] = nil
+        unlockedServiceIDs.remove(serviceID)
+        securityErrorByServiceID[serviceID] = nil
+        try? secureProfileStore.removeProfile(for: serviceID)
+        try? engineKeyStore.removeKey(for: serviceID)
         if lastActiveTab?.serviceID == serviceID {
             lastActiveTab = nil
         }
@@ -306,18 +710,24 @@ final class AppEnvironment: ObservableObject {
         purgeWebDataIfNeeded(for: removed)
     }
 
-    /// Purges the removed engine's website data from the shared data store when
-    /// the user enabled the setting, mirroring macOS's `WebKitCacheCleaner`.
+    /// Each engine owns an identified WebKit store, so removal never affects a
+    /// different engine even when both point at the same host.
     private func purgeWebDataIfNeeded(for service: Service) {
-        guard shouldPurgeDanglingWebData,
-              let host = URL(string: service.url)?.host?.lowercased(),
-              !services.contains(where: { URL(string: $0.url)?.host?.lowercased() == host }) else { return }
-        webDataPurger.purgeWebsiteData(forHost: host)
+        guard shouldPurgeDanglingWebData else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await websiteDataStoreManager.removeDataStore(for: service.id)
+            } catch {
+                securityErrorByServiceID[service.id] = "The engine was removed, but its isolated website data could not be deleted."
+            }
+        }
     }
 
     // MARK: - Session management
 
     func ensureSessions(for serviceID: UUID) {
+        guard !isServiceLocked(serviceID) else { return }
         guard (persistedTabState.openTabs[serviceID] ?? [:]).isEmpty else { return }
         if persistedTabState.openTabs[serviceID] == nil {
             persistedTabState.openTabs[serviceID] = [:]
@@ -339,7 +749,7 @@ final class AppEnvironment: ObservableObject {
         if lastActiveTab == closedTab {
             lastActiveTab = nil
         }
-        webSessions[serviceID]?.removeValue(forKey: index)
+        webSessions[serviceID]?.removeValue(forKey: index)?.invalidate()
         if persistedTabState.activeIndicesByID[serviceID] == index {
             let remaining = (persistedTabState.openTabs[serviceID] ?? [:]).keys.sorted()
             persistedTabState.activeIndicesByID[serviceID] = remaining.min(by: { abs($0 - index) < abs($1 - index) }) ?? 0
@@ -378,6 +788,8 @@ final class AppEnvironment: ObservableObject {
     }
 
     func setActiveSession(for serviceID: UUID, index: Int) {
+        guard services.contains(where: { $0.id == serviceID }) else { return }
+        registerUserActivity()
         let slot = SessionSlots.range.contains(index) ? index : 0
         let newTab = TabIdentifier(serviceID: serviceID, sessionIndex: slot)
         if let oldService = activeService {
@@ -387,7 +799,16 @@ final class AppEnvironment: ObservableObject {
             }
         }
         recordTabHistory(switchingTo: newTab)
+        if let current = activeService, current.id != serviceID,
+           current.isEncrypted, current.lockOnSwitchAway {
+            lockService(current.id)
+        }
         persistedTabState.activeServiceID = serviceID
+        guard !isServiceLocked(serviceID) else {
+            persistedTabState.activeIndicesByID[serviceID] = slot
+            save()
+            return
+        }
         if persistedTabState.openTabs[serviceID] == nil {
             persistedTabState.openTabs[serviceID] = [:]
         }
@@ -395,7 +816,9 @@ final class AppEnvironment: ObservableObject {
             persistedTabState.openTabs[serviceID]?[slot] = serviceURL(for: serviceID)
         }
         persistedTabState.activeIndicesByID[serviceID] = slot
-        webSessions[serviceID]?[slot]?.loadIfNeeded()
+        if allowsNetworkWork {
+            webSessions[serviceID]?[slot]?.loadIfNeeded()
+        }
         save()
     }
 
@@ -417,6 +840,7 @@ final class AppEnvironment: ObservableObject {
     }
 
     func updateSessionURL(for serviceID: UUID, sessionIndex: Int, url: URL) {
+        guard services.contains(where: { $0.id == serviceID }), !isServiceLocked(serviceID) else { return }
         let urlString = url.absoluteString
         guard !urlString.isEmpty, urlString != "about:blank" else { return }
         if persistedTabState.openTabs[serviceID] == nil {
@@ -426,6 +850,7 @@ final class AppEnvironment: ObservableObject {
     }
 
     func updateSessionTitle(for serviceID: UUID, sessionIndex: Int, title: String) {
+        guard services.contains(where: { $0.id == serviceID }), !isServiceLocked(serviceID) else { return }
         guard !title.isEmpty else { return }
         if persistedTabState.tabTitles[serviceID] == nil {
             persistedTabState.tabTitles[serviceID] = [:]
@@ -518,7 +943,8 @@ final class AppEnvironment: ObservableObject {
     }
 
     func saveCustomActionScript(_ script: String, serviceID: UUID, actionID: UUID) {
-        guard let serviceIndex = services.firstIndex(where: { $0.id == serviceID }) else { return }
+        guard !isServiceLocked(serviceID),
+              let serviceIndex = services.firstIndex(where: { $0.id == serviceID }) else { return }
         services[serviceIndex].templateActionScriptSync[actionID] = false
         services[serviceIndex].actionScripts[actionID] = script
         save()
@@ -528,7 +954,8 @@ final class AppEnvironment: ObservableObject {
     /// template script (dropping the stored custom one), turning off hands control
     /// back, seeding the custom script with the default when none exists.
     func setTemplateActionScriptSync(_ isInSync: Bool, serviceID: UUID, actionID: UUID) {
-        guard let serviceIndex = services.firstIndex(where: { $0.id == serviceID }),
+        guard !isServiceLocked(serviceID),
+              let serviceIndex = services.firstIndex(where: { $0.id == serviceID }),
               let action = customActions.first(where: { $0.id == actionID }),
               let defaultScript = ActionScripts.defaultScript(for: services[serviceIndex], action: action) else {
             return
@@ -551,7 +978,8 @@ final class AppEnvironment: ObservableObject {
     /// template stylesheet (dropping the stored custom one), turning off hands
     /// control back, seeding the stylesheet with the default.
     func setTemplateCustomCSSSync(_ isInSync: Bool, serviceID: UUID) {
-        guard let serviceIndex = services.firstIndex(where: { $0.id == serviceID }),
+        guard !isServiceLocked(serviceID),
+              let serviceIndex = services.firstIndex(where: { $0.id == serviceID }),
               let defaultCSS = ActionScripts.defaultCustomCSS(for: services[serviceIndex]) else {
             return
         }
@@ -573,7 +1001,8 @@ final class AppEnvironment: ObservableObject {
 
     private func applyDefaultScript(for action: CustomAction, toServiceAt index: Int) {
         let service = services[index]
-        guard let template = ActionScripts.defaultServiceTemplate(for: service),
+        guard !isServiceLocked(service.id),
+              let template = ActionScripts.defaultServiceTemplate(for: service),
               let defaultID = ActionScripts.defaultActionID(matching: action.name),
               let defaultScript = template.actionScripts[defaultID]?.trimmingCharacters(in: .whitespacesAndNewlines),
               !defaultScript.isEmpty else { return }
@@ -588,6 +1017,7 @@ final class AppEnvironment: ObservableObject {
     /// Mirrors macOS `didReceiveInputStateMessage`: each clearing trigger records
     /// only when its own setting is enabled, and no other clear type records.
     func recordPrompt(_ text: String, clearType: String, for serviceID: UUID, sessionIndex: Int) {
+        guard !isServiceLocked(serviceID) else { return }
         let shouldRecord: Bool
         switch clearType {
         case "submit":
@@ -625,6 +1055,7 @@ final class AppEnvironment: ObservableObject {
     }
 
     func updateTabInputState(_ state: TabInputState, for serviceID: UUID, sessionIndex: Int) {
+        guard !isServiceLocked(serviceID) else { return }
         guard let service = services.first(where: { $0.id == serviceID }), service.preservePrompt else { return }
         if persistedTabState.tabInputs[serviceID] == nil {
             persistedTabState.tabInputs[serviceID] = [:]
@@ -690,6 +1121,7 @@ final class AppEnvironment: ObservableObject {
     /// session is left and refreshed whenever a page finishes loading, so ring
     /// previews are instant without re-screenshotting every web view.
     func storeThumbnail(_ image: UIImage?, for serviceID: UUID, sessionIndex: Int) {
+        guard services.contains(where: { $0.id == serviceID }), !isServiceLocked(serviceID) else { return }
         guard let image else { return }
         sessionThumbnails[TabIdentifier(serviceID: serviceID, sessionIndex: sessionIndex)] = image
         thumbnailsRevision += 1
@@ -723,27 +1155,56 @@ final class AppEnvironment: ObservableObject {
     private static func makeSettingsURL() -> URL {
         let baseDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent(Constants.APP_FOLDER_NAME)
-        try? FileManager.default.createDirectory(at: baseDir, withIntermediateDirectories: true, attributes: nil)
+        try? FileManager.default.createDirectory(
+            at: baseDir,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete]
+        )
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: baseDir.path
+        )
         return baseDir.appendingPathComponent("settings.json")
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: settingsURL),
-              let persisted = try? JSONDecoder().decode(PersistedSettings.self, from: data) else {
-            persistedSettingsSnapshot = nil
-            persistedSettingsJSON = nil
-            services = DefaultEngineDefinitions.definitions
-            customActions = DefaultActions.defaults
-            persistedTabState.activeServiceID = services.first?.id
-            for service in services {
-                ensureSessions(for: service.id)
+        startupState = .loading
+        guard isProtectedDataAvailable() else {
+            startupState = .waitingForProtectedData
+            return
+        }
+
+        guard FileManager.default.fileExists(atPath: settingsURL.path) else {
+            installDefaultSettings()
+            return
+        }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: settingsURL)
+        } catch {
+            startupState = isProtectedDataAvailable()
+                ? .failed("Quiper could not read settings. The existing file was left untouched.")
+                : .waitingForProtectedData
+            return
+        }
+
+        let persisted: PersistedSettings
+        let json: [String: Any]
+        do {
+            persisted = try JSONDecoder().decode(PersistedSettings.self, from: data)
+            guard let decodedJSON = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw SettingsLoadError.invalidTopLevelDocument
             }
-            save()
+            json = decodedJSON
+        } catch {
+            startupState = .failed("Quiper could not decode settings. The existing file was left untouched.")
             return
         }
 
         persistedSettingsSnapshot = persisted
-        persistedSettingsJSON = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        persistedSettingsJSON = json
+        storedWebsiteDataStoreVersion = json[Self.websiteDataStoreVersionKey] as? Int
         services = persisted.services
         customActions = persisted.customActions ?? []
         if let colorScheme = persisted.colorScheme {
@@ -803,15 +1264,76 @@ final class AppEnvironment: ObservableObject {
             if let activeID = persistedTabState.activeServiceID {
                 lastActiveTab = TabIdentifier(serviceID: activeID, sessionIndex: activeSessionIndex(for: activeID))
             }
-            for service in services {
-                if autoCreateSessionOnEmptyEngineActivation {
-                    ensureSessions(for: service.id)
-                }
-            }
-            restoreTabsState()
         }
-        if persisted.didDecodeLegacyServiceIdentifiers {
+
+        let didSanitizeSecuredState = services.contains { service in
+            guard service.isEncrypted else { return false }
+            return persistedTabState.activeIndicesByID[service.id] != nil
+                || persistedTabState.openTabs[service.id] != nil
+                || persistedTabState.tabTitles[service.id] != nil
+                || persistedTabState.tabInputs[service.id] != nil
+                || persistedTabState.tabPromptHistories[service.id] != nil
+                || persistedTabState.tabPromptHistoryEnabledOverrides[service.id] != nil
+                || persistedTabState.tabHistory?.contains(where: { $0.serviceID == service.id }) == true
+        }
+        for service in services where service.isEncrypted {
+            stripSensitiveState(for: service.id)
+        }
+
+        if requiresWebsiteDataMigration,
+           (storedWebsiteDataStoreVersion ?? 0) < Self.websiteDataStoreVersion {
+            startupState = .needsWebsiteDataReset
+            return
+        }
+        finishLoadingReadyState()
+        if persisted.didDecodeLegacyServiceIdentifiers || didSanitizeSecuredState {
             save()
+        }
+    }
+
+    private enum SettingsLoadError: Error {
+        case invalidTopLevelDocument
+    }
+
+    private func installDefaultSettings() {
+        persistedSettingsSnapshot = nil
+        persistedSettingsJSON = [:]
+        storedWebsiteDataStoreVersion = Self.websiteDataStoreVersion
+        services = DefaultEngineDefinitions.definitions
+        customActions = DefaultActions.defaults
+        persistedTabState = PersistedTabState(activeServiceID: services.first?.id)
+        for service in services where autoCreateSessionOnEmptyEngineActivation {
+            ensureSessions(for: service.id)
+        }
+        guard save(flushSecureProfiles: false) else {
+            startupState = .failed("Quiper could not create its protected settings file.")
+            return
+        }
+        finishLoadingReadyState()
+    }
+
+    private func finishLoadingReadyState() {
+        startupState = .ready
+        if autoCreateSessionOnEmptyEngineActivation {
+            for service in services where !isServiceLocked(service.id) {
+                ensureSessions(for: service.id)
+            }
+        }
+        restoreTabsState()
+        startInactivityMonitoring()
+        if enrichMissingIcons, !didStartIconEnrichment {
+            didStartIconEnrichment = true
+            enrichMissingIconsIfNeeded()
+        }
+    }
+
+    private func startInactivityMonitoring() {
+        guard allowsNetworkWork else { return }
+        guard inactivityTimer == nil else { return }
+        inactivityTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.checkInactivityLocks()
+            }
         }
     }
 
@@ -819,6 +1341,7 @@ final class AppEnvironment: ObservableObject {
     /// by `PersistedTabState` and are instantiated when the user selects them.
     private func restoreTabsState() {
         guard let serviceID = persistedTabState.activeServiceID,
+              !isServiceLocked(serviceID),
               let sessions = persistedTabState.openTabs[serviceID],
               !sessions.isEmpty else { return }
         let preferredIndex = activeSessionIndex(for: serviceID)
@@ -836,9 +1359,19 @@ final class AppEnvironment: ObservableObject {
         )
     }
 
-    func save() {
+    @discardableResult
+    func save(flushSecureProfiles: Bool = true) -> Bool {
+        guard isProtectedDataAvailable() else { return false }
+        if flushSecureProfiles, !persistUnlockedProfiles() {
+            return false
+        }
         var payload = persistedSettingsSnapshot ?? PersistedSettings(services: services)
-        payload.services = services
+        // A protected engine may be unlocked in memory. Persist only its
+        // deliberately minimal stub so future Service fields cannot cross the
+        // plaintext boundary merely because their encoder was not updated.
+        payload.services = services.map { service in
+            service.isEncrypted ? securedStub(from: service) : service
+        }
         payload.customActions = customActions
         payload.colorScheme = colorScheme
         payload.dragAreaPosition = dragAreaPosition
@@ -846,7 +1379,7 @@ final class AppEnvironment: ObservableObject {
         payload.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
         payload.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
         payload.tabSurvivalPolicy = tabSurvivalPolicy
-        payload.persistedTabState = tabSurvivalPolicy == .never ? nil : persistedTabState
+        payload.persistedTabState = tabSurvivalPolicy == .never ? nil : plaintextTabState()
         payload.enablePromptHistory = enablePromptHistory
         payload.promptHistoryRecordOnSubmit = promptHistoryRecordOnSubmit
         payload.promptHistoryRecordOnCmdBackspace = promptHistoryRecordOnCmdBackspace
@@ -856,7 +1389,7 @@ final class AppEnvironment: ObservableObject {
         payload.version = 1
         guard let encodedPayload = try? JSONEncoder().encode(payload),
               let encodedObject = try? JSONSerialization.jsonObject(with: encodedPayload) as? [String: Any]
-        else { return }
+        else { return false }
 
         var settingsObject = persistedSettingsJSON ?? [:]
         for key in Self.iosOwnedSettingKeys {
@@ -868,18 +1401,69 @@ final class AppEnvironment: ObservableObject {
         for key in Self.iosOwnedSettingKeys where encodedObject[key] != nil {
             settingsObject[key] = encodedObject[key]
         }
+        if let storedWebsiteDataStoreVersion {
+            settingsObject[Self.websiteDataStoreVersionKey] = storedWebsiteDataStoreVersion
+        }
 
         guard let data = try? JSONSerialization.data(
             withJSONObject: settingsObject,
             options: [.prettyPrinted, .sortedKeys]
-        ) else { return }
+        ) else { return false }
         do {
-            try data.write(to: settingsURL, options: .atomic)
+            try FileManager.default.createDirectory(
+                at: settingsURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+                attributes: [.protectionKey: FileProtectionType.complete]
+            )
+            try FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.complete],
+                ofItemAtPath: settingsURL.deletingLastPathComponent().path
+            )
+            try data.write(to: settingsURL, options: [.atomic, .completeFileProtection])
         } catch {
-            return
+            return false
         }
         persistedSettingsSnapshot = payload
         persistedSettingsJSON = settingsObject
+        return true
+    }
+
+    private func persistUnlockedProfiles() -> Bool {
+        for service in services where service.isEncrypted && unlockedServiceIDs.contains(service.id) {
+            guard let key = unlockedKeys[service.id] else {
+                securityErrorByServiceID[service.id] = "The engine is marked unlocked but its key is unavailable."
+                return false
+            }
+            do {
+                try secureProfileStore.saveProfile(
+                    IOSSecuredEngineProfile(
+                        service: service,
+                        state: persistedTabState,
+                        includeTabState: tabSurvivalPolicy != .never
+                    ),
+                    key: key
+                )
+            } catch {
+                securityErrorByServiceID[service.id] = error.localizedDescription
+                return false
+            }
+        }
+        return true
+    }
+
+    private func plaintextTabState() -> PersistedTabState {
+        var state = persistedTabState
+        let secureIDs = Set(services.lazy.filter(\.isEncrypted).map(\.id))
+        for serviceID in secureIDs {
+            state.activeIndicesByID[serviceID] = nil
+            state.openTabs[serviceID] = nil
+            state.tabTitles[serviceID] = nil
+            state.tabInputs[serviceID] = nil
+            state.tabPromptHistories[serviceID] = nil
+            state.tabPromptHistoryEnabledOverrides[serviceID] = nil
+        }
+        state.tabHistory = state.tabHistory?.filter { !secureIDs.contains($0.serviceID) }
+        return state
     }
 
     private static let iosOwnedSettingKeys: Set<String> = [
@@ -898,8 +1482,11 @@ final class AppEnvironment: ObservableObject {
         "promptHistoryRecordOnSelectionClear",
         "promptHistoryLimit",
         "tabNavigationRingSize",
+        websiteDataStoreVersionKey,
         "version"
     ]
+
+    private static let websiteDataStoreVersionKey = "iosWebsiteDataStoreVersion"
 
     private static let knownLegacySettingKeys: Set<String> = [
         "selectorDisplayMode",

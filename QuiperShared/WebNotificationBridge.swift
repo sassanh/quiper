@@ -16,12 +16,20 @@ final class WebNotificationBridge: NSObject {
     private let serviceID: UUID
     private var serviceName: String
     private let sessionIndex: Int
+    private var redactsContent: Bool
 
-    init(webView: WKWebView, serviceID: UUID, serviceName: String, sessionIndex: Int) {
+    init(
+        webView: WKWebView,
+        serviceID: UUID,
+        serviceName: String,
+        sessionIndex: Int,
+        redactsContent: Bool = false
+    ) {
         self.webView = webView
         self.serviceID = serviceID
         self.serviceName = serviceName
         self.sessionIndex = sessionIndex
+        self.redactsContent = redactsContent
         super.init()
         handlerProxy.delegate = self
         installBridge()
@@ -58,6 +66,10 @@ final class WebNotificationBridge: NSObject {
 
     func updateServiceName(_ name: String) {
         serviceName = name
+    }
+
+    func updateContentRedaction(_ redactsContent: Bool) {
+        self.redactsContent = redactsContent
     }
 
     private func installBridge() {
@@ -112,21 +124,17 @@ final class WebNotificationBridge: NSObject {
                 }
 
                 let content = UNMutableNotificationContent()
-                content.title = title
-                if let body = payload.body {
-                    content.body = body
-                }
-                if let subtitle = payload.subtitle {
-                    content.subtitle = subtitle
-                }
-                if let badge = payload.badge {
-                    content.badge = badge
-                }
-                if let tag = payload.tag {
-                    content.threadIdentifier = tag
+                content.title = self.redactsContent ? self.serviceName : title
+                if self.redactsContent {
+                    content.body = "Open Quiper to view this protected notification."
+                } else {
+                    content.body = payload.body ?? ""
+                    content.subtitle = payload.subtitle ?? ""
+                    content.badge = payload.badge
+                    content.threadIdentifier = payload.tag ?? ""
                 }
                 content.sound = payload.silent ? nil : .default
-                var userInfo = payload.userInfo ?? [:]
+                var userInfo = self.redactsContent ? [:] : (payload.userInfo ?? [:])
                 userInfo[NotificationMetadata.serviceIDKey] = serviceID.uuidString
                 userInfo[NotificationMetadata.serviceNameKey] = serviceName
                 userInfo[NotificationMetadata.sessionIndexKey] = sessionIndex

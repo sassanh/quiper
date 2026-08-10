@@ -21,11 +21,18 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
     @Published var findStatusText: String? = nil
     @Published var snapshot: UIImage?
 
-    init(service: Service, sessionIndex: Int, initialURL: URL?, loadImmediately: Bool = true) {
+    init(
+        service: Service,
+        sessionIndex: Int,
+        initialURL: URL?,
+        websiteDataStore: WKWebsiteDataStore,
+        loadImmediately: Bool = true
+    ) {
         self.id = UUID()
         self.serviceID = service.id
         self.sessionIndex = sessionIndex
         let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = websiteDataStore
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         let userContentController = WKUserContentController()
@@ -108,6 +115,7 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
     var onInputStateChanged: ((TabInputState) -> Void)?
     var onRequestRestoreInputState: (() -> TabInputState?)?
     var onInputStateCommitted: (() -> Void)?
+    var onUserActivity: (() -> Void)?
 
     var onRingSecondTapDown: ((CGPoint) -> Void)?
     var onRingHoldBegan: (() -> Void)?
@@ -136,7 +144,8 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
 
         let recognizer = DoubleTapGestureRecognizer()
         recognizer.delegate = self
-        recognizer.onFirstTapEnded = { [weak shield] location in
+        recognizer.onFirstTapEnded = { [weak self, weak shield] location in
+            self?.onUserActivity?()
             shield?.arm(at: location)
         }
         recognizer.onSecondTapDown = { [weak self, weak shield] location in
@@ -261,6 +270,33 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         webView.stopLoading()
     }
 
+    func invalidate() {
+        findDebounceTask?.cancel()
+        scrollObservation?.invalidate()
+        scrollObservation = nil
+        pendingLoadURL = nil
+        pendingInputState = nil
+        findQuery = ""
+        findSearch = ""
+        findStatusText = nil
+        snapshot = nil
+        title = ""
+        url = nil
+        webView.stopLoading()
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        coordinator.invalidate()
+        onPromptRecorded = nil
+        onURLChange = nil
+        onTitleChange = nil
+        onRememberRoutingDecision = nil
+        onInputStateChanged = nil
+        onRequestRestoreInputState = nil
+        onInputStateCommitted = nil
+        onUserActivity = nil
+        onSnapshot = nil
+    }
+
     func goBack() {
         if webView.canGoBack { webView.goBack() }
     }
@@ -322,12 +358,18 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
     private func installScrollObservation() {
         scrollObservation = webView.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] scrollView, _ in
             MainActor.assumeIsolated {
-                self?.handleScroll(scrollView.contentOffset.y)
+                self?.handleScroll(
+                    scrollView.contentOffset.y,
+                    userInitiated: scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating
+                )
             }
         }
     }
 
-    private func handleScroll(_ y: CGFloat) {
+    private func handleScroll(_ y: CGFloat, userInitiated: Bool) {
+        if userInitiated {
+            onUserActivity?()
+        }
         if y <= 0 {
             lastScrollY = y
             downwardAccumulation = 0

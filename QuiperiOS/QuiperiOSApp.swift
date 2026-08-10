@@ -1,3 +1,4 @@
+import AppIntents
 import Combine
 import SwiftUI
 import UserNotifications
@@ -9,31 +10,168 @@ struct QuiperiOSApp: App {
     @StateObject private var notificationDelegate = IOSNotificationDelegate()
 
     init() {
-        _environment = StateObject(
-            wrappedValue: UITestSupport.isEnabled
-                ? UITestSupport.makeEnvironment()
-                : AppEnvironment()
-        )
+        let isUnitTestHost = UITestSupport.isUnitTestHost
+        if !isUnitTestHost {
+            _ = PrivacyShieldWindowController.shared
+        }
+
+        let appEnvironment: AppEnvironment
+        if UITestSupport.isEnabled {
+            appEnvironment = UITestSupport.makeEnvironment()
+        } else if isUnitTestHost {
+            appEnvironment = UITestSupport.makeUnitTestHostEnvironment()
+        } else {
+            appEnvironment = AppEnvironment()
+        }
+        _environment = StateObject(wrappedValue: appEnvironment)
     }
 
     var body: some Scene {
         WindowGroup {
-            EngineBrowserView()
-                .environmentObject(environment)
-                .preferredColorScheme(environment.colorScheme.colorScheme)
-                .task {
-                    guard !UITestSupport.isEnabled else { return }
-                    notificationDelegate.configure(environment: environment)
-                    _ = try? await UNUserNotificationCenter.current().requestAuthorization(
-                        options: [.alert, .badge, .sound]
-                    )
-                }
-                .onChange(of: scenePhase) { _, phase in
-                    if phase != .active {
-                        environment.save()
+            if UITestSupport.isUnitTestHost {
+                Color.clear
+                    .accessibilityHidden(true)
+            } else {
+                IOSAppRootView()
+                    .environmentObject(environment)
+                    .preferredColorScheme(environment.colorScheme.colorScheme)
+                    .task {
+                        guard !UITestSupport.isEnabled else { return }
+                        notificationDelegate.configure(environment: environment)
+                        _ = try? await UNUserNotificationCenter.current().requestAuthorization(
+                            options: [.alert, .badge, .sound]
+                        )
                     }
-                }
+                    .onChange(of: scenePhase) { _, phase in
+                        environment.handleScenePhase(phase)
+                    }
+                    .onAppear {
+                        environment.handleScenePhase(scenePhase)
+                    }
+            }
         }
+    }
+}
+
+private struct IOSAppRootView: View {
+    @EnvironmentObject private var environment: AppEnvironment
+
+    var body: some View {
+        ZStack {
+            switch environment.startupState {
+            case .loading:
+                ProgressView("Preparing Quiper…")
+            case .waitingForProtectedData:
+                StartupMessageView(
+                    title: "Quiper Is Locked",
+                    systemImage: "lock.fill",
+                    message: "Unlock this device to make Quiper's protected settings available."
+                )
+            case .needsWebsiteDataReset:
+                WebsiteDataResetView()
+            case .ready:
+                EngineBrowserView()
+            case .failed(let message):
+                StartupMessageView(
+                    title: "Quiper Couldn’t Start",
+                    systemImage: "exclamationmark.triangle.fill",
+                    message: message,
+                    retry: environment.retryStartup
+                )
+            }
+
+            if environment.isPrivacyShieldVisible {
+                PrivacyShieldView()
+                    .transition(.opacity)
+                    .zIndex(1000)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+            environment.retryStartup()
+        }
+    }
+}
+
+private struct StartupMessageView: View {
+    let title: String
+    let systemImage: String
+    let message: String
+    var retry: (() -> Void)?
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(title, systemImage: systemImage)
+        } description: {
+            Text(message)
+        } actions: {
+            if let retry {
+                Button("Try Again", action: retry)
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+}
+
+private struct WebsiteDataResetView: View {
+    @EnvironmentObject private var environment: AppEnvironment
+    @State private var isResetting = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Image(systemName: "lock.square.stack.fill")
+                    .font(.system(size: 54))
+                    .foregroundStyle(Color.accentColor)
+                Text("Engine Isolation Upgrade")
+                    .font(.largeTitle.bold())
+                Text("Quiper now gives every engine its own isolated website-data store. Existing shared cookies and site storage must be removed once before browsing can continue.")
+                    .font(.title3)
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("You will need to sign in to websites again once.", systemImage: "person.crop.circle.badge.exclamationmark")
+                    Label("Engine settings, drafts, and prompt history are not deleted.", systemImage: "checkmark.shield")
+                    Label("Afterward, one engine can no longer read another engine’s cookies or site storage.", systemImage: "rectangle.3.group.bubble.left.fill")
+                }
+                .font(.body)
+                Button {
+                    isResetting = true
+                    Task {
+                        await environment.completeWebsiteDataReset()
+                        isResetting = false
+                    }
+                } label: {
+                    HStack {
+                        if isResetting {
+                            ProgressView()
+                        }
+                        Text(isResetting ? "Resetting Website Sessions…" : "Reset Website Sessions and Continue")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(isResetting)
+            }
+            .frame(maxWidth: 620, alignment: .leading)
+            .padding(32)
+        }
+    }
+}
+
+private struct PrivacyShieldView: View {
+    var body: some View {
+        ZStack {
+            Color(uiColor: .systemBackground)
+                .ignoresSafeArea()
+            VStack(spacing: 12) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 42))
+                    .foregroundStyle(Color.accentColor)
+                Text("Quiper")
+                    .font(.title2.bold())
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Quiper content hidden")
     }
 }
 

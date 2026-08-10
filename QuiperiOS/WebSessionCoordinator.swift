@@ -30,7 +30,8 @@ final class WebSessionCoordinator: NSObject {
             webView: webView,
             serviceID: service.id,
             serviceName: service.name,
-            sessionIndex: sessionIndex
+            sessionIndex: sessionIndex,
+            redactsContent: service.isEncrypted
         )
         self.notificationBridge = bridge
 
@@ -58,6 +59,31 @@ final class WebSessionCoordinator: NSObject {
 
     func installInputTracker() {}
 
+    func invalidate() {
+        notificationBridge?.invalidate()
+        notificationBridge = nil
+        guard let webView else { return }
+        let userContentController = webView.configuration.userContentController
+        userContentController.removeScriptMessageHandler(forName: "quiperInputState")
+        userContentController.removeAllUserScripts()
+        activeDownloads.values.forEach { $0.cancel { _ in } }
+        activeDownloads.removeAll()
+        self.webView = nil
+        onInputState = nil
+        onTitle = nil
+        onLoading = nil
+        onURL = nil
+        onNavigationState = nil
+        onRememberRoutingDecision = nil
+        onDidFinish = nil
+        service.url = ""
+        service.focus_selector = ""
+        service.actionScripts = [:]
+        service.customCSS = nil
+        service.routingRules = []
+        service.iconBase64 = nil
+    }
+
     func setKeyboardSuppressed(_ suppressed: Bool) {
         keyboardSuppressed = suppressed
         guard suppressed, let webView else { return }
@@ -76,6 +102,7 @@ final class WebSessionCoordinator: NSObject {
         let oldService = service
         service = updatedService
         notificationBridge?.updateServiceName(updatedService.name)
+        notificationBridge?.updateContentRedaction(updatedService.isEncrypted)
 
         let scriptsChanged = oldService.focus_selector != updatedService.focus_selector
             || Self.resolvedCustomCSS(for: oldService) != Self.resolvedCustomCSS(for: updatedService)

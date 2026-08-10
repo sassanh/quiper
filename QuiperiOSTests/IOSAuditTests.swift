@@ -24,7 +24,7 @@ struct IOSAuditTests {
         ])
         defer { removeSettings(at: url) }
 
-        let environment = AppEnvironment(settingsURL: url, enrichMissingIcons: false)
+        let environment = testEnvironment(settingsURL: url)
         #expect(environment.dragAreaPosition == .top)
         environment.colorScheme = .light
         environment.dragAreaPosition = .bottom
@@ -55,7 +55,7 @@ struct IOSAuditTests {
         try write(settings, to: url)
         defer { removeSettings(at: url) }
 
-        let environment = AppEnvironment(settingsURL: url, enrichMissingIcons: false)
+        let environment = testEnvironment(settingsURL: url)
         #expect(environment.services.isEmpty)
         #expect(environment.dragAreaPosition == .bottom)
         environment.save()
@@ -76,7 +76,7 @@ struct IOSAuditTests {
         try write(settings, to: url)
         defer { removeSettings(at: url) }
 
-        let environment = AppEnvironment(settingsURL: url, enrichMissingIcons: false)
+        let environment = testEnvironment(settingsURL: url)
         #expect(environment.existingSession(for: service.id, sessionIndex: 0) != nil)
         #expect(environment.existingSession(for: service.id, sessionIndex: 1) == nil)
 
@@ -93,10 +93,7 @@ struct IOSAuditTests {
     @Test func removingServiceCleansPersistedAndLiveState() {
         let service = makeService()
         let settingsURL = temporarySettingsURL()
-        let environment = AppEnvironment(
-            settingsURL: settingsURL,
-            enrichMissingIcons: false
-        )
+        let environment = testEnvironment(settingsURL: settingsURL)
         defer { removeSettings(at: settingsURL) }
 
         environment.services = [service]
@@ -106,6 +103,10 @@ struct IOSAuditTests {
         environment.persistedTabState.tabInputs[service.id] = [
             0: TabInputState(text: "draft", isContentEditable: false, start: 0, end: 5)
         ]
+        environment.persistedTabState.tabPromptHistories[service.id] = [
+            0: [PromptHistoryEntry(text: "prompt", timestamp: Date(timeIntervalSince1970: 1))]
+        ]
+        environment.persistedTabState.tabPromptHistoryEnabledOverrides[service.id] = [0: false]
         environment.persistedTabState.tabHistory = [
             TabIdentifier(serviceID: service.id, sessionIndex: 0)
         ]
@@ -123,54 +124,58 @@ struct IOSAuditTests {
         #expect(environment.persistedTabState.openTabs[service.id] == nil)
         #expect(environment.persistedTabState.tabTitles[service.id] == nil)
         #expect(environment.persistedTabState.tabInputs[service.id] == nil)
+        #expect(environment.persistedTabState.tabPromptHistories[service.id] == nil)
+        #expect(environment.persistedTabState.tabPromptHistoryEnabledOverrides[service.id] == nil)
         #expect(environment.persistedTabState.tabHistory?.isEmpty != false)
     }
 
-    @Test func sharedHostIsPurgedOnlyAfterLastOwnerIsRemoved() {
+    @Test func eachRemovedEnginePurgesOnlyItsIsolatedStore() async {
         let first = makeService(name: "First", url: "https://Example.com/one")
         let second = makeService(name: "Second", url: "https://example.com/two")
-        let purger = RecordingWebDataPurger()
+        let manager = RecordingWebsiteDataStoreManager()
         let settingsURL = temporarySettingsURL()
         let environment = AppEnvironment(
             settingsURL: settingsURL,
             enrichMissingIcons: false,
-            webDataPurger: purger
+            websiteDataStoreManager: manager,
+            allowsNetworkWork: false
         )
         defer { removeSettings(at: settingsURL) }
         environment.services = [first, second]
 
         environment.removeService(first.id)
-        #expect(purger.hosts.isEmpty)
+        await Task.yield()
+        #expect(manager.removedServiceIDs == [first.id])
 
         environment.removeService(second.id)
-        #expect(purger.hosts == ["example.com"])
+        await Task.yield()
+        #expect(manager.removedServiceIDs == [first.id, second.id])
     }
 
-    @Test func disabledWebsiteCleanupDoesNotPurge() {
+    @Test func disabledWebsiteCleanupDoesNotPurge() async {
         let service = makeService()
-        let purger = RecordingWebDataPurger()
+        let manager = RecordingWebsiteDataStoreManager()
         let settingsURL = temporarySettingsURL()
         let environment = AppEnvironment(
             settingsURL: settingsURL,
             enrichMissingIcons: false,
-            webDataPurger: purger
+            websiteDataStoreManager: manager,
+            allowsNetworkWork: false
         )
         defer { removeSettings(at: settingsURL) }
         environment.services = [service]
         environment.shouldPurgeDanglingWebData = false
 
         environment.removeService(service.id)
+        await Task.yield()
 
-        #expect(purger.hosts.isEmpty)
+        #expect(manager.removedServiceIDs.isEmpty)
     }
 
     @Test func promptHistoryHonorsEachTriggerAndLimit() {
         let service = makeService(preservePrompt: true)
         let settingsURL = temporarySettingsURL()
-        let environment = AppEnvironment(
-            settingsURL: settingsURL,
-            enrichMissingIcons: false
-        )
+        let environment = testEnvironment(settingsURL: settingsURL)
         defer { removeSettings(at: settingsURL) }
         environment.services = [service]
         environment.promptHistoryLimit = 1
@@ -214,10 +219,7 @@ struct IOSAuditTests {
     @Test func notificationActivationValidatesServiceAndSession() {
         let service = makeService()
         let settingsURL = temporarySettingsURL()
-        let environment = AppEnvironment(
-            settingsURL: settingsURL,
-            enrichMissingIcons: false
-        )
+        let environment = testEnvironment(settingsURL: settingsURL)
         defer { removeSettings(at: settingsURL) }
         environment.services = [service]
 
@@ -233,7 +235,7 @@ struct IOSAuditTests {
     @Test func ringOverlaySuppressionPropagatesToExistingAndNewSessions() {
         let service = makeService(focusSelector: "#prompt")
         let settingsURL = temporarySettingsURL()
-        let environment = AppEnvironment(settingsURL: settingsURL, enrichMissingIcons: false)
+        let environment = testEnvironment(settingsURL: settingsURL)
         defer { removeSettings(at: settingsURL) }
         environment.services = [service]
 
@@ -262,7 +264,7 @@ struct IOSAuditTests {
     @Test func findLifecycleUpdatesCountsAndClearsState() async throws {
         let service = makeService()
         let settingsURL = temporarySettingsURL()
-        let environment = AppEnvironment(settingsURL: settingsURL, enrichMissingIcons: false)
+        let environment = testEnvironment(settingsURL: settingsURL)
         defer { removeSettings(at: settingsURL) }
         environment.services = [service]
         let session = environment.webViewSession(
@@ -274,7 +276,7 @@ struct IOSAuditTests {
 
         session.webView.loadHTMLString(
             "<body>needle <span>needle</span></body>",
-            baseURL: URL(string: "https://example.com")
+            baseURL: nil
         )
         try await waitForFindFixture(in: session)
         session.setFindQuery("needle")
@@ -337,6 +339,15 @@ struct IOSAuditTests {
         )
     }
 
+    private func testEnvironment(settingsURL: URL) -> AppEnvironment {
+        AppEnvironment(
+            settingsURL: settingsURL,
+            enrichMissingIcons: false,
+            websiteDataStoreManager: RecordingWebsiteDataStoreManager(),
+            allowsNetworkWork: false
+        )
+    }
+
     private func temporarySettingsURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("quiper-ios-tests-\(UUID().uuidString).json")
@@ -367,11 +378,20 @@ struct IOSAuditTests {
 }
 
 @MainActor
-private final class RecordingWebDataPurger: WebDataPurger {
-    private(set) var hosts: [String] = []
+private final class RecordingWebsiteDataStoreManager: WebsiteDataStoreManaging {
+    private(set) var removedServiceIDs: [UUID] = []
+    private(set) var legacyResetCount = 0
 
-    func purgeWebsiteData(forHost host: String) {
-        hosts.append(host)
+    func dataStore(for serviceID: UUID) -> WKWebsiteDataStore {
+        WKWebsiteDataStore.nonPersistent()
+    }
+
+    func resetLegacyDefaultStore() async {
+        legacyResetCount += 1
+    }
+
+    func removeDataStore(for serviceID: UUID) async throws {
+        removedServiceIDs.append(serviceID)
     }
 }
 

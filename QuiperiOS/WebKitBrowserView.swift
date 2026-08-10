@@ -2,9 +2,7 @@ import SwiftUI
 import WebKit
 
 struct BrowserViewportLayout: Equatable {
-    let contentFrameTopInset: CGFloat
     let obscuredContentInsets: UIEdgeInsets
-    let fallbackAdditionalSafeAreaInsets: UIEdgeInsets
 }
 
 struct WebKitBrowserView: UIViewControllerRepresentable {
@@ -72,18 +70,12 @@ final class WebViewHostController: UIViewController {
         guard appliedViewportLayout != viewportLayout else { return }
         appliedViewportLayout = viewportLayout
         loadViewIfNeeded()
-        if #available(iOS 26.0, *) {
-            webViewTopConstraint?.constant = 0
-            additionalSafeAreaInsets = .zero
-            webView.scrollView.contentInsetAdjustmentBehavior = .never
-            webView.scrollView.contentInset = viewportLayout.obscuredContentInsets
-            webView.scrollView.scrollIndicatorInsets = viewportLayout.obscuredContentInsets
-            webView.obscuredContentInsets = viewportLayout.obscuredContentInsets
-        } else {
-            webViewTopConstraint?.constant = viewportLayout.contentFrameTopInset
-            webView.scrollView.contentInsetAdjustmentBehavior = .always
-            additionalSafeAreaInsets = viewportLayout.fallbackAdditionalSafeAreaInsets
-        }
+        webViewTopConstraint?.constant = 0
+        additionalSafeAreaInsets = .zero
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.scrollView.contentInset = viewportLayout.obscuredContentInsets
+        webView.scrollView.scrollIndicatorInsets = viewportLayout.obscuredContentInsets
+        webView.obscuredContentInsets = viewportLayout.obscuredContentInsets
     }
 
     func detachWebView() {

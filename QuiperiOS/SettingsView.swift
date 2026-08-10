@@ -55,6 +55,10 @@ struct SettingsView: View {
                 Text("This action and its engine scripts will be removed.")
             }
         }
+        .simultaneousGesture(
+            DragGesture()
+                .onChanged { _ in environment.registerUserActivity() }
+        )
     }
 
     private var engineDeletePresented: Binding<Bool> {
@@ -81,8 +85,15 @@ struct SettingsView: View {
                     HStack {
                         EngineIconView(service: service, size: 24)
                         Text(service.name)
+                        Spacer()
+                        if service.isEncrypted {
+                            Image(systemName: environment.isServiceLocked(service.id) ? "lock.fill" : "lock.open.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
+                .accessibilityIdentifier("settings-engine-\(service.id.uuidString)")
             }
             .onDelete { offsets in
                 if let index = offsets.first, environment.services.indices.contains(index) {
@@ -311,6 +322,7 @@ struct EngineEditView: View {
     @State private var showingDiscardConfirmation = false
     @State private var showingDeleteConfirmation = false
     @State private var isFetchingIcon = false
+    @State private var protectionDisclosure: ProtectionDisclosure?
     @Environment(\.dismiss) private var dismiss
 
     init(service: Service) {
@@ -324,8 +336,19 @@ struct EngineEditView: View {
 
     var body: some View {
         Form {
-            Section("Details") {
+            if environment.isServiceLocked(service.id) {
+                Section {
+                    TextField("Name", text: $service.name)
+                        .accessibilityIdentifier("engine-edit-name-\(service.id.uuidString)")
+                    Label("Unlock this engine to edit its URL, prompt selector, icon, routing rules, or custom CSS.", systemImage: "lock.fill")
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Protected Details")
+                }
+            } else {
+                Section("Details") {
                 TextField("Name", text: $service.name)
+                    .accessibilityIdentifier("engine-edit-name-\(service.id.uuidString)")
                 TextField("URL", text: $service.url)
                     .keyboardType(.URL)
                     .autocorrectionDisabled()
@@ -404,6 +427,8 @@ struct EngineEditView: View {
             } footer: {
                 Text("Inject custom CSS into this engine's pages to adjust colors, fonts, or hide unwanted UI, or follow Quiper's bundled stylesheet for the engine.")
             }
+            }
+            securitySection
         }
         .navigationTitle(service.name)
         .navigationBarBackButtonHidden(isDirty)
@@ -459,6 +484,104 @@ struct EngineEditView: View {
         } message: {
             Text("You have unsaved changes to this engine.")
         }
+        .sheet(item: $protectionDisclosure) { disclosure in
+            EngineProtectionDisclosureView(
+                enabling: disclosure.enabling,
+                engineName: service.name,
+                isWorking: environment.securityOperationServiceIDs.contains(service.id),
+                onConfirm: {
+                    Task {
+                        if disclosure.enabling {
+                            await environment.enableProtection(for: service.id)
+                        } else {
+                            await environment.disableProtection(for: service.id)
+                        }
+                        syncFromEnvironment()
+                        protectionDisclosure = nil
+                    }
+                },
+                onCancel: { protectionDisclosure = nil }
+            )
+        }
+        .onChange(of: environment.unlockedServiceIDs) {
+            if environment.isServiceLocked(service.id) {
+                syncFromEnvironment()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var securitySection: some View {
+        Section {
+            if service.isEncrypted {
+                LabeledContent("Status") {
+                    Label(
+                        environment.isServiceLocked(service.id) ? "Locked" : "Unlocked",
+                        systemImage: environment.isServiceLocked(service.id) ? "lock.fill" : "lock.open.fill"
+                    )
+                    .foregroundStyle(environment.isServiceLocked(service.id) ? Color.secondary : Color.green)
+                }
+                Toggle("Lock When Leaving Engine", isOn: $service.lockOnSwitchAway)
+                Toggle("Lock After Inactivity", isOn: $service.lockAfterInactivity)
+                if service.lockAfterInactivity {
+                    Stepper(value: $service.autoLockInactivityTimeout, in: 1...1440) {
+                        Text("Inactivity: \(service.autoLockInactivityTimeout) min")
+                    }
+                }
+                if environment.isServiceLocked(service.id) {
+                    Button {
+                        Task {
+                            await environment.unlockService(service.id)
+                            syncFromEnvironment()
+                        }
+                    } label: {
+                        Label("Unlock Engine", systemImage: "lock.open")
+                    }
+                    .disabled(isDirty || environment.securityOperationServiceIDs.contains(service.id))
+                } else {
+                    Button {
+                        environment.lockService(service.id)
+                        syncFromEnvironment()
+                    } label: {
+                        Label("Lock Now", systemImage: "lock")
+                    }
+                    .disabled(isDirty)
+                }
+                Button("Remove Protection…", role: .destructive) {
+                    protectionDisclosure = ProtectionDisclosure(enabling: false)
+                }
+                .disabled(isDirty || environment.securityOperationServiceIDs.contains(service.id))
+            } else {
+                Button {
+                    protectionDisclosure = ProtectionDisclosure(enabling: true)
+                } label: {
+                    Label("Protect Engine…", systemImage: "lock.shield")
+                }
+                .accessibilityIdentifier("protect-engine-\(service.id.uuidString)")
+                .disabled(isDirty || environment.securityOperationServiceIDs.contains(service.id))
+            }
+            if let error = environment.securityError(for: service.id) {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        } header: {
+            Text("Security")
+        } footer: {
+            if isDirty {
+                Text("Save or discard your current edits before changing protection.")
+            } else if service.isEncrypted {
+                Text("Protected engine details and browsing state are encrypted with a device-only key. Lock rules remain visible so iOS can enforce them.")
+            } else {
+                Text("Protect this engine’s configuration, drafts, prompt history, URLs, and titles with device authentication.")
+            }
+        }
+    }
+
+    private func syncFromEnvironment() {
+        guard let updated = environment.services.first(where: { $0.id == service.id }) else { return }
+        service = updated
+        originalService = updated
     }
 
     private func fetchIconFromWebsite() async {
@@ -468,6 +591,98 @@ struct EngineEditView: View {
         if let base64 = await FaviconFetcher.fetchFavicon(for: service.url) {
             service.iconBase64 = base64
             service.iconManuallyUnset = false
+        }
+    }
+}
+
+private struct ProtectionDisclosure: Identifiable {
+    let id = UUID()
+    let enabling: Bool
+}
+
+private struct EngineProtectionDisclosureView: View {
+    let enabling: Bool
+    let engineName: String
+    let isWorking: Bool
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Image(systemName: enabling ? "lock.shield.fill" : "lock.open.fill")
+                        .font(.system(size: 48))
+                        .foregroundStyle(enabling ? Color.accentColor : Color.orange)
+                    Text(enabling ? "Protect \(engineName)" : "Remove Protection")
+                        .font(.largeTitle.bold())
+                    Text(
+                        enabling
+                            ? "Review exactly what this protection covers before continuing."
+                            : "Quiper will authenticate you, decrypt the protected profile, and return its contents to the shared settings document."
+                    )
+                    disclosureRow(
+                        icon: "lock.doc.fill",
+                        title: "Encrypted by Quiper",
+                        detail: "The engine URL and configuration, custom scripts and CSS, routing rules, tab URLs and titles, drafts, and prompt history use AES-GCM with a unique key."
+                    )
+                    disclosureRow(
+                        icon: "safari.fill",
+                        title: "Website Data Is Isolated",
+                        detail: "Cookies, local storage, IndexedDB, service workers, and caches live in this engine’s own WebKit store. iOS Complete Data Protection protects that store while the device is locked; it is not encrypted with Quiper’s AES key."
+                    )
+                    disclosureRow(
+                        icon: "eye",
+                        title: "What Remains Visible",
+                        detail: "The engine name, protection status, and lock rules remain in settings so Quiper can identify and lock the engine. Protected notification previews are redacted."
+                    )
+                    disclosureRow(
+                        icon: "arrow.down.doc",
+                        title: "Downloads Are Separate",
+                        detail: "Downloaded files remain in Quiper’s Files-accessible Downloads folder and are outside the AES-encrypted engine profile."
+                    )
+                    disclosureRow(
+                        icon: "exclamationmark.triangle.fill",
+                        title: "No Recovery or Transfer",
+                        detail: "The key stays on this device and requires its passcode. Removing the device passcode, replacing the device, or restoring a backup makes this protected profile permanently unrecoverable."
+                    )
+                    .foregroundStyle(.red)
+                    Button(action: onConfirm) {
+                        HStack {
+                            if isWorking {
+                                ProgressView()
+                            }
+                            Text(enabling ? "Authenticate and Protect" : "Authenticate and Remove Protection")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(enabling ? Color.accentColor : Color.red)
+                    .controlSize(.large)
+                    .disabled(isWorking)
+                    Button("Cancel", action: onCancel)
+                        .frame(maxWidth: .infinity)
+                        .disabled(isWorking)
+                }
+                .frame(maxWidth: 620, alignment: .leading)
+                .padding(28)
+            }
+            .interactiveDismissDisabled(isWorking)
+        }
+    }
+
+    private func disclosureRow(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: icon)
+                .font(.title3)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }
@@ -499,8 +714,17 @@ struct ActionEditView: View {
                     NavigationLink {
                         ActionScriptEditView(action: action, service: service, environment: environment)
                     } label: {
-                        Text(service.name)
+                        HStack {
+                            Text(service.name)
+                            Spacer()
+                            if environment.isServiceLocked(service.id) {
+                                Image(systemName: "lock.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
+                    .disabled(environment.isServiceLocked(service.id))
                 }
             } header: {
                 Text("Engine Scripts")

@@ -121,9 +121,23 @@ struct EngineBrowserView: View {
                 loadRingPreviews()
             }
         }
+        .onChange(of: environment.shouldDismissSensitiveUI) { _, shouldDismiss in
+            guard shouldDismiss else { return }
+            showingSettings = false
+            showingHistory = false
+            showingEnginePicker = false
+            if isFindBarVisible {
+                closeFindBar()
+            }
+            dismissRing()
+        }
         .onAppear {
             wireRingGestureCallbacks()
         }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in environment.registerUserActivity() }
+        )
         .sheet(isPresented: $showingSettings) {
             SettingsView()
                 .environmentObject(environment)
@@ -160,28 +174,19 @@ struct EngineBrowserView: View {
         switch environment.dragAreaPosition {
         case .top:
             return BrowserViewportLayout(
-                contentFrameTopInset: safeAreaInsets.top + toolbarExtent,
                 obscuredContentInsets: UIEdgeInsets(
                     top: safeAreaInsets.top + toolbarExtent,
                     left: 0,
                     bottom: safeAreaInsets.bottom,
                     right: 0
-                ),
-                fallbackAdditionalSafeAreaInsets: .zero
+                )
             )
         case .bottom:
             return BrowserViewportLayout(
-                contentFrameTopInset: 0,
                 obscuredContentInsets: UIEdgeInsets(
                     top: safeAreaInsets.top,
                     left: 0,
                     bottom: safeAreaInsets.bottom + toolbarExtent,
-                    right: 0
-                ),
-                fallbackAdditionalSafeAreaInsets: UIEdgeInsets(
-                    top: 0,
-                    left: 0,
-                    bottom: toolbarExtent,
                     right: 0
                 )
             )
@@ -212,6 +217,7 @@ struct EngineBrowserView: View {
 
     private var activeSession: WebViewSession? {
         guard let service = environment.activeService else { return nil }
+        guard !environment.isServiceLocked(service.id) else { return nil }
         if !environment.autoCreateSessionOnEmptyEngineActivation,
            environment.hasNoSessions(for: service.id) {
             return nil
@@ -255,6 +261,7 @@ struct EngineBrowserView: View {
     }
 
     private func dismissKeyboard() {
+        isFindFieldFocused = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
@@ -399,7 +406,11 @@ struct EngineBrowserView: View {
     private static let ringScrollDwell: UInt64 = 300_000_000
 
     private func ringAutoScrollVelocity(at point: CGPoint) -> CGFloat {
-        let screenHeight = UIScreen.main.bounds.height
+        let screenHeight = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first(where: { $0.activationState == .foregroundActive })?
+            .screen.bounds.height ?? 0
+        guard screenHeight > 0 else { return 0 }
         let topDistance = point.y
         let bottomDistance = screenHeight - point.y
         if topDistance < Self.ringEdgeZone {
@@ -937,6 +948,22 @@ struct EngineBrowserView: View {
                 }
             }
             Divider()
+            if let service = environment.activeService, service.isEncrypted {
+                if environment.isServiceLocked(service.id) {
+                    Button {
+                        Task { await environment.unlockService(service.id) }
+                    } label: {
+                        Label("Unlock Engine", systemImage: "lock.open")
+                    }
+                } else {
+                    Button {
+                        environment.lockService(service.id)
+                    } label: {
+                        Label("Lock Engine", systemImage: "lock")
+                    }
+                }
+                Divider()
+            }
             Button {
                 showingSettings = true
             } label: {
@@ -980,6 +1007,11 @@ struct EngineBrowserView: View {
                 Text(service?.name ?? "Select Engine")
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
+                if let service, service.isEncrypted {
+                    Image(systemName: environment.isServiceLocked(service.id) ? "lock.fill" : "lock.open.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.secondary)
@@ -988,7 +1020,9 @@ struct EngineBrowserView: View {
             .padding(.vertical, 8)
             .glassIsland(in: Capsule(), interactive: true)
         }
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Select engine")
+        .accessibilityIdentifier("engine-selector-button")
     }
 
     private func sessionSelector(flexible: Bool) -> some View {
@@ -1026,6 +1060,7 @@ struct EngineBrowserView: View {
                 .accessibilityLabel(SessionSlots.tooltipTitle(for: slot))
                 .accessibilityIdentifier("session-\(slot)")
                 .accessibilityValue(isActive ? "active" : isLoaded ? "loaded" : "empty")
+                .disabled(environment.isServiceLocked(serviceID))
             }
         }
         .frame(maxWidth: .infinity)
@@ -1041,7 +1076,9 @@ struct EngineBrowserView: View {
 
     private func webContent(viewportLayout: BrowserViewportLayout) -> some View {
         ZStack {
-            if let session = activeSession {
+            if let service = environment.activeService, environment.isServiceLocked(service.id) {
+                lockedEngineView(service)
+            } else if let session = activeSession {
                 WebKitBrowserView(
                     session: session,
                     viewportLayout: viewportLayout
@@ -1074,6 +1111,46 @@ struct EngineBrowserView: View {
         .accessibilityIdentifier("web-content")
     }
 
+    private func lockedEngineView(_ service: Service) -> some View {
+        VStack(spacing: 18) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(Color.accentColor)
+            Text("\(service.name) Is Locked")
+                .font(.title2.bold())
+            Text("Authenticate to decrypt this engine’s settings, drafts, prompt history, and tab state.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 420)
+            if let error = environment.securityError(for: service.id) {
+                Text(error)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 480)
+            }
+            Button {
+                Task { await environment.unlockService(service.id) }
+            } label: {
+                HStack {
+                    if environment.securityOperationServiceIDs.contains(service.id) {
+                        ProgressView()
+                    }
+                    Text("Unlock Engine")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(environment.securityOperationServiceIDs.contains(service.id))
+            if environment.securityError(for: service.id) != nil {
+                Button("Open Settings") {
+                    showingSettings = true
+                }
+            }
+        }
+        .padding(28)
+    }
+
     private var uiTestControls: some View {
         VStack {
             HStack {
@@ -1086,6 +1163,7 @@ struct EngineBrowserView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .accessibilityLabel("Open navigation ring")
+                .accessibilityValue(isFindFieldFocused ? "find-focused" : "find-unfocused")
                 .accessibilityIdentifier("ui-test-open-ring")
             }
             Spacer()
@@ -1161,6 +1239,11 @@ struct EnginePickerView: View {
                                 }
                             }
                             Spacer()
+                            if service.isEncrypted {
+                                Image(systemName: environment.isServiceLocked(service.id) ? "lock.fill" : "lock.open.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                             if service.id == environment.activeService?.id {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 15, weight: .semibold))
@@ -1271,6 +1354,7 @@ private struct Island: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Hide keyboard")
     }
 }

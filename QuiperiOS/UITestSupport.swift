@@ -1,36 +1,78 @@
 import Foundation
+import WebKit
 
 enum UITestSupport {
     static let launchArgument = "--ui-testing"
+    static let launchEnvironmentKey = "QUIPER_UI_TESTING"
+    static let protectedEngineLaunchArgument = "--ui-testing-protected-engine"
 
     static var isEnabled: Bool {
         #if DEBUG
         ProcessInfo.processInfo.arguments.contains(launchArgument)
+            || ProcessInfo.processInfo.environment[launchEnvironmentKey] == "1"
+        #else
+        false
+        #endif
+    }
+
+    static var isUnitTestHost: Bool {
+        #if DEBUG
+        guard !isEnabled else { return false }
+        let environment = ProcessInfo.processInfo.environment
+        return environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
         #else
         false
         #endif
     }
 
     @MainActor
-    static func makeEnvironment() -> AppEnvironment {
-        let settingsURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("quiper-ios-ui-tests-\(ProcessInfo.processInfo.processIdentifier).json")
-        try? FileManager.default.removeItem(at: settingsURL)
-
-        let environment = AppEnvironment(
-            settingsURL: settingsURL,
-            enrichMissingIcons: false
+    static func makeUnitTestHostEnvironment() -> AppEnvironment {
+        let directoryURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "quiper-ios-unit-test-host-\(ProcessInfo.processInfo.processIdentifier)",
+            isDirectory: true
         )
+        try? FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        let settingsURL = directoryURL.appendingPathComponent("settings.json")
+        let settings = PersistedSettings(
+            services: [],
+            customActions: [],
+            autoCreateSessionOnEmptyEngineActivation: false,
+            shouldPurgeDanglingWebData: false,
+            persistedTabState: PersistedTabState()
+        )
+        try? JSONEncoder().encode(settings).write(to: settingsURL, options: .atomic)
+
+        return AppEnvironment(
+            settingsURL: settingsURL,
+            enrichMissingIcons: false,
+            requiresWebsiteDataMigration: false,
+            isProtectedDataAvailable: { true },
+            allowsNetworkWork: false
+        )
+    }
+
+    @MainActor
+    static func makeEnvironment() -> AppEnvironment {
+        let directoryURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "quiper-ios-ui-tests-\(ProcessInfo.processInfo.processIdentifier)",
+            isDirectory: true
+        )
+        try? FileManager.default.removeItem(at: directoryURL)
+        try? FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        let settingsURL = directoryURL.appendingPathComponent("settings.json")
+        let profileStore = FileSecureProfileStore(
+            directoryURL: directoryURL.appendingPathComponent("profiles", isDirectory: true)
+        )
+        let keyStore = UITestEngineKeyStore()
         let service = Service(
             id: UUID(uuidString: "F0A38C27-2DB2-4922-9D52-0C94575CBA31")!,
             name: "UI Test Engine",
             url: localPageURL,
             focus_selector: "#prompt"
         )
-        environment.services = [service]
-        environment.customActions = []
-        environment.tabNavigationRingSize = 3
-        environment.persistedTabState = PersistedTabState(
+        let tabState = PersistedTabState(
             activeServiceID: service.id,
             activeIndicesByID: [service.id: 0],
             openTabs: [service.id: [0: localPageURL, 1: localPageURL, 2: localPageURL]],
@@ -40,8 +82,36 @@ enum UITestSupport {
                 TabIdentifier(serviceID: service.id, sessionIndex: 2)
             ]
         )
-        environment.save()
-        return environment
+        let startsProtected = ProcessInfo.processInfo.arguments.contains(protectedEngineLaunchArgument)
+        var persistedService = service
+        var persistedTabState = tabState
+        if startsProtected {
+            let key = Data(repeating: 0xA7, count: 32)
+            keyStore.setKey(key, for: service.id)
+            try? profileStore.saveProfile(
+                IOSSecuredEngineProfile(service: service, state: tabState, includeTabState: true),
+                key: key
+            )
+            persistedService.isEncrypted = true
+            persistedService.hasMigratedMetadata = true
+            persistedTabState = PersistedTabState(activeServiceID: service.id)
+        }
+        let settings = PersistedSettings(
+            services: [persistedService],
+            customActions: [],
+            persistedTabState: persistedTabState,
+            tabNavigationRingSize: 3
+        )
+        try? JSONEncoder().encode(settings).write(to: settingsURL, options: .atomic)
+
+        return AppEnvironment(
+            settingsURL: settingsURL,
+            enrichMissingIcons: false,
+            websiteDataStoreManager: UITestWebsiteDataStoreManager(),
+            engineKeyStore: keyStore,
+            secureProfileStore: profileStore,
+            isProtectedDataAvailable: { true }
+        )
     }
 
     private static let localPageURL: String = {
@@ -68,4 +138,44 @@ enum UITestSupport {
         """
         return "data:text/html;base64,\(Data(html.utf8).base64EncodedString())"
     }()
+}
+
+@MainActor
+private final class UITestEngineKeyStore: EngineKeyStoring {
+    private var keys: [UUID: Data] = [:]
+
+    func setKey(_ key: Data, for serviceID: UUID) {
+        keys[serviceID] = key
+    }
+
+    func containsKey(for serviceID: UUID) -> Bool {
+        keys[serviceID] != nil
+    }
+
+    func createKey(for serviceID: UUID, reason: String) async throws -> Data {
+        if let key = keys[serviceID] { return key }
+        let key = Data(repeating: 0xB4, count: 32)
+        keys[serviceID] = key
+        return key
+    }
+
+    func retrieveKey(for serviceID: UUID, reason: String) async throws -> Data {
+        guard let key = keys[serviceID] else { throw EngineKeyStoreError.keyMissing }
+        return key
+    }
+
+    func removeKey(for serviceID: UUID) throws {
+        keys[serviceID] = nil
+    }
+}
+
+@MainActor
+private final class UITestWebsiteDataStoreManager: WebsiteDataStoreManaging {
+    func dataStore(for serviceID: UUID) -> WKWebsiteDataStore {
+        WKWebsiteDataStore.nonPersistent()
+    }
+
+    func resetLegacyDefaultStore() async { }
+
+    func removeDataStore(for serviceID: UUID) async throws { }
 }
