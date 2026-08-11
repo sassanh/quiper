@@ -13,6 +13,7 @@ struct EngineBrowserView: View {
     @State private var isFindBarVisible = false
     @State private var displayedFindStatus: String?
     @State private var toolbarExtent: CGFloat = 0
+    @State private var commandContext = IOSSceneCommandContext()
     @FocusState private var isFindFieldFocused: Bool
 
     @State private var isRingVisible = false
@@ -41,7 +42,7 @@ struct EngineBrowserView: View {
                         safeAreaInsets: geo.safeAreaInsets
                     )
                 )
-                    .background(Color.black)
+                    .background(Color(uiColor: .systemBackground))
                     .opacity(selectionDimOpacity)
                     .ignoresSafeArea(.container)
                 if !isMinimized {
@@ -133,6 +134,10 @@ struct EngineBrowserView: View {
         }
         .onAppear {
             wireRingGestureCallbacks()
+            commandContext.presentationHandler = presentCommand
+        }
+        .onDisappear {
+            commandContext.presentationHandler = nil
         }
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
@@ -150,6 +155,53 @@ struct EngineBrowserView: View {
             EnginePickerView()
                 .environmentObject(environment)
                 .presentationDetents([.medium, .large])
+        }
+        .focusedSceneValue(commandContext)
+        .environment(commandContext)
+        .overlay(alignment: .top) {
+            if let message = commandContext.errorMessage {
+                Text(message)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.red, in: Capsule())
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .task(id: message) {
+                        try? await Task.sleep(for: .seconds(4))
+                        if commandContext.errorMessage == message {
+                            withAnimation {
+                                commandContext.errorMessage = nil
+                            }
+                        }
+                    }
+                    .zIndex(200)
+            }
+        }
+    }
+
+    private func presentCommand(_ command: IOSScenePresentationCommand) {
+        switch command {
+        case .showSettings:
+            showingSettings = true
+        case .showHistory:
+            showingHistory = true
+        case .showFind:
+            openFindBar()
+        }
+    }
+
+    private func executeCommand(_ command: IOSAppCommand) {
+        Task {
+            do {
+                _ = try await environment.commandExecutor.execute(
+                    command,
+                    sceneContext: commandContext
+                )
+            } catch {
+                commandContext.report(error)
+            }
         }
     }
 
@@ -865,10 +917,10 @@ struct EngineBrowserView: View {
                     .accessibilityIdentifier("find-status")
             }
             findIconButton(systemImage: "chevron.up", label: "Previous match") {
-                activeSession?.stepFind(forward: false)
+                executeCommand(.find(.previous))
             }
             findIconButton(systemImage: "chevron.down", label: "Next match") {
-                activeSession?.stepFind(forward: true)
+                executeCommand(.find(.next))
             }
             findIconButton(systemImage: "xmark", label: "Close find") {
                 closeFindBar()
@@ -928,7 +980,9 @@ struct EngineBrowserView: View {
     @ViewBuilder
     private var navigationControls: some View {
         if let session = activeSession {
-            NavigationControls(session: session)
+            NavigationControls(session: session) {
+                executeCommand(.reload(.normal))
+            }
         } else {
             EmptyView()
         }
@@ -941,7 +995,7 @@ struct EngineBrowserView: View {
             } else {
                 ForEach(environment.customActions) { action in
                     Button {
-                        environment.runAction(action, for: activeServiceID)
+                        executeCommand(.runAction(actionID: action.id, engineID: activeServiceID))
                     } label: {
                         Label(action.name.isEmpty ? "Action" : action.name, systemImage: "bolt.fill")
                     }
@@ -951,13 +1005,13 @@ struct EngineBrowserView: View {
             if let service = environment.activeService, service.isEncrypted {
                 if environment.isServiceLocked(service.id) {
                     Button {
-                        Task { await environment.unlockService(service.id) }
+                        executeCommand(.openEngine(service.id))
                     } label: {
                         Label("Unlock Engine", systemImage: "lock.open")
                     }
                 } else {
                     Button {
-                        environment.lockService(service.id)
+                        executeCommand(.lock(.engine(service.id)))
                     } label: {
                         Label("Lock Engine", systemImage: "lock")
                     }
@@ -965,17 +1019,17 @@ struct EngineBrowserView: View {
                 Divider()
             }
             Button {
-                showingSettings = true
+                executeCommand(.showSettings)
             } label: {
                 Label("Settings", systemImage: "gearshape")
             }
             Button {
-                showingHistory = true
+                executeCommand(.showHistory)
             } label: {
                 Label("Prompt History", systemImage: "clock.arrow.circlepath")
             }
             Button {
-                openFindBar()
+                executeCommand(.find(.show))
             } label: {
                 Label("Find in Page", systemImage: "magnifyingglass")
             }
@@ -987,6 +1041,7 @@ struct EngineBrowserView: View {
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.secondary)
             }
+            .foregroundStyle(.primary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .glassIsland(in: Capsule(), interactive: true)
@@ -1016,6 +1071,7 @@ struct EngineBrowserView: View {
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.secondary)
             }
+            .foregroundStyle(.primary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .glassIsland(in: Capsule(), interactive: true)
@@ -1033,7 +1089,7 @@ struct EngineBrowserView: View {
                 let isActive = hasActiveSession && slot == activeSlot
                 let isLoaded = environment.isSessionLoaded(for: serviceID, slot: slot)
                 Button {
-                    environment.setActiveSession(for: serviceID, index: slot)
+                    executeCommand(.selectSession(slot))
                 } label: {
                     Text(SessionSlots.label(for: slot))
                         .font(.system(size: 13, weight: isActive ? .semibold : .regular))
@@ -1054,7 +1110,7 @@ struct EngineBrowserView: View {
                 .contentShape(Rectangle())
                 .contextMenu {
                     Button("Close Session", role: .destructive) {
-                        environment.closeSession(for: activeServiceID, at: slot)
+                        executeCommand(.closeSessionAt(serviceID: serviceID, index: slot))
                     }
                 }
                 .accessibilityLabel(SessionSlots.tooltipTitle(for: slot))
@@ -1070,7 +1126,7 @@ struct EngineBrowserView: View {
 
     private func segmentForeground(isActive: Bool, isLoaded: Bool) -> Color {
         if isActive { return .white }
-        if !isLoaded { return .primary.opacity(0.3) }
+        if !isLoaded { return .primary.opacity(0.55) }
         return .primary
     }
 
@@ -1085,7 +1141,12 @@ struct EngineBrowserView: View {
                 )
                     .id(session.id)
             } else if environment.services.isEmpty {
-                ContentUnavailableView("No Engines", systemImage: "globe", description: Text("Add an engine in Settings."))
+                ContentUnavailableView(
+                    "No Engines",
+                    systemImage: "globe",
+                    description: Text("Add an engine in Settings.")
+                )
+                .foregroundStyle(.primary)
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "square.stack.3d.up")
@@ -1097,9 +1158,7 @@ struct EngineBrowserView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Button("New Session") {
-                        if let serviceID = environment.activeService?.id ?? environment.services.first?.id {
-                            environment.setActiveSession(for: serviceID, index: 0)
-                        }
+                        executeCommand(.openNewSession(engineID: environment.activeService?.id))
                     }
                     .buttonStyle(.borderedProminent)
                 }
@@ -1130,7 +1189,7 @@ struct EngineBrowserView: View {
                     .frame(maxWidth: 480)
             }
             Button {
-                Task { await environment.unlockService(service.id) }
+                executeCommand(.openEngine(service.id))
             } label: {
                 HStack {
                     if environment.securityOperationServiceIDs.contains(service.id) {
@@ -1144,7 +1203,7 @@ struct EngineBrowserView: View {
             .disabled(environment.securityOperationServiceIDs.contains(service.id))
             if environment.securityError(for: service.id) != nil {
                 Button("Open Settings") {
-                    showingSettings = true
+                    executeCommand(.showSettings)
                 }
             }
         }
@@ -1217,6 +1276,7 @@ private extension View {
 
 struct EnginePickerView: View {
     @EnvironmentObject private var environment: AppEnvironment
+    @Environment(IOSSceneCommandContext.self) private var commandContext
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1224,8 +1284,17 @@ struct EnginePickerView: View {
             List {
                 ForEach(environment.services) { service in
                     Button {
-                        environment.setActiveService(service.id)
-                        dismiss()
+                        Task {
+                            do {
+                                _ = try await environment.commandExecutor.execute(
+                                    .openEngine(service.id),
+                                    sceneContext: commandContext
+                                )
+                                dismiss()
+                            } catch {
+                                commandContext.report(error)
+                            }
+                        }
                     } label: {
                         HStack(spacing: 12) {
                             EngineIconView(service: service, size: 26)
@@ -1268,6 +1337,7 @@ struct EnginePickerView: View {
 
 private struct NavigationControls: View {
     @ObservedObject var session: WebViewSession
+    let reload: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1299,7 +1369,7 @@ private struct NavigationControls: View {
                 if session.isLoading {
                     session.stopLoading()
                 } else {
-                    session.reload()
+                    reload()
                 }
             } label: {
                 Image(systemName: session.isLoading ? "xmark" : "arrow.clockwise")
@@ -1342,6 +1412,7 @@ private struct Island: View {
                         .lineLimit(1)
                 }
             }
+            .foregroundStyle(.primary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .glassIsland(in: Capsule(), interactive: true)

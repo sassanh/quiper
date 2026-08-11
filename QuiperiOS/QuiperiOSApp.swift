@@ -24,6 +24,11 @@ struct QuiperiOSApp: App {
             appEnvironment = AppEnvironment()
         }
         _environment = StateObject(wrappedValue: appEnvironment)
+        if !isUnitTestHost {
+            AppDependencyManager.shared.add(
+                dependency: IOSAppIntentDependency(environment: appEnvironment)
+            )
+        }
     }
 
     var body: some Scene {
@@ -49,6 +54,9 @@ struct QuiperiOSApp: App {
                         environment.handleScenePhase(scenePhase)
                     }
             }
+        }
+        .commands {
+            IOSKeyboardCommands(environment: environment)
         }
     }
 }

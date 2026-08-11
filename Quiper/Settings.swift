@@ -216,6 +216,9 @@ class Settings: ObservableObject {
     }
     /// Makes the primary Go to engine 1–10 modifier shortcuts available system-wide.
     @Published var globalEngineDigitShortcutsEnabled: Bool = false
+    /// iOS owns these bindings. macOS retains them so a shared settings file
+    /// remains lossless without interpreting UIKit key equivalents as Carbon keys.
+    private var preservedIOSHardwareKeyboardSettings: IOSHardwareKeyboardSettings?
     @Published var settingsColorStyle: SettingsColorStyle = .colorful {
         didSet {
             saveSettings()
@@ -303,6 +306,7 @@ class Settings: ObservableObject {
         enableHUDCmdEscape = true
         hideQuiperWhenRetriggeringActiveEngineShortcut = true
         globalEngineDigitShortcutsEnabled = false
+        preservedIOSHardwareKeyboardSettings = nil
         showOnAllSpaces = false
         settingsColorStyle = .colorful
         tabSurvivalPolicy = .always
@@ -479,6 +483,7 @@ class Settings: ObservableObject {
         updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
         serviceZoomLevels = (persisted.serviceZoomLevels ?? [:]).mapValues { CGFloat($0) }
         appShortcutBindings = persisted.appShortcuts ?? .defaults
+        preservedIOSHardwareKeyboardSettings = persisted.iosHardwareKeyboardSettings
         if let altSessionDigits = persisted.sessionDigitsAlternateModifiers {
             appShortcutBindings.sessionDigitsAlternateModifiers = altSessionDigits
         }
@@ -611,6 +616,7 @@ class Settings: ObservableObject {
             didResolveEngineSettingsShortcutMigration: persistedEngineSettingsShortcutMigrationForSave(),
                                             hasDismissedEngineSettingsShortcutNotice: hasDismissedEngineSettingsShortcutNotice,
                                             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
+                                            iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
                                             quiperVersion: persistedQuiperVersionForSave())
             let data = try JSONEncoder().encode(payload)
             try data.write(to: settingsFile)
@@ -671,6 +677,7 @@ class Settings: ObservableObject {
             hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
             didResolveEngineSettingsShortcutMigration: persistedEngineSettingsShortcutMigrationForSave(),
             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
+            iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
             quiperVersion: persistedQuiperVersionForSave()
         )
     }
@@ -694,6 +701,7 @@ class Settings: ObservableObject {
         updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
         serviceZoomLevels = (persisted.serviceZoomLevels ?? [:]).mapValues { CGFloat($0) }
         appShortcutBindings = persisted.appShortcuts ?? .defaults
+        preservedIOSHardwareKeyboardSettings = persisted.iosHardwareKeyboardSettings
         if let altSessionDigits = persisted.sessionDigitsAlternateModifiers {
             appShortcutBindings.sessionDigitsAlternateModifiers = altSessionDigits
         }

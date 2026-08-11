@@ -6,8 +6,9 @@ import Carbon
 
 /// The built-in action set shared by both targets.
 ///
-/// macOS surfaces these through the recorded hotkeys; iOS has no keyboard, so
-/// the same actions are offered from the Actions menu instead.
+/// macOS stores Carbon-based action hotkeys on each action. iOS presents the
+/// same actions in its menu and assigns independent logical-key defaults when
+/// a hardware keyboard is attached.
 enum DefaultActions {
     static let defaults: [CustomAction] = [
         newSessionAction,

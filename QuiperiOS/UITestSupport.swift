@@ -5,6 +5,8 @@ enum UITestSupport {
     static let launchArgument = "--ui-testing"
     static let launchEnvironmentKey = "QUIPER_UI_TESTING"
     static let protectedEngineLaunchArgument = "--ui-testing-protected-engine"
+    static let hardwareKeyboardSeenLaunchArgument = "--ui-testing-hardware-keyboard-seen"
+    static let hardwareKeyboardConnectedLaunchArgument = "--ui-testing-hardware-keyboard-connected"
 
     static var isEnabled: Bool {
         #if DEBUG
@@ -83,6 +85,10 @@ enum UITestSupport {
             ]
         )
         let startsProtected = ProcessInfo.processInfo.arguments.contains(protectedEngineLaunchArgument)
+        let keyboardSeen = ProcessInfo.processInfo.arguments.contains(hardwareKeyboardSeenLaunchArgument)
+        let keyboardConnected = ProcessInfo.processInfo.arguments.contains(
+            hardwareKeyboardConnectedLaunchArgument
+        )
         var persistedService = service
         var persistedTabState = tabState
         if startsProtected {
@@ -100,7 +106,10 @@ enum UITestSupport {
             services: [persistedService],
             customActions: [],
             persistedTabState: persistedTabState,
-            tabNavigationRingSize: 3
+            tabNavigationRingSize: 3,
+            iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings(
+                hasSeenHardwareKeyboard: keyboardSeen || keyboardConnected
+            )
         )
         try? JSONEncoder().encode(settings).write(to: settingsURL, options: .atomic)
 
@@ -110,7 +119,8 @@ enum UITestSupport {
             websiteDataStoreManager: UITestWebsiteDataStoreManager(),
             engineKeyStore: keyStore,
             secureProfileStore: profileStore,
-            isProtectedDataAvailable: { true }
+            isProtectedDataAvailable: { true },
+            hardwareKeyboardMonitor: UITestHardwareKeyboardMonitor(isConnected: keyboardConnected)
         )
     }
 
@@ -129,15 +139,33 @@ enum UITestSupport {
           </head>
           <body>
             <label for="prompt">Test prompt</label>
-            <input id="prompt" aria-label="Test prompt" type="text">
+            <input id="prompt" aria-label="Test prompt" type="text" autofocus>
+            <p id="focus-state">not focused</p>
             <p>needle first</p>
             <div class="spacer"></div>
             <p>needle second</p>
+            <script>
+              document.getElementById("prompt").addEventListener("focus", () => {
+                document.getElementById("focus-state").textContent = "prompt focused";
+              });
+            </script>
           </body>
         </html>
         """
         return "data:text/html;base64,\(Data(html.utf8).base64EncodedString())"
     }()
+}
+
+@MainActor
+private final class UITestHardwareKeyboardMonitor: HardwareKeyboardMonitoring {
+    let isConnected: Bool
+    var onConnectionChanged: ((Bool) -> Void)?
+
+    init(isConnected: Bool) {
+        self.isConnected = isConnected
+    }
+
+    func start() { }
 }
 
 @MainActor

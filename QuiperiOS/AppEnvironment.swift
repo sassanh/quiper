@@ -15,6 +15,11 @@ final class AppEnvironment: ObservableObject {
         case failed(String)
     }
 
+    private enum SettingsDocumentState {
+        case unavailable
+        case loaded(snapshot: PersistedSettings?, json: [String: Any])
+    }
+
     static let websiteDataStoreVersion = 1
 
     @Published var services: [Service] = []
@@ -32,6 +37,8 @@ final class AppEnvironment: ObservableObject {
     @Published var automaticallySwitchEngineOnLastSessionClose: Bool = true
     @Published var autoCreateSessionOnEmptyEngineActivation: Bool = true
     @Published var shouldPurgeDanglingWebData: Bool = true
+    @Published var iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings = .defaults
+    @Published private(set) var isHardwareKeyboardConnected = false
     @Published private(set) var startupState: StartupState = .loading
     @Published private(set) var unlockedServiceIDs: Set<UUID> = []
     @Published private(set) var securityOperationServiceIDs: Set<UUID> = []
@@ -48,9 +55,8 @@ final class AppEnvironment: ObservableObject {
     private let isProtectedDataAvailable: () -> Bool
     private let enrichMissingIcons: Bool
     private let allowsNetworkWork: Bool
-    // Keep fields owned by the other platform intact when iOS saves shared settings.
-    private var persistedSettingsSnapshot: PersistedSettings?
-    private var persistedSettingsJSON: [String: Any]?
+    private let hardwareKeyboardMonitor: any HardwareKeyboardMonitoring
+    private var settingsDocumentState: SettingsDocumentState = .unavailable
     private var storedWebsiteDataStoreVersion: Int?
     private var unlockedKeys: [UUID: Data] = [:]
     private var lastActivityTime = Date()
@@ -60,6 +66,7 @@ final class AppEnvironment: ObservableObject {
     private var webSessions: [UUID: [Int: WebViewSession]] = [:]
     private(set) var sessionThumbnails: [TabIdentifier: UIImage] = [:]
     @Published private(set) var thumbnailsRevision = 0
+    lazy var commandExecutor = IOSCommandExecutor(environment: self)
 
     init(
         settingsURL: URL? = nil,
@@ -69,7 +76,8 @@ final class AppEnvironment: ObservableObject {
         secureProfileStore: (any SecureProfileStoring)? = nil,
         requiresWebsiteDataMigration: Bool? = nil,
         isProtectedDataAvailable: (() -> Bool)? = nil,
-        allowsNetworkWork: Bool = true
+        allowsNetworkWork: Bool = true,
+        hardwareKeyboardMonitor: (any HardwareKeyboardMonitoring)? = nil
     ) {
         FaviconFetcher.configure(imageProcessor: UIKitFaviconImageProcessor.self)
         let resolvedSettingsURL = settingsURL ?? Self.makeSettingsURL()
@@ -86,7 +94,48 @@ final class AppEnvironment: ObservableObject {
         self.isProtectedDataAvailable = isProtectedDataAvailable ?? { UIApplication.shared.isProtectedDataAvailable }
         self.enrichMissingIcons = enrichMissingIcons
         self.allowsNetworkWork = allowsNetworkWork
+        self.hardwareKeyboardMonitor = hardwareKeyboardMonitor ?? HardwareKeyboardMonitor()
         load()
+        self.hardwareKeyboardMonitor.onConnectionChanged = { [weak self] connected in
+            self?.handleHardwareKeyboardConnection(connected)
+        }
+        self.hardwareKeyboardMonitor.start()
+        handleHardwareKeyboardConnection(self.hardwareKeyboardMonitor.isConnected)
+    }
+
+    private func handleHardwareKeyboardConnection(_ connected: Bool) {
+        isHardwareKeyboardConnected = connected
+        persistHardwareKeyboardSeenIfNeeded()
+    }
+
+    private func persistHardwareKeyboardSeenIfNeeded() {
+        guard isHardwareKeyboardConnected,
+              startupState == .ready,
+              case .loaded = settingsDocumentState,
+              !iosHardwareKeyboardSettings.hasSeenHardwareKeyboard else { return }
+        iosHardwareKeyboardSettings.hasSeenHardwareKeyboard = true
+        _ = save()
+    }
+
+    func updateHardwareKeyboardSettings(
+        _ update: (inout IOSHardwareKeyboardSettings) -> Void
+    ) {
+        update(&iosHardwareKeyboardSettings)
+        pruneHardwareKeyboardBindings()
+        _ = save()
+    }
+
+    func restoreDefaultHardwareKeyboardSettings() {
+        iosHardwareKeyboardSettings.restoreDefaults()
+        pruneHardwareKeyboardBindings()
+        _ = save()
+    }
+
+    private func pruneHardwareKeyboardBindings() {
+        iosHardwareKeyboardSettings.prune(
+            validEngineIDs: Set(services.map(\.id)),
+            validActionIDs: Set(customActions.map(\.id))
+        )
     }
 
     // MARK: - Web view sessions
@@ -104,6 +153,7 @@ final class AppEnvironment: ObservableObject {
             sessionIndex: sessionIndex,
             initialURL: initialURL,
             websiteDataStore: websiteDataStoreManager.dataStore(for: serviceID),
+            initialBackgroundColor: browserBackgroundColor,
             loadImmediately: loadImmediately && allowsNetworkWork
         )
         session.onPromptRecorded = { [weak self] text, clearType in
@@ -139,6 +189,17 @@ final class AppEnvironment: ObservableObject {
         webSessions[serviceID] = serviceMap
         session.setKeyboardSuppressed(isRingOverlayActive)
         return session
+    }
+
+    private var browserBackgroundColor: UIColor {
+        switch colorScheme {
+        case .system:
+            return .systemBackground
+        case .light:
+            return .white
+        case .dark:
+            return .black
+        }
     }
 
     func setRingOverlayActive(_ active: Bool) {
@@ -199,6 +260,33 @@ final class AppEnvironment: ObservableObject {
     /// without instantiating a new one (used for ring previews).
     func existingSession(for serviceID: UUID, sessionIndex: Int) -> WebViewSession? {
         webSessions[serviceID]?[sessionIndex]
+    }
+
+    func activeWebSession(createIfNeeded: Bool = true) -> WebViewSession? {
+        guard let service = activeService, !isServiceLocked(service.id) else { return nil }
+        let index = activeSessionIndex(for: service.id)
+        if let session = webSessions[service.id]?[index] {
+            return session
+        }
+        guard createIfNeeded,
+              persistedTabState.openTabs[service.id]?[index] != nil else { return nil }
+        return webViewSession(
+            for: service.id,
+            sessionIndex: index,
+            initialURL: activeSessionURL(for: service.id)
+        )
+    }
+
+    func recreateActiveWebSession() -> WebViewSession? {
+        guard let service = activeService, !isServiceLocked(service.id) else { return nil }
+        let index = activeSessionIndex(for: service.id)
+        let url = webSessions[service.id]?[index]?.webView.url ?? activeSessionURL(for: service.id)
+        webSessions[service.id]?.removeValue(forKey: index)?.invalidate()
+        return webViewSession(
+            for: service.id,
+            sessionIndex: index,
+            initialURL: url
+        )
     }
 
     // MARK: - Secure engine lifecycle
@@ -342,10 +430,14 @@ final class AppEnvironment: ObservableObject {
         }
     }
 
-    func unlockService(_ serviceID: UUID) async {
-        guard !securityOperationServiceIDs.contains(serviceID),
-              isServiceLocked(serviceID),
-              var index = services.firstIndex(where: { $0.id == serviceID }) else { return }
+    @discardableResult
+    func unlockService(
+        _ serviceID: UUID,
+        createSessionIfNeeded: Bool = true
+    ) async -> Bool {
+        guard var index = services.firstIndex(where: { $0.id == serviceID }) else { return false }
+        guard isServiceLocked(serviceID) else { return true }
+        guard !securityOperationServiceIDs.contains(serviceID) else { return false }
         securityOperationServiceIDs.insert(serviceID)
         securityErrorByServiceID[serviceID] = nil
         defer { securityOperationServiceIDs.remove(serviceID) }
@@ -356,10 +448,10 @@ final class AppEnvironment: ObservableObject {
                 reason: "Unlock \(services[index].name)"
             )
             guard let refreshedIndex = services.firstIndex(where: { $0.id == serviceID }),
-                  isServiceLocked(serviceID) else { return }
+                  isServiceLocked(serviceID) else { return false }
             index = refreshedIndex
             guard currentScenePhase != .background || !services[index].lockOnSwitchAway else {
-                return
+                return false
             }
             let profile = try secureProfileStore.loadProfile(for: serviceID, key: key)
             var restoredService = profile.metadata.applying(to: services[index])
@@ -375,14 +467,18 @@ final class AppEnvironment: ObservableObject {
             unlockedKeys[serviceID] = key
             unlockedServiceIDs.insert(serviceID)
             registerUserActivity()
-            if autoCreateSessionOnEmptyEngineActivation, hasNoSessions(for: serviceID) {
+            if createSessionIfNeeded,
+               autoCreateSessionOnEmptyEngineActivation,
+               hasNoSessions(for: serviceID) {
                 ensureSessions(for: serviceID)
             }
             if persistedTabState.activeServiceID == serviceID {
                 restoreTabsState()
             }
+            return true
         } catch {
             securityErrorByServiceID[serviceID] = error.localizedDescription
+            return false
         }
     }
 
@@ -416,16 +512,29 @@ final class AppEnvironment: ObservableObject {
         case .active:
             isPrivacyShieldVisible = false
             shouldDismissSensitiveUI = false
-            checkInactivityLocks()
+            // App initialization can race the protected-data availability
+            // transition on a normal foreground launch. Retry here as soon as
+            // the scene is active so a transient device-data lock cannot leave
+            // the app stuck on the startup lock screen.
+            if startupState == .waitingForProtectedData {
+                retryStartup()
+            }
+            if startupState == .ready {
+                checkInactivityLocks()
+            }
         case .inactive:
             isPrivacyShieldVisible = true
-            save()
+            if startupState == .ready {
+                save()
+            }
         case .background:
             isPrivacyShieldVisible = true
             shouldDismissSensitiveUI = true
-            save()
-            for service in services where service.isEncrypted && service.lockOnSwitchAway {
-                lockService(service.id)
+            if startupState == .ready {
+                save()
+                for service in services where service.isEncrypted && service.lockOnSwitchAway {
+                    lockService(service.id)
+                }
             }
         @unknown default:
             isPrivacyShieldVisible = true
@@ -528,7 +637,7 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: - Service management
 
-    func setActiveService(_ id: UUID) {
+    func setActiveService(_ id: UUID, createSessionIfNeeded: Bool = true) {
         guard services.contains(where: { $0.id == id }) else { return }
         registerUserActivity()
         if let current = activeService, current.id != id {
@@ -542,7 +651,10 @@ final class AppEnvironment: ObservableObject {
         let newTab = TabIdentifier(serviceID: id, sessionIndex: activeSessionIndex(for: id))
         recordTabHistory(switchingTo: newTab)
         persistedTabState.activeServiceID = id
-        if autoCreateSessionOnEmptyEngineActivation, !isServiceLocked(id), hasNoSessions(for: id) {
+        if createSessionIfNeeded,
+           autoCreateSessionOnEmptyEngineActivation,
+           !isServiceLocked(id),
+           hasNoSessions(for: id) {
             ensureSessions(for: id)
         }
         save()
@@ -706,6 +818,7 @@ final class AppEnvironment: ObservableObject {
         if persistedTabState.activeServiceID == serviceID {
             persistedTabState.activeServiceID = services.first?.id
         }
+        iosHardwareKeyboardSettings.engineBindings[serviceID] = nil
         save()
         purgeWebDataIfNeeded(for: removed)
     }
@@ -864,32 +977,6 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: - Actions
 
-    func runAction(_ action: CustomAction, for serviceID: UUID) {
-        guard let service = services.first(where: { $0.id == serviceID }),
-              let session = webSessions[serviceID]?[activeSessionIndex(for: serviceID)] else { return }
-        let storedScript = actionScript(for: service, action: action)
-        let rawScript = storedScript.trimmingCharacters(in: .whitespacesAndNewlines)
-        let script: String
-        if rawScript.isEmpty {
-            script = WebScripts.makeActionFallbackScript(actionName: action.name, serviceName: service.name)
-        } else {
-            script = rawScript
-        }
-
-        let wrappedScript = WebScripts.makeActionRunnerScript(script: script)
-
-        session.webView.callAsyncJavaScript(wrappedScript, in: nil, in: .page) { result in
-            switch result {
-            case .success(let value):
-                if let dict = value as? [String: Any], let message = dict["quiperError"] as? String {
-                    NSLog("[Quiper] Custom action script failed (caught exception): \(message)")
-                }
-            case .failure(let error):
-                NSLog("[Quiper] Custom action script failed (error): \(error)")
-            }
-        }
-    }
-
     func actionScript(for service: Service, action: CustomAction) -> String {
         if service.templateActionScriptSync[action.id] == true,
            let defaultScript = ActionScripts.defaultScript(for: service, action: action) {
@@ -935,6 +1022,7 @@ final class AppEnvironment: ObservableObject {
 
     func removeAction(id: UUID) {
         customActions.removeAll { $0.id == id }
+        iosHardwareKeyboardSettings.actionBindings[id] = nil
         for serviceIndex in services.indices {
             services[serviceIndex].actionScripts.removeValue(forKey: id)
             services[serviceIndex].templateActionScriptSync.removeValue(forKey: id)
@@ -1169,6 +1257,7 @@ final class AppEnvironment: ObservableObject {
 
     private func load() {
         startupState = .loading
+        settingsDocumentState = .unavailable
         guard isProtectedDataAvailable() else {
             startupState = .waitingForProtectedData
             return
@@ -1202,11 +1291,12 @@ final class AppEnvironment: ObservableObject {
             return
         }
 
-        persistedSettingsSnapshot = persisted
-        persistedSettingsJSON = json
+        settingsDocumentState = .loaded(snapshot: persisted, json: json)
         storedWebsiteDataStoreVersion = json[Self.websiteDataStoreVersionKey] as? Int
         services = persisted.services
         customActions = persisted.customActions ?? []
+        iosHardwareKeyboardSettings = persisted.iosHardwareKeyboardSettings ?? .defaults
+        pruneHardwareKeyboardBindings()
         if let colorScheme = persisted.colorScheme {
             self.colorScheme = colorScheme
         }
@@ -1296,16 +1386,17 @@ final class AppEnvironment: ObservableObject {
     }
 
     private func installDefaultSettings() {
-        persistedSettingsSnapshot = nil
-        persistedSettingsJSON = [:]
+        settingsDocumentState = .loaded(snapshot: nil, json: [:])
         storedWebsiteDataStoreVersion = Self.websiteDataStoreVersion
         services = DefaultEngineDefinitions.definitions
         customActions = DefaultActions.defaults
+        iosHardwareKeyboardSettings = .defaults
         persistedTabState = PersistedTabState(activeServiceID: services.first?.id)
         for service in services where autoCreateSessionOnEmptyEngineActivation {
             ensureSessions(for: service.id)
         }
         guard save(flushSecureProfiles: false) else {
+            settingsDocumentState = .unavailable
             startupState = .failed("Quiper could not create its protected settings file.")
             return
         }
@@ -1314,6 +1405,7 @@ final class AppEnvironment: ObservableObject {
 
     private func finishLoadingReadyState() {
         startupState = .ready
+        persistHardwareKeyboardSeenIfNeeded()
         if autoCreateSessionOnEmptyEngineActivation {
             for service in services where !isServiceLocked(service.id) {
                 ensureSessions(for: service.id)
@@ -1361,11 +1453,14 @@ final class AppEnvironment: ObservableObject {
 
     @discardableResult
     func save(flushSecureProfiles: Bool = true) -> Bool {
+        guard case let .loaded(persistedSnapshot, persistedJSON) = settingsDocumentState else {
+            return false
+        }
         guard isProtectedDataAvailable() else { return false }
         if flushSecureProfiles, !persistUnlockedProfiles() {
             return false
         }
-        var payload = persistedSettingsSnapshot ?? PersistedSettings(services: services)
+        var payload = persistedSnapshot ?? PersistedSettings(services: services)
         // A protected engine may be unlocked in memory. Persist only its
         // deliberately minimal stub so future Service fields cannot cross the
         // plaintext boundary merely because their encoder was not updated.
@@ -1386,20 +1481,26 @@ final class AppEnvironment: ObservableObject {
         payload.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear
         payload.promptHistoryLimit = promptHistoryLimit
         payload.tabNavigationRingSize = tabNavigationRingSize
+        pruneHardwareKeyboardBindings()
+        payload.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
         payload.version = 1
         guard let encodedPayload = try? JSONEncoder().encode(payload),
               let encodedObject = try? JSONSerialization.jsonObject(with: encodedPayload) as? [String: Any]
         else { return false }
 
-        var settingsObject = persistedSettingsJSON ?? [:]
+        var settingsObject = persistedJSON
+        let ownedObject = Self.preservingMacShortcutFields(
+            in: encodedObject,
+            from: settingsObject
+        )
         for key in Self.iosOwnedSettingKeys {
             settingsObject.removeValue(forKey: key)
         }
         for key in Self.knownLegacySettingKeys {
             settingsObject.removeValue(forKey: key)
         }
-        for key in Self.iosOwnedSettingKeys where encodedObject[key] != nil {
-            settingsObject[key] = encodedObject[key]
+        for key in Self.iosOwnedSettingKeys where ownedObject[key] != nil {
+            settingsObject[key] = ownedObject[key]
         }
         if let storedWebsiteDataStoreVersion {
             settingsObject[Self.websiteDataStoreVersionKey] = storedWebsiteDataStoreVersion
@@ -1423,8 +1524,7 @@ final class AppEnvironment: ObservableObject {
         } catch {
             return false
         }
-        persistedSettingsSnapshot = payload
-        persistedSettingsJSON = settingsObject
+        settingsDocumentState = .loaded(snapshot: payload, json: settingsObject)
         return true
     }
 
@@ -1482,6 +1582,7 @@ final class AppEnvironment: ObservableObject {
         "promptHistoryRecordOnSelectionClear",
         "promptHistoryLimit",
         "tabNavigationRingSize",
+        "iosHardwareKeyboardSettings",
         websiteDataStoreVersionKey,
         "version"
     ]
@@ -1492,4 +1593,46 @@ final class AppEnvironment: ObservableObject {
         "selectorDisplayMode",
         "showPromptRecordingGlow"
     ]
+
+    private static func preservingMacShortcutFields(
+        in encodedObject: [String: Any],
+        from previousObject: [String: Any]
+    ) -> [String: Any] {
+        var result = encodedObject
+        result["services"] = mergingNestedField(
+            "activationShortcut",
+            current: encodedObject["services"],
+            previous: previousObject["services"]
+        )
+        result["customActions"] = mergingNestedField(
+            "shortcut",
+            current: encodedObject["customActions"],
+            previous: previousObject["customActions"]
+        )
+        return result
+    }
+
+    private static func mergingNestedField(
+        _ field: String,
+        current: Any?,
+        previous: Any?
+    ) -> Any? {
+        guard var currentItems = current as? [[String: Any]],
+              let previousItems = previous as? [[String: Any]] else {
+            return current
+        }
+        let previousByID = previousItems.reduce(into: [UUID: [String: Any]]()) { result, item in
+            guard let idString = item["id"] as? String,
+                  let id = UUID(uuidString: idString),
+                  result[id] == nil else { return }
+            result[id] = item
+        }
+        for index in currentItems.indices {
+            guard let idString = currentItems[index]["id"] as? String,
+                  let id = UUID(uuidString: idString),
+                  let value = previousByID[id]?[field] else { continue }
+            currentItems[index][field] = value
+        }
+        return currentItems
+    }
 }

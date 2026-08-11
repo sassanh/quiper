@@ -382,6 +382,7 @@ struct PersistedSettings: Codable {
     var didResolveEngineSettingsShortcutMigration: Bool?
     var hasDismissedEngineSettingsShortcutNotice: Bool?
     var globalEngineDigitShortcutsEnabled: Bool?
+    var iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings?
     var quiperVersion: String?
     var version: Int? = 1
     private(set) var didDecodeLegacySelectorDisplayMode = false
@@ -416,6 +417,7 @@ struct PersistedSettings: Codable {
         case didResolveEngineSettingsShortcutMigration
         case hasDismissedEngineSettingsShortcutNotice
         case globalEngineDigitShortcutsEnabled
+        case iosHardwareKeyboardSettings
         case quiperVersion
     }
 
@@ -463,6 +465,7 @@ struct PersistedSettings: Codable {
          didResolveEngineSettingsShortcutMigration: Bool? = nil,
          hasDismissedEngineSettingsShortcutNotice: Bool? = nil,
          globalEngineDigitShortcutsEnabled: Bool? = nil,
+         iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings? = nil,
          quiperVersion: String? = nil,
          version: Int? = 1) {
         self.services = services
@@ -501,6 +504,7 @@ struct PersistedSettings: Codable {
         self.didResolveEngineSettingsShortcutMigration = didResolveEngineSettingsShortcutMigration
         self.hasDismissedEngineSettingsShortcutNotice = hasDismissedEngineSettingsShortcutNotice
         self.globalEngineDigitShortcutsEnabled = globalEngineDigitShortcutsEnabled
+        self.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
         self.quiperVersion = quiperVersion
         self.version = version
     }
@@ -539,6 +543,7 @@ struct PersistedSettings: Codable {
          didResolveEngineSettingsShortcutMigration: Bool? = nil,
          hasDismissedEngineSettingsShortcutNotice: Bool? = nil,
          globalEngineDigitShortcutsEnabled: Bool? = nil,
+         iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings? = nil,
          quiperVersion: String? = nil,
          version: Int? = 1) {
         self.services = services
@@ -575,6 +580,7 @@ struct PersistedSettings: Codable {
         self.didResolveEngineSettingsShortcutMigration = didResolveEngineSettingsShortcutMigration
         self.hasDismissedEngineSettingsShortcutNotice = hasDismissedEngineSettingsShortcutNotice
         self.globalEngineDigitShortcutsEnabled = globalEngineDigitShortcutsEnabled
+        self.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
         self.quiperVersion = quiperVersion
         self.version = version
     }
@@ -677,6 +683,10 @@ struct PersistedSettings: Codable {
         didResolveEngineSettingsShortcutMigration = try container.decodeIfPresent(Bool.self, forKey: .didResolveEngineSettingsShortcutMigration)
         hasDismissedEngineSettingsShortcutNotice = try container.decodeIfPresent(Bool.self, forKey: .hasDismissedEngineSettingsShortcutNotice)
         globalEngineDigitShortcutsEnabled = try container.decodeIfPresent(Bool.self, forKey: .globalEngineDigitShortcutsEnabled)
+        iosHardwareKeyboardSettings = try container.decodeIfPresent(
+            IOSHardwareKeyboardSettings.self,
+            forKey: .iosHardwareKeyboardSettings
+        )
         quiperVersion = try container.decodeIfPresent(String.self, forKey: .quiperVersion)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
     }

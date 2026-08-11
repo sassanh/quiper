@@ -5,7 +5,7 @@ project="Quiper.xcodeproj"
 category="${1:-macos-all}"
 
 case "$category" in
-    macos-unit|macos-ui|ios-unit|macos-all)
+    macos-unit|macos-ui|ios-unit|ios-ui|macos-all)
         shift
         ;;
     *)
@@ -21,6 +21,34 @@ destination=""
 derived_data_path=""
 coverage_path=""
 coverage_html_path=""
+
+ios_simulator_destination() {
+    local override="$1"
+    local preferred_prefix="$2"
+    local fallback_prefix="$3"
+    if [[ -n "$override" ]]; then
+        echo "$override"
+        return
+    fi
+
+    local preferred_id
+    local fallback_id
+    local simulator_id
+    preferred_id=$(xcrun simctl list devices available --json \
+        | jq -r --arg prefix "$preferred_prefix" '[.devices | to_entries[] | .value[]
+            | select(.isAvailable == true and (.name | startswith($prefix)))]
+            | .[0].udid // empty')
+    fallback_id=$(xcrun simctl list devices available --json \
+        | jq -r --arg prefix "$fallback_prefix" '[.devices | to_entries[] | .value[]
+            | select(.isAvailable == true and (.name | startswith($prefix)))]
+            | .[0].udid // empty')
+    simulator_id="${preferred_id:-$fallback_id}"
+    if [[ -z "$simulator_id" ]]; then
+        echo "No available $fallback_prefix simulator was found." >&2
+        return 1
+    fi
+    echo "platform=iOS Simulator,id=$simulator_id"
+}
 
 case "$category" in
     macos-unit)
@@ -43,28 +71,26 @@ case "$category" in
         ;;
     ios-unit)
         scheme="QuiperiOS"
+        test_target="QuiperiOSTests"
         app_name="QuiperiOS"
         derived_data_path="${IOS_UNIT_DERIVED_DATA_PATH:-${IOS_DERIVED_DATA_PATH:-build/DerivedData-ios-unit}}"
         coverage_path="${IOS_UNIT_COVERAGE_PATH:-${IOS_COVERAGE_PATH:-coverage-ios-unit.lcov}}"
         coverage_html_path="${IOS_UNIT_COVERAGE_HTML_PATH:-${IOS_COVERAGE_HTML_PATH:-coverage-html-ios-unit}}"
 
-        destination="${IOS_TEST_DESTINATION:-}"
-        if [[ -z "$destination" ]]; then
-            preferred_id=$(xcrun simctl list devices available --json \
-                | jq -r '[.devices | to_entries[] | .value[]
-                    | select(.isAvailable == true and (.name | startswith("iPhone 17")))]
-                    | .[0].udid // empty')
-            fallback_id=$(xcrun simctl list devices available --json \
-                | jq -r '[.devices | to_entries[] | .value[]
-                    | select(.isAvailable == true and (.name | startswith("iPhone")))]
-                    | .[0].udid // empty')
-            simulator_id="${preferred_id:-$fallback_id}"
-            if [[ -z "$simulator_id" ]]; then
-                echo "No available iPhone simulator was found." >&2
-                exit 1
-            fi
-            destination="platform=iOS Simulator,id=$simulator_id"
-        fi
+        destination=$(ios_simulator_destination "${IOS_TEST_DESTINATION:-}" "iPhone 17" "iPhone")
+        ;;
+    ios-ui)
+        scheme="QuiperiOS"
+        test_target="QuiperiOSUITests"
+        app_name="QuiperiOS"
+        derived_data_path="${IOS_UI_DERIVED_DATA_PATH:-build/DerivedData-ios-ui}"
+        coverage_path="${IOS_UI_COVERAGE_PATH:-coverage-ios-ui.lcov}"
+        coverage_html_path="${IOS_UI_COVERAGE_HTML_PATH:-coverage-html-ios-ui}"
+
+        destination=$(ios_simulator_destination \
+            "${IOS_UI_TEST_DESTINATION:-${IOS_TEST_DESTINATION:-}}" \
+            "iPad Pro 13-inch" \
+            "iPad")
         ;;
     macos-all)
         scheme="Quiper"

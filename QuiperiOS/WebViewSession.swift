@@ -3,6 +3,20 @@ import Foundation
 import UIKit
 import WebKit
 
+enum WebViewSessionReadinessError: LocalizedError {
+    case timedOut
+    case invalidated
+
+    var errorDescription: String? {
+        switch self {
+        case .timedOut:
+            return "The page did not finish loading in time."
+        case .invalidated:
+            return "The session closed before the page finished loading."
+        }
+    }
+}
+
 @MainActor
 final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDelegate {
     let id: UUID
@@ -20,12 +34,14 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
     @Published var findQuery: String = ""
     @Published var findStatusText: String? = nil
     @Published var snapshot: UIImage?
+    @Published private(set) var isNavigationReady = false
 
     init(
         service: Service,
         sessionIndex: Int,
         initialURL: URL?,
         websiteDataStore: WKWebsiteDataStore,
+        initialBackgroundColor: UIColor,
         loadImmediately: Bool = true
     ) {
         self.id = UUID()
@@ -39,6 +55,9 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         configuration.userContentController = userContentController
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.underPageBackgroundColor = initialBackgroundColor
+        webView.backgroundColor = initialBackgroundColor
+        webView.scrollView.backgroundColor = initialBackgroundColor
         self.webView = webView
         self.coordinator = WebSessionCoordinator(
             webView: webView,
@@ -62,6 +81,9 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         }
         coordinator.onLoading = { [weak self] loading in
             self?.isLoading = loading
+            if loading {
+                self?.isNavigationReady = false
+            }
         }
         coordinator.onURL = { [weak self] url in
             self?.url = url
@@ -75,8 +97,13 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
             self?.onRememberRoutingDecision?(host, action)
         }
         coordinator.onDidFinish = { [weak self] in
+            self?.isNavigationReady = true
+            self?.completeReadinessWaiters()
             self?.restoreInputStateIfNeeded()
             self?.captureSnapshot()
+        }
+        coordinator.onDidFail = { [weak self] error in
+            self?.completeReadinessWaiters(throwing: error)
         }
 
         installScrollObservation()
@@ -103,6 +130,8 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
     private var findCurrentIndex = 0
     private var findTotal = 0
     private var findRequestID = 0
+    private var readinessWaiters: [UUID: CheckedContinuation<Void, Error>] = [:]
+    private var readinessTimeoutTasks: [UUID: Task<Void, Never>] = [:]
 
     private static let collapseThreshold: CGFloat = 80
     private static let restoreThreshold: CGFloat = 40
@@ -266,6 +295,30 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         webView.load(URLRequest(url: pending))
     }
 
+    func waitUntilNavigationReady(timeout: Duration = .seconds(15)) async throws {
+        if isNavigationReady {
+            return
+        }
+        let waiterID = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                readinessWaiters[waiterID] = continuation
+                readinessTimeoutTasks[waiterID] = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: timeout)
+                    guard !Task.isCancelled else { return }
+                    self?.completeReadinessWaiter(
+                        waiterID,
+                        throwing: WebViewSessionReadinessError.timedOut
+                    )
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.completeReadinessWaiter(waiterID, throwing: CancellationError())
+            }
+        }
+    }
+
     func stopLoading() {
         webView.stopLoading()
     }
@@ -280,6 +333,8 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         findSearch = ""
         findStatusText = nil
         snapshot = nil
+        isNavigationReady = false
+        completeReadinessWaiters(throwing: WebViewSessionReadinessError.invalidated)
         title = ""
         url = nil
         webView.stopLoading()
@@ -295,6 +350,22 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         onInputStateCommitted = nil
         onUserActivity = nil
         onSnapshot = nil
+    }
+
+    private func completeReadinessWaiters(throwing error: Error? = nil) {
+        for waiterID in Array(readinessWaiters.keys) {
+            completeReadinessWaiter(waiterID, throwing: error)
+        }
+    }
+
+    private func completeReadinessWaiter(_ waiterID: UUID, throwing error: Error?) {
+        readinessTimeoutTasks.removeValue(forKey: waiterID)?.cancel()
+        guard let continuation = readinessWaiters.removeValue(forKey: waiterID) else { return }
+        if let error {
+            continuation.resume(throwing: error)
+        } else {
+            continuation.resume()
+        }
     }
 
     func goBack() {

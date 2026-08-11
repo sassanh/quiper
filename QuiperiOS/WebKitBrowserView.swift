@@ -6,18 +6,21 @@ struct BrowserViewportLayout: Equatable {
 }
 
 struct WebKitBrowserView: UIViewControllerRepresentable {
+    @Environment(\.colorScheme) private var colorScheme
+
     let session: WebViewSession
     let viewportLayout: BrowserViewportLayout
 
     func makeUIViewController(context: Context) -> WebViewHostController {
         WebViewHostController(
             webView: session.webView,
-            viewportLayout: viewportLayout
+            viewportLayout: viewportLayout,
+            colorScheme: colorScheme
         )
     }
 
     func updateUIViewController(_ controller: WebViewHostController, context: Context) {
-        controller.apply(viewportLayout)
+        controller.apply(viewportLayout, colorScheme: colorScheme)
     }
 
     static func dismantleUIViewController(_ controller: WebViewHostController, coordinator: ()) {
@@ -28,15 +31,17 @@ struct WebKitBrowserView: UIViewControllerRepresentable {
 final class WebViewHostController: UIViewController {
     private let webView: WKWebView
     private var appliedViewportLayout: BrowserViewportLayout?
+    private var appliedColorScheme: ColorScheme?
     private var webViewTopConstraint: NSLayoutConstraint?
 
     init(
         webView: WKWebView,
-        viewportLayout: BrowserViewportLayout
+        viewportLayout: BrowserViewportLayout,
+        colorScheme: ColorScheme
     ) {
         self.webView = webView
         super.init(nibName: nil, bundle: nil)
-        apply(viewportLayout)
+        apply(viewportLayout, colorScheme: colorScheme)
     }
 
     @available(*, unavailable)
@@ -66,16 +71,36 @@ final class WebViewHostController: UIViewController {
         view.backgroundColor = webView.underPageBackgroundColor
     }
 
-    func apply(_ viewportLayout: BrowserViewportLayout) {
-        guard appliedViewportLayout != viewportLayout else { return }
-        appliedViewportLayout = viewportLayout
+    func apply(_ viewportLayout: BrowserViewportLayout, colorScheme: ColorScheme) {
+        let layoutChanged = appliedViewportLayout != viewportLayout
+        let colorSchemeChanged = appliedColorScheme != colorScheme
+        guard layoutChanged || colorSchemeChanged else { return }
         loadViewIfNeeded()
-        webViewTopConstraint?.constant = 0
-        additionalSafeAreaInsets = .zero
-        webView.scrollView.contentInsetAdjustmentBehavior = .never
-        webView.scrollView.contentInset = viewportLayout.obscuredContentInsets
-        webView.scrollView.scrollIndicatorInsets = viewportLayout.obscuredContentInsets
-        webView.obscuredContentInsets = viewportLayout.obscuredContentInsets
+        if layoutChanged {
+            appliedViewportLayout = viewportLayout
+            webViewTopConstraint?.constant = 0
+            additionalSafeAreaInsets = .zero
+            webView.scrollView.contentInsetAdjustmentBehavior = .never
+            webView.scrollView.contentInset = viewportLayout.obscuredContentInsets
+            webView.scrollView.scrollIndicatorInsets = viewportLayout.obscuredContentInsets
+            webView.obscuredContentInsets = viewportLayout.obscuredContentInsets
+        }
+        if colorSchemeChanged {
+            appliedColorScheme = colorScheme
+            let backgroundColor = Self.backgroundColor(for: colorScheme)
+            webView.underPageBackgroundColor = backgroundColor
+            webView.backgroundColor = backgroundColor
+            webView.scrollView.backgroundColor = backgroundColor
+            view.backgroundColor = backgroundColor
+        }
+    }
+
+    private static func backgroundColor(for colorScheme: ColorScheme) -> UIColor {
+        UIColor.systemBackground.resolvedColor(
+            with: UITraitCollection(
+                userInterfaceStyle: colorScheme == .dark ? .dark : .light
+            )
+        )
     }
 
     func detachWebView() {

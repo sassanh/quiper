@@ -197,7 +197,7 @@ struct SettingsView: View {
         } header: {
             Text("Actions")
         } footer: {
-            Text("Actions run JavaScript in the active engine. iOS has no keyboard, so trigger them from the Actions button in the toolbar.")
+            Text("Actions run JavaScript in the active engine. Trigger them from the toolbar, App Shortcuts, or a configured hardware-keyboard shortcut.")
         }
     }
 
@@ -230,6 +230,20 @@ struct SettingsView: View {
             Toggle("Automatically Switch Engine", isOn: $environment.automaticallySwitchEngineOnLastSessionClose)
             Toggle("Auto-Create Session on Empty Engine", isOn: $environment.autoCreateSessionOnEmptyEngineActivation)
             Toggle("Purge Dangling Web Data", isOn: $environment.shouldPurgeDanglingWebData)
+            if environment.iosHardwareKeyboardSettings.hasSeenHardwareKeyboard {
+                NavigationLink {
+                    HardwareKeyboardSettingsView()
+                        .environmentObject(environment)
+                } label: {
+                    HStack {
+                        Label("Hardware Keyboard", systemImage: "keyboard")
+                        Spacer()
+                        Text(environment.isHardwareKeyboardConnected ? "Connected" : "Not Connected")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("hardware-keyboard-settings")
+            }
         } header: {
             Text("Behavior")
         } footer: {

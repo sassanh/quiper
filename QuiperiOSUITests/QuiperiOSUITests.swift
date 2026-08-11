@@ -103,6 +103,45 @@ final class QuiperiOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No Recovery or Transfer"].exists)
     }
 
+    func testHardwareKeyboardCommandsWorkWhileWebInputOwnsFocus() {
+        relaunch(with: [
+            "--ui-testing",
+            "--ui-testing-hardware-keyboard-seen",
+            "--ui-testing-hardware-keyboard-connected"
+        ])
+
+        let prompt = app.textFields["Test prompt"]
+        XCTAssertTrue(prompt.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["prompt focused"].waitForExistence(timeout: 10))
+
+        app.typeKey("2", modifierFlags: .command)
+        wait(forValue: "active", on: app.buttons["session-1"])
+    }
+
+    func testHardwareKeyboardSettingsAppearOnlyAfterDetection() {
+        app.buttons["actions-menu"].tap()
+        app.buttons["Settings"].tap()
+        XCTAssertFalse(app.descendants(matching: .any)["hardware-keyboard-settings"].exists)
+
+        relaunch(with: ["--ui-testing", "--ui-testing-hardware-keyboard-seen"])
+
+        app.buttons["actions-menu"].tap()
+        app.buttons["Settings"].tap()
+        let row = app.buttons["hardware-keyboard-settings"]
+        XCTAssertTrue(scrollToHittable(row, in: app.collectionViews.firstMatch))
+        XCTAssertTrue(app.staticTexts["Not Connected"].exists)
+        let keyboardSettings = app.navigationBars["Hardware Keyboard"]
+        XCTAssertTrue(tap(row, until: keyboardSettings))
+    }
+
+    private func relaunch(with arguments: [String]) {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = arguments
+        app.launchEnvironment["QUIPER_UI_TESTING"] = "1"
+        app.launch()
+    }
+
     private func openFindBar() {
         app.buttons["actions-menu"].tap()
         let findAction = app.buttons["Find in Page"]

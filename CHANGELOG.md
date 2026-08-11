@@ -4,6 +4,7 @@
 
 ### Added
 
+- **iOS App Shortcuts and Hardware Keyboard Support**: Quiper now exposes engine opening, new sessions, actions, and protected-engine locking to Siri, Spotlight, Shortcuts, and the Action button. Attached keyboards gain native, configurable shortcuts for sessions, engines, actions, history, recent tabs, reload, find, Settings, and zoom—even while typing in a website. Keyboard settings stay out of the way until a physical keyboard has been connected once.
 - **Quiper for iOS**: Quiper is now a native iPhone and iPad app sharing the same engine library, custom actions, prompt history, session tabs, and engine icons as the Mac app. Each engine's tabs reopen at their last-visited URLs exactly as they were when the app was closed, matching the Mac app's session persistence.
 - **iOS Liquid Glass Interface**: On iOS 26 the bottom bar appears as floating glass control capsules over the page, with a translucent material fallback on earlier systems. The bar collapses into a compact island while the keyboard is open or the page scrolls down, and a loading ring traces the stop control while content loads.
 - **iOS Link Routing**: Links on iOS now follow each engine's routing rules the same way they do on the Mac app—opening internally, in a new window, or externally—and an "always" choice for a domain can be remembered so it applies to future visits.

@@ -150,17 +150,59 @@ struct IOSSecurityTests {
         try fixture.writeSettings(service: service)
         let originalData = try Data(contentsOf: fixture.settingsURL)
         let availability = ProtectedDataAvailability(isAvailable: false)
+        let keyboardMonitor = SecurityHardwareKeyboardMonitor(isConnected: false)
 
         let environment = fixture.makeEnvironment(
-            isProtectedDataAvailable: { availability.isAvailable }
+            isProtectedDataAvailable: { availability.isAvailable },
+            hardwareKeyboardMonitor: keyboardMonitor
         )
         #expect(environment.startupState == .waitingForProtectedData)
         #expect(try Data(contentsOf: fixture.settingsURL) == originalData)
 
         availability.isAvailable = true
-        environment.retryStartup()
+        environment.handleScenePhase(.inactive)
+        keyboardMonitor.setConnected(true)
+        #expect(try Data(contentsOf: fixture.settingsURL) == originalData)
+
+        environment.handleScenePhase(.active)
         #expect(environment.startupState == .ready)
         #expect(environment.services.first?.id == service.id)
+    }
+
+    @Test func invalidSettingsCannotBeOverwrittenByStartupCallbacks() throws {
+        let fixture = try SecurityFixture()
+        defer { fixture.remove() }
+        let originalData = Data(#"{"services":["#.utf8)
+        try originalData.write(to: fixture.settingsURL, options: .atomic)
+        let keyboardMonitor = SecurityHardwareKeyboardMonitor(isConnected: true)
+
+        let environment = fixture.makeEnvironment(hardwareKeyboardMonitor: keyboardMonitor)
+        #expect(environment.startupState == .failed("Quiper could not decode settings. The existing file was left untouched."))
+
+        environment.handleScenePhase(.inactive)
+        environment.handleScenePhase(.background)
+        keyboardMonitor.setConnected(false)
+        keyboardMonitor.setConnected(true)
+
+        #expect(try Data(contentsOf: fixture.settingsURL) == originalData)
+    }
+
+    @Test func becomingActiveRetriesProtectedDataStartup() throws {
+        let fixture = try SecurityFixture()
+        defer { fixture.remove() }
+        try fixture.writeSettings(service: makeSensitiveService())
+        let availability = ProtectedDataAvailability(isAvailable: false)
+        let environment = fixture.makeEnvironment(
+            isProtectedDataAvailable: { availability.isAvailable }
+        )
+
+        #expect(environment.startupState == .waitingForProtectedData)
+
+        availability.isAvailable = true
+        environment.handleScenePhase(.active)
+
+        #expect(environment.startupState == .ready)
+        #expect(environment.services.first?.name == "Protected Test Engine")
     }
 
     @Test func existingInstallRequiresOneSuccessfulWebsiteDataReset() async throws {
@@ -178,6 +220,20 @@ struct IOSSecurityTests {
         #expect(environment.startupState == .ready)
         let object = try jsonObject(at: fixture.settingsURL)
         #expect(object["iosWebsiteDataStoreVersion"] as? Int == AppEnvironment.websiteDataStoreVersion)
+    }
+
+    @Test func websiteDataMigrationMarkerSurvivesReload() async throws {
+        let fixture = try SecurityFixture()
+        defer { fixture.remove() }
+        try fixture.writeSettings(service: makeSensitiveService())
+        let environment = fixture.makeEnvironment(requiresWebsiteDataMigration: true)
+
+        #expect(environment.startupState == .needsWebsiteDataReset)
+        await environment.completeWebsiteDataReset()
+        #expect(environment.startupState == .ready)
+
+        let reloaded = fixture.makeEnvironment(requiresWebsiteDataMigration: true)
+        #expect(reloaded.startupState == .ready)
     }
 
     @Test func newInstallRecordsIsolationVersionWithoutMigrationPrompt() throws {
@@ -294,7 +350,8 @@ private final class SecurityFixture {
 
     func makeEnvironment(
         requiresWebsiteDataMigration: Bool = false,
-        isProtectedDataAvailable: (() -> Bool)? = nil
+        isProtectedDataAvailable: (() -> Bool)? = nil,
+        hardwareKeyboardMonitor: (any HardwareKeyboardMonitoring)? = nil
     ) -> AppEnvironment {
         AppEnvironment(
             settingsURL: settingsURL,
@@ -304,7 +361,8 @@ private final class SecurityFixture {
             secureProfileStore: profileStore,
             requiresWebsiteDataMigration: requiresWebsiteDataMigration,
             isProtectedDataAvailable: isProtectedDataAvailable,
-            allowsNetworkWork: false
+            allowsNetworkWork: false,
+            hardwareKeyboardMonitor: hardwareKeyboardMonitor
         )
     }
 
@@ -333,6 +391,23 @@ private final class SecurityFixture {
 
     func remove() {
         try? FileManager.default.removeItem(at: directoryURL)
+    }
+}
+
+@MainActor
+private final class SecurityHardwareKeyboardMonitor: HardwareKeyboardMonitoring {
+    private(set) var isConnected: Bool
+    var onConnectionChanged: ((Bool) -> Void)?
+
+    init(isConnected: Bool) {
+        self.isConnected = isConnected
+    }
+
+    func start() { }
+
+    func setConnected(_ connected: Bool) {
+        isConnected = connected
+        onConnectionChanged?(connected)
     }
 }
 

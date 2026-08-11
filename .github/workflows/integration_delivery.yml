@@ -122,6 +122,13 @@ jobs:
             codecov_flag: ios-unittests
             result_bundle: build/DerivedData-ios-unit/TestResult.xcresult
             result_artifact: iOS-Unit-TestResult.xcresult
+          - category: ios-ui
+            name: iOS UI Tests
+            coverage_path: coverage-ios-ui.lcov
+            coverage_html_path: coverage-html-ios-ui
+            codecov_flag: ios-uitests
+            result_bundle: build/DerivedData-ios-ui/TestResult.xcresult
+            result_artifact: iOS-UI-TestResult.xcresult
     environment:
       name: test
       url: https://app.codecov.io/gh/${{ github.repository }}/
@@ -149,7 +156,7 @@ jobs:
         run: |
           swift --version
           xcodebuild -version
-          if [ "${{ matrix.category }}" = "ios-unit" ]; then
+          if [[ "${{ matrix.category }}" == ios-* ]]; then
             xcrun simctl list runtimes
           fi
 

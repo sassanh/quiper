@@ -19,6 +19,7 @@ final class WebSessionCoordinator: NSObject {
     var onNavigationState: ((_ canGoBack: Bool, _ canGoForward: Bool) -> Void)?
     var onRememberRoutingDecision: ((_ host: String, _ action: RoutingAction) -> Void)?
     var onDidFinish: (() -> Void)?
+    var onDidFail: ((Error) -> Void)?
 
     init(webView: WKWebView, service: Service, sessionIndex: Int) {
         self.webView = webView
@@ -76,6 +77,7 @@ final class WebSessionCoordinator: NSObject {
         onNavigationState = nil
         onRememberRoutingDecision = nil
         onDidFinish = nil
+        onDidFail = nil
         service.url = ""
         service.focus_selector = ""
         service.actionScripts = [:]
@@ -270,11 +272,13 @@ extension WebSessionCoordinator: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation?, withError error: Error) {
         onLoading?(false)
         notifyNavigationState(for: webView)
+        onDidFail?(error)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation?, withError error: Error) {
         onLoading?(false)
         notifyNavigationState(for: webView)
+        onDidFail?(error)
     }
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
