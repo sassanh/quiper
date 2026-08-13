@@ -11,9 +11,7 @@ struct QuiperiOSApp: App {
 
     init() {
         let isUnitTestHost = UITestSupport.isUnitTestHost
-        if !isUnitTestHost {
-            _ = PrivacyShieldWindowController.shared
-        }
+        let privacyShieldController = isUnitTestHost ? nil : PrivacyShieldWindowController.shared
 
         let appEnvironment: AppEnvironment
         if UITestSupport.isEnabled {
@@ -25,6 +23,9 @@ struct QuiperiOSApp: App {
         }
         _environment = StateObject(wrappedValue: appEnvironment)
         if !isUnitTestHost {
+            privacyShieldController?.bind(
+                activeServiceLockState: appEnvironment.activeServiceLockStatePublisher
+            )
             AppDependencyManager.shared.add(
                 dependency: IOSAppIntentDependency(environment: appEnvironment)
             )
@@ -65,7 +66,7 @@ private struct IOSAppRootView: View {
     @EnvironmentObject private var environment: AppEnvironment
 
     var body: some View {
-        ZStack {
+        Group {
             switch environment.startupState {
             case .loading:
                 ProgressView("Preparing Quiper…")
@@ -86,12 +87,6 @@ private struct IOSAppRootView: View {
                     message: message,
                     retry: environment.retryStartup
                 )
-            }
-
-            if environment.isPrivacyShieldVisible {
-                PrivacyShieldView()
-                    .transition(.opacity)
-                    .zIndex(1000)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
@@ -162,24 +157,6 @@ private struct WebsiteDataResetView: View {
             .frame(maxWidth: 620, alignment: .leading)
             .padding(32)
         }
-    }
-}
-
-private struct PrivacyShieldView: View {
-    var body: some View {
-        ZStack {
-            Color(uiColor: .systemBackground)
-                .ignoresSafeArea()
-            VStack(spacing: 12) {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 42))
-                    .foregroundStyle(Color.accentColor)
-                Text("Quiper")
-                    .font(.title2.bold())
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Quiper content hidden")
     }
 }
 

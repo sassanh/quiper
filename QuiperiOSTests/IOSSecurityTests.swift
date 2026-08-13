@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 import Testing
@@ -278,12 +279,79 @@ struct IOSSecurityTests {
         await environment.unlockService(service.id)
         environment.services[0].lockOnSwitchAway = true
         environment.handleScenePhase(.background)
-        #expect(environment.isPrivacyShieldVisible)
         #expect(environment.isServiceLocked(service.id))
+        #expect(environment.isActiveServiceLocked)
         await environment.unlockService(service.id)
         #expect(environment.isServiceLocked(service.id))
         environment.handleScenePhase(.active)
-        #expect(!environment.isPrivacyShieldVisible)
+    }
+
+    @Test func activeEngineLockStateDistinguishesProtectionFromLocking() async throws {
+        let fixture = try SecurityFixture()
+        defer { fixture.remove() }
+        var activeService = makeSensitiveService()
+        activeService.lockOnSwitchAway = false
+        try fixture.writeSettings(service: activeService)
+        let environment = fixture.makeEnvironment()
+
+        #expect(!environment.isActiveServiceLocked)
+
+        await environment.enableProtection(for: activeService.id)
+        #expect(!environment.isActiveServiceLocked)
+
+        environment.lockService(activeService.id)
+        #expect(environment.isActiveServiceLocked)
+
+        await environment.unlockService(activeService.id)
+        #expect(!environment.isActiveServiceLocked)
+    }
+
+    @Test func activeEngineLockPublisherEmitsOnlyStableTransitions() async throws {
+        let fixture = try SecurityFixture()
+        defer { fixture.remove() }
+        let activeService = makeSensitiveService()
+        try fixture.writeSettings(service: activeService)
+        let environment = fixture.makeEnvironment()
+        var observedStates: [Bool] = []
+        let cancellable = environment.activeServiceLockStatePublisher.sink {
+            observedStates.append($0)
+        }
+
+        await environment.enableProtection(for: activeService.id)
+        environment.lockService(activeService.id)
+        await environment.unlockService(activeService.id)
+
+        #expect(observedStates == [false, true, false])
+        withExtendedLifetime(cancellable) { }
+    }
+
+    @Test func lockedInactiveEngineDoesNotShieldUnlockedActiveEngine() async throws {
+        let fixture = try SecurityFixture()
+        defer { fixture.remove() }
+        let activeService = makeSensitiveService()
+        try fixture.writeSettings(service: activeService)
+        let environment = fixture.makeEnvironment()
+        var inactiveService = Service(
+            name: "Inactive Protected Engine",
+            url: "https://inactive.example",
+            focus_selector: "textarea"
+        )
+        inactiveService.lockOnSwitchAway = false
+        environment.addService(inactiveService)
+
+        await environment.enableProtection(for: inactiveService.id)
+        environment.lockService(inactiveService.id)
+
+        #expect(environment.activeService?.id == activeService.id)
+        #expect(environment.isServiceLocked(inactiveService.id))
+        #expect(!environment.isActiveServiceLocked)
+    }
+
+    @Test func privacyShieldPolicyRequiresAnInactiveSceneAndLockedActiveEngine() {
+        #expect(!PrivacyShieldPolicy.isVisible(sceneIsActive: true, activeServiceIsLocked: false))
+        #expect(!PrivacyShieldPolicy.isVisible(sceneIsActive: true, activeServiceIsLocked: true))
+        #expect(!PrivacyShieldPolicy.isVisible(sceneIsActive: false, activeServiceIsLocked: false))
+        #expect(PrivacyShieldPolicy.isVisible(sceneIsActive: false, activeServiceIsLocked: true))
     }
 
     @Test func missingDeviceOnlyKeyNeverFallsBackToPlaintext() async throws {

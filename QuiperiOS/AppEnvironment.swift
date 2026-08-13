@@ -43,7 +43,6 @@ final class AppEnvironment: ObservableObject {
     @Published private(set) var unlockedServiceIDs: Set<UUID> = []
     @Published private(set) var securityOperationServiceIDs: Set<UUID> = []
     @Published private(set) var securityErrorByServiceID: [UUID: String] = [:]
-    @Published private(set) var isPrivacyShieldVisible = false
     @Published private(set) var shouldDismissSensitiveUI = false
     private(set) var isRingOverlayActive = false
 
@@ -215,8 +214,45 @@ final class AppEnvironment: ObservableObject {
     // MARK: - Accessors
 
     var activeService: Service? {
-        guard let activeServiceID = persistedTabState.activeServiceID else { return services.first }
+        Self.activeService(in: services, tabState: persistedTabState)
+    }
+
+    var isActiveServiceLocked: Bool {
+        Self.isActiveServiceLocked(
+            services: services,
+            tabState: persistedTabState,
+            unlockedServiceIDs: unlockedServiceIDs
+        )
+    }
+
+    var activeServiceLockStatePublisher: AnyPublisher<Bool, Never> {
+        Publishers.CombineLatest3($services, $persistedTabState, $unlockedServiceIDs)
+            .map { services, tabState, unlockedServiceIDs in
+                Self.isActiveServiceLocked(
+                    services: services,
+                    tabState: tabState,
+                    unlockedServiceIDs: unlockedServiceIDs
+                )
+            }
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+
+    private static func activeService(
+        in services: [Service],
+        tabState: PersistedTabState
+    ) -> Service? {
+        guard let activeServiceID = tabState.activeServiceID else { return services.first }
         return services.first { $0.id == activeServiceID }
+    }
+
+    private static func isActiveServiceLocked(
+        services: [Service],
+        tabState: PersistedTabState,
+        unlockedServiceIDs: Set<UUID>
+    ) -> Bool {
+        guard let activeService = activeService(in: services, tabState: tabState) else { return false }
+        return activeService.isEncrypted && !unlockedServiceIDs.contains(activeService.id)
     }
 
     func isServiceLocked(_ serviceID: UUID) -> Bool {
@@ -339,11 +375,11 @@ final class AppEnvironment: ObservableObject {
             )
             try secureProfileStore.saveProfile(profile, key: key)
 
+            unlockedKeys[serviceID] = key
+            unlockedServiceIDs.insert(serviceID)
             services[index].isEncrypted = true
             services[index].hasMigratedMetadata = true
             services[index].usesDiskutilSparseBundle = false
-            unlockedKeys[serviceID] = key
-            unlockedServiceIDs.insert(serviceID)
             updateCachedSessions(for: services[index])
             guard save() else {
                 services[index] = originalService
@@ -510,7 +546,6 @@ final class AppEnvironment: ObservableObject {
         currentScenePhase = phase
         switch phase {
         case .active:
-            isPrivacyShieldVisible = false
             shouldDismissSensitiveUI = false
             // App initialization can race the protected-data availability
             // transition on a normal foreground launch. Retry here as soon as
@@ -523,12 +558,10 @@ final class AppEnvironment: ObservableObject {
                 checkInactivityLocks()
             }
         case .inactive:
-            isPrivacyShieldVisible = true
             if startupState == .ready {
                 save()
             }
         case .background:
-            isPrivacyShieldVisible = true
             shouldDismissSensitiveUI = true
             if startupState == .ready {
                 save()
@@ -537,7 +570,7 @@ final class AppEnvironment: ObservableObject {
                 }
             }
         @unknown default:
-            isPrivacyShieldVisible = true
+            break
         }
     }
 
@@ -640,17 +673,24 @@ final class AppEnvironment: ObservableObject {
     func setActiveService(_ id: UUID, createSessionIfNeeded: Bool = true) {
         guard services.contains(where: { $0.id == id }) else { return }
         registerUserActivity()
-        if let current = activeService, current.id != id {
+        let previousService = activeService
+        if let previousService, previousService.id != id {
             captureThumbnailWhenLeaving(
-                TabIdentifier(serviceID: current.id, sessionIndex: activeSessionIndex(for: current.id))
+                TabIdentifier(
+                    serviceID: previousService.id,
+                    sessionIndex: activeSessionIndex(for: previousService.id)
+                )
             )
-            if current.isEncrypted && current.lockOnSwitchAway {
-                lockService(current.id)
-            }
         }
         let newTab = TabIdentifier(serviceID: id, sessionIndex: activeSessionIndex(for: id))
         recordTabHistory(switchingTo: newTab)
         persistedTabState.activeServiceID = id
+        if let previousService,
+           previousService.id != id,
+           previousService.isEncrypted,
+           previousService.lockOnSwitchAway {
+            lockService(previousService.id)
+        }
         if createSessionIfNeeded,
            autoCreateSessionOnEmptyEngineActivation,
            !isServiceLocked(id),
@@ -911,12 +951,15 @@ final class AppEnvironment: ObservableObject {
                 captureThumbnailWhenLeaving(oldTab)
             }
         }
+        let previousService = activeService
         recordTabHistory(switchingTo: newTab)
-        if let current = activeService, current.id != serviceID,
-           current.isEncrypted, current.lockOnSwitchAway {
-            lockService(current.id)
-        }
         persistedTabState.activeServiceID = serviceID
+        if let previousService,
+           previousService.id != serviceID,
+           previousService.isEncrypted,
+           previousService.lockOnSwitchAway {
+            lockService(previousService.id)
+        }
         guard !isServiceLocked(serviceID) else {
             persistedTabState.activeIndicesByID[serviceID] = slot
             save()

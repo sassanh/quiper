@@ -1,25 +1,23 @@
+import Combine
 import UIKit
+
+enum PrivacyShieldPolicy {
+    static func isVisible(sceneIsActive: Bool, activeServiceIsLocked: Bool) -> Bool {
+        !sceneIsActive && activeServiceIsLocked
+    }
+}
 
 @MainActor
 final class PrivacyShieldWindowController: NSObject {
     static let shared = PrivacyShieldWindowController()
 
     private var shieldWindows: [String: UIWindow] = [:]
+    private var sceneActivityByIdentifier: [String: Bool] = [:]
+    private var activeServiceIsLocked = false
+    private var lockStateCancellable: AnyCancellable?
 
     override private init() {
         super.init()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(show),
-            name: UIApplication.willResignActiveNotification,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(hide),
-            name: UIApplication.didBecomeActiveNotification,
-            object: nil
-        )
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(sceneDidDisconnect(_:)),
@@ -40,33 +38,53 @@ final class PrivacyShieldWindowController: NSObject {
         )
     }
 
-    @objc private func show() {
-        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
-            showShield(for: scene)
+    func bind(activeServiceLockState: AnyPublisher<Bool, Never>) {
+        lockStateCancellable = activeServiceLockState.sink { @MainActor [weak self] isLocked in
+            guard let self else { return }
+            self.activeServiceIsLocked = isLocked
+            self.updateAllShields()
         }
-    }
-
-    @objc private func hide() {
-        for window in shieldWindows.values {
-            window.isHidden = true
-            window.rootViewController = nil
-        }
-        shieldWindows.removeAll()
     }
 
     @objc private func sceneDidDisconnect(_ notification: Notification) {
         guard let scene = notification.object as? UIWindowScene else { return }
+        sceneActivityByIdentifier[scene.session.persistentIdentifier] = nil
         hideShield(for: scene)
     }
 
     @objc private func sceneWillDeactivate(_ notification: Notification) {
         guard let scene = notification.object as? UIWindowScene else { return }
-        showShield(for: scene)
+        setScene(scene, isActive: false)
     }
 
     @objc private func sceneDidActivate(_ notification: Notification) {
         guard let scene = notification.object as? UIWindowScene else { return }
-        hideShield(for: scene)
+        setScene(scene, isActive: true)
+    }
+
+    private func setScene(_ scene: UIWindowScene, isActive: Bool) {
+        sceneActivityByIdentifier[scene.session.persistentIdentifier] = isActive
+        updateShield(for: scene, sceneIsActive: isActive)
+    }
+
+    private func updateAllShields() {
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            let identifier = scene.session.persistentIdentifier
+            let sceneIsActive = sceneActivityByIdentifier[identifier]
+                ?? (scene.activationState == .foregroundActive)
+            updateShield(for: scene, sceneIsActive: sceneIsActive)
+        }
+    }
+
+    private func updateShield(for scene: UIWindowScene, sceneIsActive: Bool) {
+        if PrivacyShieldPolicy.isVisible(
+            sceneIsActive: sceneIsActive,
+            activeServiceIsLocked: activeServiceIsLocked
+        ) {
+            showShield(for: scene)
+        } else {
+            hideShield(for: scene)
+        }
     }
 
     private func showShield(for scene: UIWindowScene) {
