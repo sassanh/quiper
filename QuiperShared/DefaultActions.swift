@@ -127,6 +127,33 @@ enum ActionScripts {
         return service.customCSS ?? ""
     }
 
+    /// The default prompt input selector an engine ships with, if its template provides one.
+    static func defaultPromptInputSelector(for service: Service) -> String? {
+        guard let template = defaultServiceTemplate(for: service) else {
+            return nil
+        }
+        let selector = template.focus_selector.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selector.isEmpty else { return nil }
+        return selector
+    }
+
+    /// The bundled default prompt input selector when the engine tracks the
+    /// template's value, mirroring macOS `Settings.promptInputSelector(for:)`.
+    static func syncedPromptInputSelector(for service: Service) -> String? {
+        guard service.templatePromptInputSelectorSync else { return nil }
+        return defaultPromptInputSelector(for: service)
+    }
+
+    /// The prompt input selector actually used for a service, mirroring macOS
+    /// `Settings.promptInputSelector(for:)` resolution: a synced template wins,
+    /// otherwise the engine's own stored selector.
+    static func resolvedPromptInputSelector(for service: Service) -> String {
+        if let syncedSelector = syncedPromptInputSelector(for: service) {
+            return syncedSelector
+        }
+        return service.focus_selector
+    }
+
     /// The default script an action ships with for a service, if a template provides one.
     static func defaultScript(for service: Service, action: CustomAction) -> String? {
         guard let template = defaultServiceTemplate(for: service),

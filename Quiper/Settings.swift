@@ -742,12 +742,7 @@ class Settings: ObservableObject {
     }
 
     func defaultPromptInputSelector(for service: Service) -> String? {
-        guard let template = defaultServiceTemplate(for: service) else {
-            return nil
-        }
-        let selector = template.focus_selector.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !selector.isEmpty else { return nil }
-        return selector
+        ActionScripts.defaultPromptInputSelector(for: service)
     }
 
     func defaultCustomCSS(for service: Service) -> String? {
@@ -755,7 +750,7 @@ class Settings: ObservableObject {
     }
 
     func isTemplatePromptInputSelector(_ service: Service) -> Bool {
-        defaultPromptInputSelector(for: service) != nil
+        ActionScripts.defaultPromptInputSelector(for: service) != nil
     }
 
     func isTemplateCustomCSS(_ service: Service) -> Bool {
@@ -773,9 +768,8 @@ class Settings: ObservableObject {
     }
 
     func promptInputSelector(for service: Service) -> String {
-        if service.templatePromptInputSelectorSync,
-           let defaultSelector = defaultPromptInputSelector(for: service) {
-            return defaultSelector
+        if let syncedSelector = ActionScripts.syncedPromptInputSelector(for: service) {
+            return syncedSelector
         }
         return FocusSelectorStorage.loadSelector(
             serviceID: service.id,

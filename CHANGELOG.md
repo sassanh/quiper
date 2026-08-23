@@ -4,6 +4,8 @@
 
 ### Added
 
+- **iOS Prompt Selector Editor**: Each engine's settings on iOS now edits the focus selector in the same code editor as the Mac app, with a Use Latest Default toggle that keeps bundled-template engines following Quiper's defaults automatically. Engines added from templates track their template from the start, and engines carried over from the Mac resolve their template selectors correctly on iPhone and iPad.
+
 - **iOS App Shortcuts and Hardware Keyboard Support**: Quiper now exposes engine opening, new sessions, actions, and protected-engine locking to Siri, Spotlight, Shortcuts, and the Action button. Attached keyboards gain native, configurable shortcuts for sessions, engines, actions, history, recent tabs, reload, find, Settings, and zoom—even while typing in a website. Keyboard settings stay out of the way until a physical keyboard has been connected once.
 - **Quiper for iOS**: Quiper is now a native iPhone and iPad app sharing the same engine library, custom actions, prompt history, session tabs, and engine icons as the Mac app. Each engine's tabs reopen at their last-visited URLs exactly as they were when the app was closed, matching the Mac app's session persistence.
 - **iOS Liquid Glass Interface**: On iOS 26 the bottom bar appears as floating glass control capsules over the page, with a translucent material fallback on earlier systems. The bar collapses into a compact island while the keyboard is open or the page scrolls down, and a loading ring traces the stop control while content loads.

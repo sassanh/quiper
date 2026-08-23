@@ -348,6 +348,24 @@ struct EngineEditView: View {
         service != originalService
     }
 
+    private var isTemplateSelectorBacked: Bool {
+        ActionScripts.defaultPromptInputSelector(for: service) != nil
+    }
+
+    private var isTemplateSelectorInSync: Bool {
+        isTemplateSelectorBacked && service.templatePromptInputSelectorSync
+    }
+
+    private func toggleTemplateSelectorSync(_ newValue: Bool) {
+        guard let defaultSelector = ActionScripts.defaultPromptInputSelector(for: service) else { return }
+        service.templatePromptInputSelectorSync = newValue
+        if newValue {
+            service.focus_selector = ""
+        } else {
+            service.focus_selector = defaultSelector
+        }
+    }
+
     var body: some View {
         Form {
             if environment.isServiceLocked(service.id) {
@@ -392,13 +410,33 @@ struct EngineEditView: View {
                 Text("Automatically fetched from the engine's site when available, otherwise provided by the bundled defaults.")
             }
             Section {
-                TextField("Focus Selector", text: $service.focus_selector)
-                    .autocorrectionDisabled()
+                if isTemplateSelectorBacked {
+                    LatestDefaultToggle(
+                        isInSync: isTemplateSelectorInSync,
+                        syncedDescription: "This selector follows Quiper's bundled engine template and updates automatically.",
+                        customDescription: "This engine uses a custom editable selector.",
+                        setInSync: toggleTemplateSelectorSync
+                    )
+                }
+                CodeEditorView(
+                    code: Binding(
+                        get: { ActionScripts.resolvedPromptInputSelector(for: service) },
+                        set: { newValue in
+                            guard !isTemplateSelectorInSync else { return }
+                            service.focus_selector = newValue
+                        }
+                    ),
+                    language: .cssSelector,
+                    isReadOnly: isTemplateSelectorInSync
+                )
+                .frame(minHeight: 150)
                 Toggle("Preserve Prompt", isOn: $service.preservePrompt)
             } header: {
                 Text("Prompt Input")
             } footer: {
-                Text("The CSS selector Quiper uses to find the prompt input on this engine's page.")
+                Text(isTemplateSelectorInSync
+                     ? "Quiper targets this engine's prompt input with the bundled template's selector."
+                     : "The CSS selector Quiper uses to find the prompt input on this engine's page.")
             }
             Section {
                 NavigationLink {

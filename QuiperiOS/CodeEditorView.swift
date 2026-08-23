@@ -83,6 +83,11 @@ private struct CodeMirrorEditorView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.isInspectable = true
         webView.isOpaque = false
+        // Pin the magnification so read-only flips (which rebuild the content
+        // DOM) cannot leave the page visually rescaled.
+        webView.scrollView.minimumZoomScale = 1
+        webView.scrollView.maximumZoomScale = 1
+        webView.scrollView.bouncesZoom = false
         webView.backgroundColor = editorBackingColor
         webView.scrollView.backgroundColor = editorBackingColor
         webView.underPageBackgroundColor = editorBackingColor
@@ -107,6 +112,9 @@ private struct CodeMirrorEditorView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         webView.isOpaque = false
+        if webView.scrollView.zoomScale != 1 {
+            webView.scrollView.zoomScale = 1
+        }
         webView.backgroundColor = editorBackingColor
         webView.scrollView.backgroundColor = editorBackingColor
         webView.underPageBackgroundColor = editorBackingColor

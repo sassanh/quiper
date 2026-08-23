@@ -758,6 +758,10 @@ final class AppEnvironment: ObservableObject {
         var service = template
         service.id = UUID()
         service.actionScripts = [:]
+        if ActionScripts.defaultPromptInputSelector(for: service) != nil {
+            service.templatePromptInputSelectorSync = true
+            service.focus_selector = ""
+        }
         if ActionScripts.defaultCustomCSS(for: service) != nil {
             service.templateCustomCSSSync = true
             service.customCSS = nil

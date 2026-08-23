@@ -39,7 +39,7 @@ final class WebSessionCoordinator: NSObject {
         let userContentController = webView.configuration.userContentController
         userContentController.addUserScript(WebScripts.makeValueSetterInterceptorScript())
         userContentController.addUserScript(WebScripts.makeInputStateTrackerScript(
-            selector: service.focus_selector,
+            selector: Self.resolvedFocusSelector(for: service),
             initiallyActive: true
         ))
         userContentController.add(self, name: "quiperInputState")
@@ -56,6 +56,12 @@ final class WebSessionCoordinator: NSObject {
     /// bundled default, otherwise the engine's own stored CSS.
     private static func resolvedCustomCSS(for service: Service) -> String {
         ActionScripts.resolvedCustomCSS(for: service)
+    }
+
+    /// Mirrors the macOS `promptInputSelector(for:)` resolution: a synced
+    /// template uses the bundled default, otherwise the engine's own selector.
+    private static func resolvedFocusSelector(for service: Service) -> String {
+        ActionScripts.resolvedPromptInputSelector(for: service)
     }
 
     func installInputTracker() {}
@@ -106,7 +112,7 @@ final class WebSessionCoordinator: NSObject {
         notificationBridge?.updateServiceName(updatedService.name)
         notificationBridge?.updateContentRedaction(updatedService.isEncrypted)
 
-        let scriptsChanged = oldService.focus_selector != updatedService.focus_selector
+        let scriptsChanged = Self.resolvedFocusSelector(for: oldService) != Self.resolvedFocusSelector(for: updatedService)
             || Self.resolvedCustomCSS(for: oldService) != Self.resolvedCustomCSS(for: updatedService)
         guard scriptsChanged, let webView else { return }
 
@@ -115,7 +121,7 @@ final class WebSessionCoordinator: NSObject {
         notificationBridge?.reinstall()
         userContentController.addUserScript(WebScripts.makeValueSetterInterceptorScript())
         userContentController.addUserScript(WebScripts.makeInputStateTrackerScript(
-            selector: updatedService.focus_selector,
+            selector: Self.resolvedFocusSelector(for: updatedService),
             initiallyActive: true
         ))
         let cssToInject = Self.resolvedCustomCSS(for: updatedService)
@@ -134,11 +140,12 @@ final class WebSessionCoordinator: NSObject {
     // MARK: - JS injection
 
     func focusInput(restoring state: TabInputState?) {
-        guard !keyboardSuppressed, let webView, !service.focus_selector.isEmpty else { return }
+        let selector = Self.resolvedFocusSelector(for: service)
+        guard !keyboardSuppressed, let webView, !selector.isEmpty else { return }
         let shouldRestore = service.preservePrompt
         let inputState = shouldRestore ? state : nil
         let jsString = WebScripts.makeFocusInputScript(
-            selector: service.focus_selector,
+            selector: selector,
             hasSaved: inputState != nil,
             text: inputState?.text ?? "",
             start: inputState?.start ?? 0,
@@ -148,9 +155,10 @@ final class WebSessionCoordinator: NSObject {
     }
 
     func injectAndSubmit(_ text: String) {
-        guard let webView, !service.focus_selector.isEmpty else { return }
+        let selector = Self.resolvedFocusSelector(for: service)
+        guard let webView, !selector.isEmpty else { return }
         let jsString = WebScripts.makeInjectAndSubmitScript(
-            selector: service.focus_selector,
+            selector: selector,
             text: text
         )
         webView.evaluateJavaScript(jsString, completionHandler: nil)
