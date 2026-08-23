@@ -4,6 +4,7 @@
 
 ### Added
 
+- **iOS Load Error View**: When a page fails to load on iPhone or iPad—a connection error, timeout, HTTP 4xx or 5xx response, or a crashed page process—Quiper now shows its own themed error panel with the reason and a Retry button, matching the Mac app, instead of the system's generic error page. Responses the page cannot display now route into Quiper's download storage as on the Mac.
 - **iOS Prompt Selector Editor**: Each engine's settings on iOS now edits the focus selector in the same code editor as the Mac app, with a Use Latest Default toggle that keeps bundled-template engines following Quiper's defaults automatically. Engines added from templates track their template from the start, and engines carried over from the Mac resolve their template selectors correctly on iPhone and iPad.
 
 - **iOS App Shortcuts and Hardware Keyboard Support**: Quiper now exposes engine opening, new sessions, actions, and protected-engine locking to Siri, Spotlight, Shortcuts, and the Action button. Attached keyboards gain native, configurable shortcuts for sessions, engines, actions, history, recent tabs, reload, find, Settings, and zoom—even while typing in a website. Keyboard settings stay out of the way until a physical keyboard has been connected once.
@@ -36,6 +37,7 @@
 
 ### Fixed
 
+- **Adaptive Load Error Panel**: The load error panel now follows light and dark mode as the system appearance changes, instead of keeping the background color it was created with—which previously left white error text on a light panel in dark mode.
 - **Stable Expanded Selectors**: Changing the selected session or engine while a selector is expanded no longer shifts the open panel mid-interaction. Expanded panels still follow the window when it moves or resizes near screen edges and re-anchor to the current selection each time they reopen.
 - **iOS Appearance Backgrounds**: Web pages, sessions, and the action-script editor on iPhone and iPad now keep the correct light or dark background in every state, so dark mode no longer shows white or mismatched areas behind content while loading or after switching appearance.
 - **iOS Adaptive Toolbar**: The floating control bar now sits on a single row whenever it fits—such as on wider screens in landscape or on iPad—and stacks into rows only when there isn't room, instead of deciding by orientation alone.

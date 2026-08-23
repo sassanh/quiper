@@ -22,6 +22,23 @@ final class WebLoadErrorView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyBackgroundColor()
+    }
+
+    /// `NSColor.cgColor` bakes the resolved color for the appearance that is
+    /// current at conversion time, so resolve it against this view's effective
+    /// appearance and refresh whenever that changes; otherwise the background
+    /// keeps the appearance the view was created with.
+    private func applyBackgroundColor() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            self.layer?.backgroundColor = NSColor.windowBackgroundColor
+                .withAlphaComponent(0.94)
+                .cgColor
+        }
+    }
+
     func configure(error: WebLoadError, retryAvailable: Bool = true) {
         titleLabel.stringValue = error.kind.title
         messageLabel.stringValue = error.kind.message
@@ -43,7 +60,7 @@ final class WebLoadErrorView: NSView {
         setVisible(false)
 
         wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.94).cgColor
+        applyBackgroundColor()
 
         iconView.image = NSImage(
             systemSymbolName: "exclamationmark.triangle",
