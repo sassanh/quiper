@@ -88,6 +88,7 @@ final class WebViewHostController: UIViewController {
         if colorSchemeChanged {
             appliedColorScheme = colorScheme
             let backgroundColor = Self.backgroundColor(for: colorScheme)
+            webView.isOpaque = false
             webView.underPageBackgroundColor = backgroundColor
             webView.backgroundColor = backgroundColor
             webView.scrollView.backgroundColor = backgroundColor

@@ -82,8 +82,9 @@ private struct CodeMirrorEditorView: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.isInspectable = true
+        webView.isOpaque = false
         webView.backgroundColor = editorBackingColor
-        webView.isOpaque = true
+        webView.scrollView.backgroundColor = editorBackingColor
         webView.underPageBackgroundColor = editorBackingColor
         webView.accessibilityLabel = "Code editor"
 
@@ -105,7 +106,9 @@ private struct CodeMirrorEditorView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        webView.isOpaque = false
         webView.backgroundColor = editorBackingColor
+        webView.scrollView.backgroundColor = editorBackingColor
         webView.underPageBackgroundColor = editorBackingColor
         context.coordinator.parent = self
         context.coordinator.updateInitialThemeScript(
@@ -124,7 +127,11 @@ private struct CodeMirrorEditorView: UIViewRepresentable {
     }
 
     private var editorBackingColor: UIColor {
-        .secondarySystemGroupedBackground
+        UIColor.secondarySystemGroupedBackground.resolvedColor(
+            with: UITraitCollection(
+                userInterfaceStyle: colorScheme == .dark ? .dark : .light
+            )
+        )
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {

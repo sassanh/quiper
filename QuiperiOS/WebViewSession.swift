@@ -55,6 +55,7 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         configuration.userContentController = userContentController
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.isOpaque = false
         webView.underPageBackgroundColor = initialBackgroundColor
         webView.backgroundColor = initialBackgroundColor
         webView.scrollView.backgroundColor = initialBackgroundColor

@@ -34,6 +34,10 @@
 
 ### Fixed
 
+- **iOS Appearance Backgrounds**: Web pages, sessions, and the action-script editor on iPhone and iPad now keep the correct light or dark background in every state, so dark mode no longer shows white or mismatched areas behind content while loading or after switching appearance.
+- **iOS Adaptive Toolbar**: The floating control bar now sits on a single row whenever it fits—such as on wider screens in landscape or on iPad—and stacks into rows only when there isn't room, instead of deciding by orientation alone.
+- **iOS Full-Page Settings**: Opening Settings now presents it as a full page instead of a floating form sheet, most visible on iPad.
+- **Gemini Transparent Background**: The bundled Gemini template now makes all of Gemini's background layers transparent, so Quiper's theme colors show through instead of Gemini's opaque backdrop.
 - **Microphone and Camera Permission Prompts**: When a website requests microphone or camera access, Quiper now asks macOS for the matching system permission and only grants the page if the user allows it. Hardened-runtime camera and audio-input entitlements are restored so notarized builds can complete capture after approval.
 - **iOS Delete Confirmations Show Cancel**: The delete and discard-changes confirmations on iOS now present a proper Cancel option alongside the destructive action. On iOS 26 the system hides Cancel buttons in action sheets, so these confirmations use alerts instead, where both buttons are always visible.
 - **iOS Bottom Bar During Tab Switch**: The bottom bar now appears the moment an engine is selected in the tab switcher, before the zoom transition begins, instead of only after it finishes. Its engine name and active session slot reflect the selected tab immediately, so the bar shows the tab that is coming into view rather than the one being left.

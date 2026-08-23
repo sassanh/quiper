@@ -35,7 +35,6 @@ struct EngineBrowserView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let landscape = geo.size.width > geo.size.height
             ZStack(alignment: toolbarAlignment) {
                 webContent(
                     viewportLayout: browserViewportLayout(
@@ -52,7 +51,7 @@ struct EngineBrowserView: View {
                             .reportsToolbarExtent()
                             .zIndex(ringSelection != nil ? 40 : 0)
                     } else {
-                        toolbarControls(landscape: landscape)
+                        toolbarControls
                             .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: toolbarAnchor)))
                             .reportsToolbarExtent()
                             .zIndex(ringSelection != nil ? 40 : 0)
@@ -146,6 +145,7 @@ struct EngineBrowserView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView()
                 .environmentObject(environment)
+                .presentationSizing(.page)
         }
         .sheet(isPresented: $showingHistory) {
             PromptHistoryView()
@@ -872,20 +872,17 @@ struct EngineBrowserView: View {
         .allowsHitTesting(false)
     }
 
-    private func toolbarControls(landscape: Bool) -> some View {
-        VStack(spacing: 10) {
-            if landscape {
-                landscapeControls
-            } else {
-                portraitControls
-            }
+    private var toolbarControls: some View {
+        ViewThatFits(in: .horizontal) {
+            singleRowControls
+            stackedControls
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .glassContainer()
     }
 
-    private var portraitControls: some View {
+    private var stackedControls: some View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
                 engineSelectorButton
@@ -897,7 +894,7 @@ struct EngineBrowserView: View {
         }
     }
 
-    private var landscapeControls: some View {
+    private var singleRowControls: some View {
         HStack(spacing: 10) {
             engineSelectorButton
             actionsMenu

@@ -334,7 +334,8 @@ enum DefaultEngineDefinitions {
                 RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay)
             ],
             customCSS: """
-            body, mat-sidenav-container, response-container>* {
+            html, body, chat-app-orchestrator, mat-sidenav-container, mat-sidenav-content,
+            .blur-bg, .autosuggest-scrim, response-container>* {
               background-color: transparent !important;
             }
             input-container, input-container::before {
