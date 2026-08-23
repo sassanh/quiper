@@ -1137,6 +1137,8 @@ struct EngineBrowserView: View {
                     viewportLayout: viewportLayout
                 )
                     .id(session.id)
+                SessionLoadErrorOverlay(session: session)
+                    .id(session.id)
             } else if environment.services.isEmpty {
                 ContentUnavailableView(
                     "No Engines",

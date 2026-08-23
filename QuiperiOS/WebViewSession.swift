@@ -35,6 +35,7 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
     @Published var findStatusText: String? = nil
     @Published var snapshot: UIImage?
     @Published private(set) var isNavigationReady = false
+    @Published private(set) var loadError: WebLoadError?
 
     init(
         service: Service,
@@ -101,10 +102,23 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
             self?.isNavigationReady = true
             self?.completeReadinessWaiters()
             self?.restoreInputStateIfNeeded()
+            self?.clearLoadError()
             self?.captureSnapshot()
         }
         coordinator.onDidFail = { [weak self] error in
             self?.completeReadinessWaiters(throwing: error)
+        }
+        coordinator.onMainFrameNavigationBegan = { [weak self] url in
+            self?.beginMainFrameNavigation(to: url)
+        }
+        coordinator.onLoadFailure = { [weak self] error in
+            self?.reportLoadFailure(error)
+        }
+        coordinator.onHTTPFailure = { [weak self] statusCode, url in
+            self?.reportHTTPFailure(statusCode: statusCode, url: url)
+        }
+        coordinator.onWebContentProcessTerminated = { [weak self] in
+            self?.reportWebContentTermination()
         }
 
         installScrollObservation()
@@ -120,6 +134,9 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
     }
 
     private var pendingLoadURL: URL?
+    private var activeRequestURL: URL?
+    private var failedRequestURL: URL?
+    private var webContentTerminationRetry = WebProcessTerminationRetryState()
 
     private var pendingInputState: TabInputState?
     private var lastScrollY: CGFloat = 0
@@ -290,6 +307,64 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         webView.reload()
     }
 
+    // MARK: - Load errors
+
+    /// Mirrors macOS `beginMainFrameNavigation`: a new main-frame request
+    /// started, so any previous failure is cleared and the request is tracked
+    /// as the retry target until a failure replaces it.
+    func beginMainFrameNavigation(to url: URL) {
+        activeRequestURL = url
+        failedRequestURL = nil
+        loadError = nil
+        webContentTerminationRetry.reset()
+    }
+
+    /// Mirrors macOS `handleNavigationFailure`: cancellations never surface;
+    /// every other main-frame failure becomes a themed error that keeps the
+    /// failed URL for retry.
+    func reportLoadFailure(_ error: Error) {
+        guard !WebLoadError.isCancellation(error) else { return }
+        let failure = WebLoadError(error: error, fallbackURL: activeRequestURL)
+        failedRequestURL = failure.url ?? activeRequestURL
+        loadError = failure
+    }
+
+    /// Mirrors macOS `decidePolicyFor navigationResponse`: main-frame HTTP
+    /// 4xx/5xx responses cancel the navigation and surface as errors instead
+    /// of rendering the server's error body.
+    func reportHTTPFailure(statusCode: Int, url: URL?) {
+        let failure = WebLoadError.http(statusCode: statusCode, url: url ?? activeRequestURL)
+        failedRequestURL = failure.url
+        loadError = failure
+    }
+
+    /// Mirrors macOS: the first web-content process crash auto-reloads once;
+    /// a second crash surfaces as an error.
+    func reportWebContentTermination() {
+        guard webContentTerminationRetry.shouldRetry() else {
+            let failure = WebLoadError(
+                kind: .contentProcessTerminated,
+                url: webView.url ?? activeRequestURL
+            )
+            failedRequestURL = failure.url
+            loadError = failure
+            return
+        }
+        webView.reload()
+    }
+
+    /// Mirrors macOS `retryFailedNavigation`: reloads the URL that failed.
+    func retryFailedLoad() {
+        guard let url = failedRequestURL else { return }
+        beginMainFrameNavigation(to: url)
+        webView.load(URLRequest(url: url))
+    }
+
+    private func clearLoadError() {
+        failedRequestURL = nil
+        loadError = nil
+    }
+
     func loadIfNeeded() {
         guard let pending = pendingLoadURL else { return }
         pendingLoadURL = nil
@@ -330,6 +405,9 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         scrollObservation = nil
         pendingLoadURL = nil
         pendingInputState = nil
+        activeRequestURL = nil
+        failedRequestURL = nil
+        loadError = nil
         findQuery = ""
         findSearch = ""
         findStatusText = nil

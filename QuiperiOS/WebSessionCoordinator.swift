@@ -20,6 +20,10 @@ final class WebSessionCoordinator: NSObject {
     var onRememberRoutingDecision: ((_ host: String, _ action: RoutingAction) -> Void)?
     var onDidFinish: (() -> Void)?
     var onDidFail: ((Error) -> Void)?
+    var onMainFrameNavigationBegan: ((URL) -> Void)?
+    var onLoadFailure: ((Error) -> Void)?
+    var onHTTPFailure: ((_ statusCode: Int, _ url: URL?) -> Void)?
+    var onWebContentProcessTerminated: (() -> Void)?
 
     init(webView: WKWebView, service: Service, sessionIndex: Int) {
         self.webView = webView
@@ -84,6 +88,10 @@ final class WebSessionCoordinator: NSObject {
         onRememberRoutingDecision = nil
         onDidFinish = nil
         onDidFail = nil
+        onMainFrameNavigationBegan = nil
+        onLoadFailure = nil
+        onHTTPFailure = nil
+        onWebContentProcessTerminated = nil
         service.url = ""
         service.focus_selector = ""
         service.actionScripts = [:]
@@ -231,6 +239,10 @@ extension WebSessionCoordinator: WKNavigationDelegate {
             return
         }
 
+        if let requestURL = navigationAction.request.url {
+            onMainFrameNavigationBegan?(requestURL)
+        }
+
         if userApprovedURLs.contains(url) {
             userApprovedURLs.remove(url)
             decisionHandler(allowWithoutAppLink)
@@ -280,13 +292,36 @@ extension WebSessionCoordinator: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation?, withError error: Error) {
         onLoading?(false)
         notifyNavigationState(for: webView)
+        onLoadFailure?(error)
         onDidFail?(error)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation?, withError error: Error) {
         onLoading?(false)
         notifyNavigationState(for: webView)
+        onLoadFailure?(error)
         onDidFail?(error)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
+        if navigationResponse.isForMainFrame,
+           let httpResponse = navigationResponse.response as? HTTPURLResponse,
+           (400...599).contains(httpResponse.statusCode) {
+            onHTTPFailure?(httpResponse.statusCode, httpResponse.url)
+            decisionHandler(.cancel)
+            return
+        }
+
+        if navigationResponse.canShowMIMEType {
+            decisionHandler(.allow)
+        } else {
+            decisionHandler(.download)
+        }
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        onWebContentProcessTerminated?()
     }
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
