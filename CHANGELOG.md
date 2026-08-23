@@ -36,6 +36,7 @@
 
 ### Fixed
 
+- **Stable Expanded Selectors**: Changing the selected session or engine while a selector is expanded no longer shifts the open panel mid-interaction. Expanded panels still follow the window when it moves or resizes near screen edges and re-anchor to the current selection each time they reopen.
 - **iOS Appearance Backgrounds**: Web pages, sessions, and the action-script editor on iPhone and iPad now keep the correct light or dark background in every state, so dark mode no longer shows white or mismatched areas behind content while loading or after switching appearance.
 - **iOS Adaptive Toolbar**: The floating control bar now sits on a single row whenever it fits—such as on wider screens in landscape or on iPad—and stacks into rows only when there isn't room, instead of deciding by orientation alone.
 - **iOS Full-Page Settings**: Opening Settings now presents it as a full page instead of a floating form sheet, most visible on iPad.

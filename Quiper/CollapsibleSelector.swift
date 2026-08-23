@@ -89,7 +89,13 @@ class CollapsibleSelector: NSView {
     var isExpanded: Bool {
         expandedPanel != nil
     }
-    
+
+    /// Host window frame at the time the expanded panel was last anchored.
+    /// Layout passes that don't move the window (e.g. selection changes while
+    /// expanded) must not drag the panel; only real geometry changes may
+    /// reposition it.
+    private var lastAnchoredWindowFrame: NSRect = .zero
+
     var isTrackingMouse: Bool {
         return expandedControl?.isTrackingMouse ?? false
     }
@@ -345,10 +351,16 @@ class CollapsibleSelector: NSView {
 
     /// Repositions the expanded panel after its host window moves or resizes.
     /// The panel remains a child window, but its anchor must be recalculated
-    /// from the selector's current screen-space frame.
+    /// from the selector's current screen-space frame. Layout passes triggered
+    /// without a window geometry change (selection updates, title refreshes)
+    /// are ignored so an open panel never jumps mid-interaction; the next
+    /// expansion re-anchors it anyway.
     func repositionExpandedPanel() {
-        guard let panel = expandedPanel, let control = expandedControl else { return }
+        guard let panel = expandedPanel, let control = expandedControl, let window else { return }
+        let windowFrame = window.frame
+        guard windowFrame != lastAnchoredWindowFrame else { return }
         positionExpandedPanel(panel, control: control)
+        lastAnchoredWindowFrame = windowFrame
     }
 
     private func positionExpandedPanel(_ panel: NSPanel, control: SegmentedControl) {
@@ -497,6 +509,7 @@ class CollapsibleSelector: NSView {
         
         // 5. Calculate Position (Center Alignment) and keep the panel on-screen.
         positionExpandedPanel(panel, control: control)
+        lastAnchoredWindowFrame = window.frame
         
         // Attaching the selector-owned panel is the single expanded-state transition.
         // Do this before notifying the delegate so reentrant callbacks see the same state.
