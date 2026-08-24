@@ -118,13 +118,37 @@ enum ActionScripts {
     }
 
     /// The custom CSS actually applied to a service's pages, mirroring macOS
-    /// `Settings.customCSS(for:)`: a synced template wins, otherwise the engine's
-    /// own stored stylesheet.
+    /// `Settings.customCSS(for:)`: a synced template wins, otherwise the
+    /// file-backed stylesheet with the engine's stored copy as fallback.
     static func resolvedCustomCSS(for service: Service) -> String {
         if let syncedCSS = syncedCustomCSS(for: service) {
             return syncedCSS
         }
-        return service.customCSS ?? ""
+        return EngineFileStorage.loadCustomCSS(
+            serviceID: service.id,
+            fallback: service.customCSS ?? ""
+        )
+    }
+
+    /// The action script actually used for a service and action, mirroring
+    /// macOS `Settings.actionScript(for:action:)`: a synced template wins,
+    /// otherwise the file-backed script with the engine's stored copy as
+    /// fallback.
+    static func resolvedActionScript(for service: Service, action: CustomAction) -> String {
+        if let syncedScript = syncedActionScript(for: service, action: action) {
+            return syncedScript
+        }
+        return EngineFileStorage.loadActionScript(
+            serviceID: service.id,
+            actionID: action.id,
+            fallback: service.actionScripts[action.id] ?? ""
+        )
+    }
+
+    /// The bundled default script when the engine tracks the template's value.
+    static func syncedActionScript(for service: Service, action: CustomAction) -> String? {
+        guard service.templateActionScriptSync[action.id] == true else { return nil }
+        return defaultScript(for: service, action: action)
     }
 
     /// The default prompt input selector an engine ships with, if its template provides one.

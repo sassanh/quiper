@@ -4,6 +4,7 @@
 
 ### Added
 
+- **iOS File-Backed Engine Customizations**: Custom stylesheets and action scripts on iPhone and iPad are now stored as per-engine files exactly like on the Mac, with matching template-sync resolution. Protecting or deleting an engine cleans the files up, and protected engines keep their data sealed in the encrypted profile.
 - **iOS Load Error View**: When a page fails to load on iPhone or iPad—a connection error, timeout, HTTP 4xx or 5xx response, or a crashed page process—Quiper now shows its own themed error panel with the reason and a Retry button, matching the Mac app, instead of the system's generic error page. Responses the page cannot display now route into Quiper's download storage as on the Mac.
 - **iOS Prompt Selector Editor**: Each engine's settings on iOS now edits the focus selector in the same code editor as the Mac app, with a Use Latest Default toggle that keeps bundled-template engines following Quiper's defaults automatically. Engines added from templates track their template from the start, and engines carried over from the Mac resolve their template selectors correctly on iPhone and iPad.
 

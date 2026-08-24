@@ -778,13 +778,7 @@ class Settings: ObservableObject {
     }
 
     func customCSS(for service: Service) -> String {
-        if let syncedCSS = ActionScripts.syncedCustomCSS(for: service) {
-            return syncedCSS
-        }
-        return CustomCSSStorage.loadCSS(
-            serviceID: service.id,
-            fallback: service.customCSS ?? ""
-        )
+        ActionScripts.resolvedCustomCSS(for: service)
     }
 
     func setTemplatePromptInputSelectorSync(_ isInSync: Bool, serviceID: UUID) {
@@ -846,15 +840,7 @@ class Settings: ObservableObject {
     }
 
     func actionScript(for service: Service, action: CustomAction) -> String {
-        if service.templateActionScriptSync[action.id] == true,
-           let defaultScript = defaultActionScript(for: service, action: action) {
-            return defaultScript
-        }
-        return ActionScriptStorage.loadScript(
-            serviceID: service.id,
-            actionID: action.id,
-            fallback: service.actionScripts[action.id] ?? ""
-        )
+        ActionScripts.resolvedActionScript(for: service, action: action)
     }
 
     func setTemplateActionScriptSync(_ isInSync: Bool, serviceID: UUID, actionID: UUID) {

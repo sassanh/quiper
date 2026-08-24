@@ -380,6 +380,10 @@ final class AppEnvironment: ObservableObject {
             services[index].isEncrypted = true
             services[index].hasMigratedMetadata = true
             services[index].usesDiskutilSparseBundle = false
+            // The stylesheet and scripts are sealed in the profile now; drop
+            // any plaintext files so protection covers them completely.
+            EngineFileStorage.deleteCustomCSS(for: serviceID)
+            EngineFileStorage.deleteActionScripts(for: serviceID)
             updateCachedSessions(for: services[index])
             guard save() else {
                 services[index] = originalService
@@ -718,8 +722,21 @@ final class AppEnvironment: ObservableObject {
             return
         }
         services[index] = service
+        syncCustomCSSFile(for: service)
         updateCachedSessions(for: service)
         save()
+    }
+
+    /// Keeps the file-backed stylesheet in step with the engine's stored state:
+    /// synced engines (and cleared stylesheets) have no file, custom ones keep
+    /// the edited content. Protected engines never touch files—their stylesheet
+    /// lives only in the sealed profile.
+    private func syncCustomCSSFile(for service: Service) {
+        guard !service.isEncrypted else { return }
+        EngineFileStorage.saveCustomCSS(
+            service.templateCustomCSSSync ? "" : (service.customCSS ?? ""),
+            serviceID: service.id
+        )
     }
 
     /// Persists a remembered routing choice for a host at the top of the engine's
@@ -863,6 +880,8 @@ final class AppEnvironment: ObservableObject {
             persistedTabState.activeServiceID = services.first?.id
         }
         iosHardwareKeyboardSettings.engineBindings[serviceID] = nil
+        EngineFileStorage.deleteCustomCSS(for: serviceID)
+        EngineFileStorage.deleteActionScripts(for: serviceID)
         save()
         purgeWebDataIfNeeded(for: removed)
     }
@@ -1025,11 +1044,7 @@ final class AppEnvironment: ObservableObject {
     // MARK: - Actions
 
     func actionScript(for service: Service, action: CustomAction) -> String {
-        if service.templateActionScriptSync[action.id] == true,
-           let defaultScript = ActionScripts.defaultScript(for: service, action: action) {
-            return defaultScript
-        }
-        return service.actionScripts[action.id] ?? ""
+        ActionScripts.resolvedActionScript(for: service, action: action)
     }
 
     // MARK: - Actions management
@@ -1082,6 +1097,9 @@ final class AppEnvironment: ObservableObject {
               let serviceIndex = services.firstIndex(where: { $0.id == serviceID }) else { return }
         services[serviceIndex].templateActionScriptSync[actionID] = false
         services[serviceIndex].actionScripts[actionID] = script
+        if !services[serviceIndex].isEncrypted {
+            EngineFileStorage.saveActionScript(script, serviceID: serviceID, actionID: actionID)
+        }
         save()
     }
 
@@ -1099,11 +1117,24 @@ final class AppEnvironment: ObservableObject {
         services[serviceIndex].templateActionScriptSync[actionID] = isInSync
         if isInSync {
             services[serviceIndex].actionScripts.removeValue(forKey: actionID)
+            if !services[serviceIndex].isEncrypted {
+                EngineFileStorage.deleteActionScript(serviceID: serviceID, actionID: actionID)
+            }
         } else {
-            let existingScript = services[serviceIndex].actionScripts[actionID]?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let existingScript = EngineFileStorage.loadActionScript(
+                serviceID: serviceID,
+                actionID: actionID,
+                fallback: services[serviceIndex].actionScripts[actionID] ?? ""
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
             if existingScript.isEmpty {
                 services[serviceIndex].actionScripts[actionID] = defaultScript
+                if !services[serviceIndex].isEncrypted {
+                    EngineFileStorage.saveActionScript(
+                        defaultScript,
+                        serviceID: serviceID,
+                        actionID: actionID
+                    )
+                }
             }
         }
         save()
@@ -1125,6 +1156,12 @@ final class AppEnvironment: ObservableObject {
         } else {
             services[serviceIndex].customCSS = defaultCSS
         }
+        if !services[serviceIndex].isEncrypted {
+            EngineFileStorage.saveCustomCSS(
+                isInSync ? "" : defaultCSS,
+                serviceID: serviceID
+            )
+        }
         save()
     }
 
@@ -1145,6 +1182,9 @@ final class AppEnvironment: ObservableObject {
         guard existing.isEmpty, service.templateActionScriptSync[action.id] != false else { return }
         services[index].templateActionScriptSync[action.id] = true
         services[index].actionScripts.removeValue(forKey: action.id)
+        if !services[index].isEncrypted {
+            EngineFileStorage.deleteActionScript(serviceID: service.id, actionID: action.id)
+        }
     }
 
     // MARK: - Prompt history

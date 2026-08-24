@@ -1,92 +1,51 @@
-import Foundation
 import AppKit
 
 enum ActionScriptStorage {
-    private static var baseDirectory: URL {
-        let isRunningTests = NSClassFromString("XCTestCase") != nil
-        let isUITesting = CommandLine.arguments.contains("--uitesting")
-        
-        let appDir: URL
-        if isRunningTests || isUITesting {
-            let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
-            appDir = tempDir.appendingPathComponent("QuiperTests-\(ProcessInfo.processInfo.processIdentifier)")
-        } else {
-            let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            appDir = supportDir.appendingPathComponent(Constants.APP_FOLDER_NAME, isDirectory: true)
-        }
-        
-        let scriptsDir = appDir.appendingPathComponent("ActionScripts", isDirectory: true)
-        try? FileManager.default.createDirectory(at: scriptsDir, withIntermediateDirectories: true)
-        return scriptsDir
-    }
-
-    private static func serviceDirectory(for serviceID: UUID) -> URL {
-        let dir = baseDirectory.appendingPathComponent(serviceID.uuidString, isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }
-
     static func scriptURL(serviceID: UUID, actionID: UUID) -> URL {
-        serviceDirectory(for: serviceID).appendingPathComponent("\(actionID.uuidString).js", isDirectory: false)
+        EngineFileStorage.actionScriptURL(serviceID: serviceID, actionID: actionID)
     }
 
     static func revealInFinder(serviceID: UUID, actionID: UUID, contents: String) {
-        let url = scriptURL(serviceID: serviceID, actionID: actionID)
-        if !FileManager.default.fileExists(atPath: url.path) {
-            let data = Data(contents.utf8)
-            try? data.write(to: url, options: .atomic)
-        }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        EngineFileStorage.saveActionScript(contents, serviceID: serviceID, actionID: actionID)
+        NSWorkspace.shared.activateFileViewerSelecting(
+            [EngineFileStorage.actionScriptURL(serviceID: serviceID, actionID: actionID)]
+        )
     }
 
     static func copyPath(serviceID: UUID, actionID: UUID, contents: String) {
-        let url = scriptURL(serviceID: serviceID, actionID: actionID)
-        if !FileManager.default.fileExists(atPath: url.path) {
-            let data = Data(contents.utf8)
-            try? data.write(to: url, options: .atomic)
-        }
+        EngineFileStorage.saveActionScript(contents, serviceID: serviceID, actionID: actionID)
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(url.path, forType: .string)
+        pasteboard.setString(
+            EngineFileStorage.actionScriptURL(serviceID: serviceID, actionID: actionID).path,
+            forType: .string
+        )
     }
 
     static func loadScript(serviceID: UUID, actionID: UUID, fallback: String) -> String {
-        let url = scriptURL(serviceID: serviceID, actionID: actionID)
-        guard let data = try? Data(contentsOf: url),
-              let script = String(data: data, encoding: .utf8) else {
-            return fallback
-        }
-        return script
+        EngineFileStorage.loadActionScript(serviceID: serviceID, actionID: actionID, fallback: fallback)
     }
 
     static func saveScript(_ script: String, serviceID: UUID, actionID: UUID) {
-        let url = scriptURL(serviceID: serviceID, actionID: actionID)
-        TextFileStorage.save(script, to: url)
+        EngineFileStorage.saveActionScript(script, serviceID: serviceID, actionID: actionID)
     }
 
     static func openInDefaultEditor(serviceID: UUID, actionID: UUID, contents: String) {
-        let url = scriptURL(serviceID: serviceID, actionID: actionID)
-        if !FileManager.default.fileExists(atPath: url.path) {
-            let data = Data(contents.utf8)
-            try? data.write(to: url, options: .atomic)
-        }
-        NSWorkspace.shared.open(url)
+        EngineFileStorage.saveActionScript(contents, serviceID: serviceID, actionID: actionID)
+        NSWorkspace.shared.open(
+            EngineFileStorage.actionScriptURL(serviceID: serviceID, actionID: actionID)
+        )
     }
 
     static func deleteScript(serviceID: UUID, actionID: UUID) {
-        let url = scriptURL(serviceID: serviceID, actionID: actionID)
-        try? FileManager.default.removeItem(at: url)
+        EngineFileStorage.deleteActionScript(serviceID: serviceID, actionID: actionID)
     }
 
     static func deleteScripts(for serviceID: UUID) {
-        let dir = baseDirectory.appendingPathComponent(serviceID.uuidString, isDirectory: true)
-        try? FileManager.default.removeItem(at: dir)
+        EngineFileStorage.deleteActionScripts(for: serviceID)
     }
 
     static func deleteAllScripts() {
-        let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDir = supportDir.appendingPathComponent(Constants.APP_FOLDER_NAME, isDirectory: true)
-        let scriptsDir = appDir.appendingPathComponent("ActionScripts", isDirectory: true)
-        try? FileManager.default.removeItem(at: scriptsDir)
+        EngineFileStorage.deleteAllActionScripts()
     }
 }
