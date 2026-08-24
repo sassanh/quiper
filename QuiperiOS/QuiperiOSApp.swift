@@ -80,6 +80,22 @@ private struct IOSAppRootView: View {
                 WebsiteDataResetView()
             case .ready:
                 EngineBrowserView()
+                    .fullScreenCover(isPresented: onboardingPresentationBinding) {
+                        IOSOnboardingSheet(environment: environment)
+                    }
+                    .alert(
+                        "Update Default Action Scripts?",
+                        isPresented: Bindings.unwrap(environment.needsTemplateActionSyncMigrationPrompt)
+                    ) {
+                        Button("Update") {
+                            environment.resolveTemplateActionSyncMigration(updateScripts: true)
+                        }
+                        Button("Keep Custom", role: .cancel) {
+                            environment.resolveTemplateActionSyncMigration(updateScripts: false)
+                        }
+                    } message: {
+                        Text("Quiper can reconnect actions that match built-in templates to the latest bundled scripts. Choose Update to keep those template scripts in sync automatically. Choose Keep Custom to leave existing scripts editable and unchanged.")
+                    }
             case .failed(let message):
                 StartupMessageView(
                     title: "Quiper Couldn’t Start",
@@ -92,6 +108,20 @@ private struct IOSAppRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
             environment.retryStartup()
         }
+    }
+}
+
+/// Bridges published flags into `isPresented` bindings. The onboarding sheet is
+/// suppressed for UI-test runs; the underlying state stays untouched.
+private enum Bindings {
+    static func unwrap(_ value: Bool) -> Binding<Bool> {
+        Binding(get: { value }, set: { _ in })
+    }
+}
+
+private extension IOSAppRootView {
+    var onboardingPresentationBinding: Binding<Bool> {
+        Bindings.unwrap(environment.needsIOSOnboarding && !UITestSupport.isEnabled)
     }
 }
 

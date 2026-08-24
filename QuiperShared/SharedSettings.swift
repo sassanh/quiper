@@ -365,6 +365,7 @@ struct PersistedSettings: Codable {
     var autoCreateSessionOnEmptyEngineActivation: Bool?
     var shouldPurgeDanglingWebData: Bool?
     var hasCompletedGhostOnboarding: Bool?
+    var hasCompletedIOSOnboarding: Bool?
     var enableHUDDoubleTapCmd: Bool?
     var enableHUDCmdEscape: Bool?
     var showOnAllSpaces: Bool?
@@ -400,6 +401,7 @@ struct PersistedSettings: Codable {
         case autoCreateSessionOnEmptyEngineActivation
         case shouldPurgeDanglingWebData
         case hasCompletedGhostOnboarding
+        case hasCompletedIOSOnboarding
         case enableHUDDoubleTapCmd
         case enableHUDCmdEscape
         case showOnAllSpaces
@@ -448,6 +450,7 @@ struct PersistedSettings: Codable {
          autoCreateSessionOnEmptyEngineActivation: Bool? = nil,
          shouldPurgeDanglingWebData: Bool? = nil,
          hasCompletedGhostOnboarding: Bool? = nil,
+         hasCompletedIOSOnboarding: Bool? = nil,
          enableHUDDoubleTapCmd: Bool? = nil,
          enableHUDCmdEscape: Bool? = nil,
          showOnAllSpaces: Bool? = nil,
@@ -487,6 +490,7 @@ struct PersistedSettings: Codable {
         self.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
         self.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
         self.hasCompletedGhostOnboarding = hasCompletedGhostOnboarding
+        self.hasCompletedIOSOnboarding = hasCompletedIOSOnboarding
         self.enableHUDDoubleTapCmd = enableHUDDoubleTapCmd
         self.enableHUDCmdEscape = enableHUDCmdEscape
         self.showOnAllSpaces = showOnAllSpaces
@@ -526,6 +530,7 @@ struct PersistedSettings: Codable {
          autoCreateSessionOnEmptyEngineActivation: Bool? = nil,
          shouldPurgeDanglingWebData: Bool? = nil,
          hasCompletedGhostOnboarding: Bool? = nil,
+         hasCompletedIOSOnboarding: Bool? = nil,
          enableHUDDoubleTapCmd: Bool? = nil,
          enableHUDCmdEscape: Bool? = nil,
          showOnAllSpaces: Bool? = nil,
@@ -563,6 +568,7 @@ struct PersistedSettings: Codable {
         self.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
         self.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
         self.hasCompletedGhostOnboarding = hasCompletedGhostOnboarding
+        self.hasCompletedIOSOnboarding = hasCompletedIOSOnboarding
         self.enableHUDDoubleTapCmd = enableHUDDoubleTapCmd
         self.enableHUDCmdEscape = enableHUDCmdEscape
         self.showOnAllSpaces = showOnAllSpaces
@@ -646,6 +652,7 @@ struct PersistedSettings: Codable {
         autoCreateSessionOnEmptyEngineActivation = try container.decodeIfPresent(Bool.self, forKey: .autoCreateSessionOnEmptyEngineActivation)
         shouldPurgeDanglingWebData = try container.decodeIfPresent(Bool.self, forKey: .shouldPurgeDanglingWebData)
         hasCompletedGhostOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedGhostOnboarding)
+        hasCompletedIOSOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedIOSOnboarding)
         enableHUDDoubleTapCmd = try container.decodeIfPresent(Bool.self, forKey: .enableHUDDoubleTapCmd)
         enableHUDCmdEscape = try container.decodeIfPresent(Bool.self, forKey: .enableHUDCmdEscape)
         showOnAllSpaces = try container.decodeIfPresent(Bool.self, forKey: .showOnAllSpaces)

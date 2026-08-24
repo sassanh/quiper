@@ -44,6 +44,8 @@ final class AppEnvironment: ObservableObject {
     @Published private(set) var securityOperationServiceIDs: Set<UUID> = []
     @Published private(set) var securityErrorByServiceID: [UUID: String] = [:]
     @Published private(set) var shouldDismissSensitiveUI = false
+    @Published private(set) var needsTemplateActionSyncMigrationPrompt = false
+    @Published private(set) var needsIOSOnboarding = false
     private(set) var isRingOverlayActive = false
 
     private let settingsURL: URL
@@ -57,6 +59,8 @@ final class AppEnvironment: ObservableObject {
     private let hardwareKeyboardMonitor: any HardwareKeyboardMonitoring
     private var settingsDocumentState: SettingsDocumentState = .unavailable
     private var storedWebsiteDataStoreVersion: Int?
+    private var persistedSettingsMigrationContext: PersistedSettingsMigrationContext?
+    private var isTemplateActionSyncMigrationUnresolved = false
     private var unlockedKeys: [UUID: Data] = [:]
     private var lastActivityTime = Date()
     private var currentScenePhase: ScenePhase = .active
@@ -1342,6 +1346,79 @@ final class AppEnvironment: ObservableObject {
         return baseDir.appendingPathComponent("settings.json")
     }
 
+    // MARK: - Persisted settings migrations & first-run onboarding
+
+    /// Mirrors macOS `App`'s migration prompts: only settings that predate
+    /// version stamping (unversioned existing payloads) are eligible, and a
+    /// payload from a newer or unparseable app version is deferred untouched.
+    private func configureMigrations(loadedFromDisk: Bool, persistedVersion: String?) {
+        let context = PersistedSettingsMigrationContext(
+            loadedFromDisk: loadedFromDisk,
+            persistedVersion: persistedVersion,
+            currentVersion: Bundle.main.versionDisplayString
+        )
+        persistedSettingsMigrationContext = context
+
+        let templateSyncDetected = context.isUnversionedExistingSettings
+            && hasTemplateActionScriptMigrationCandidates()
+        let disposition = context.disposition(
+            whenDetected: templateSyncDetected,
+            presentation: .prompted
+        )
+        isTemplateActionSyncMigrationUnresolved = disposition.isUnresolved
+        needsTemplateActionSyncMigrationPrompt = disposition == .awaitingPrompt
+    }
+
+    /// Mirrors macOS `hasTemplateActionScriptMigrationCandidates`.
+    private func hasTemplateActionScriptMigrationCandidates() -> Bool {
+        services.contains { service in
+            customActions.contains { ActionScripts.defaultScript(for: service, action: $0) != nil }
+        }
+    }
+
+    /// Mirrors macOS `persistedQuiperVersionForSave`: the stamp stays absent
+    /// until the prompted migration is resolved so the prompt survives relaunch.
+    private var persistedQuiperVersionForSave: String? {
+        guard let context = persistedSettingsMigrationContext,
+              !isTemplateActionSyncMigrationUnresolved else {
+            return nil
+        }
+        return context.versionForPersistence
+    }
+
+    /// Mirrors macOS `resolveTemplateActionSyncMigration`: "Update" reconnects
+    /// template-matching actions to the bundled scripts and keeps them synced;
+    /// "Keep Custom" leaves existing scripts editable and unchanged.
+    func resolveTemplateActionSyncMigration(updateScripts: Bool) {
+        for serviceIndex in services.indices {
+            for action in customActions
+            where ActionScripts.defaultScript(for: services[serviceIndex], action: action) != nil {
+                if updateScripts {
+                    services[serviceIndex].templateActionScriptSync[action.id] = true
+                    services[serviceIndex].actionScripts.removeValue(forKey: action.id)
+                    EngineFileStorage.deleteActionScript(
+                        serviceID: services[serviceIndex].id,
+                        actionID: action.id
+                    )
+                } else if services[serviceIndex].templateActionScriptSync[action.id] == nil {
+                    services[serviceIndex].templateActionScriptSync[action.id] = false
+                }
+            }
+        }
+        isTemplateActionSyncMigrationUnresolved = false
+        needsTemplateActionSyncMigrationPrompt = false
+        save()
+    }
+
+    /// Mirrors macOS `OnboardingWizard.completeOnboarding` persistence: the
+    /// first-run sheet appears until it is explicitly dismissed. Presentation
+    /// suppression for test hosts lives in the app layer, not in this state.
+    func completeIOSOnboarding() {
+        guard needsIOSOnboarding else { return }
+        needsIOSOnboarding = false
+        save()
+    }
+
     private func load() {
         startupState = .loading
         settingsDocumentState = .unavailable
@@ -1380,8 +1457,12 @@ final class AppEnvironment: ObservableObject {
 
         settingsDocumentState = .loaded(snapshot: persisted, json: json)
         storedWebsiteDataStoreVersion = json[Self.websiteDataStoreVersionKey] as? Int
+        needsIOSOnboarding = !(persisted.hasCompletedIOSOnboarding ?? false)
         services = persisted.services
         customActions = persisted.customActions ?? []
+        // Migration detection reads services and custom actions, so it must
+        // run after they are populated from the payload.
+        configureMigrations(loadedFromDisk: true, persistedVersion: persisted.quiperVersion)
         iosHardwareKeyboardSettings = persisted.iosHardwareKeyboardSettings ?? .defaults
         pruneHardwareKeyboardBindings()
         if let colorScheme = persisted.colorScheme {
@@ -1475,13 +1556,15 @@ final class AppEnvironment: ObservableObject {
     private func installDefaultSettings() {
         settingsDocumentState = .loaded(snapshot: nil, json: [:])
         storedWebsiteDataStoreVersion = Self.websiteDataStoreVersion
-        services = DefaultEngineDefinitions.definitions
+        configureMigrations(loadedFromDisk: false, persistedVersion: nil)
+        needsIOSOnboarding = true
+        // Engines are intentionally not installed here: the first-run onboarding
+        // lets the user pick them. An intentionally empty engine list survives
+        // relaunch, and the Add Engine flow covers late additions.
+        services = []
         customActions = DefaultActions.defaults
         iosHardwareKeyboardSettings = .defaults
-        persistedTabState = PersistedTabState(activeServiceID: services.first?.id)
-        for service in services where autoCreateSessionOnEmptyEngineActivation {
-            ensureSessions(for: service.id)
-        }
+        persistedTabState = PersistedTabState()
         guard save(flushSecureProfiles: false) else {
             settingsDocumentState = .unavailable
             startupState = .failed("Quiper could not create its protected settings file.")
@@ -1571,6 +1654,8 @@ final class AppEnvironment: ObservableObject {
         pruneHardwareKeyboardBindings()
         payload.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
         payload.version = 1
+        payload.quiperVersion = persistedQuiperVersionForSave
+        payload.hasCompletedIOSOnboarding = needsIOSOnboarding ? nil : true
         guard let encodedPayload = try? JSONEncoder().encode(payload),
               let encodedObject = try? JSONSerialization.jsonObject(with: encodedPayload) as? [String: Any]
         else { return false }
@@ -1671,7 +1756,9 @@ final class AppEnvironment: ObservableObject {
         "tabNavigationRingSize",
         "iosHardwareKeyboardSettings",
         websiteDataStoreVersionKey,
-        "version"
+        "version",
+        "quiperVersion",
+        "hasCompletedIOSOnboarding"
     ]
 
     private static let websiteDataStoreVersionKey = "iosWebsiteDataStoreVersion"

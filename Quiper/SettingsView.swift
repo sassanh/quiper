@@ -2377,21 +2377,3 @@ private struct ActionScriptEditor: View {
 
 
 
-
-extension Bundle {
-    var versionDisplayString: String {
-        let shortVersion = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        let buildNumber = object(forInfoDictionaryKey: "CFBundleVersion") as? String
-        
-        switch (shortVersion, buildNumber) {
-        case let (short?, build?) where short != build:
-            return "\(short) (\(build))"
-        case let (short?, _):
-            return short
-        case let (_, build?):
-            return build
-        default:
-            return "Unknown"
-        }
-    }
-}
