@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-08-25
+
 ### Added
 
 - **iOS First-Run Onboarding**: Quiper on iPhone and iPad now opens with a short welcome—how sessions and the recent-tabs ring work, and where Settings lives—and offers to protect sensitive engines with device authentication right away, using the same protection as the Mac app.
