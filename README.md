@@ -13,7 +13,7 @@ Quiper unifies all your AI chat services into a single, instant-access macOS ove
 [![GitHub release](https://img.shields.io/github/v/release/sassanh/quiper.svg)](https://github.com/sassanh/quiper/releases)
 [![codecov](https://codecov.io/gh/sassanh/quiper/branch/main/graph/badge.svg)](https://codecov.io/gh/sassanh/quiper)
 
-### 📖 [Read the Official Documentation ➔](https://sassanh.github.io/quiper/)
+### 📖 [Read the Official Documentation ➔](https://quiper.sassanh.com/)
 
 ## Highlights
 
@@ -131,7 +131,7 @@ open Quiper.app
 
 ---
 
-### 📖 [Read the Official Documentation ➔](https://sassanh.github.io/quiper/)
+### 📖 [Read the Official Documentation ➔](https://quiper.sassanh.com/)
 
 For full details on keyboard shortcuts, managing engines, customizing CSS, setting up Custom Actions, and troubleshooting, please refer to our comprehensive documentation.
 

@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitepress'
 
-const siteUrl = 'https://sassanh.github.io'
-const siteBase = '/quiper/'
+const siteUrl = 'https://quiper.sassanh.com'
+const siteBase = '/'
 
 function pageUrl(relativePath: string): string {
   const route = relativePath
@@ -17,10 +17,15 @@ export default defineConfig({
   title: 'Quiper',
   description: 'Unified AI overlay for macOS — documentation and guides.',
 
+  sitemap: {
+    hostname: siteUrl,
+  },
+
   head: [
     ['link', { rel: 'icon', type: 'image/png', href: `${siteBase}logo.png` }],
     ['link', { rel: 'apple-touch-icon', href: `${siteBase}logo.png` }],
     ['meta', { name: 'theme-color', content: '#7c3aed' }],
+    ['script', {}, `if (location.hostname === 'sassanh.github.io') { location.replace('https://quiper.sassanh.com' + location.pathname.replace(/^\\/quiper\\/?/, '/') + location.search + location.hash); }`],
   ],
 
   transformHead({ pageData }) {

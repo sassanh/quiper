@@ -108,7 +108,7 @@ struct GeneralSettingsView: View {
                         
                         Spacer(minLength: 16)
                         
-                        Link(destination: URL(string: "https://sassanh.github.io/quiper/")!) {
+                        Link(destination: URL(string: "https://quiper.sassanh.com/")!) {
                             HStack(spacing: 4) {
                                 Text("Open Guide")
                                 Image(systemName: "arrow.up.right")

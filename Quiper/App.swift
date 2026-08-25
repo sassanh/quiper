@@ -415,7 +415,7 @@ final class AppController: NSObject, NSWindowDelegate {
     }
 
     @objc func openDocumentation(_ sender: Any?) {
-        guard let url = URL(string: "https://sassanh.github.io/quiper/") else { return }
+        guard let url = URL(string: "https://quiper.sassanh.com/") else { return }
         NSWorkspace.shared.open(url)
     }
 
