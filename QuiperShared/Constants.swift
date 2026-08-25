@@ -27,6 +27,16 @@ struct Constants {
 
     static let STATUS_ITEM_OBSERVER_CONTEXT = 1
 
+    /// Layout metrics for the floating location bar HUD.
+    struct LocationBarHUD {
+        static let height: CGFloat = 58
+        static let cornerRadius: CGFloat = 14
+        /// Horizontal margin the bar extends beyond the main window on each side.
+        static let sideMargin: CGFloat = 24
+        /// Gap between the bar and the toolbar's inner edge.
+        static let headerGap: CGFloat = 36
+    }
+
     /// Launch flags and mode checks shared across app entry points.
     struct LaunchMode {
         nonisolated static let uiTestingFlag = "--uitesting"

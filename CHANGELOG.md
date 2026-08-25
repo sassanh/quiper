@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Location Bar**: `Cmd+Shift+L` opens a slim address bar spanning the width of the Quiper window with a little margin to spare on each side, sitting right beside the toolbar on whichever edge it lives. It comes prefilled with the current page's address—edit it and press Enter or click the arrow button to navigate the active session there.
+
 ## [5.0.0] - 2026-08-25
 
 ### Added

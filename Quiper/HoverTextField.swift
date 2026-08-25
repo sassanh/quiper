@@ -3,14 +3,20 @@ import AppKit
 final class HoverTextField: NSTextField {
     // Prevent focus from being stolen from webview
     override var acceptsFirstResponder: Bool { false }
-    
+
     private var trackingArea: NSTrackingArea?
-    
+
     // Explicitly allow setting a larger hit-test view (e.g., the LoadingBorderView)
     weak var hitTestView: NSView?
-    
+
     // Check if tooltip should be shown (e.g., to prevent showing when obscured)
     var shouldShowTooltip: ((NSEvent) -> Bool)?
+
+    /// Invoked on mouse-up when the gesture was a click (no significant
+    /// movement); drags move the window instead.
+    var onClick: (() -> Void)?
+
+    private var dragTracker: WindowDragTracker?
     
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -55,5 +61,36 @@ final class HoverTextField: NSTextField {
     
     override func mouseExited(with event: NSEvent) {
         QuickTooltip.shared.hide(for: self)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard onClick != nil else {
+            super.mouseDown(with: event)
+            return
+        }
+        dragTracker = WindowDragTracker(window: window)
+        dragTracker?.begin()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard onClick != nil else {
+            super.mouseDragged(with: event)
+            return
+        }
+        dragTracker?.update()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard onClick != nil else {
+            super.mouseUp(with: event)
+            return
+        }
+        let didDrag = dragTracker?.end() ?? false
+        dragTracker = nil
+        let point = convert(event.locationInWindow, from: nil)
+        if !didDrag && bounds.contains(point) {
+            QuickTooltip.shared.hide(for: self)
+            onClick?()
+        }
     }
 }

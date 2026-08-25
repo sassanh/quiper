@@ -122,6 +122,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var tabHistoryHUDWindow: NSWindow?
     var promptHistoryHUDWindow: NSWindow?
     var modifierHUDWindow: NSWindow?
+    var locationBarHUDWindow: NSWindow?
     var tabPreviews: [TabIdentifier: NSImage] = [:]
 
     var keyDownEventMonitor: Any?
@@ -141,6 +142,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var isHeaderHovered = false
     var isModifiersForHeaderDown = false
     var isHeaderForcedVisibleForAction = false
+    var isHeaderForcedVisibleForLocationBar = false
     var isUpdatingHeaderVisibility = false
     var isWindowBeingDragged = false
     var selectorCursorMonitor: Timer?
@@ -149,6 +151,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var wasBothCmdsDown = false
     var modifierHUDView: ModifierHUDView?
     var promptHistoryHUDView: PromptHistoryHUDView?
+    var locationBarHUDView: LocationBarHUDView?
     var onboardingHUD: GhostOnboardingHUDView?
 
     private var isCompactMode = false
@@ -208,6 +211,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 win?.removeChildWindow(mhw)
                 mhw.orderOut(nil)
                 mhw.close()
+            }
+            if let lbhw = locationBarHUDWindow {
+                win?.removeChildWindow(lbhw)
+                lbhw.orderOut(nil)
+                lbhw.close()
             }
             removeObserver(self, forKeyPath: "window")
             win?.removeObserver(self, forKeyPath: "effectiveAppearance")
@@ -565,6 +573,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         findBarViewController?.hide()
         setShortcutsEnabled(false)
         hideModifierHUD()
+        hideLocationBarHUD()
         NotificationCenter.default.post(name: .windowDidHide, object: nil)
     }
 
@@ -715,8 +724,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         windowMarginView?.configureBarEdge(isBottom ? .bottom : .top)
         windowOutlineView?.configureBarEdge(isBottom ? .bottom : .top)
-        
+
         updateBlurWindowFrame()
+        if locationBarHUDWindow?.isVisible == true {
+            alignLocationBarHUDWindow()
+        }
     }
 
     private func configureWindow(for window: NSWindow) {
@@ -1212,6 +1224,9 @@ struct SecureTabState: Codable {
             }
             return true
         }
+        title.onClick = { [weak self] in
+            self?.toggleLocationBarHUD()
+        }
 
         // Session Actions Button
         let iconConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
@@ -1290,6 +1305,7 @@ struct SecureTabState: Codable {
             isModifiersForHeaderDown = false
             collapsibleSessionSelector?.collapse()
             collapsibleServiceSelector?.collapse()
+            hideLocationBarHUD()
         }
         updateHeaderVisibility(animated: true)
     }
@@ -1510,6 +1526,9 @@ struct SecureTabState: Codable {
         }
         if let mhw = modifierHUDWindow, mhw.isVisible {
             alignHUDWindow(mhw, width: 492, height: 465)
+        }
+        if locationBarHUDWindow?.isVisible == true {
+            alignLocationBarHUDWindow()
         }
     }
 

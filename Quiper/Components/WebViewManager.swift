@@ -1016,6 +1016,13 @@ final class WebViewManager: NSObject {
         let token = ObjectIdentifier(webView)
         guard let url = failedRequestURLsByWebView[token] else { return }
 
+        load(url, in: webView)
+    }
+
+    /// Performs a fresh main-frame load of `url` in `webView`, resetting any
+    /// visible load-error state first. All programmatic navigations must go
+    /// through here so the error-view bookkeeping stays in one place.
+    func load(_ url: URL, in webView: WKWebView) {
         beginMainFrameNavigation(webView, to: url)
         if url.isFileURL {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())

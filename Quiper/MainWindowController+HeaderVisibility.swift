@@ -39,6 +39,7 @@ extension MainWindowController {
         let shouldShowHeaderIfHidden = isHeaderHovered ||
                                        isModifiersForHeaderDown ||
                                        isHeaderForcedVisibleForAction ||
+                                       isHeaderForcedVisibleForLocationBar ||
                                        isAnySelectorExpanded ||
                                        isWindowBeingDragged ||
                                        GhostOnboardingManager.shared.isActive

@@ -42,6 +42,10 @@ extension MainWindowController {
                     self.cancelHistoryCycling()
                     return nil
                 }
+                if let hud = self.locationBarHUDView, !hud.isHidden {
+                    self.hideLocationBarHUD()
+                    return nil
+                }
                 if let hud = self.promptHistoryHUDView, !hud.isHidden {
                     self.hidePromptHistoryHUD()
                     return nil
@@ -232,6 +236,7 @@ extension MainWindowController {
     private func showModifierHUD() {
         guard let parentWindow = window else { return }
         hidePromptHistoryHUD()
+        hideLocationBarHUD()
         cancelHistoryCycling()
         
         if modifierHUDWindow == nil {
@@ -490,6 +495,12 @@ extension MainWindowController {
         case "y":
             togglePromptHistoryHUD()
             return true
+        case "l":
+            guard isShift else {
+                return false
+            }
+            toggleLocationBarHUD()
+            return true
         case "w":
             closeCurrentTab()
             return true
@@ -610,6 +621,7 @@ extension MainWindowController {
         guard let parentWindow = window else { return }
         hidePromptHistoryHUD()
         hideModifierHUD()
+        hideLocationBarHUD()
         
         if tabHistoryHUDWindow == nil {
             let panel = NSPanel(

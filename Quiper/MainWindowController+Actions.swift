@@ -29,6 +29,7 @@ extension MainWindowController {
         raiseHUDWindow(tabHistoryHUDWindow)
         raiseHUDWindow(promptHistoryHUDWindow)
         raiseHUDWindow(modifierHUDWindow)
+        raiseHUDWindow(locationBarHUDWindow)
     }
     
     @objc func sessionActionsButtonTapped(_ sender: NSButton) {
@@ -46,6 +47,7 @@ extension MainWindowController {
     func showPromptHistoryHUD() {
         guard let parentWindow = window else { return }
         hideModifierHUD()
+        hideLocationBarHUD()
         cancelHistoryCycling()
         
         if promptHistoryHUDWindow == nil {
@@ -83,27 +85,34 @@ extension MainWindowController {
 
     func alignHUDWindow(_ hudWindow: NSWindow?, width: CGFloat, height: CGFloat, offsetY: CGFloat = -50) {
         guard let parentWindow = window, let hudWindow = hudWindow else { return }
-        
+
+        let targetY = parentWindow.frame.midY - (height / 2) + offsetY
+        hudWindow.setFrame(alignedHUDFrame(width: width, height: height, y: targetY), display: true, animate: false)
+    }
+
+    /// Computes a HUD frame centered horizontally over the main window at the
+    /// given bottom-edge Y, clamped to the visible screen.
+    func alignedHUDFrame(width: CGFloat, height: CGFloat, y: CGFloat) -> NSRect {
+        guard let parentWindow = window else { return .zero }
+
         let parentFrame = parentWindow.frame
         let screenFrame = (parentWindow.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        
+
         var targetX = parentFrame.midX - (width / 2)
-        var targetY = parentFrame.midY - (height / 2) + offsetY
-        
-        // Clamp to screen bounds
         if targetX < screenFrame.minX {
             targetX = screenFrame.minX
         } else if targetX + width > screenFrame.maxX {
             targetX = screenFrame.maxX - width
         }
-        
+
+        var targetY = y
         if targetY < screenFrame.minY {
             targetY = screenFrame.minY
         } else if targetY + height > screenFrame.maxY {
             targetY = screenFrame.maxY - height
         }
-        
-        hudWindow.setFrame(NSRect(x: targetX, y: targetY, width: width, height: height), display: true, animate: false)
+
+        return NSRect(x: targetX, y: targetY, width: width, height: height)
     }
 
     func togglePromptHistoryHUD() {
@@ -114,6 +123,84 @@ extension MainWindowController {
         } else {
             showPromptHistoryHUD()
         }
+    }
+
+    func showLocationBarHUD() {
+        guard let parentWindow = window else { return }
+        hideModifierHUD()
+        hidePromptHistoryHUD()
+        cancelHistoryCycling()
+
+        // Keep the toolbar revealed while the bar is open (matters in auto-hide mode)
+        isHeaderForcedVisibleForLocationBar = true
+        updateHeaderVisibility()
+
+        if locationBarHUDWindow == nil {
+            let panel = InteractiveHUDPanel(
+                contentRect: NSRect(x: 0, y: 0, width: 600, height: Constants.LocationBarHUD.height),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            configureHUDPanel(panel, parentWindow: parentWindow)
+
+            let hud = LocationBarHUDView(frame: panel.contentView?.bounds ?? .zero, windowController: self)
+            hud.autoresizingMask = [.width, .height]
+            panel.contentView = hud
+
+            locationBarHUDView = hud
+            locationBarHUDWindow = panel
+
+            parentWindow.addChildWindow(panel, ordered: .above)
+        }
+
+        alignLocationBarHUDWindow()
+        locationBarHUDWindow?.makeKeyAndOrderFront(nil)
+        raiseHUDWindow(locationBarHUDWindow)
+        locationBarHUDView?.show()
+    }
+
+    func hideLocationBarHUD() {
+        if let hud = locationBarHUDView, !hud.isHidden, !hud.isHiding {
+            hud.hide()
+            return
+        }
+        locationBarHUDWindow?.orderOut(nil)
+
+        if isHeaderForcedVisibleForLocationBar {
+            isHeaderForcedVisibleForLocationBar = false
+            updateHeaderVisibility()
+        }
+    }
+
+    func toggleLocationBarHUD() {
+        if let hud = locationBarHUDView, hud.isHiding {
+            return
+        } else if let hud = locationBarHUDView, !hud.isHidden {
+            hideLocationBarHUD()
+        } else {
+            showLocationBarHUD()
+        }
+    }
+
+    /// Sizes the bar to the main window's width plus a margin on each side, and
+    /// places it right next to the toolbar (drag area), following whichever
+    /// window edge the toolbar currently lives on.
+    func alignLocationBarHUDWindow() {
+        guard let parentWindow = window else { return }
+        let width = parentWindow.frame.width + 2 * Constants.LocationBarHUD.sideMargin
+        let height = Constants.LocationBarHUD.height
+
+        let headerInset = currentMargin + CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
+        let gap = Constants.LocationBarHUD.headerGap
+        let parentFrame = parentWindow.frame
+        let isHeaderAtBottom = Settings.shared.dragAreaPosition == .bottom
+
+        let targetY = isHeaderAtBottom
+            ? parentFrame.minY + headerInset + gap
+            : parentFrame.maxY - headerInset - gap - height
+
+        locationBarHUDWindow?.setFrame(alignedHUDFrame(width: width, height: height, y: targetY), display: true, animate: false)
     }
 
     @objc func manualLockTapped(_ sender: NSButton) {
@@ -302,11 +389,7 @@ extension MainWindowController {
         guard let service = currentService(),
               let webView = currentWebView(),
               let url = URL(string: service.url) else { return }
-        if url.isFileURL {
-            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-        } else {
-            webView.load(URLRequest(url: url))
-        }
+        webViewManager.load(url, in: webView)
     }
 
     @objc func presentFindPanelFromMenu(_ sender: Any?) {
