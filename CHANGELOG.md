@@ -40,6 +40,7 @@
 
 ### Fixed
 
+- **Engine Shortcuts After Setting Global Shortcut**: Setting the Show/Hide Quiper shortcut in Settings no longer makes every engine's dedicated shortcut behave as a plain Show/Hide toggle until relaunch. Engine shortcuts keep opening their own engine—and hiding Quiper only when it is showing that engine—no matter when the global shortcut is set.
 - **Adaptive Load Error Panel**: The load error panel now follows light and dark mode as the system appearance changes, instead of keeping the background color it was created with—which previously left white error text on a light panel in dark mode.
 - **Stable Expanded Selectors**: Changing the selected session or engine while a selector is expanded no longer shifts the open panel mid-interaction. Expanded panels still follow the window when it moves or resizes near screen edges and re-anchor to the current selection each time they reopen.
 - **iOS Appearance Backgrounds**: Web pages, sessions, and the action-script editor on iPhone and iPad now keep the correct light or dark background in every state, so dark mode no longer shows white or mismatched areas behind content while loading or after switching appearance.

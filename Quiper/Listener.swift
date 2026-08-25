@@ -119,18 +119,29 @@ final class HotkeyManager {
     private func installHandlerIfNeeded() {
         guard eventHandler == nil else { return }
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { (_, _, userData) -> OSStatus in
+        InstallEventHandler(GetApplicationEventTarget(), { (_, event, userData) -> OSStatus in
             guard let userData else { return noErr }
-            
+
+            let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+            var hotKeyID = EventHotKeyID()
+            let status = GetEventParameter(event,
+                                           EventParamName(kEventParamDirectObject),
+                                           EventParamType(typeEventHotKeyID),
+                                           nil,
+                                           MemoryLayout<EventHotKeyID>.size,
+                                           nil,
+                                           &hotKeyID)
+            guard status == noErr, hotKeyID.signature == manager.hotKeySignature else {
+                return OSStatus(eventNotHandledErr)
+            }
+
             if ShortcutRecordingState.isRecording {
-                let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
                 Task { @MainActor in
                     NotificationCenter.default.post(name: .shortcutRecordingDidTriggerReserved, object: manager.configuration)
                 }
                 return noErr
             }
-            
-            let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+
             Task { @MainActor in
                 manager.callback?()
             }
