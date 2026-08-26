@@ -7,6 +7,11 @@
 - **Location Bar**: `Cmd+Shift+L` opens a slim address bar spanning the width of the Quiper window with a little margin to spare on each side, sitting right beside the toolbar on whichever edge it lives. It comes prefilled with the current page's address—edit it and press Enter or click the arrow button to navigate the active session there.
 - **Click-Away HUD Dismissal**: Clicking anywhere outside an open floating panel—the location bar, prompt history, Control Center, or the recent-tabs ring—now closes it.
 
+### Fixed
+
+- **Recent-Tabs Ring Sticking After Quick Taps**: A quick `Cmd+\`` tap no longer leaves the tab-ring HUD stuck on screen. The ring now closes and commits the switch even when ⌘ is released before the hotkey event finishes processing, when a system input popup holds key status, or when the window loses focus mid-gesture.
+- **Shortcuts Surviving System Popups**: The tiny Siri-related popup that appears spontaneously on recent macOS betas no longer disables Quiper's keyboard shortcuts while it is on screen.
+
 ## [5.0.0] - 2026-08-25
 
 ### Added

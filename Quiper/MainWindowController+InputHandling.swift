@@ -101,29 +101,43 @@ extension MainWindowController {
 
     var hasModalWindow: Bool {
         let mainWindow = window
-        return mainWindow?.attachedSheet != nil
-            || NSApp.windows.contains {
-                $0 !== mainWindow
-                    && $0.isVisible
-                    && $0.isKeyWindow
-                    && !($0 is ActivePanel)
-                    && !($0 is InteractiveHUDPanel)
-            }
+        if mainWindow?.attachedSheet != nil { return true }
+        if NSApp.modalWindow != nil { return true }
+
+        return NSApp.windows.contains { window in
+            guard window !== mainWindow, window.isVisible, window.isKeyWindow else { return false }
+            if window is ActivePanel || window is InteractiveHUDPanel { return false }
+            if Self.isTransientSystemInputWindow(window) { return false }
+            return true
+        }
+    }
+
+    /// macOS betas spawn transient system input windows inside the app's own
+    /// window list (the Siri-related `NSCampoLightweightUIHostWindow`, accent
+    /// popups). They can hold key status spontaneously but are not modals and
+    /// must never disable Quiper's shortcuts.
+    private static func isTransientSystemInputWindow(_ window: NSWindow) -> Bool {
+        let className = String(describing: type(of: window))
+        return className.contains("Campo") || className.contains("LightweightUI")
     }
 
     func handleFlagsChanged(event: NSEvent) {
-        if !(skipModalCheck || !hasModalWindow) { return }
-        
-        if GhostOnboardingManager.shared.isActive {
-            return
-        }
-
+        // Ending the recent-tabs ring on ⌘ release outranks modal gating:
+        // transient system input UI (e.g. the accent-popup host window on
+        // recent macOS) can hold key status and would otherwise strand the
+        // ring HUD on screen with no event ever dismissing it.
         if isCyclingHistory {
             let requiredFlags = NSEvent.ModifierFlags.command.rawValue
             let currentFlags = event.modifierFlags.rawValue
             if (currentFlags & requiredFlags) != requiredFlags {
                 endHistoryCycling()
             }
+        }
+
+        if !(skipModalCheck || !hasModalWindow) { return }
+
+        if GhostOnboardingManager.shared.isActive {
+            return
         }
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -688,7 +702,7 @@ extension MainWindowController {
         lastHistorySwitchTime = Date()
     }
     
-    func handleGraveKeyDown() {
+    func handleGraveKeyDown(currentModifiers: NSEvent.ModifierFlags? = nil) {
         guard !isActiveSpaceWebFullscreen else {
             showWebFullScreenBanner()
             return
@@ -747,7 +761,15 @@ extension MainWindowController {
         }
         
         advanceHistoryCycling(allowRotation: true)
-        
+
+        // The Carbon hotkey callback is delivered asynchronously: on a fast
+        // ⌘` tap, Cmd can already be released by the time this runs, so the
+        // flagsChanged-based cycle end never fires. Finish the gesture now.
+        guard areCommandModifiersHeld(currentModifiers) else {
+            endHistoryCycling()
+            return
+        }
+
         // Start keyboard repeat delay timer (400ms)
         historyRepeatTimer?.invalidate()
         historyRepeatTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
@@ -756,8 +778,8 @@ extension MainWindowController {
             }
         }
     }
-    
-    func handleGraveBackwardKeyDown() {
+
+    func handleGraveBackwardKeyDown(currentModifiers: NSEvent.ModifierFlags? = nil) {
         guard !isActiveSpaceWebFullscreen else {
             showWebFullScreenBanner()
             return
@@ -821,7 +843,13 @@ extension MainWindowController {
         }
         
         advanceHistoryCycling(allowRotation: true)
-        
+
+        // Same asynchronous-delivery guard as the forward variant above.
+        guard areCommandModifiersHeld(currentModifiers) else {
+            endHistoryCycling()
+            return
+        }
+
         // Start keyboard repeat delay timer (400ms)
         historyRepeatTimer?.invalidate()
         historyRepeatTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
@@ -829,6 +857,13 @@ extension MainWindowController {
                 self?.startRapidHistoryRepeat()
             }
         }
+    }
+
+    /// Whether the ⌘ modifier is still down. `currentModifiers` lets callers
+    /// (and tests) pin the state at gesture time instead of reading live.
+    private func areCommandModifiersHeld(_ currentModifiers: NSEvent.ModifierFlags?) -> Bool {
+        let modifiers = currentModifiers ?? NSEvent.modifierFlags
+        return modifiers.contains(.command)
     }
     
     private func startRapidHistoryRepeat() {

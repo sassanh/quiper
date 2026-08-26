@@ -1581,6 +1581,13 @@ struct SecureTabState: Codable {
     }
     
     func windowDidResignKey(_ notification: Notification) {
+        // Losing key status (e.g. a transient system input popup taking over)
+        // strands the recent-tabs ring: the events that normally dismiss it
+        // may never be delivered afterwards. Commit the gesture immediately.
+        if isCyclingHistory {
+            endHistoryCycling()
+        }
+
         PreviousTabHotkeyManager.shared.unregister()
         if let keyWindow = NSApp.keyWindow,
            window?.childWindows?.contains(keyWindow) == true {
