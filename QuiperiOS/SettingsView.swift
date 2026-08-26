@@ -963,6 +963,7 @@ private struct NavigationPopGestureLock: UIViewControllerRepresentable {
 
 struct RoutingRulesEditView: View {
     @Binding var service: Service
+    @FocusState private var focusedRuleID: UUID?
 
     var body: some View {
         Form {
@@ -972,7 +973,11 @@ struct RoutingRulesEditView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(Array(service.routingRules.indices), id: \.self) { index in
-                        RoutingRuleField(rule: $service.routingRules[index])
+                        RoutingRuleField(
+                            rule: $service.routingRules[index],
+                            ruleID: service.routingRules[index].id,
+                            focusedRuleID: $focusedRuleID
+                        )
                     }
                     .onDelete { offsets in
                         service.routingRules.remove(atOffsets: offsets)

@@ -7,12 +7,16 @@ import SwiftUI
 /// iOS swipe-to-delete/Edit-mode affordances—wrap this component per target.
 struct RoutingRuleField: View {
     @Binding var rule: RoutingRule
+    let ruleID: UUID
+    let focusedRuleID: FocusState<UUID?>.Binding
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             TextField("e.g. ^https?://([^/]*\\.)?google\\.com", text: $rule.pattern)
+                .focused(focusedRuleID, equals: ruleID)
                 #if os(macOS)
                 .textFieldStyle(.roundedBorder)
+                .fontDesign(.monospaced)
                 .frame(maxWidth: .infinity)
                 #else
                 .autocorrectionDisabled()
@@ -25,12 +29,12 @@ struct RoutingRuleField: View {
                 }
             }
             .pickerStyle(.menu)
-            #if os(macOS)
-            .frame(width: 90)
-            #else
             .labelsHidden()
-            .fixedSize()
-            #endif
+            // Wide enough for the longest action name plus the menu chevron;
+            // bump when adding `RoutingAction` cases so the value never
+            // truncates.
+            .frame(width: 120)
+            .accessibilityLabel("Action")
         }
     }
 }

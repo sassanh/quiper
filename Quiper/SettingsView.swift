@@ -1556,65 +1556,117 @@ struct ServiceDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     
-    private func ruleBinding(at index: Int) -> Binding<RoutingRule> {
+    @FocusState private var focusedRoutingRuleID: UUID?
+
+    private func ruleBinding(for rule: RoutingRule) -> Binding<RoutingRule> {
         Binding(
             get: {
-                if index < service.routingRules.count {
-                    return service.routingRules[index]
-                }
-                return RoutingRule(pattern: "", action: .internalStay)
+                service.routingRules.first(where: { $0.id == rule.id }) ?? rule
             },
             set: { newValue in
-                if index < service.routingRules.count {
+                if let index = service.routingRules.firstIndex(where: { $0.id == newValue.id }) {
                     service.routingRules[index] = newValue
                     settings.saveSettings()
                 }
             }
         )
     }
-    
+
     private func moveRule(from: Int, to: Int) {
         guard from >= 0, from < service.routingRules.count,
               to >= 0, to < service.routingRules.count else { return }
-        
-        service.routingRules.swapAt(from, to)
+
+        withAnimation(.easeInOut(duration: 0.25)) {
+            service.routingRules.swapAt(from, to)
+        }
         settings.saveSettings()
+    }
+
+    private func actionTint(for action: RoutingAction) -> Color {
+        switch action {
+        case .internalStay: return .green
+        case .popup: return .blue
+        case .prompt: return .orange
+        case .external: return .red
+        }
     }
     
     @ViewBuilder
-    private func domainRow(index: Int, rule: Binding<RoutingRule>, onDelete: @escaping () -> Void) -> some View {
-        HStack(spacing: 8) {
-            // Reordering chevrons
-            VStack(spacing: 2) {
+    private func domainRow(rule: Binding<RoutingRule>, onDelete: @escaping () -> Void) -> some View {
+        let index = service.routingRules.firstIndex(where: { $0.id == rule.wrappedValue.id }) ?? 0
+        let tint = actionTint(for: rule.wrappedValue.action)
+
+        HStack(spacing: 12) {
+            // Reordering stepper
+            HStack(spacing: 0) {
                 Button {
                     moveRule(from: index, to: index - 1)
+                    focusedRoutingRuleID = rule.wrappedValue.id
                 } label: {
                     Image(systemName: "chevron.up")
-                        .font(.system(size: 8, weight: .bold))
+                        .frame(width: 20, height: 16)
+                        .foregroundStyle(index == 0 ? Color.secondary.opacity(0.4) : Color.secondary)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(index == 0)
-                
+                .accessibilityLabel("Move rule up")
+                .help("Move rule up")
+
+                Divider()
+                    .frame(height: 12)
+
                 Button {
                     moveRule(from: index, to: index + 1)
+                    focusedRoutingRuleID = rule.wrappedValue.id
                 } label: {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .frame(width: 20, height: 16)
+                        .foregroundStyle(index == service.routingRules.count - 1 ? Color.secondary.opacity(0.4) : Color.secondary)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(index == service.routingRules.count - 1)
+                .accessibilityLabel("Move rule down")
+                .help("Move rule down")
             }
-            .frame(width: 14)
-            
+            .background(Color(NSColor.controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(Color(NSColor.separatorColor).opacity(0.6), lineWidth: 1)
+            )
+
             // Pattern field + action picker (shared with iOS)
-            RoutingRuleField(rule: rule)
-            
+            RoutingRuleField(
+                rule: rule,
+                ruleID: rule.wrappedValue.id,
+                focusedRuleID: $focusedRoutingRuleID
+            )
+            .onChange(of: rule.wrappedValue.action) {
+                focusedRoutingRuleID = rule.wrappedValue.id
+            }
+
             // Delete button
             Button(role: .destructive, action: onDelete) {
                 Image(systemName: "trash")
             }
             .buttonStyle(.borderless)
             .help("Remove routing rule")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(tint.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(tint.opacity(0.25), lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onTapGesture {
+            focusedRoutingRuleID = rule.wrappedValue.id
         }
     }
     
@@ -1652,16 +1704,20 @@ struct ServiceDetailView: View {
                                     .foregroundColor(.secondary)
                                     .padding(.vertical, 8)
                             } else {
-                                ForEach(Array(service.routingRules.indices), id: \.self) { index in
-                                    domainRow(index: index, rule: ruleBinding(at: index), onDelete: {
-                                        service.routingRules.remove(at: index)
+                                ForEach(service.routingRules) { rule in
+                                    domainRow(rule: ruleBinding(for: rule), onDelete: {
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            service.routingRules.removeAll { $0.id == rule.id }
+                                        }
                                         settings.saveSettings()
                                     })
                                 }
                             }
-                            
+
                             Button {
-                                service.routingRules.append(RoutingRule(pattern: "", action: .internalStay))
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    service.routingRules.append(RoutingRule(pattern: "", action: .internalStay))
+                                }
                                 settings.saveSettings()
                             } label: {
                                 Label("Add Routing Rule", systemImage: "plus")
