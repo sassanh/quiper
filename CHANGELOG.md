@@ -7,10 +7,15 @@
 - **Location Bar**: `Cmd+Shift+L` opens a slim address bar spanning the width of the Quiper window with a little margin to spare on each side, sitting right beside the toolbar on whichever edge it lives. It comes prefilled with the current page's address—edit it and press Enter or click the arrow button to navigate the active session there.
 - **Click-Away HUD Dismissal**: Clicking anywhere outside an open floating panel—the location bar, prompt history, Control Center, or the recent-tabs ring—now closes it.
 
+### Changed
+
+- **Server Error Pages Render Natively**: When a site responds with its own 404, 500, rate-limit, or challenge page, Quiper now shows that page instead of replacing it with a generic error panel. Quiper's error view remains for failures where the site returns nothing at all—connection failures, DNS errors, timeouts.
+
 ### Fixed
 
 - **Recent-Tabs Ring Sticking After Quick Taps**: A quick `Cmd+\`` tap no longer leaves the tab-ring HUD stuck on screen. The ring now closes and commits the switch even when ⌘ is released before the hotkey event finishes processing, when a system input popup holds key status, or when the window loses focus mid-gesture.
 - **Shortcuts Surviving System Popups**: The tiny Siri-related popup that appears spontaneously on recent macOS betas no longer disables Quiper's keyboard shortcuts while it is on screen.
+- **No More False "Page Failed to Load" on Redirects**: Navigations that WebKit interrupts for policy reasons—such as Google rerouting a search to its CAPTCHA page—no longer show the generic "unexpected error" panel with a useless Retry button.
 
 ## [5.0.0] - 2026-08-25
 

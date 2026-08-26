@@ -114,9 +114,6 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         coordinator.onLoadFailure = { [weak self] error in
             self?.reportLoadFailure(error)
         }
-        coordinator.onHTTPFailure = { [weak self] statusCode, url in
-            self?.reportHTTPFailure(statusCode: statusCode, url: url)
-        }
         coordinator.onWebContentProcessTerminated = { [weak self] in
             self?.reportWebContentTermination()
         }
@@ -326,15 +323,6 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         guard !WebLoadError.isCancellation(error) else { return }
         let failure = WebLoadError(error: error, fallbackURL: activeRequestURL)
         failedRequestURL = failure.url ?? activeRequestURL
-        loadError = failure
-    }
-
-    /// Mirrors macOS `decidePolicyFor navigationResponse`: main-frame HTTP
-    /// 4xx/5xx responses cancel the navigation and surface as errors instead
-    /// of rendering the server's error body.
-    func reportHTTPFailure(statusCode: Int, url: URL?) {
-        let failure = WebLoadError.http(statusCode: statusCode, url: url ?? activeRequestURL)
-        failedRequestURL = failure.url
         loadError = failure
     }
 

@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import WebKit
 @testable import Quiper
 
 @MainActor
@@ -27,21 +28,6 @@ final class WebLoadErrorTests: XCTestCase {
         XCTAssertEqual(WebLoadError(error: URLError(.resourceUnavailable)).kind, .resourceUnavailable)
         XCTAssertEqual(WebLoadError(error: URLError(.fileDoesNotExist)).kind, .fileAccessFailure)
         XCTAssertEqual(WebLoadError(error: URLError(.noPermissionsToReadFile)).kind, .fileAccessFailure)
-    }
-
-    func testHTTPStatusClassification() {
-        XCTAssertEqual(WebLoadError.http(statusCode: 404).kind, .httpClientError(statusCode: 404))
-        XCTAssertEqual(WebLoadError.http(statusCode: 429).kind, .httpClientError(statusCode: 429))
-        XCTAssertEqual(WebLoadError.http(statusCode: 499).kind, .httpClientError(statusCode: 499))
-        XCTAssertEqual(WebLoadError.http(statusCode: 500).kind, .httpServerError(statusCode: 500))
-        XCTAssertEqual(WebLoadError.http(statusCode: 503).kind, .httpServerError(statusCode: 503))
-        XCTAssertEqual(WebLoadError.http(statusCode: 599).kind, .httpServerError(statusCode: 599))
-    }
-
-    func testHTTPMessagesUseFriendlyStatusSpecificCopy() {
-        XCTAssertEqual(WebLoadError.http(statusCode: 404).kind.title, "Page not found")
-        XCTAssertEqual(WebLoadError.http(statusCode: 503).kind.title, "Service unavailable")
-        XCTAssertFalse(WebLoadError.http(statusCode: 404).kind.message.contains("404"))
     }
 
     func testUnknownErrorUsesFallbackClassification() {
@@ -82,6 +68,16 @@ final class WebLoadErrorTests: XCTestCase {
         XCTAssertFalse(retryState.shouldRetry())
         retryState.reset()
         XCTAssertTrue(retryState.shouldRetry())
+    }
+
+    func testFrameLoadInterruptedByPolicyChangeIsDetected() {
+        let interrupted = NSError(domain: "WebKitErrorDomain", code: 102)
+        XCTAssertTrue(WebLoadError.isFrameLoadInterrupted(interrupted))
+        XCTAssertFalse(WebLoadError.isFrameLoadInterrupted(URLError(.timedOut)))
+        XCTAssertFalse(WebLoadError.isFrameLoadInterrupted(NSError(domain: "WebKitErrorDomain", code: 404)))
+
+        let loadError = WebLoadError(error: interrupted)
+        XCTAssertEqual(loadError.kind, .unknown, "The error itself still classifies as unknown — it must simply be filtered out")
     }
 
     func testErrorViewPersistsWhenSessionWrapperIsHidden() throws {

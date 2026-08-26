@@ -1,4 +1,5 @@
 import Foundation
+import WebKit
 
 struct WebLoadError: Equatable {
     enum Kind: Equatable {
@@ -13,8 +14,6 @@ struct WebLoadError: Equatable {
         case invalidURL
         case resourceUnavailable
         case fileAccessFailure
-        case httpClientError(statusCode: Int)
-        case httpServerError(statusCode: Int)
         case contentProcessTerminated
         case unknown
 
@@ -42,10 +41,6 @@ struct WebLoadError: Equatable {
                 return "Resource unavailable"
             case .fileAccessFailure:
                 return "File could not be opened"
-            case let .httpClientError(statusCode):
-                return Self.httpClientTitle(for: statusCode)
-            case let .httpServerError(statusCode):
-                return Self.httpServerTitle(for: statusCode)
             case .contentProcessTerminated:
                 return "Page process stopped"
             case .unknown:
@@ -77,83 +72,10 @@ struct WebLoadError: Equatable {
                 return "The requested page is currently unavailable."
             case .fileAccessFailure:
                 return "The local file is missing or cannot be read."
-            case let .httpClientError(statusCode):
-                return Self.httpClientMessage(for: statusCode)
-            case let .httpServerError(statusCode):
-                return Self.httpServerMessage(for: statusCode)
             case .contentProcessTerminated:
                 return "The page process stopped unexpectedly."
             case .unknown:
                 return "An unexpected error prevented the page from loading."
-            }
-        }
-
-        private static func httpClientTitle(for statusCode: Int) -> String {
-            switch statusCode {
-            case 400: return "Bad request"
-            case 401, 407: return "Authentication required"
-            case 403: return "Access denied"
-            case 404: return "Page not found"
-            case 405: return "Method not allowed"
-            case 408: return "Request timed out"
-            case 409: return "Request conflict"
-            case 410: return "Page is gone"
-            case 413: return "Request is too large"
-            case 414: return "Address is too long"
-            case 415: return "Unsupported request"
-            case 422: return "Request could not be processed"
-            case 423: return "Resource is locked"
-            case 425: return "Request could not be processed yet"
-            case 426: return "Connection upgrade required"
-            case 429: return "Too many requests"
-            case 431: return "Request headers are too large"
-            case 451: return "Page is unavailable"
-            default: return "Client request failed"
-            }
-        }
-
-        private static func httpClientMessage(for statusCode: Int) -> String {
-            switch statusCode {
-            case 401, 407:
-                return "The server requires authentication before it can show this page."
-            case 403:
-                return "You do not have permission to view this page."
-            case 404:
-                return "The requested page could not be found."
-            case 408:
-                return "The server timed out while waiting for the request."
-            case 429:
-                return "The server is receiving too many requests."
-            default:
-                return "The server could not process this request."
-            }
-        }
-
-        private static func httpServerTitle(for statusCode: Int) -> String {
-            switch statusCode {
-            case 500: return "Server error"
-            case 501: return "Server feature unavailable"
-            case 502: return "Bad gateway"
-            case 503: return "Service unavailable"
-            case 504: return "Gateway timed out"
-            case 505: return "HTTP version unsupported"
-            case 511: return "Network authentication required"
-            default: return "Server request failed"
-            }
-        }
-
-        private static func httpServerMessage(for statusCode: Int) -> String {
-            switch statusCode {
-            case 502:
-                return "The server received an invalid response from another server."
-            case 503:
-                return "The server is temporarily unavailable."
-            case 504:
-                return "Another server took too long to respond."
-            case 511:
-                return "The network requires authentication before it can connect."
-            default:
-                return "The server could not complete this request."
             }
         }
     }
@@ -172,16 +94,21 @@ struct WebLoadError: Equatable {
         self.url = Self.failingURL(from: nsError) ?? fallbackURL
     }
 
-    static func http(statusCode: Int, url: URL? = nil) -> WebLoadError {
-        let kind: Kind = (400..<500).contains(statusCode)
-            ? .httpClientError(statusCode: statusCode)
-            : .httpServerError(statusCode: statusCode)
-        return WebLoadError(kind: kind, url: url)
-    }
-
     static func isCancellation(_ error: Error) -> Bool {
         let nsError = error as NSError
         return nsError.domain == NSURLErrorDomain && nsError.code == URLError.cancelled.rawValue
+    }
+
+    /// Fires when a navigation was superseded or cancelled by a policy
+    /// decision (redirects, downloads, custom routing) rather than by a real
+    /// failure — must never surface as a load error.
+    ///
+    /// Code 102 is `WKErrorFrameLoadInterruptedByPolicyChange`
+    /// ("Frame load interrupted"); the constant isn't exposed to Swift on all
+    /// SDKs, so its stable numeric identity is used directly.
+    static func isFrameLoadInterrupted(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == "WebKitErrorDomain" && nsError.code == 102
     }
 
     private static func kind(for error: NSError) -> Kind {

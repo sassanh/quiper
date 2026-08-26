@@ -30,18 +30,6 @@ struct IOSLoadErrorTests {
         #expect(error.url == failedURL)
     }
 
-    @Test func httpFailureSurfacesWithStatusCodeKind() throws {
-        let session = makeSession()
-        let failedURL = try #require(URL(string: "https://engine.example.com/chat"))
-
-        session.beginMainFrameNavigation(to: failedURL)
-        session.reportHTTPFailure(statusCode: 404, url: nil)
-
-        let error = try #require(session.loadError)
-        #expect(error.kind == .httpClientError(statusCode: 404))
-        #expect(error.url == failedURL)
-    }
-
     @Test func newNavigationClearsError() throws {
         let session = makeSession()
         let failedURL = try #require(URL(string: "https://engine.example.com/chat"))

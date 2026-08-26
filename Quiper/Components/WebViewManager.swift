@@ -1005,7 +1005,14 @@ final class WebViewManager: NSObject {
     }
 
     private func handleNavigationFailure(_ error: Error, for webView: WKWebView) {
-        guard !WebLoadError.isCancellation(error) else { return }
+        guard !WebLoadError.isCancellation(error),
+              !WebLoadError.isFrameLoadInterrupted(error) else { return }
+
+        let nsError = error as NSError
+        NSLog("[Quiper] Page load failed: domain=%@ code=%d url=%@",
+              nsError.domain,
+              nsError.code,
+              (nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString ?? "nil")
 
         let token = ObjectIdentifier(webView)
         let loadError = WebLoadError(error: error, fallbackURL: activeRequestURLsByWebView[token])
@@ -1755,17 +1762,10 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
 
     @MainActor
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
-        if navigationResponse.isForMainFrame,
-           let httpResponse = navigationResponse.response as? HTTPURLResponse,
-           (400...599).contains(httpResponse.statusCode) {
-            let token = ObjectIdentifier(webView)
-            let responseURL = httpResponse.url ?? activeRequestURLsByWebView[token]
-            let error = WebLoadError.http(statusCode: httpResponse.statusCode, url: responseURL)
-            showLoadError(error, for: webView, fallbackURL: responseURL)
-            decisionHandler(.cancel)
-            return
-        }
-
+        // Server responses — including 4xx/5xx error pages — render natively:
+        // the site's own error content is almost always more useful than a
+        // generic panel, and cancelling here would strand policy-interrupted
+        // navigations with a misleading failure.
         if navigationResponse.canShowMIMEType {
             decisionHandler(.allow)
         } else {

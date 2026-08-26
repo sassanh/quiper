@@ -22,7 +22,6 @@ final class WebSessionCoordinator: NSObject {
     var onDidFail: ((Error) -> Void)?
     var onMainFrameNavigationBegan: ((URL) -> Void)?
     var onLoadFailure: ((Error) -> Void)?
-    var onHTTPFailure: ((_ statusCode: Int, _ url: URL?) -> Void)?
     var onWebContentProcessTerminated: (() -> Void)?
 
     init(webView: WKWebView, service: Service, sessionIndex: Int) {
@@ -90,7 +89,6 @@ final class WebSessionCoordinator: NSObject {
         onDidFail = nil
         onMainFrameNavigationBegan = nil
         onLoadFailure = nil
-        onHTTPFailure = nil
         onWebContentProcessTerminated = nil
         service.url = ""
         service.focus_selector = ""
@@ -305,14 +303,8 @@ extension WebSessionCoordinator: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
-        if navigationResponse.isForMainFrame,
-           let httpResponse = navigationResponse.response as? HTTPURLResponse,
-           (400...599).contains(httpResponse.statusCode) {
-            onHTTPFailure?(httpResponse.statusCode, httpResponse.url)
-            decisionHandler(.cancel)
-            return
-        }
-
+        // Server responses — including 4xx/5xx error pages — render natively,
+        // matching macOS.
         if navigationResponse.canShowMIMEType {
             decisionHandler(.allow)
         } else {
