@@ -31,6 +31,28 @@ extension MainWindowController {
         raiseHUDWindow(modifierHUDWindow)
         raiseHUDWindow(locationBarHUDWindow)
     }
+
+    /// Closes every open HUD whose frame does not contain the clicked point,
+    /// so clicking anywhere outside a floating panel dismisses it.
+    func dismissHUDsOnOutsideClick(at screenPoint: NSPoint) {
+        func containsClick(_ hudWindow: NSWindow?) -> Bool {
+            guard let hudWindow, hudWindow.isVisible else { return true }
+            return hudWindow.frame.contains(screenPoint)
+        }
+
+        if !containsClick(tabHistoryHUDWindow) {
+            hideTabHistoryHUD()
+        }
+        if !containsClick(promptHistoryHUDWindow) {
+            hidePromptHistoryHUD()
+        }
+        if !containsClick(modifierHUDWindow) {
+            hideModifierHUD()
+        }
+        if !containsClick(locationBarHUDWindow) {
+            hideLocationBarHUD()
+        }
+    }
     
     @objc func sessionActionsButtonTapped(_ sender: NSButton) {
         GhostOnboardingManager.shared.advanceFromMenuClick()
@@ -433,9 +455,22 @@ extension MainWindowController {
         ]) { [weak self] event in
             self?.lastActivityTime = Date()
             if event.type == .leftMouseDown || event.type == .rightMouseDown {
+                // Resolve against the event itself: the clicked window and its
+                // coordinate space are authoritative at delivery time.
+                let clickScreenPoint: NSPoint
+                if let eventWindow = event.window {
+                    clickScreenPoint = eventWindow.convertToScreen(
+                        NSRect(origin: event.locationInWindow, size: .zero)
+                    ).origin
+                } else {
+                    clickScreenPoint = NSEvent.mouseLocation
+                }
                 Task { @MainActor [weak self] in
-                    guard let self = self, event.window === self.window else { return }
-                    self.raiseVisibleHUDs()
+                    guard let self = self else { return }
+                    self.dismissHUDsOnOutsideClick(at: clickScreenPoint)
+                    if event.window === self.window {
+                        self.raiseVisibleHUDs()
+                    }
                 }
             }
             return event
