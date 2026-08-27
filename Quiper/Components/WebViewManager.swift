@@ -6,6 +6,7 @@ import Combine
 protocol WebViewManagerDelegate: AnyObject {
     func webViewDidUpdateTitle(_ title: String, for webView: WKWebView)
     func webViewDidUpdateLoading(_ isLoading: Bool, for webView: WKWebView)
+    func webViewDidUpdateFullscreenState(_ state: WKWebView.FullscreenState, for webView: WKWebView)
     func webViewDidFinishNavigation(_ webView: WKWebView)
     func engineDidUnlock(serviceID: UUID)
     func inputStateRequestSave()
@@ -794,6 +795,7 @@ final class WebViewManager: NSObject {
                             // Remove non-persistent webview and clean observers
                             webview.removeObserver(self, forKeyPath: "title")
                             webview.removeObserver(self, forKeyPath: "loading")
+                            webview.removeObserver(self, forKeyPath: "fullscreenState")
                             let oldToken = ObjectIdentifier(webview)
                             self.initialLoadAwaitingFocus.remove(oldToken)
                             self.serviceIDsByWebView.removeValue(forKey: oldToken)
@@ -959,6 +961,7 @@ final class WebViewManager: NSObject {
         // Add observers
         webview.addObserver(self, forKeyPath: "title", options: .new, context: nil)
         webview.addObserver(self, forKeyPath: "loading", options: .new, context: nil)
+        webview.addObserver(self, forKeyPath: "fullscreenState", options: .new, context: nil)
         
         return webview
     }
@@ -1209,6 +1212,8 @@ final class WebViewManager: NSObject {
                 delegate?.webViewDidUpdateTitle(webView.title ?? "", for: webView)
             } else if keyPath == "loading" {
                 delegate?.webViewDidUpdateLoading(webView.isLoading, for: webView)
+            } else if keyPath == "fullscreenState" {
+                delegate?.webViewDidUpdateFullscreenState(webView.fullscreenState, for: webView)
             }
         }
     }
@@ -1245,6 +1250,7 @@ final class WebViewManager: NSObject {
  
         webView.removeObserver(self, forKeyPath: "title")
         webView.removeObserver(self, forKeyPath: "loading")
+        webView.removeObserver(self, forKeyPath: "fullscreenState")
 
         // Remove the wrapper view (parent) from the view hierarchy, then the webview
         webView.removeFromSuperview()

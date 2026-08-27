@@ -9,11 +9,18 @@ import QuartzCore
 struct CGSFuncs {
     typealias CGSConnectionID = UInt32
     typealias CGSWindowID = UInt32
+    typealias CGSSpaceID = UInt64
     typealias CGSSetWindowBackgroundBlurRadiusFunc = @convention(c) (CGSConnectionID, CGSWindowID, Int32) -> Int32
     typealias CGSMainConnectionIDFunc = @convention(c) () -> CGSConnectionID
+    typealias CGSCopySpacesForWindowsFunc = @convention(c) (CGSConnectionID, Int32, CFArray) -> Unmanaged<CFArray>?
+    typealias CGSMoveWindowsToManagedSpaceFunc = @convention(c) (CGSConnectionID, CFArray, CGSSpaceID) -> Int32
+    typealias CGSManagedDisplayGetCurrentSpaceFunc = @convention(c) (CGSConnectionID, CFString) -> CGSSpaceID
 
     static var getMainConnection: CGSMainConnectionIDFunc?
     static var setBlurRadius: CGSSetWindowBackgroundBlurRadiusFunc?
+    static var copySpacesForWindows: CGSCopySpacesForWindowsFunc?
+    static var moveWindowsToManagedSpace: CGSMoveWindowsToManagedSpaceFunc?
+    static var managedDisplayGetCurrentSpace: CGSManagedDisplayGetCurrentSpaceFunc?
     static var initialized = false
     
     static func initialize() {
@@ -32,8 +39,71 @@ struct CGSFuncs {
             if let setBlurSym = dlsym(validHandle, "SLSSetWindowBackgroundBlurRadius") ?? dlsym(validHandle, "CGSSetWindowBackgroundBlurRadius") {
                 setBlurRadius = unsafeBitCast(setBlurSym, to: CGSSetWindowBackgroundBlurRadiusFunc.self)
             }
+
+            if let copySpacesSym = dlsym(validHandle, "SLSCopySpacesForWindows") ?? dlsym(validHandle, "CGSCopySpacesForWindows") {
+                copySpacesForWindows = unsafeBitCast(copySpacesSym, to: CGSCopySpacesForWindowsFunc.self)
+            }
+
+            if let moveWindowsSym = dlsym(validHandle, "SLSMoveWindowsToManagedSpace") ?? dlsym(validHandle, "CGSMoveWindowsToManagedSpace") {
+                moveWindowsToManagedSpace = unsafeBitCast(moveWindowsSym, to: CGSMoveWindowsToManagedSpaceFunc.self)
+            }
+
+            if let currentSpaceSym = dlsym(validHandle, "SLSManagedDisplayGetCurrentSpace") ?? dlsym(validHandle, "CGSManagedDisplayGetCurrentSpace") {
+                managedDisplayGetCurrentSpace = unsafeBitCast(currentSpaceSym, to: CGSManagedDisplayGetCurrentSpaceFunc.self)
+            }
         }
         initialized = true
+    }
+
+    static func activeSpace(for screen: NSScreen?) -> CGSSpaceID? {
+        initialize()
+        guard let screen,
+              let displayNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
+              let displayUUID = CGDisplayCreateUUIDFromDisplayID(CGDirectDisplayID(displayNumber.uint32Value))?.takeRetainedValue(),
+              let displayUUIDString = CFUUIDCreateString(nil, displayUUID),
+              let getMainConnection,
+              let managedDisplayGetCurrentSpace else {
+            return nil
+        }
+
+        let space = managedDisplayGetCurrentSpace(getMainConnection(), displayUUIDString)
+        return space == 0 ? nil : space
+    }
+
+    static func spaces(for window: NSWindow) -> [CGSSpaceID] {
+        initialize()
+        guard window.windowNumber > 0,
+              let getMainConnection,
+              let copySpacesForWindows else {
+            return []
+        }
+
+        let windowIDs = [NSNumber(value: UInt32(window.windowNumber))] as CFArray
+        guard let spaces = copySpacesForWindows(getMainConnection(), 0x7, windowIDs)?.takeRetainedValue() else {
+            return []
+        }
+
+        return (spaces as NSArray).compactMap { ($0 as? NSNumber)?.uint64Value }
+    }
+
+    static func move(_ windows: [NSWindow], to space: CGSSpaceID) -> Bool {
+        initialize()
+        guard let getMainConnection,
+              let moveWindowsToManagedSpace else {
+            return false
+        }
+
+        let windowIDs = windows.compactMap { window -> NSNumber? in
+            guard window.windowNumber > 0 else { return nil }
+            return NSNumber(value: UInt32(window.windowNumber))
+        }
+        guard !windowIDs.isEmpty else { return false }
+
+        return moveWindowsToManagedSpace(
+            getMainConnection(),
+            windowIDs as CFArray,
+            space
+        ) == 0
     }
 }
 
@@ -171,6 +241,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard isWebContentFullscreen else { return false }
         guard let fullScreenWindow = webFullScreenWindow else { return true }
         return fullScreenWindow.isOnActiveSpace
+    }
+
+    private var elementFullscreenWebView: WKWebView?
+    private var elementFullscreenOriginSpace: CGSFuncs.CGSSpaceID?
+    private var shouldRestoreCollectionBehaviorAfterElementFullscreen = false
+
+    /// The Space currently owned by a fullscreen element of Quiper's own web
+    /// content, if any. Quiper's own overlay must never open inside it —
+    /// doing so corrupts the overlay's Space state when the element exits.
+    /// Fullscreen Spaces owned by *other* applications are unaffected.
+    var ownedElementFullscreenSpace: CGSFuncs.CGSSpaceID? {
+        guard let webFullScreenWindow else { return nil }
+        return CGSFuncs.spaces(for: webFullScreenWindow).first
     }
 
     let barBorderWidth: CGFloat = 8
@@ -514,25 +597,32 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func show() {
-        reconcileWebContentFullScreen()
         guard !isActiveSpaceWebFullscreen else {
             showWebFullScreenBanner()
+            return
+        }
+        if let fullscreenWindow = webFullScreenWindow {
+            showWebFullScreenBanner()
+            NSApp.activate(ignoringOtherApps: true)
+            fullscreenWindow.makeKeyAndOrderFront(nil)
             return
         }
         checkInactivityLock()
         var didTeleport = false
         if let window = window {
-            // Standard show attempt
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            // Session-aware: during an element-fullscreen session this keeps
+            // canJoinAllSpaces off so the overlay cannot appear in the owned
+            // fullscreen Space.
+            updateCollectionBehaviorForVisibilityState()
             window.makeKeyAndOrderFront(nil)
-            
+
             // If WindowServer's space cache is broken, the window will be trapped on another space.
             // We surgically deploy the teleport sequence only when the standard show fails.
             if !window.isOnActiveSpace {
                 didTeleport = true
                 window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
                 window.makeKeyAndOrderFront(nil)
-                
+
                 // Wait 100ms for WindowServer to physically execute the space jump
                 // before flipping the flag back, otherwise it cancels the jump mid-flight.
                 // updateCollectionBehaviorForVisibilityState is also deferred here because
@@ -543,26 +633,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
         }
         NSApp.activate(ignoringOtherApps: true)
-        
+
         if let sheet = window?.attachedSheet {
             sheet.makeKeyAndOrderFront(nil)
         } else if !GhostOnboardingManager.shared.isActive {
             focusInputInActiveWebviewWithFallback()
         }
-        
+
         setShortcutsEnabled(true)
-        if !didTeleport {
+        if !didTeleport && ownedElementFullscreenSpace == nil {
             updateCollectionBehaviorForVisibilityState()
         }
         NotificationCenter.default.post(name: .windowDidShow, object: nil)
     }
 
     func hide() {
-        reconcileWebContentFullScreen()
-        guard !isActiveSpaceWebFullscreen else {
-            showWebFullScreenBanner()
-            return
-        }
+        NSLog("[HideBlock] hide: isFS=%d fsWindow=%d isOnActiveSpace=%d owned=%@ active=%@ overlayVisible=%d",
+              isWebContentFullscreen ? 1 : 0,
+              webFullScreenWindow != nil ? 1 : 0,
+              isActiveSpaceWebFullscreen ? 1 : 0,
+              ownedElementFullscreenSpace.map(String.init(describing:)) ?? "nil",
+              window.flatMap { CGSFuncs.activeSpace(for: $0.screen) }.map(String.init(describing:)) ?? "nil",
+              window?.isVisible == true ? 1 : 0)
         if let sheet = window?.attachedSheet {
             window?.endSheet(sheet, returnCode: .cancel)
         }
@@ -575,6 +667,51 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hideModifierHUD()
         hideLocationBarHUD()
         NotificationCenter.default.post(name: .windowDidHide, object: nil)
+    }
+
+    func handleElementFullscreenStateChange(
+        _ state: WKWebView.FullscreenState,
+        for webView: WKWebView
+    ) {
+        switch state {
+        case .enteringFullscreen:
+            elementFullscreenWebView = webView
+            isWebContentFullscreen = true
+            shouldRestoreCollectionBehaviorAfterElementFullscreen = false
+            if let window {
+                elementFullscreenOriginSpace = CGSFuncs.activeSpace(for: window.screen)
+                    ?? CGSFuncs.spaces(for: window).first
+            }
+        case .inFullscreen:
+            elementFullscreenWebView = webView
+            isWebContentFullscreen = true
+        case .exitingFullscreen:
+            guard elementFullscreenWebView === webView, let window else { return }
+
+            let wasHidden = !window.isVisible
+            guard let originSpace = elementFullscreenOriginSpace,
+                  let fullscreenSpace = CGSFuncs.activeSpace(for: webView.window?.screen),
+                  originSpace != fullscreenSpace,
+                  wasHidden || CGSFuncs.spaces(for: window).contains(fullscreenSpace) else {
+                return
+            }
+
+            shouldRestoreCollectionBehaviorAfterElementFullscreen = true
+            let windowsToMove = [window] + (window.childWindows ?? [])
+            if !CGSFuncs.move(windowsToMove, to: originSpace) {
+                NSLog("[Quiper] Could not move the window out of the exiting fullscreen Space")
+            }
+            if wasHidden {
+                window.makeKeyAndOrderFront(nil)
+                setShortcutsEnabled(true)
+            }
+        case .notInFullscreen:
+            if elementFullscreenWebView === webView {
+                clearElementFullscreenState()
+            }
+        @unknown default:
+            break
+        }
     }
 
     func toggleWindowSize() {
@@ -1264,11 +1401,6 @@ struct SecureTabState: Codable {
             NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidResize), name: NSWindow.didResizeNotification, object: window)
             window.addObserver(self, forKeyPath: "effectiveAppearance", options: [.new], context: nil)
         }
-        // Quiper must not be hidden while an element is fullscreen. Instead of
-        // guarding every hide pathway, listen for the hide events themselves:
-        // the app's own funneled hide notification, and OS-level app hiding.
-        NotificationCenter.default.addObserver(self, selector: #selector(handleMainWindowDidHide), name: .windowDidHide, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handleMainWindowDidHide), name: NSApplication.didHideNotification, object: nil)
         
         applyColorScheme()
     }
@@ -1344,45 +1476,35 @@ struct SecureTabState: Codable {
         guard let window = notification.object as? NSWindow, window !== self.window else { return }
         webFullScreenWindow = window
         isWebContentFullscreen = true
+
+        // The element's fullscreen Space is now owned by Quiper's own web
+        // content, and a visible overlay would be dragged into it by
+        // `.moveToActiveSpace` on the Space switch. Hide it for the duration
+        // of the session — the exitingFullscreen handler brings it back to
+        // its origin Space afterwards.
+        self.window?.orderOut(nil)
+        NSLog("[FullSpace] entered: fsWindowSpaces=\(CGSFuncs.spaces(for: window).map(String.init(describing:)).joined(separator: ",")) overlaySpaces=\(self.window.map { CGSFuncs.spaces(for: $0).map(String.init(describing:)).joined(separator: ",") } ?? "nil")")
     }
     
     @objc private func handleWindowWillExitWebFullScreen(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === webFullScreenWindow else { return }
+        clearElementFullscreenState()
+    }
+
+    private func clearElementFullscreenState() {
+        elementFullscreenWebView = nil
+        elementFullscreenOriginSpace = nil
         webFullScreenWindow = nil
         isWebContentFullscreen = false
         removeWebFullScreenBanner()
-    }
-    
-    // The element-fullscreen state is owned by WebKit; the webview reports it
-    // directly. The AppKit fullscreen notifications are only the "when"; this
-    // reads the authoritative "what" from the webview and its fullscreen window.
-    // It self-heals missed events (e.g. a trigger pressed during the brief
-    // entering transition) without ever clobbering a positively identified
-    // fullscreen window with a transitional one.
-    private func reconcileWebContentFullScreen() {
-        guard let webView = webViewManager.webViewInFullScreen(), webView.window != nil else {
-            isWebContentFullscreen = false
-            webFullScreenWindow = nil
-            removeWebFullScreenBanner()
-            return
-        }
 
-        isWebContentFullscreen = true
-        if let fullScreenWindow = webView.window, fullScreenWindow !== self.window {
-            webFullScreenWindow = fullScreenWindow
-        }
+        // The fullscreen session is over: give the overlay its normal
+        // all-Spaces behavior back (it was pinned to a single Space so it
+        // could not bleed into the owned fullscreen Space).
+        shouldRestoreCollectionBehaviorAfterElementFullscreen = false
+        updateCollectionBehaviorForVisibilityState()
     }
 
-    // Event-driven backstop: any path that hides the Quiper window while an
-    // element is fullscreen (the overlay hotkey, an OS gesture, another app,
-    // etc.) is undone here by showing the window again. Instead of guarding each
-    // hide pathway, the hide itself is observed and reverted. Quiper must simply
-    // not be dismissable while fullscreen content is on screen.
-    @objc private func handleMainWindowDidHide(_ notification: Notification) {
-        guard isWebContentFullscreen else { return }
-        show()
-    }
-    
     // While web content is in fullscreen (a site entered the Fullscreen API),
     // Quiper stays in the space it was on and does not respond to global
     // shortcuts. If the user tries to bring Quiper up anyway, surface a banner
@@ -1390,40 +1512,32 @@ struct SecureTabState: Codable {
     func showWebFullScreenBanner() {
         guard let fullScreenWindow = webFullScreenWindow, let contentView = fullScreenWindow.contentView else { return }
         removeWebFullScreenBanner()
-        
-        let banner = PassthroughBannerView(frame: .zero)
-        banner.wantsLayer = true
-        banner.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
-        banner.layer?.cornerRadius = 10
-        banner.layer?.masksToBounds = true
-        
-        let label = NSTextField(labelWithString: "Exit the fullscreen window to get back to Quiper")
-        label.textColor = .white
-        label.font = .systemFont(ofSize: 14, weight: .medium)
-        label.alignment = .center
-        label.lineBreakMode = .byWordWrapping
-        banner.addSubview(label)
-        
-        let maxWidth: CGFloat = 440
-        let horizontalPadding: CGFloat = 18
-        let verticalPadding: CGFloat = 10
-        let textWidth = maxWidth - horizontalPadding * 2
-        let textHeight = label.sizeThatFits(NSSize(width: textWidth, height: 200)).height
-        let bannerWidth = min(maxWidth, textWidth + horizontalPadding * 2)
-        let bannerHeight = textHeight + verticalPadding * 2
+
+        let pill = makeGlassPillBanner(
+            iconName: "arrow.down.forward.and.arrow.up.backward",
+            title: "Quiper is in fullscreen",
+            caption: "Exit fullscreen to return to Quiper."
+        )
+        let banner = pill.view
+
         banner.frame = NSRect(
-            x: (contentView.bounds.width - bannerWidth) / 2,
-            y: contentView.bounds.height - bannerHeight - 24,
-            width: bannerWidth,
-            height: bannerHeight
+            x: (contentView.bounds.width - pill.size.width) / 2,
+            y: contentView.bounds.height - pill.size.height - 24,
+            width: pill.size.width,
+            height: pill.size.height
         )
         banner.autoresizingMask = [.minYMargin, .minXMargin, .maxXMargin]
-        label.frame = NSRect(x: horizontalPadding, y: verticalPadding / 2, width: bannerWidth - horizontalPadding * 2, height: textHeight)
-        label.autoresizingMask = [.width]
-        
+
         contentView.addSubview(banner, positioned: .above, relativeTo: nil)
         webFullScreenBannerView = banner
-        
+
+        banner.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            banner.animator().alphaValue = 1
+        }
+
         webFullScreenBannerTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.webFullScreenBannerView === banner else { return }
@@ -1440,6 +1554,66 @@ struct SecureTabState: Codable {
                 }
             }
         }
+    }
+
+    private func makeGlassPillBanner(iconName: String, title: String, caption: String) -> (view: PassthroughBannerView, size: NSSize) {
+        let banner = PassthroughBannerView(frame: .zero)
+        banner.wantsLayer = true
+
+        let effect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 320, height: 56))
+        effect.material = .hudWindow
+        effect.state = .active
+        effect.blendingMode = .withinWindow
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = 14
+        effect.layer?.masksToBounds = true
+        effect.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
+        effect.layer?.borderWidth = 1
+
+        let iconView = NSImageView()
+        if let icon = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .medium)) {
+            iconView.image = icon
+        }
+        iconView.contentTintColor = .secondaryLabelColor
+
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.textColor = .labelColor
+
+        let captionLabel = NSTextField(labelWithString: caption)
+        captionLabel.font = .systemFont(ofSize: 12)
+        captionLabel.textColor = .secondaryLabelColor
+
+        let textStack = NSStackView(views: [titleLabel, captionLabel])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 2
+
+        let stack = NSStackView(views: [iconView, textStack])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 10
+
+        let horizontalPadding: CGFloat = 18
+        let verticalPadding: CGFloat = 12
+        let stackSize = stack.fittingSize
+        let size = NSSize(
+            width: stackSize.width + horizontalPadding * 2,
+            height: max(52, stackSize.height + verticalPadding * 2)
+        )
+        effect.frame = NSRect(origin: .zero, size: size)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        effect.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: effect.leadingAnchor, constant: horizontalPadding),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: effect.trailingAnchor, constant: -horizontalPadding),
+            stack.centerXAnchor.constraint(equalTo: effect.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: effect.centerYAnchor)
+        ])
+
+        banner.addSubview(effect)
+        return (banner, size)
     }
     
     func removeWebFullScreenBanner() {

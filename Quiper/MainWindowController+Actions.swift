@@ -644,6 +644,10 @@ extension MainWindowController: WebViewManagerDelegate {
         guard webView == currentWebView() else { return }
         updateLoadingIndicator(for: webView)
     }
+
+    func webViewDidUpdateFullscreenState(_ state: WKWebView.FullscreenState, for webView: WKWebView) {
+        handleElementFullscreenStateChange(state, for: webView)
+    }
     
     func webViewDidFinishNavigation(_ webView: WKWebView) {
         saveTabsState()

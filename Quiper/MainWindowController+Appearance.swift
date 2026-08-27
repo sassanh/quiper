@@ -117,7 +117,16 @@ extension MainWindowController {
     
     func updateCollectionBehaviorForVisibilityState() {
         guard let window = self.window else { return }
-        
+
+        // During an element-fullscreen session the overlay must stay out of
+        // the Space owned by Quiper's own fullscreen content: pin it to a
+        // single Space instead of joining all of them, or every Space switch
+        // would drag it into the fullscreen Space (`.moveToActiveSpace`).
+        if ownedElementFullscreenSpace != nil {
+            window.collectionBehavior = [.fullScreenAuxiliary, .stationary]
+            return
+        }
+
         let isVisible = window.isVisible
         let behavior: NSWindow.CollectionBehavior = (Settings.shared.showOnAllSpaces || !isVisible)
             ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]

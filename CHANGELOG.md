@@ -9,6 +9,7 @@
 
 ### Changed
 
+- **Quiper Stays Out of Element Fullscreen Spaces**: The overlay no longer appears in Spaces owned by fullscreen web content; shortcuts return focus to the fullscreen window and the overlay restores when fullscreen ends, with a clear banner while active.
 - **Server Error Pages Render Natively**: When a site responds with its own 404, 500, rate-limit, or challenge page, Quiper now shows that page instead of replacing it with a generic error panel. Quiper's error view remains for failures where the site returns nothing at all—connection failures, DNS errors, timeouts.
 - **Refined Routing Rules Editor**: Each routing rule sits in its own card tinted with its action's guide color—Internal green, Popup blue, Prompt orange, Safari red—so rules are identifiable at a glance. Rows animate when moved, added, or removed, the focused text field travels with its rule, and clicking anywhere on a row edits its pattern. The action picker shows full action names, and pattern fields use a monospaced font.
 

@@ -685,9 +685,7 @@ final class AppController: NSObject, NSWindowDelegate {
     private func registerOverlayHotkey() {
         hotkeyManager.registerCurrentHotkey { [weak self] in
             guard let self else { return }
-            if self.windowController.isWebContentFullscreen {
-                self.showWindow(nil)
-            } else if self.isWindowVisible {
+            if self.isWindowVisible {
                 self.hideWindow(nil)
             } else {
                 self.showWindow(nil)
