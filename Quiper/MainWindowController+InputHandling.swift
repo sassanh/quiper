@@ -117,8 +117,24 @@ extension MainWindowController {
     /// popups). They can hold key status spontaneously but are not modals and
     /// must never disable Quiper's shortcuts.
     private static func isTransientSystemInputWindow(_ window: NSWindow) -> Bool {
-        let className = String(describing: type(of: window))
-        return className.contains("Campo") || className.contains("LightweightUI")
+        // Check multiple representations for robustness across Swift
+        // mangling / beta vs CI toolchains. Real host is
+        // `NSCampoLightweightUIHostWindow`; test mock is
+        // `MockCampoLightweightUIHostWindow` (Swift-mangled).
+        let candidates: [String] = [
+            String(describing: type(of: window)),
+            NSStringFromClass(type(of: window)),
+            window.className,
+            String(describing: window.classForCoder),
+            window.identifier?.rawValue ?? ""
+        ]
+        for name in candidates {
+            let lower = name.lowercased()
+            if lower.contains("campo") || lower.contains("lightweight") {
+                return true
+            }
+        }
+        return false
     }
 
     func handleFlagsChanged(event: NSEvent) {

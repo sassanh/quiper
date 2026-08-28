@@ -685,12 +685,33 @@ final class AppController: NSObject, NSWindowDelegate {
     private func registerOverlayHotkey() {
         hotkeyManager.registerCurrentHotkey { [weak self] in
             guard let self else { return }
+            if self.windowController.isActiveSpaceWebFullscreen {
+                self.activateLastKnownApplicationForFullscreenExit()
+                return
+            }
             if self.isWindowVisible {
                 self.hideWindow(nil)
             } else {
                 self.showWindow(nil)
             }
         }
+    }
+
+    private func activateLastKnownApplicationForFullscreenExit() {
+        guard let app = lastNonQuiperApplication, !app.isTerminated else {
+            NSLog("[FullSpace] hotkey in fullscreen: no last app to return to, showing banner")
+            windowController.showWebFullScreenBanner()
+            return
+        }
+        NSLog(
+            "[FullSpace] hotkey in fullscreen: activating last app %@ (pid %d)",
+            app.localizedName ?? app.bundleIdentifier ?? "unknown",
+            app.processIdentifier
+        )
+        // Force activation even if its window is not on the current
+        // (fullscreen) Space – this is how we leave the fullscreen Space
+        // without exiting fullscreen and without private Space SPI.
+        app.activate(options: [.activateAllWindows])
     }
 
     private func registerEngineHotkeys() {

@@ -8,9 +8,14 @@ final class ModalWindowDetectionTests: XCTestCase {
     override func setUp() {
         super.setUp()
         Settings.shared.reset()
+        // Ensure a clean window state before each test; prior tests and the
+        // host app can leave 150+ live windows that would otherwise pollute
+        // hasModalWindow's scan.
+        NSApp.windows.forEach { $0.orderOut(nil) }
     }
 
     override func tearDown() {
+        NSApp.windows.forEach { $0.orderOut(nil) }
         Settings.shared.reset()
         super.tearDown()
     }
@@ -91,10 +96,12 @@ final class ModalWindowDetectionTests: XCTestCase {
         let controller = MainWindowController(services: services)
         controller.switchSession(to: 0)
 
-        // The test host app launches its own real overlay at startup; that
-        // window would otherwise leak into hasModalWindow's scan.
+        // The test host app launches its own real overlay at startup and prior
+        // tests leak many windows (seen as 156 live windows in CI). Order out
+        // any existing visible window so hasModalWindow is evaluated in
+        // isolation for this test.
         NSApp.windows
-            .filter { $0 is OverlayWindow && $0 !== controller.window }
+            .filter { $0 !== controller.window && $0.isVisible }
             .forEach { $0.orderOut(nil) }
 
         return controller
