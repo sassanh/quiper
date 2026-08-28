@@ -8,75 +8,66 @@ import UniformTypeIdentifiers
 @MainActor
 enum ConfigPortManager {
 
-    private static let fileExtension = "quiper"
+    private static let fileExtension = ConfigPortability.fileExtension
 
     // MARK: – Export
 
     static func exportConfig() throws -> Data {
-        let settings = Settings.shared
-        var ps = settings.makePersistedSettings()
-        
-        // Force sync ALL disk scripts into the PS services so the export is highly accurate and self-contained!
-        let diskScripts = collectAllScripts(for: settings.services)
-        for i in 0..<ps.services.count {
-            let serviceID = ps.services[i].id
-            for actionID in ps.services[i].actionScripts.keys {
-                let key = "\(serviceID)/\(actionID)"
-                if let content = diskScripts[key] {
-                    ps.services[i].actionScripts[actionID] = content
-                }
-            }
-        }
-        
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(ps)
+        var ps = Settings.shared.makePersistedSettings()
+        ConfigPortability.inlineFileScripts(into: &ps)
+        return try ConfigPortability.encode(ps)
     }
 
-    /// Gathers every JS action script stored on disk for the given services.
+    static func exportConfig(secureChoice: SecureExportChoice, decryptedServices: [Service] = []) throws -> Data {
+        var ps = Settings.shared.makePersistedSettings(secureChoice: secureChoice, decryptedServices: decryptedServices)
+        ConfigPortability.inlineFileScripts(into: &ps)
+        return try ConfigPortability.encode(ps)
+    }
 
-    private static func collectAllScripts(for services: [Service]) -> [String: String] {
-        var result: [String: String] = [:]
-        for service in services {
-            for actionID in service.actionScripts.keys {
-                let script = ActionScriptStorage.loadScript(
-                    serviceID: service.id,
-                    actionID: actionID,
-                    fallback: service.actionScripts[actionID] ?? ""
-                )
-                let trimmed = script.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { continue }
-                result["\(service.id)/\(actionID)"] = trimmed
-            }
+    static func exportConfig(secureChoice: SecureExportChoice, decryptedEngines: [Settings.DecryptedEngineForExport]) throws -> Data {
+        var ps = Settings.shared.makePersistedSettings(secureChoice: secureChoice, decryptedEngines: decryptedEngines)
+        ConfigPortability.inlineFileScripts(into: &ps)
+        return try ConfigPortability.encode(ps)
+    }
+
+    static func exportConfigWithDecryption() async throws -> Data {
+        var decrypted: [Settings.DecryptedEngineForExport] = []
+        for service in Settings.shared.services where service.isEncrypted {
+            let copy = try await Settings.shared.decryptedServiceForExport(serviceID: service.id)
+            decrypted.append(copy)
         }
-        return result
+        return try exportConfig(secureChoice: .decryptForMigration, decryptedEngines: decrypted)
     }
 
     // MARK: – Import
 
     static func importConfig(from data: Data) throws {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        
-        let ps: PersistedSettings
-        do {
-            ps = try decoder.decode(PersistedSettings.self, from: data)
-        } catch let error as DecodingError {
-            throw ConfigPortError.decodingFailed(error)
-        } catch {
-            throw error
-        }
-
-        // Restore settings
+        let ps = try ConfigPortability.decode(from: data)
         Settings.shared.applyPersistedSettings(ps)
-        
-        // Restore action scripts to disk. The memory structures were updated by `applyPersistedSettings`
-        for service in ps.services {
-            for (actionID, script) in service.actionScripts {
-                ActionScriptStorage.saveScript(script, serviceID: service.id, actionID: actionID)
+        ConfigPortability.persistFileArtifacts(from: ps)
+        Settings.shared.saveSettings()
+    }
+
+    static func importConfig(from data: Data, droppingOrphans: Bool) throws {
+        var ps = try ConfigPortability.decode(from: data)
+        if droppingOrphans {
+            let orphans = Set(Settings.shared.orphanedServicesForImport(in: ps).map(\.id))
+            ps.services.removeAll { orphans.contains($0.id) }
+            for id in orphans {
+                ps.persistedTabState?.activeIndicesByID.removeValue(forKey: id)
+                ps.persistedTabState?.openTabs.removeValue(forKey: id)
+                ps.persistedTabState?.tabTitles.removeValue(forKey: id)
+                ps.persistedTabState?.tabInputs.removeValue(forKey: id)
+                ps.persistedTabState?.tabPromptHistories.removeValue(forKey: id)
+                ps.persistedTabState?.tabPromptHistoryEnabledOverrides.removeValue(forKey: id)
+                ps.persistedTabState?.tabHistory?.removeAll { $0.serviceID == id }
+                if ps.persistedTabState?.activeServiceID == id {
+                    ps.persistedTabState?.activeServiceID = ps.services.first?.id
+                }
             }
         }
+        Settings.shared.applyPersistedSettings(ps)
+        ConfigPortability.persistFileArtifacts(from: ps)
         Settings.shared.saveSettings()
     }
 
@@ -85,9 +76,10 @@ enum ConfigPortManager {
     static func showExportPanel(in window: NSWindow?, completion: @escaping (Result<URL, Error>) -> Void) {
         let panel = NSSavePanel()
         panel.title = "Export Quiper Config"
-        panel.nameFieldStringValue = "quiper-config.\(fileExtension)"
-        panel.allowedContentTypes = [.init(filenameExtension: fileExtension)!]
+        panel.nameFieldStringValue = "quiper-config"
+        panel.allowedContentTypes = [ConfigPortability.contentType]
         panel.canCreateDirectories = true
+        panel.level = .modalPanel
 
         let handler: (NSApplication.ModalResponse) -> Void = { response in
             guard response == .OK, let url = panel.url else { return }
@@ -102,9 +94,77 @@ enum ConfigPortManager {
             }
         }
 
+        NSApp.activate(ignoringOtherApps: true)
         if let window {
+            window.makeKeyAndOrderFront(nil)
             panel.beginSheetModal(for: window, completionHandler: handler)
         } else {
+            panel.begin(completionHandler: handler)
+        }
+    }
+
+    static func showExportPanelWithChoice(in window: NSWindow?, choice: SecureExportChoice, completion: @escaping (Result<URL, Error>) -> Void) {
+        let panel = NSSavePanel()
+        panel.title = "Export Quiper Config"
+        panel.nameFieldStringValue = "quiper-config"
+        panel.allowedContentTypes = [ConfigPortability.contentType]
+        panel.canCreateDirectories = true
+        panel.level = .modalPanel
+
+        let handler: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                do {
+                    let data = try exportConfig(secureChoice: choice)
+                    try data.write(to: url, options: .atomic)
+                    completion(.success(url))
+                } catch {
+                    completion(.failure(error))
+                }
+            }
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        if let window {
+            window.makeKeyAndOrderFront(nil)
+            panel.beginSheetModal(for: window, completionHandler: handler)
+        } else {
+            panel.begin(completionHandler: handler)
+        }
+    }
+
+    static func showExportPanelWithDecrypted(in window: NSWindow?, decryptedServices: [Service], completion: @escaping (Result<URL, Error>) -> Void) {
+        let engines = decryptedServices.map { Settings.DecryptedEngineForExport(service: $0, tabState: nil) }
+        showExportPanelWithDecryptedEngines(in: window, decryptedEngines: engines, completion: completion)
+    }
+
+    static func showExportPanelWithDecryptedEngines(in window: NSWindow?, decryptedEngines: [Settings.DecryptedEngineForExport], completion: @escaping (Result<URL, Error>) -> Void) {
+        let panel = NSSavePanel()
+        panel.title = "Export Quiper Config"
+        panel.nameFieldStringValue = "quiper-config"
+        panel.allowedContentTypes = [ConfigPortability.contentType]
+        panel.canCreateDirectories = true
+        panel.level = .modalPanel
+
+        let handler: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                do {
+                    let data = try exportConfig(secureChoice: .decryptForMigration, decryptedEngines: decryptedEngines)
+                    try data.write(to: url, options: .atomic)
+                    completion(.success(url))
+                } catch {
+                    completion(.failure(error))
+                }
+            }
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        if let window {
+            window.makeKeyAndOrderFront(nil)
+            panel.beginSheetModal(for: window, completionHandler: handler)
+        } else {
+            panel.level = .modalPanel
             panel.begin(completionHandler: handler)
         }
     }
@@ -139,36 +199,4 @@ enum ConfigPortManager {
     }
 }
 
-enum ConfigPortError: LocalizedError {
-    case decodingFailed(DecodingError)
 
-    var errorDescription: String? {
-        switch self {
-        case .decodingFailed(let error):
-            return "Failed to read the config file: \(error.detailedDescription)"
-        }
-    }
-}
-
-extension DecodingError {
-    var detailedDescription: String {
-        switch self {
-        case .keyNotFound(let key, let context):
-            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
-            let location = path.isEmpty ? "" : " at '\(path)'"
-            return "Missing field '\(key.stringValue)'\(location)."
-        case .typeMismatch(let type, let context):
-            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
-            return "Incorrect type for field '\(path)': expected \(type). \(context.debugDescription)"
-        case .valueNotFound(let type, let context):
-            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
-            return "Value of type '\(type)' not found at '\(path)'."
-        case .dataCorrupted(let context):
-            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
-            let location = path.isEmpty ? "" : " at '\(path)'"
-            return "Data corrupted\(location): \(context.debugDescription)"
-        @unknown default:
-            return self.localizedDescription
-        }
-    }
-}

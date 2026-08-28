@@ -1096,6 +1096,361 @@ final class AppEnvironment: ObservableObject {
         save()
     }
 
+    func removeAllServices() {
+        let servicesToRemove = services
+        guard !servicesToRemove.isEmpty else { return }
+        let busyIDs = securityOperationServiceIDs.intersection(servicesToRemove.map(\.id))
+        guard busyIDs.isEmpty else {
+            if let first = busyIDs.first {
+                securityErrorByServiceID[first] = "Wait for the current security operation to finish before deleting engines."
+            }
+            return
+        }
+        for serviceID in servicesToRemove.map(\.id) {
+            invalidateSessions(for: serviceID)
+            sessionThumbnails = sessionThumbnails.filter { $0.key.serviceID != serviceID }
+            unlockedKeys[serviceID] = nil
+            unlockedServiceIDs.remove(serviceID)
+            securityErrorByServiceID[serviceID] = nil
+            try? secureProfileStore.removeProfile(for: serviceID)
+            try? engineKeyStore.removeKey(for: serviceID)
+            EngineFileStorage.deleteCustomCSS(for: serviceID)
+            EngineFileStorage.deleteActionScripts(for: serviceID)
+        }
+        let removedServices = servicesToRemove
+        services.removeAll()
+        persistedTabState.openTabs.removeAll()
+        persistedTabState.tabTitles.removeAll()
+        persistedTabState.tabPromptHistories.removeAll()
+        persistedTabState.tabInputs.removeAll()
+        persistedTabState.tabPromptHistoryEnabledOverrides.removeAll()
+        persistedTabState.activeIndicesByID.removeAll()
+        persistedTabState.tabHistory?.removeAll()
+        persistedTabState.activeServiceID = nil
+        lastActiveTab = nil
+        iosHardwareKeyboardSettings.engineBindings = [:]
+        pruneHardwareKeyboardBindings()
+        save()
+        for service in removedServices where shouldPurgeDanglingWebData {
+            Task { [weak self, serviceID = service.id] in
+                try? await self?.websiteDataStoreManager.removeDataStore(for: serviceID)
+            }
+        }
+    }
+
+    func removeAllActions() {
+        guard !customActions.isEmpty || services.contains(where: { !$0.actionScripts.isEmpty || !$0.templateActionScriptSync.isEmpty }) else { return }
+        for index in services.indices {
+            let serviceID = services[index].id
+            services[index].actionScripts.removeAll()
+            services[index].templateActionScriptSync.removeAll()
+            EngineFileStorage.deleteActionScripts(for: serviceID)
+        }
+        customActions.removeAll()
+        iosHardwareKeyboardSettings.actionBindings.removeAll()
+        pruneHardwareKeyboardBindings()
+        save()
+    }
+
+    // MARK: - Config import / export
+
+    func makePersistedSettingsForExport() -> PersistedSettings {
+        makePersistedSettingsForExport(secureChoice: .keepLocked, decryptedEngines: [])
+    }
+
+    func makePersistedSettingsForExport(
+        secureChoice: SecureExportChoice,
+        decryptedEngines: [DecryptedEngineForExport] = []
+    ) -> PersistedSettings {
+        let decryptedByID = Dictionary(uniqueKeysWithValues: decryptedEngines.map { ($0.service.id, $0.service) })
+        let servicesForExport: [Service] = {
+            switch secureChoice {
+            case .keepLocked:
+                return services.map { $0.isEncrypted ? securedStub(from: $0) : $0 }
+            case .exclude:
+                return services.filter { !$0.isEncrypted }
+            case .decryptForMigration:
+                return services.compactMap { service in
+                    if service.isEncrypted, let decrypted = decryptedByID[service.id] {
+                        return decrypted
+                    }
+                    if service.isEncrypted {
+                        return securedStub(from: service)
+                    }
+                    return service
+                }
+            }
+        }()
+
+        let activeTabState: PersistedTabState? = {
+            guard tabSurvivalPolicy != .never else { return nil }
+            switch secureChoice {
+            case .keepLocked, .exclude:
+                return plaintextTabState()
+            case .decryptForMigration:
+                var full = plaintextTabState()
+                // Start from plaintext and add back decrypted engines' tab states
+                for engine in decryptedEngines {
+                    let id = engine.service.id
+                    if let tabState = engine.tabState {
+                        var dict = full
+                        tabState.applying(to: &dict, serviceID: id)
+                        full = dict
+                    } else if let existing = persistedTabState.openTabs[id] {
+                        // Already unlocked engine had its tabs in plaintext? No, unlocked engines' tabs are already in persistedTabState but filtered out by plaintextTabState.
+                        // For already-unlocked engines, we need to take their current tabs from live persistedTabState
+                        full.openTabs[id] = persistedTabState.openTabs[id]
+                        full.tabTitles[id] = persistedTabState.tabTitles[id]
+                        full.tabInputs[id] = persistedTabState.tabInputs[id]
+                        full.tabPromptHistories[id] = persistedTabState.tabPromptHistories[id]
+                        full.tabPromptHistoryEnabledOverrides[id] = persistedTabState.tabPromptHistoryEnabledOverrides[id]
+                        if let idx = persistedTabState.activeIndicesByID[id] {
+                            full.activeIndicesByID[id] = idx
+                        }
+                    }
+                }
+                // Also preserve non-encrypted tabs already in plaintext, and ensure tabHistory includes decrypted engines
+                var mergedHistory = full.tabHistory ?? []
+                let decryptedIDs = Set(decryptedEngines.map { $0.service.id })
+                // Add history entries for decrypted engines that were previously filtered
+                for entry in persistedTabState.tabHistory ?? [] where decryptedIDs.contains(entry.serviceID) {
+                    if !mergedHistory.contains(entry) {
+                        mergedHistory.append(entry)
+                    }
+                }
+                full.tabHistory = mergedHistory.isEmpty ? nil : mergedHistory
+                return full
+            }
+        }()
+
+        var payload = PersistedSettings(services: servicesForExport)
+        payload.customActions = customActions
+        payload.colorScheme = colorScheme
+        payload.dragAreaPosition = dragAreaPosition
+        payload.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
+        payload.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
+        payload.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
+        payload.tabSurvivalPolicy = tabSurvivalPolicy
+        payload.persistedTabState = activeTabState
+        payload.enablePromptHistory = enablePromptHistory
+        payload.promptHistoryRecordOnSubmit = promptHistoryRecordOnSubmit
+        payload.promptHistoryRecordOnCmdBackspace = promptHistoryRecordOnCmdBackspace
+        payload.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear
+        payload.promptHistoryLimit = promptHistoryLimit
+        payload.tabNavigationRingSize = tabNavigationRingSize
+        payload.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
+        payload.version = 1
+        payload.quiperVersion = persistedQuiperVersionForSave
+        payload.hasCompletedIOSOnboarding = needsIOSOnboarding ? nil : true
+        return payload
+    }
+
+    var hasEncryptedServices: Bool {
+        services.contains { $0.isEncrypted }
+    }
+
+    func hasLocalSecureData(for serviceID: UUID) -> Bool {
+        secureProfileStore.containsProfile(for: serviceID) && engineKeyStore.containsKey(for: serviceID)
+    }
+
+    func orphanedServicesForImport(in persisted: PersistedSettings) -> [Service] {
+        orphanedEncryptedServices(in: persisted, hasLocalBundle: hasLocalSecureData)
+    }
+
+    struct DecryptedEngineForExport {
+        let service: Service
+        let tabState: IOSSecuredTabState?
+    }
+
+    /// Pure helper: returns a decrypted copy without mutating live state.
+    /// If already unlocked, uses in-memory service; otherwise prompts for biometric and reads the profile.
+    func decryptedServiceForExport(serviceID: UUID) async throws -> DecryptedEngineForExport {
+        guard let stub = services.first(where: { $0.id == serviceID }) else {
+            throw SecureExportError.serviceNotFound
+        }
+        guard stub.isEncrypted else {
+            return DecryptedEngineForExport(service: stub, tabState: nil)
+        }
+
+        if !isServiceLocked(serviceID), let service = services.first(where: { $0.id == serviceID }) {
+            let tabState: IOSSecuredTabState? = {
+                guard tabSurvivalPolicy != .never else { return nil }
+                var state = persistedTabState
+                // Already unlocked, its tabs are already in persistedTabState, but we capture them for export
+                return IOSSecuredTabState(serviceID: serviceID, state: state)
+            }()
+            return DecryptedEngineForExport(service: service.decryptedForExport, tabState: tabState)
+        }
+
+        let name = stub.name
+        let key = try await engineKeyStore.retrieveKey(for: serviceID, reason: "Decrypt \(name) for export")
+        let profile = try secureProfileStore.loadProfile(for: serviceID, key: key)
+        var restored = profile.metadata.applying(to: stub)
+        restored = restored.decryptedForExport
+        return DecryptedEngineForExport(service: restored, tabState: profile.tabState)
+    }
+
+    enum SecureExportError: LocalizedError {
+        case serviceNotFound
+        case missingKey
+        case authenticationCancelled
+        var errorDescription: String? {
+            switch self {
+            case .serviceNotFound: return "Engine not found."
+            case .missingKey: return "Secure storage for this engine is missing."
+            case .authenticationCancelled: return "Authentication was cancelled."
+            }
+        }
+    }
+
+    func exportConfiguration(secureChoice: SecureExportChoice) async throws -> Data {
+        switch secureChoice {
+        case .keepLocked, .exclude:
+            var payload = makePersistedSettingsForExport(secureChoice: secureChoice)
+            ConfigPortability.inlineFileScripts(into: &payload)
+            return try ConfigPortability.encode(payload)
+        case .decryptForMigration:
+            var decrypted: [DecryptedEngineForExport] = []
+            for service in services where service.isEncrypted {
+                let copy = try await decryptedServiceForExport(serviceID: service.id)
+                decrypted.append(copy)
+            }
+            var payload = makePersistedSettingsForExport(secureChoice: .decryptForMigration, decryptedEngines: decrypted)
+            ConfigPortability.inlineFileScripts(into: &payload)
+            return try ConfigPortability.encode(payload)
+        }
+    }
+
+    func exportConfiguration() throws -> Data {
+        var payload = makePersistedSettingsForExport()
+        ConfigPortability.inlineFileScripts(into: &payload)
+        return try ConfigPortability.encode(payload)
+    }
+
+    func importConfiguration(from data: Data) throws {
+        let persisted = try ConfigPortability.decode(from: data)
+        applyImportedSettings(persisted)
+        ConfigPortability.persistFileArtifacts(from: persisted)
+        guard save() else {
+            throw ConfigImportError.saveFailed
+        }
+    }
+
+    func importConfiguration(from data: Data, droppingOrphans: Bool) throws {
+        var persisted = try ConfigPortability.decode(from: data)
+        if droppingOrphans {
+            let orphans = Set(orphanedServicesForImport(in: persisted).map(\.id))
+            persisted.services.removeAll { orphans.contains($0.id) }
+            // Also purge their tab state to keep file clean
+            for id in orphans {
+                persisted.persistedTabState?.activeIndicesByID[id] = nil
+                persisted.persistedTabState?.openTabs[id] = nil
+                persisted.persistedTabState?.tabTitles[id] = nil
+                persisted.persistedTabState?.tabInputs[id] = nil
+                persisted.persistedTabState?.tabPromptHistories[id] = nil
+                persisted.persistedTabState?.tabPromptHistoryEnabledOverrides[id] = nil
+                persisted.persistedTabState?.tabHistory?.removeAll { $0.serviceID == id }
+            }
+        }
+        applyImportedSettings(persisted)
+        ConfigPortability.persistFileArtifacts(from: persisted)
+        guard save() else {
+            throw ConfigImportError.saveFailed
+        }
+    }
+
+    private enum ConfigImportError: LocalizedError {
+        case saveFailed
+        var errorDescription: String? {
+            "Quiper imported the file but could not save the new settings."
+        }
+    }
+
+    private func applyImportedSettings(_ persisted: PersistedSettings) {
+        // Invalidate sessions for services that will be replaced or removed.
+        let incomingIDs = Set(persisted.services.map(\.id))
+        let removedIDs = Set(services.map(\.id)).subtracting(incomingIDs)
+        for serviceID in removedIDs {
+            invalidateSessions(for: serviceID)
+            sessionThumbnails = sessionThumbnails.filter { $0.key.serviceID != serviceID }
+            unlockedKeys[serviceID] = nil
+            unlockedServiceIDs.remove(serviceID)
+            securityErrorByServiceID[serviceID] = nil
+            try? secureProfileStore.removeProfile(for: serviceID)
+            try? engineKeyStore.removeKey(for: serviceID)
+            EngineFileStorage.deleteCustomCSS(for: serviceID)
+            EngineFileStorage.deleteActionScripts(for: serviceID)
+        }
+        // Replace in-memory state.
+        services = persisted.services
+        // Keep cached web views in sync with the imported service descriptors.
+        for service in services {
+            updateCachedSessions(for: service)
+        }
+        // Drop any web views for engines that no longer exist.
+        for serviceID in Array(webSessions.keys) where !incomingIDs.contains(serviceID) {
+            invalidateSessions(for: serviceID)
+        }
+        customActions = persisted.customActions ?? []
+        iosHardwareKeyboardSettings = persisted.iosHardwareKeyboardSettings ?? .defaults
+        pruneHardwareKeyboardBindings()
+        if let colorScheme = persisted.colorScheme { self.colorScheme = colorScheme }
+        if let dragAreaPosition = persisted.dragAreaPosition { self.dragAreaPosition = dragAreaPosition }
+        if let tabSurvivalPolicy = persisted.tabSurvivalPolicy { self.tabSurvivalPolicy = tabSurvivalPolicy }
+        if let enablePromptHistory = persisted.enablePromptHistory { self.enablePromptHistory = enablePromptHistory }
+        if let promptHistoryRecordOnSubmit = persisted.promptHistoryRecordOnSubmit { self.promptHistoryRecordOnSubmit = promptHistoryRecordOnSubmit }
+        if let promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace { self.promptHistoryRecordOnCmdBackspace = promptHistoryRecordOnCmdBackspace }
+        if let promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear { self.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear }
+        if let promptHistoryLimit = persisted.promptHistoryLimit { self.promptHistoryLimit = promptHistoryLimit }
+        if let tabNavigationRingSize = persisted.tabNavigationRingSize { self.tabNavigationRingSize = max(2, min(10, tabNavigationRingSize)) }
+        if let automaticallySwitchEngineOnLastSessionClose = persisted.automaticallySwitchEngineOnLastSessionClose { self.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose }
+        if let autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation { self.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation }
+        if let shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData { self.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData }
+        if tabSurvivalPolicy == .never {
+            persistedTabState = PersistedTabState()
+            persistedTabState.activeServiceID = services.first?.id
+        } else if let tabState = persisted.persistedTabState {
+            persistedTabState = tabState
+            if persistedTabState.activeServiceID == nil || !services.contains(where: { $0.id == persistedTabState.activeServiceID }) {
+                persistedTabState.activeServiceID = services.first?.id
+            }
+        } else {
+            persistedTabState = PersistedTabState()
+            persistedTabState.activeServiceID = services.first?.id
+        }
+        // Strip any plaintext for secured engines that may have been in the file as stubs already.
+        for service in services where service.isEncrypted {
+            stripSensitiveState(for: service.id)
+        }
+        if let activeID = persistedTabState.activeServiceID {
+            lastActiveTab = TabIdentifier(serviceID: activeID, sessionIndex: activeSessionIndex(for: activeID))
+        } else {
+            lastActiveTab = nil
+        }
+        if autoCreateSessionOnEmptyEngineActivation {
+            for service in services where !isServiceLocked(service.id) {
+                ensureSessions(for: service.id)
+            }
+        }
+        if let hasCompletedIOSOnboarding = persisted.hasCompletedIOSOnboarding {
+            needsIOSOnboarding = !hasCompletedIOSOnboarding
+        } else {
+            needsIOSOnboarding = false
+        }
+        configureMigrations(loadedFromDisk: true, persistedVersion: persisted.quiperVersion)
+        // Remove orphaned file artifacts for services that no longer exist.
+        let validServiceIDs = Set(services.map(\.id))
+        // Orphaned services already cleaned above for removedIDs; also handle case where import overwrote services completely.
+        // For action scripts: valid services already have correct files via persistFileArtifacts, but old files for deleted services are gone.
+        // For engines with customCSS that is now nil/synced, persistFileArtifacts already deleted the file.
+        // Ensure unlocked state is consistent: encrypted engines start locked.
+        for service in services where service.isEncrypted {
+            unlockedKeys[service.id] = nil
+            unlockedServiceIDs.remove(service.id)
+        }
+        _ = validServiceIDs
+    }
+
     func saveCustomActionScript(_ script: String, serviceID: UUID, actionID: UUID) {
         guard !isServiceLocked(serviceID),
               let serviceIndex = services.firstIndex(where: { $0.id == serviceID }) else { return }

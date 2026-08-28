@@ -3,6 +3,7 @@ import Foundation
 import AppKit
 import SwiftUI
 import Carbon
+import LocalAuthentication
 
 // Models extracted to QuiperShared/SharedModels.swift and QuiperShared/SharedSettings.swift
 
@@ -642,8 +643,77 @@ class Settings: ObservableObject {
     }
 
     func makePersistedSettings() -> PersistedSettings {
-        PersistedSettings(
-            services: services,
+        makePersistedSettings(secureChoice: .keepLocked, decryptedEngines: [])
+    }
+
+    struct DecryptedEngineForExport {
+        let service: Service
+        let tabState: MainWindowController.SecureTabState?
+    }
+
+    func makePersistedSettings(secureChoice: SecureExportChoice, decryptedServices: [Service] = []) -> PersistedSettings {
+        // Legacy shim – callers that pass [Service] without tab state.
+        let engines = decryptedServices.map { DecryptedEngineForExport(service: $0, tabState: nil) }
+        return makePersistedSettings(secureChoice: secureChoice, decryptedEngines: engines)
+    }
+
+    func makePersistedSettings(secureChoice: SecureExportChoice, decryptedEngines: [DecryptedEngineForExport] = []) -> PersistedSettings {
+        let decryptedByID = Dictionary(uniqueKeysWithValues: decryptedEngines.map { ($0.service.id, $0.service) })
+        let servicesForExport: [Service] = {
+            switch secureChoice {
+            case .keepLocked:
+                return services.map { $0.isEncrypted ? securedStub(from: $0) : $0 }
+            case .exclude:
+                return services.filter { !$0.isEncrypted }
+            case .decryptForMigration:
+                return services.compactMap { service in
+                    if service.isEncrypted, let decrypted = decryptedByID[service.id] {
+                        return decrypted
+                    }
+                    if service.isEncrypted {
+                        return nil // Should have been decrypted; if not, exclude to avoid stub leak – caller ensures all are decrypted
+                    }
+                    return service
+                }
+            }
+        }()
+
+        let tabStateForExport: PersistedTabState? = {
+            guard tabSurvivalPolicy != .never else { return nil }
+            switch secureChoice {
+            case .keepLocked, .exclude:
+                return plaintextTabState()
+            case .decryptForMigration:
+                var base = plaintextTabState() ?? PersistedTabState()
+                for engine in decryptedEngines {
+                    if let state = engine.tabState {
+                        base.activeIndicesByID[engine.service.id] = state.activeIndex
+                        base.openTabs[engine.service.id] = state.openTabs
+                        if let titles = state.tabTitles { base.tabTitles[engine.service.id] = titles }
+                        if let inputs = state.tabInputs { base.tabInputs[engine.service.id] = inputs }
+                        if let histories = state.tabPromptHistories { base.tabPromptHistories[engine.service.id] = histories }
+                        if let overrides = state.tabPromptHistoryEnabledOverrides { base.tabPromptHistoryEnabledOverrides[engine.service.id] = overrides }
+                    }
+                }
+                // Preserve tabHistory entries for decrypted engines that were previously filtered
+                let decryptedIDs = Set(decryptedEngines.map { $0.service.id })
+                var mergedHistory = base.tabHistory ?? []
+                for entry in persistedTabState?.tabHistory ?? [] where decryptedIDs.contains(entry.serviceID) {
+                    if !mergedHistory.contains(entry) {
+                        mergedHistory.append(entry)
+                    }
+                }
+                // Also merge activeServiceID if it was a decrypted engine and was stripped
+                if base.activeServiceID == nil, let current = persistedTabState?.activeServiceID, decryptedIDs.contains(current) {
+                    base.activeServiceID = current
+                }
+                base.tabHistory = mergedHistory.isEmpty ? nil : mergedHistory
+                return base
+            }
+        }()
+
+        return PersistedSettings(
+            services: servicesForExport,
             hotkey: hotkeyConfiguration,
             customActions: customActions,
             updatePreferences: updatePreferences,
@@ -666,7 +736,7 @@ class Settings: ObservableObject {
             showOnAllSpaces: showOnAllSpaces,
             settingsColorStyle: settingsColorStyle,
             tabSurvivalPolicy: tabSurvivalPolicy,
-            persistedTabState: persistedTabState,
+            persistedTabState: tabStateForExport,
             enablePromptHistory: enablePromptHistory,
             promptRecordingIndicatorStyle: promptRecordingIndicatorStyle,
             promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
@@ -680,6 +750,157 @@ class Settings: ObservableObject {
             iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
             quiperVersion: persistedQuiperVersionForSave()
         )
+    }
+
+    private func securedStub(from service: Service) -> Service {
+        var stub = service
+        stub.url = ""
+        stub.focus_selector = ""
+        stub.actionScripts = [:]
+        stub.customCSS = nil
+        stub.routingRules = []
+        stub.iconBase64 = nil
+        stub.iconManuallyUnset = nil
+        stub.preservePrompt = true
+        stub.templateActionScriptSync = [:]
+        stub.templatePromptInputSelectorSync = false
+        stub.templateCustomCSSSync = false
+        stub.isEncrypted = true
+        stub.hasMigratedMetadata = true
+        stub.usesDiskutilSparseBundle = false
+        return stub
+    }
+
+    private func plaintextTabState() -> PersistedTabState? {
+        guard var state = persistedTabState else { return nil }
+        let secureIDs = Set(services.lazy.filter(\.isEncrypted).map(\.id))
+        for id in secureIDs {
+            state.activeIndicesByID.removeValue(forKey: id)
+            state.openTabs.removeValue(forKey: id)
+            state.tabTitles.removeValue(forKey: id)
+            state.tabInputs.removeValue(forKey: id)
+            state.tabPromptHistories.removeValue(forKey: id)
+            state.tabPromptHistoryEnabledOverrides.removeValue(forKey: id)
+        }
+        state.tabHistory = state.tabHistory?.filter { !secureIDs.contains($0.serviceID) }
+        if let active = state.activeServiceID, secureIDs.contains(active) {
+            state.activeServiceID = nil
+        }
+        return state
+    }
+
+    // MARK: - Secure config helpers
+
+    var hasEncryptedServices: Bool {
+        services.contains { $0.isEncrypted }
+    }
+
+    func hasLocalSecureData(for serviceID: UUID) -> Bool {
+        EncryptedVolumeManager.shared.bundleExists(for: serviceID) && SecureStorageManager.shared.hasKeyInKeychain(for: serviceID)
+    }
+
+    func orphanedServicesForImport(in persisted: PersistedSettings) -> [Service] {
+        orphanedEncryptedServices(in: persisted, hasLocalBundle: hasLocalSecureData)
+    }
+
+    func decryptedServiceForExport(serviceID: UUID) async throws -> DecryptedEngineForExport {
+        guard let stub = services.first(where: { $0.id == serviceID }) else {
+            throw SecureExportError.serviceNotFound
+        }
+        guard stub.isEncrypted else { return DecryptedEngineForExport(service: stub, tabState: nil) }
+
+        // Already unlocked – use live in-memory service (authoritative after loadMetadata) and read secure tabs without prompting.
+        if EncryptedVolumeManager.shared.isUnlocked(for: serviceID) {
+            // Prefer live service which already has metadata applied; fall back to cached if needed.
+            let live = services.first(where: { $0.id == serviceID }) ?? stub
+            let service: Service
+            if let cached = EngineMetadataMigrationManager.shared.cachedMetadata(for: serviceID) {
+                var copy = live
+                // Ensure we apply cached in case live hasn't been refreshed this session.
+                cached.apply(to: &copy)
+                service = copy.decryptedForExport
+            } else if !live.hasMigratedMetadata {
+                service = live.decryptedForExport
+            } else {
+                // No cached but unlocked and migrated – try reading directly (volume already mounted).
+                do {
+                    let metadata = try EngineMetadataMigrationManager.shared.readMetadata(for: serviceID)
+                    var copy = live
+                    metadata.apply(to: &copy)
+                    service = copy.decryptedForExport
+                } catch {
+                    service = live.decryptedForExport
+                }
+            }
+            let tabState = Self.readSecureTabState(for: serviceID)
+            return DecryptedEngineForExport(service: service, tabState: tabState)
+        }
+
+        if !stub.hasMigratedMetadata {
+            // Legacy not yet migrated – data already in settings, just decrypt flag; tabs remain in plaintext.
+            return DecryptedEngineForExport(service: stub.decryptedForExport, tabState: nil)
+        }
+
+        // Need to unlock: retrieve key and mount volume
+        let context = LAContext()
+        var authError: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &authError) else {
+            throw SecureExportError.authenticationUnavailable
+        }
+        let name = stub.name
+        do {
+            try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Decrypt \(name) for export")
+        } catch let error as LAError where error.code == .userCancel || error.code == .appCancel || error.code == .systemCancel {
+            throw SecureExportError.authenticationCancelled
+        }
+
+        let key: String
+        do {
+            key = try await SecureStorageManager.shared.retrieveKeyFromKeychain(for: serviceID, context: context)
+        } catch {
+            throw SecureExportError.keyMissing
+        }
+
+        if !EncryptedVolumeManager.shared.isUnlocked(for: serviceID) {
+            try await EncryptedVolumeManager.shared.mountVolume(for: serviceID, passphrase: key)
+        }
+
+        let metadata: SecuredEngineMetadata
+        do {
+            metadata = try EngineMetadataMigrationManager.shared.readMetadata(for: serviceID)
+        } catch {
+            throw SecureExportError.readFailed(error.localizedDescription)
+        }
+
+        var copy = stub
+        metadata.apply(to: &copy)
+        let tabState = Self.readSecureTabState(for: serviceID)
+        return DecryptedEngineForExport(service: copy.decryptedForExport, tabState: tabState)
+    }
+
+    private static func readSecureTabState(for serviceID: UUID) -> MainWindowController.SecureTabState? {
+        guard Settings.shared.tabSurvivalPolicy != .never else { return nil }
+        guard EncryptedVolumeManager.shared.isUnlocked(for: serviceID) else { return nil }
+        let url = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data)
+    }
+
+    enum SecureExportError: LocalizedError {
+        case serviceNotFound
+        case authenticationUnavailable
+        case authenticationCancelled
+        case keyMissing
+        case readFailed(String)
+        var errorDescription: String? {
+            switch self {
+            case .serviceNotFound: return "Engine not found."
+            case .authenticationUnavailable: return "Authentication is not available on this Mac."
+            case .authenticationCancelled: return "Authentication was cancelled."
+            case .keyMissing: return "Secure storage for this engine is missing."
+            case .readFailed(let msg): return "Could not read protected data: \(msg)"
+            }
+        }
     }
 
     func applyPersistedSettings(_ persisted: PersistedSettings) {

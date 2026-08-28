@@ -74,6 +74,15 @@ struct GeneralSettingsView: View {
     @State private var exportError: String?
     @State private var importError: String?
     @State private var exportSuccessMessage: String?
+    @State private var showingSecureExportChoice = false
+    @State private var secureExportChoice: SecureExportChoice = .keepLocked
+    @State private var secureExportServices: [Service] = []
+    @State private var pendingImportData: Data?
+    @State private var pendingImportOrphans: [Service] = []
+    @State private var pendingImportTotalProtected = 0
+    @State private var showingSecureImportChoice = false
+    @State private var shouldProceedWithSecureExport = false
+    @State private var exportProgressPanel: SecureExportProgressPanel? = nil
 
     
     var body: some View {
@@ -283,14 +292,7 @@ struct GeneralSettingsView: View {
                     ) {
                         HStack(spacing: 8) {
                             Button(action: {
-                                ConfigPortManager.showExportPanel(in: NSApp.keyWindow) { result in
-                                    switch result {
-                                    case .success(let url):
-                                        exportSuccessMessage = "Config exported to \(url.lastPathComponent)"
-                                    case .failure(let error):
-                                        exportError = error.localizedDescription
-                                    }
-                                }
+                                handleExportTapped()
                             }) {
                                 HStack(spacing: 4) {
                                     Image(systemName: "square.and.arrow.up")
@@ -300,13 +302,7 @@ struct GeneralSettingsView: View {
                             .buttonStyle(.bordered)
                             
                             Button(action: {
-                                ConfigPortManager.showImportPanel(in: NSApp.keyWindow) { result in
-                                    if case .failure(let error) = result {
-                                        importError = error.localizedDescription
-                                    } else {
-                                        appController?.reloadServices()
-                                    }
-                                }
+                                handleImportTapped()
                             }) {
                                 HStack(spacing: 4) {
                                     Image(systemName: "square.and.arrow.down")
@@ -428,6 +424,137 @@ struct GeneralSettingsView: View {
             Button("OK", role: .cancel) { exportSuccessMessage = nil }
         } message: {
             Text(exportSuccessMessage ?? "")
+        }
+        .sheet(isPresented: $showingSecureExportChoice, onDismiss: {
+            guard shouldProceedWithSecureExport else { return }
+            shouldProceedWithSecureExport = false
+            switch secureExportChoice {
+            case .keepLocked, .exclude:
+                ConfigPortManager.showExportPanelWithChoice(in: nil, choice: secureExportChoice) { result in
+                    switch result {
+                    case .success(let url):
+                        exportSuccessMessage = "Config exported to \(url.lastPathComponent)"
+                    case .failure(let error):
+                        exportError = error.localizedDescription
+                    }
+                }
+            case .decryptForMigration:
+                let services = secureExportServices
+                let panel = SecureExportProgressPanel(services: services, onComplete: { decrypted in
+                    exportProgressPanel = nil
+                    ConfigPortManager.showExportPanelWithDecryptedEngines(in: nil, decryptedEngines: decrypted) { result in
+                        switch result {
+                        case .success(let url):
+                            exportSuccessMessage = "Config exported to \(url.lastPathComponent)"
+                        case .failure(let error):
+                            exportError = error.localizedDescription
+                        }
+                    }
+                }, onCancel: {
+                    exportProgressPanel = nil
+                })
+                exportProgressPanel = panel
+                panel.show()
+            }
+        }) {
+            SecureExportChoiceSheet(
+                encryptedCount: secureExportServices.count,
+                selection: $secureExportChoice,
+                onCancel: { showingSecureExportChoice = false },
+                onExport: {
+                    shouldProceedWithSecureExport = true
+                    showingSecureExportChoice = false
+                }
+            )
+        }
+        .sheet(isPresented: $showingSecureImportChoice) {
+            SecureImportChoiceSheet(
+                orphanCount: pendingImportOrphans.count,
+                totalProtectedCount: pendingImportTotalProtected,
+                onKeep: {
+                    showingSecureImportChoice = false
+                    guard let data = pendingImportData else { return }
+                    do {
+                        try ConfigPortManager.importConfig(from: data)
+                        pendingImportData = nil
+                        appController?.reloadServices()
+                    } catch {
+                        importError = error.localizedDescription
+                    }
+                },
+                onDrop: {
+                    showingSecureImportChoice = false
+                    guard let data = pendingImportData else { return }
+                    do {
+                        try ConfigPortManager.importConfig(from: data, droppingOrphans: true)
+                        pendingImportData = nil
+                        appController?.reloadServices()
+                    } catch {
+                        importError = error.localizedDescription
+                    }
+                },
+                onCancel: {
+                    showingSecureImportChoice = false
+                    pendingImportData = nil
+                }
+            )
+        }
+    }
+    
+    // MARK: - Secure export / import
+
+    private func handleExportTapped() {
+        guard settings.hasEncryptedServices else {
+            ConfigPortManager.showExportPanel(in: NSApp.keyWindow) { result in
+                switch result {
+                case .success(let url):
+                    exportSuccessMessage = "Config exported to \(url.lastPathComponent)"
+                case .failure(let error):
+                    exportError = error.localizedDescription
+                }
+            }
+            return
+        }
+        secureExportServices = settings.services.filter { $0.isEncrypted }
+        secureExportChoice = .keepLocked
+        showingSecureExportChoice = true
+    }
+
+    private func handleImportTapped() {
+        let panel = NSOpenPanel()
+        panel.title = "Import Quiper Config"
+        panel.message = "This will overwrite all current settings and action scripts."
+        panel.prompt = "Import"
+        panel.allowedContentTypes = [.init(filenameExtension: ConfigPortability.fileExtension)!]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+
+        let handler: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                do {
+                    let data = try Data(contentsOf: url)
+                    let persisted = try ConfigPortability.decode(from: data)
+                    let orphans = settings.orphanedServicesForImport(in: persisted)
+                    if orphans.isEmpty {
+                        try ConfigPortManager.importConfig(from: data)
+                        appController?.reloadServices()
+                    } else {
+                        pendingImportData = data
+                        pendingImportOrphans = orphans
+                        pendingImportTotalProtected = persisted.minimalEncryptedServices.count
+                        showingSecureImportChoice = true
+                    }
+                } catch {
+                    importError = error.localizedDescription
+                }
+            }
+        }
+
+        if let window = NSApp.keyWindow {
+            panel.beginSheetModal(for: window, completionHandler: handler)
+        } else {
+            panel.begin(completionHandler: handler)
         }
     }
     

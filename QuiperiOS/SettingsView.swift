@@ -1,27 +1,75 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @Environment(\.dismiss) private var dismiss
     @State private var pendingEngineDeletion: Service?
     @State private var pendingActionDeletion: CustomAction?
+    @State private var isShowingExporter = false
+    @State private var isShowingImporter = false
+    @State private var configDocument: QuiperConfigDocument?
+    @State private var exportErrorMessage: String?
+    @State private var importErrorMessage: String?
+    @State private var exportSuccessMessage: String?
+    @State private var pendingEraseAllEngines = false
+    @State private var pendingEraseAllActions = false
+    @State private var showingImportConfirmation = false
+    @State private var showingSecureExportChoice = false
+    @State private var secureExportChoice: SecureExportChoice = .keepLocked
+    @State private var showingSecureExportProgress = false
+    @State private var secureExportServices: [Service] = []
+    @State private var showingSecureImportChoice = false
+    @State private var pendingImportData: Data?
+    @State private var pendingImportOrphans: [Service] = []
+    @State private var pendingImportTotalProtected = 0
+    @State private var shouldProceedWithSecureExport = false
+    @State private var pendingDecryptedEngines: [AppEnvironment.DecryptedEngineForExport]? = nil
 
     var body: some View {
+        rootNavigation
+            .overlay { secureExportProgressOverlay }
+            .simultaneousGesture(
+                DragGesture().onChanged { _ in environment.registerUserActivity() }
+            )
+    }
+
+    private var rootNavigation: some View {
         NavigationStack {
+            settingsForm
+        }
+    }
+
+    private var settingsForm: some View {
+        let baseForm: AnyView = AnyView(
             Form {
                 enginesSection
                 actionsSection
                 promptHistorySection
                 behaviorSection
                 appearanceSection
+                configSection
+                dangerZoneSection
             }
-            .navigationTitle("Settings")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+        )
+        let withNavigation: AnyView = AnyView(
+            baseForm
+                .navigationTitle("Settings")
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }
+                    }
                 }
-            }
+        )
+        let withAlerts: AnyView = AnyView(applyAlerts(to: withNavigation))
+        let withFileDialogs: AnyView = AnyView(applyFileDialogs(to: withAlerts))
+        let withSheets: AnyView = AnyView(applySheets(to: withFileDialogs))
+        return withSheets
+    }
+
+    private func applyAlerts(to content: AnyView) -> some View {
+        content
             .alert(
                 "Delete \(pendingEngineDeletion?.name ?? "Engine")?",
                 isPresented: engineDeletePresented
@@ -32,9 +80,7 @@ struct SettingsView: View {
                     }
                     pendingEngineDeletion = nil
                 }
-                Button("Cancel", role: .cancel) {
-                    pendingEngineDeletion = nil
-                }
+                Button("Cancel", role: .cancel) { pendingEngineDeletion = nil }
             } message: {
                 Text("This engine's sessions, drafts, and prompt history will be removed.")
             }
@@ -48,17 +94,185 @@ struct SettingsView: View {
                     }
                     pendingActionDeletion = nil
                 }
-                Button("Cancel", role: .cancel) {
-                    pendingActionDeletion = nil
-                }
+                Button("Cancel", role: .cancel) { pendingActionDeletion = nil }
             } message: {
                 Text("This action and its engine scripts will be removed.")
             }
+            .alert("Erase all engines?", isPresented: $pendingEraseAllEngines) {
+                Button("Erase", role: .destructive) { environment.removeAllServices() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Deletes every engine and its local scripts. This cannot be undone.")
+            }
+            .alert("Erase all actions?", isPresented: $pendingEraseAllActions) {
+                Button("Erase", role: .destructive) { environment.removeAllActions() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Removes every custom action and the scripts stored for them. This cannot be undone.")
+            }
+            .alert("Export failed", isPresented: Binding(get: { exportErrorMessage != nil }, set: { if !$0 { exportErrorMessage = nil } })) {
+                Button("OK", role: .cancel) { exportErrorMessage = nil }
+            } message: {
+                Text(exportErrorMessage ?? "")
+            }
+            .alert("Import failed", isPresented: Binding(get: { importErrorMessage != nil }, set: { if !$0 { importErrorMessage = nil } })) {
+                Button("OK", role: .cancel) { importErrorMessage = nil }
+            } message: {
+                Text(importErrorMessage ?? "")
+            }
+            .alert("Export successful", isPresented: Binding(get: { exportSuccessMessage != nil }, set: { if !$0 { exportSuccessMessage = nil } })) {
+                Button("OK", role: .cancel) { exportSuccessMessage = nil }
+            } message: {
+                Text(exportSuccessMessage ?? "")
+            }
+            .alert("Import Config?", isPresented: $showingImportConfirmation) {
+                Button("Import", role: .destructive) { isShowingImporter = true }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This will overwrite all current engines, actions, and settings.")
+            }
+    }
+
+    private func applyFileDialogs(to content: AnyView) -> some View {
+        content
+            .fileExporter(
+                isPresented: $isShowingExporter,
+                document: configDocument,
+                contentType: ConfigPortability.contentType,
+                defaultFilename: "quiper-config"
+            ) { (result: Result<URL, Error>) in
+                switch result {
+                case .success(let url):
+                    let name = url.lastPathComponent
+                    exportSuccessMessage = "Config exported to \(name)"
+                case .failure(let error):
+                    exportErrorMessage = error.localizedDescription
+                }
+            }
+            .fileImporter(
+                isPresented: $isShowingImporter,
+                allowedContentTypes: [ConfigPortability.contentType, .json],
+                allowsMultipleSelection: false
+            ) { (result: Result<[URL], Error>) in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    let isAccessing = url.startAccessingSecurityScopedResource()
+                    defer { if isAccessing { url.stopAccessingSecurityScopedResource() } }
+                    do {
+                        let data = try Data(contentsOf: url)
+                        handleImportData(data)
+                    } catch {
+                        importErrorMessage = error.localizedDescription
+                    }
+                case .failure(let error):
+                    importErrorMessage = error.localizedDescription
+                }
+            }
+    }
+
+    private func applySheets(to content: AnyView) -> some View {
+        content
+            .sheet(isPresented: $showingSecureExportChoice, onDismiss: handleSecureExportDismiss) {
+                SecureExportChoiceSheet(
+                    encryptedCount: secureExportServices.count,
+                    selection: $secureExportChoice,
+                    onCancel: { showingSecureExportChoice = false },
+                    onExport: {
+                        shouldProceedWithSecureExport = true
+                        showingSecureExportChoice = false
+                    }
+                )
+            }
+            .sheet(isPresented: $showingSecureImportChoice) {
+                SecureImportChoiceSheet(
+                    orphanCount: pendingImportOrphans.count,
+                    totalProtectedCount: pendingImportTotalProtected,
+                    onKeep: {
+                        showingSecureImportChoice = false
+                        guard let data = pendingImportData else { return }
+                        do {
+                            try environment.importConfiguration(from: data)
+                            pendingImportData = nil
+                        } catch {
+                            importErrorMessage = error.localizedDescription
+                        }
+                    },
+                    onDrop: {
+                        showingSecureImportChoice = false
+                        guard let data = pendingImportData else { return }
+                        do {
+                            try environment.importConfiguration(from: data, droppingOrphans: true)
+                            pendingImportData = nil
+                        } catch {
+                            importErrorMessage = error.localizedDescription
+                        }
+                    },
+                    onCancel: {
+                        showingSecureImportChoice = false
+                        pendingImportData = nil
+                    }
+                )
+            }
+    }
+
+    private func handleSecureExportDismiss() {
+        guard shouldProceedWithSecureExport else { return }
+        shouldProceedWithSecureExport = false
+        switch secureExportChoice {
+        case .keepLocked, .exclude:
+            Task {
+                do {
+                    let data = try await environment.exportConfiguration(secureChoice: secureExportChoice)
+                    await MainActor.run {
+                        configDocument = QuiperConfigDocument(data: data)
+                        isShowingExporter = true
+                    }
+                } catch {
+                    await MainActor.run { exportErrorMessage = error.localizedDescription }
+                }
+            }
+        case .decryptForMigration:
+            showingSecureExportProgress = true
         }
-        .simultaneousGesture(
-            DragGesture()
-                .onChanged { _ in environment.registerUserActivity() }
-        )
+    }
+
+    @ViewBuilder
+    private var secureExportProgressOverlay: some View {
+        if showingSecureExportProgress {
+            ZStack {
+                Color.black.opacity(0.35).ignoresSafeArea()
+                SecureExportProgressSheet(
+                    services: secureExportServices,
+                    onComplete: { (decrypted: [AppEnvironment.DecryptedEngineForExport]) in
+                        pendingDecryptedEngines = decrypted
+                        showingSecureExportProgress = false
+                        var payload = environment.makePersistedSettingsForExport(secureChoice: .decryptForMigration, decryptedEngines: decrypted)
+                        ConfigPortability.inlineFileScripts(into: &payload)
+                        do {
+                            let finalData = try ConfigPortability.encode(payload)
+                            configDocument = QuiperConfigDocument(data: finalData)
+                            isShowingExporter = true
+                        } catch {
+                            exportErrorMessage = error.localizedDescription
+                        }
+                    },
+                    onCancel: {
+                        pendingDecryptedEngines = nil
+                        showingSecureExportProgress = false
+                    }
+                )
+                .environmentObject(environment)
+                .frame(maxWidth: 400)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color(uiColor: .systemBackground))
+                        .shadow(radius: 20)
+                )
+                .padding(24)
+            }
+            .transition(.opacity)
+        }
     }
 
     private var engineDeletePresented: Binding<Bool> {
@@ -266,6 +480,85 @@ struct SettingsView: View {
             Text("Appearance")
         } footer: {
             Text("Places the browsing controls at the top or bottom edge.")
+        }
+    }
+
+    private var configSection: some View {
+        Section {
+            Button {
+                handleExportTapped()
+            } label: {
+                Label("Export Config", systemImage: "square.and.arrow.up")
+            }
+            .accessibilityIdentifier("export-config")
+            Button {
+                showingImportConfirmation = true
+            } label: {
+                Label("Import Config", systemImage: "square.and.arrow.down")
+            }
+            .accessibilityIdentifier("import-config")
+        } header: {
+            Text("Config")
+        } footer: {
+            Text("Export your setup to a backup file, or restore configuration from an existing backup. Importing overwrites all current engines, actions, and settings.")
+        }
+    }
+
+    private func handleExportTapped() {
+        guard environment.hasEncryptedServices else {
+            do {
+                let data = try environment.exportConfiguration()
+                configDocument = QuiperConfigDocument(data: data)
+                isShowingExporter = true
+            } catch {
+                exportErrorMessage = error.localizedDescription
+            }
+            return
+        }
+        secureExportServices = environment.services.filter { $0.isEncrypted }
+        secureExportChoice = .keepLocked
+        showingSecureExportChoice = true
+    }
+
+    private func handleImportData(_ data: Data) {
+        do {
+            let persisted = try ConfigPortability.decode(from: data)
+            let orphans = environment.orphanedServicesForImport(in: persisted)
+            if orphans.isEmpty {
+                try environment.importConfiguration(from: data)
+            } else {
+                pendingImportData = data
+                pendingImportOrphans = orphans
+                pendingImportTotalProtected = persisted.minimalEncryptedServices.count
+                showingSecureImportChoice = true
+            }
+        } catch {
+            importErrorMessage = error.localizedDescription
+        }
+    }
+
+    private var dangerZoneSection: some View {
+        Section {
+            Button(role: .destructive) {
+                pendingEraseAllEngines = true
+            } label: {
+                Label("Erase All Engines", systemImage: "trash")
+                    .foregroundStyle(.red)
+            }
+            .accessibilityIdentifier("erase-all-engines")
+            .disabled(!environment.securityOperationServiceIDs.isEmpty)
+            Button(role: .destructive) {
+                pendingEraseAllActions = true
+            } label: {
+                Label("Erase All Actions", systemImage: "trash")
+                    .foregroundStyle(.red)
+            }
+            .accessibilityIdentifier("erase-all-actions")
+        } header: {
+            Text("Danger Zone")
+                .foregroundStyle(.red)
+        } footer: {
+            Text("These actions cannot be undone. Erasing engines removes every engine and its scripts; erasing actions removes every custom action across all engines.")
         }
     }
 
@@ -1067,5 +1360,31 @@ struct CustomCSSEditView: View {
             service.customCSS = defaultCSS
         }
         code = defaultCSS
+    }
+}
+
+struct QuiperConfigDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [ConfigPortability.contentType] }
+
+    var data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func snapshot(contentType: UTType) throws -> Data {
+        data
+    }
+
+    func fileWrapper(snapshot: Data, configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: snapshot)
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
     }
 }
