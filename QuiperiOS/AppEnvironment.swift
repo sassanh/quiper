@@ -1449,6 +1449,31 @@ final class AppEnvironment: ObservableObject {
             unlockedServiceIDs.remove(service.id)
         }
         _ = validServiceIDs
+        // Auto-reenable Secure Storage for engines that were decrypted for migration.
+        let flaggedForReenable = services.filter { $0.originatedFromSecureStorage && !$0.isEncrypted }
+        if !flaggedForReenable.isEmpty {
+            Task { @MainActor in
+                await self.reenableSecureStorageForFlaggedServices(flaggedForReenable.map(\.id))
+            }
+        }
+    }
+
+    /// Re-enables Secure Storage for engines imported via decrypt-for-migration.
+    /// Each engine prompts for device authentication once via `enableProtection`.
+    @MainActor
+    private func reenableSecureStorageForFlaggedServices(_ serviceIDs: [UUID]) async {
+        for serviceID in serviceIDs {
+            guard let index = services.firstIndex(where: { $0.id == serviceID }),
+                  services[index].originatedFromSecureStorage,
+                  !services[index].isEncrypted else { continue }
+            await enableProtection(for: serviceID)
+            // `enableProtection` sets `isEncrypted = true` on success; clear provenance flag.
+            if let idx = services.firstIndex(where: { $0.id == serviceID }),
+               services[idx].isEncrypted {
+                services[idx].originatedFromSecureStorage = false
+                _ = save()
+            }
+        }
     }
 
     func saveCustomActionScript(_ script: String, serviceID: UUID, actionID: UUID) {

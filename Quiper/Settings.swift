@@ -956,6 +956,79 @@ class Settings: ObservableObject {
             hotkeyConfiguration = storedHotkey
         }
         isLoadingSettings = false
+        // If any imported engines originated from Secure Storage, schedule
+        // automatic re-securing so the new device protects them without manual steps.
+        let flagged = services.filter { $0.originatedFromSecureStorage && !$0.isEncrypted }
+        if !flagged.isEmpty {
+            Task { @MainActor in
+                await self.reenableSecureStorageForFlaggedServices(flagged.map(\.id))
+            }
+        }
+    }
+
+    /// Automatically re-enables Secure Storage for engines that were decrypted
+    /// for migration (flagged via `originatedFromSecureStorage`). Mirrors the
+    /// manual "Protect Engine" flow but without transferring existing web data
+    /// (the imported file contains no web data, only metadata and tabs).
+    @MainActor
+    func reenableSecureStorageForFlaggedServices(_ serviceIDs: [UUID]) async {
+        for serviceID in serviceIDs {
+            guard let index = services.firstIndex(where: { $0.id == serviceID }),
+                  services[index].originatedFromSecureStorage,
+                  !services[index].isEncrypted else { continue }
+            do {
+                let randomKey = SecureStorageManager.shared.generateRandomKey()
+                try SecureStorageManager.shared.saveKeyToKeychain(randomKey, for: serviceID)
+                try await EncryptedVolumeManager.shared.createVolume(for: serviceID, passphrase: randomKey)
+                try await EncryptedVolumeManager.shared.mountVolume(for: serviceID, passphrase: randomKey)
+                // Mark for migration and move current plaintext metadata into the bundle.
+                services[index].hasMigratedMetadata = false
+                services[index].isEncrypted = true
+                // Preserve lock preferences from the original engine; default to true if unknown.
+                try await EngineMetadataMigrationManager.shared.migrateMetadata(for: serviceID, context: LAContext())
+                // Move any imported tab state for this engine into the encrypted bundle.
+                if tabSurvivalPolicy != .never, var state = persistedTabState, state.openTabs[serviceID] != nil {
+                    let activeIndex = state.activeIndicesByID[serviceID] ?? 0
+                    let secureState = MainWindowController.SecureTabState(
+                        activeIndex: activeIndex,
+                        openTabs: state.openTabs[serviceID] ?? [:],
+                        tabTitles: state.tabTitles[serviceID],
+                        tabInputs: state.tabInputs[serviceID],
+                        tabPromptHistories: state.tabPromptHistories[serviceID],
+                        tabPromptHistoryEnabledOverrides: state.tabPromptHistoryEnabledOverrides[serviceID]
+                    )
+                    let url = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
+                    if let data = try? JSONEncoder().encode(secureState) {
+                        try? data.write(to: url, options: .atomic)
+                    }
+                    state.openTabs.removeValue(forKey: serviceID)
+                    state.tabTitles.removeValue(forKey: serviceID)
+                    state.tabInputs.removeValue(forKey: serviceID)
+                    state.tabPromptHistories.removeValue(forKey: serviceID)
+                    state.tabPromptHistoryEnabledOverrides.removeValue(forKey: serviceID)
+                    state.activeIndicesByID.removeValue(forKey: serviceID)
+                    state.tabHistory = state.tabHistory?.filter { $0.serviceID != serviceID }
+                    if state.activeServiceID == serviceID {
+                        state.activeServiceID = services.first?.id
+                    }
+                    persistedTabState = state
+                }
+                services[index].originatedFromSecureStorage = false
+                services[index].hasMigratedMetadata = true
+                services[index].usesDiskutilSparseBundle = true
+                saveSettings()
+            } catch {
+                NSLog("[Settings] Failed to auto-reenable Secure Storage for %@: %@", services[index].name, error.localizedDescription)
+                // Keep the flag so the user can retry manually; clean up partial artifacts.
+                try? await EncryptedVolumeManager.shared.unmountVolume(for: serviceID)
+                EncryptedVolumeManager.shared.deleteVolume(for: serviceID)
+                SecureStorageManager.shared.deleteKeyFromKeychain(for: serviceID)
+                if let idx = services.firstIndex(where: { $0.id == serviceID }) {
+                    services[idx].isEncrypted = false
+                    services[idx].hasMigratedMetadata = false
+                }
+            }
+        }
     }
 
     func defaultActionScript(for service: Service, action: CustomAction) -> String? {

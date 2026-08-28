@@ -47,6 +47,10 @@ struct Service: Codable, Identifiable {
     /// True once this engine's metadata has been migrated into the secure bundle.
     /// After migration, metadata fields are no longer persisted in settings.json.
     var hasMigratedMetadata: Bool = false
+    /// True for engines that were decrypted for migration export and should be
+    /// automatically re-secured after import. Carries provenance that the engine
+    /// originally used Secure Storage.
+    var originatedFromSecureStorage: Bool = false
     var lockOnSwitchAway: Bool = true
     var lockAfterInactivity: Bool = false
     var autoLockInactivityTimeout: Int = 5
@@ -71,6 +75,7 @@ struct Service: Codable, Identifiable {
         case isEncrypted
         case usesDiskutilSparseBundle
         case hasMigratedMetadata
+        case originatedFromSecureStorage
         case lockOnSwitchAway
         case lockAfterInactivity
         case autoLockInactivityTimeout
@@ -95,6 +100,7 @@ struct Service: Codable, Identifiable {
          isEncrypted: Bool = false,
          usesDiskutilSparseBundle: Bool = false,
          hasMigratedMetadata: Bool = false,
+         originatedFromSecureStorage: Bool = false,
          lockOnSwitchAway: Bool = true,
          lockAfterInactivity: Bool = false,
          autoLockInactivityTimeout: Int = 5,
@@ -115,6 +121,7 @@ struct Service: Codable, Identifiable {
         self.isEncrypted = isEncrypted
         self.usesDiskutilSparseBundle = usesDiskutilSparseBundle
         self.hasMigratedMetadata = hasMigratedMetadata
+        self.originatedFromSecureStorage = originatedFromSecureStorage
         self.lockOnSwitchAway = lockOnSwitchAway
         self.lockAfterInactivity = lockAfterInactivity
         self.autoLockInactivityTimeout = autoLockInactivityTimeout
@@ -136,6 +143,7 @@ struct Service: Codable, Identifiable {
          isEncrypted: Bool = false,
          usesDiskutilSparseBundle: Bool = false,
          hasMigratedMetadata: Bool = false,
+         originatedFromSecureStorage: Bool = false,
          lockOnSwitchAway: Bool = true,
          lockAfterInactivity: Bool = false,
          autoLockInactivityTimeout: Int = 5,
@@ -155,6 +163,7 @@ struct Service: Codable, Identifiable {
         self.isEncrypted = isEncrypted
         self.usesDiskutilSparseBundle = usesDiskutilSparseBundle
         self.hasMigratedMetadata = hasMigratedMetadata
+        self.originatedFromSecureStorage = originatedFromSecureStorage
         self.lockOnSwitchAway = lockOnSwitchAway
         self.lockAfterInactivity = lockAfterInactivity
         self.autoLockInactivityTimeout = autoLockInactivityTimeout
@@ -216,6 +225,7 @@ struct Service: Codable, Identifiable {
         isEncrypted = try container.decodeIfPresent(Bool.self, forKey: .isEncrypted) ?? false
         usesDiskutilSparseBundle = try container.decodeIfPresent(Bool.self, forKey: .usesDiskutilSparseBundle) ?? false
         hasMigratedMetadata = try container.decodeIfPresent(Bool.self, forKey: .hasMigratedMetadata) ?? false
+        originatedFromSecureStorage = try container.decodeIfPresent(Bool.self, forKey: .originatedFromSecureStorage) ?? false
 
         let switchAway = try container.decodeIfPresent(Bool.self, forKey: .lockOnSwitchAway)
         let inactivity = try container.decodeIfPresent(Bool.self, forKey: .lockAfterInactivity)
@@ -285,6 +295,9 @@ struct Service: Codable, Identifiable {
         }
         if isEncrypted {
             try container.encode(hasMigratedMetadata, forKey: .hasMigratedMetadata)
+        }
+        if originatedFromSecureStorage {
+            try container.encode(originatedFromSecureStorage, forKey: .originatedFromSecureStorage)
         }
         try container.encode(lockOnSwitchAway, forKey: .lockOnSwitchAway)
         try container.encode(lockAfterInactivity, forKey: .lockAfterInactivity)

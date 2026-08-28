@@ -37,12 +37,14 @@ extension PersistedSettings {
 
 extension Service {
     /// A decrypted copy suitable for migration export: the secure flags are cleared
-    /// so `encode(to:)` includes the full metadata.
+    /// so `encode(to:)` includes the full metadata. The provenance flag is set
+    /// so the importer can automatically re-enable Secure Storage.
     var decryptedForExport: Service {
         var copy = self
         copy.isEncrypted = false
         copy.hasMigratedMetadata = false
         copy.usesDiskutilSparseBundle = false
+        copy.originatedFromSecureStorage = true
         return copy
     }
 

@@ -7,6 +7,7 @@
 - **Location Bar**: `Cmd+Shift+L` opens a slim address bar spanning the width of the Quiper window with a little margin to spare on each side, sitting right beside the toolbar on whichever edge it lives. It comes prefilled with the current page's address—edit it and press Enter or click the arrow button to navigate the active session there.
 - **Click-Away HUD Dismissal**: Clicking anywhere outside an open floating panel—the location bar, prompt history, Control Center, or the recent-tabs ring—now closes it.
 - **Import/Export and Bulk Delete for Settings**: Import or export your full configuration as a `.quiper` file and erase all engines or actions from the Danger Zone, with proper handling for protected engines on both Mac and iOS.
+- **Automatic Re-securing on Import**: Engines that were exported decrypted for migration automatically get a new secure store on the importing device and have their tabs and metadata moved back into it.
 
 ### Changed
 
