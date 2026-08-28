@@ -16,6 +16,7 @@
 
 ### Fixed
 
+- **No Ghost Background After Locking Fullscreen Engine**: Locking an encrypted engine (by timeout, manual lock, or switching away) while its content is fullscreen no longer leaves its webView visible as a ghost background behind transparent UI. The fullscreen window is now closed and the webView is properly detached before teardown, and the wrapper is correctly removed even when the webView is hosted in the fullscreen window.
 - **Recent-Tabs Ring Sticking After Quick Taps**: A quick `Cmd+\`` tap no longer leaves the tab-ring HUD stuck on screen. The ring now closes and commits the switch even when ⌘ is released before the hotkey event finishes processing, when a system input popup holds key status, or when the window loses focus mid-gesture.
 - **Shortcuts Surviving System Popups**: The tiny Siri-related popup that appears spontaneously on recent macOS betas no longer disables Quiper's keyboard shortcuts while it is on screen.
 - **No More False "Page Failed to Load" on Redirects**: Navigations that WebKit interrupts for policy reasons—such as Google rerouting a search to its CAPTCHA page—no longer show the generic "unexpected error" panel with a useless Retry button.

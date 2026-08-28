@@ -1505,6 +1505,29 @@ struct SecureTabState: Codable {
         updateCollectionBehaviorForVisibilityState()
     }
 
+    /// Called before an encrypted service's webViews are torn down for locking.
+    /// If that service owns the current element-fullscreen webView, the
+    /// fullscreen window must be closed and the webView detached before the
+    /// teardown, otherwise the fullscreen webView's layer can linger as a
+    /// ghost background behind the overlay's transparent regions.
+    func prepareForLockingEncryptedService(_ service: Service) {
+        guard isWebContentFullscreen, let fullscreenWebView = elementFullscreenWebView else { return }
+        guard let sessionMap = webViewManager.webviewsByID[service.id],
+              sessionMap.values.contains(where: { $0 === fullscreenWebView }) else {
+            return
+        }
+        NSLog("[FullSpace] Locking service %@ while fullscreen – cleaning up fullscreen window before teardown", service.name)
+        let wasHidden = window?.isVisible == false
+        webFullScreenWindow?.close()
+        fullscreenWebView.removeFromSuperview()
+        clearElementFullscreenState()
+        if wasHidden {
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            updateCollectionBehaviorForVisibilityState()
+        }
+    }
+
     // While web content is in fullscreen (a site entered the Fullscreen API),
     // Quiper stays in the space it was on and does not respond to global
     // shortcuts. If the user tries to bring Quiper up anyway, surface a banner

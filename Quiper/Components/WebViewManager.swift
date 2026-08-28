@@ -1223,7 +1223,33 @@ final class WebViewManager: NSObject {
     private func tearDownWebView(_ webView: WKWebView) {
         // Stop any in-progress loading to signal WebKit to release the content process
         let token = ObjectIdentifier(webView)
-        let wrapper = webView.superview as? WebViewWrapperView
+        var wrapper = webView.superview as? WebViewWrapperView
+        // When the webView is fullscreen its superview is the WebKit fullscreen
+        // window's contentView, not its wrapper. Look up the wrapper via the
+        // service/session maps so we can remove it correctly and avoid leaving
+        // a ghost wrapper that shows the fullscreen webView as a background
+        // behind the overlay's transparent areas.
+        if wrapper == nil, let serviceID = serviceIDsByWebView[token],
+           let sessionMap = webviewsByID[serviceID] {
+            for (sessionIndex, candidate) in sessionMap where candidate === webView {
+                if let found = wrappersByID[serviceID]?[sessionIndex] as? WebViewWrapperView {
+                    wrapper = found
+                    break
+                }
+            }
+        }
+        // If the webView is currently hosted in a different window than its
+        // wrapper (the WebKit element-fullscreen window), close that window.
+        // This prevents the fullscreen window from lingering as a ghost
+        // background behind the overlay's transparent regions after the lock
+        // tears the webView down. The close will trigger
+        // NSWindow.willExitFullScreenNotification and clear MainWindowController
+        // state via handleWindowWillExitWebFullScreen.
+        if let currentWindow = webView.window,
+           let wrapperWindow = wrapper?.window ?? containerView?.window,
+           currentWindow !== wrapperWindow {
+            currentWindow.close()
+        }
         webView.stopLoading()
  
         // Nil delegates to prevent callbacks during/after deallocation

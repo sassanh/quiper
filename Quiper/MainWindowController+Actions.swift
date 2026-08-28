@@ -229,6 +229,7 @@ extension MainWindowController {
         guard let service = currentService(), service.isEncrypted else { return }
         
         NSLog("[MainWindowController] Manual lock requested for service: %@", service.name)
+        prepareForLockingEncryptedService(service)
         webViewManager.tearDownAllWebViews(for: service)
         
         updateSessionSelector()
@@ -270,6 +271,7 @@ extension MainWindowController {
         } else {
             for service in secureServices {
                 if EncryptedVolumeManager.shared.isMounted(for: service.id) {
+                    prepareForLockingEncryptedService(service)
                     webViewManager.tearDownAllWebViews(for: service)
                     Task {
                         try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
@@ -439,6 +441,7 @@ extension MainWindowController {
     func handleSwitchAway(from service: Service) {
         guard service.isEncrypted && service.lockOnSwitchAway else { return }
         
+        prepareForLockingEncryptedService(service)
         webViewManager.tearDownAllWebViews(for: service)
         Task {
             try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
@@ -491,6 +494,7 @@ extension MainWindowController {
             if EncryptedVolumeManager.shared.isMounted(for: service.id) {
                 let timeout: TimeInterval = TimeInterval(service.autoLockInactivityTimeout * 60)
                 if now.timeIntervalSince(lastActivityTime) >= timeout {
+                    prepareForLockingEncryptedService(service)
                     webViewManager.tearDownAllWebViews(for: service)
                     Task {
                         try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
