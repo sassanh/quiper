@@ -83,6 +83,10 @@ struct GeneralSettingsView: View {
     @State private var showingSecureImportChoice = false
     @State private var shouldProceedWithSecureExport = false
     @State private var exportProgressPanel: SecureExportProgressPanel? = nil
+    @State private var showingSyncProviderSetup = false
+    @State private var showingSyncProviderActive = false
+    @State private var syncProviderData: Data?
+    @State private var showingSyncBrowser = false
 
     
     var body: some View {
@@ -313,6 +317,40 @@ struct GeneralSettingsView: View {
                         }
                         .frame(width: 260, alignment: .trailing)
                     }
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Sync over Local Network",
+                        message: "Temporarily share this config on the local network, or discover nearby devices to pull their config.",
+                        icon: "antenna.radiowaves.left.and.right",
+                        iconColor: .blue
+                    ) {
+                        HStack(spacing: 8) {
+                            Button(action: {
+                                handleSyncShareTapped()
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "antenna.radiowaves.left.and.right")
+                                    Text("Share")
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(Color.blue.settingsResolved)
+
+                            Button(action: {
+                                showingSyncBrowser = true
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "magnifyingglass")
+                                    Text("Receive")
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(Color.blue.settingsResolved)
+                        }
+                        .frame(width: 260, alignment: .trailing)
+                    }
                 }
 
                 SettingsSection(title: "Danger Zone", titleColor: .red, cardBackground: Color.red.opacity(0.05), icon: "exclamationmark.triangle.fill", iconColor: .red) {
@@ -499,6 +537,38 @@ struct GeneralSettingsView: View {
                 }
             )
         }
+        .sheet(isPresented: $showingSyncProviderSetup) {
+            QuiperSyncProviderSetupSheet(
+                onCancel: { showingSyncProviderSetup = false },
+                onReady: { data in
+                    syncProviderData = data
+                    showingSyncProviderSetup = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        showingSyncProviderActive = true
+                    }
+                }
+            )
+        }
+        .sheet(isPresented: $showingSyncProviderActive) {
+            Group {
+                if let data = syncProviderData {
+                    QuiperSyncProviderSheet(syncData: data) {
+                        showingSyncProviderActive = false
+                        syncProviderData = nil
+                    }
+                } else {
+                    SyncProviderPreparationFallbackView(onClose: {
+                        showingSyncProviderActive = false
+                        syncProviderData = nil
+                    })
+                }
+            }
+        }
+        .sheet(isPresented: $showingSyncBrowser) {
+            QuiperSyncBrowserSheet(appController: appController) {
+                showingSyncBrowser = false
+            }
+        }
     }
     
     // MARK: - Secure export / import
@@ -518,6 +588,36 @@ struct GeneralSettingsView: View {
         secureExportServices = settings.services.filter { $0.isEncrypted }
         secureExportChoice = .keepLocked
         showingSecureExportChoice = true
+    }
+
+    private func handleSyncShareTapped() {
+        if settings.hasEncryptedServices {
+            showingSyncProviderSetup = true
+        } else {
+            Task { @MainActor in
+                do {
+                    SyncPreparationState.shared.detail = "Reading engines…"
+                    settings.syncPreparationDetail = SyncPreparationState.shared.detail
+                    var ps = settings.makePersistedSettings()
+                    SyncPreparationState.shared.detail = "Packaging snapshot — preparing \(ps.services.count) engines…"
+                    settings.syncPreparationDetail = SyncPreparationState.shared.detail
+                    ConfigPortability.inlineFileScripts(into: &ps)
+                    // inlineFileScripts drives its own “Packaging snapshot — loading script…” and “…encoding…” details
+                    let data = try ConfigPortability.encode(ps)
+                    SyncPreparationState.shared.detail = "Snapshot encoded (\(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))) — starting share…"
+                    settings.syncPreparationDetail = SyncPreparationState.shared.detail
+                    syncProviderData = data
+                    showingSyncProviderActive = true
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    SyncPreparationState.shared.detail = nil
+                    settings.syncPreparationDetail = nil
+                } catch {
+                    SyncPreparationState.shared.detail = nil
+                    settings.syncPreparationDetail = nil
+                    importError = error.localizedDescription
+                }
+            }
+        }
     }
 
     private func handleImportTapped() {
@@ -614,6 +714,83 @@ struct GeneralSettingsView: View {
             return "Permission has not been requested yet."
         default:
             return "Quiper needs notification access to show engine responses."
+        }
+    }
+}
+
+private struct SyncProviderPreparationFallbackView: View {
+    var onClose: () -> Void
+
+    @ObservedObject private var settings = Settings.shared
+    @ObservedObject private var prep = SyncPreparationState.shared
+    @State private var longWait = false
+    @State private var timedOut = false
+
+    var body: some View {
+        Group {
+            if timedOut {
+                VStack(spacing: 14) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.orange)
+                    Text("Sharing preparation timed out")
+                        .font(.callout.weight(.semibold))
+                    if let detail = settings.syncPreparationDetail ?? prep.detail {
+                        Text(detail)
+                            .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text("Close and try again.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Button("Close", action: onClose)
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.blue.settingsResolved)
+                }
+            } else if longWait {
+                VStack(spacing: 14) {
+                    ProgressView()
+                    Text("Still preparing…")
+                        .font(.callout.weight(.medium))
+                    // One particular job right now — not a list
+                    if let detail = settings.syncPreparationDetail ?? prep.detail {
+                        VStack(spacing: 4) {
+                            Text("Packaging snapshot —")
+                                .font(.caption2).foregroundStyle(.secondary)
+                            Text(detail.replacingOccurrences(of: "Packaging snapshot — ", with: ""))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 8)
+                        }
+                    } else {
+                        Text("Packaging snapshot…")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Button("Close", action: onClose)
+                        .buttonStyle(.bordered)
+                }
+            } else {
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text("Preparing sharing…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    if let detail = settings.syncPreparationDetail ?? prep.detail {
+                        Text(detail)
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+            }
+        }
+        .frame(width: 520, height: 504)
+        .background(Color(NSColor.windowBackgroundColor))
+        .task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if !timedOut { longWait = true }
+            try? await Task.sleep(nanoseconds: 25_000_000_000)
+            timedOut = true
         }
     }
 }

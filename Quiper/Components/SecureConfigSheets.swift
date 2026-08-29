@@ -261,11 +261,13 @@ struct SecureExportProgressSheet: View {
 
             HStack {
                 Button("Cancel", role: .cancel, action: onCancel)
-                    .disabled(isWorking)
                 Spacer()
                 if isWorking {
                     ProgressView()
                         .controlSize(.small)
+                } else if errorMessage != nil {
+                    Button("Close", action: onCancel)
+                        .buttonStyle(.bordered)
                 }
             }
             .padding(16)
@@ -299,44 +301,78 @@ struct SecureExportProgressSheet: View {
 
     private func run() async {
         isWorking = true
+        SyncPreparationState.shared.detail = "Unlocking protected engines…"
+        Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
         var decrypted: [Settings.DecryptedEngineForExport] = []
         for index in items.indices {
+            if Task.isCancelled {
+                isWorking = false
+                SyncPreparationState.shared.detail = nil
+                Settings.shared.syncPreparationDetail = nil
+                return
+            }
             let id = items[index].id
             let service = services[index]
             guard service.isEncrypted else {
                 items[index].status = .skipped
+                SyncPreparationState.shared.detail = "Skipping \(service.name)…"
+                Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 continue
             }
-            let isLocked = !(EncryptedVolumeManager.shared.isUnlocked(for: id))
-            let needsAuth = service.hasMigratedMetadata && isLocked
-            if needsAuth {
-                items[index].status = .unlocking
-            } else {
-                // Already unlocked – still show unlocking briefly for consistency if we need to read tabs
-                items[index].status = .unlocking
+            items[index].status = .unlocking
+            SyncPreparationState.shared.detail = "Unlocking \(service.name) (\(index + 1)/\(services.count))…"
+            Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
+            // Per-engine timeout: LA prompt hidden / hdiutil stuck must not freeze the whole share forever.
+            let engineResult: Result<Settings.DecryptedEngineForExport, Error> = await withTaskGroup(of: Result<Settings.DecryptedEngineForExport, Error>.self) { group in
+                group.addTask {
+                    do {
+                        let engine = try await Settings.shared.decryptedServiceForExport(serviceID: id)
+                        return .success(engine)
+                    } catch {
+                        return .failure(error)
+                    }
+                }
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: 90_000_000_000) // 90s per-engine hard timeout
+                    return .failure(NSError(domain: "QuiperSync", code: 408, userInfo: [NSLocalizedDescriptionKey: "Timed out while unlocking. If the Touch ID prompt is hidden, bring Quiper to the front and try again."]))
+                }
+                let first = await group.next()!
+                group.cancelAll()
+                return first
             }
-            do {
-                let engine = try await Settings.shared.decryptedServiceForExport(serviceID: id)
+            switch engineResult {
+            case .success(let engine):
                 decrypted.append(engine)
                 items[index].status = .done
-            } catch {
+                SyncPreparationState.shared.detail = "Unlocked \(service.name)…"
+                Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
+            case .failure(let error):
                 let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 if msg.lowercased().contains("cancel") {
                     items[index].status = .failed("Cancelled")
-                    errorMessage = "Export cancelled. No file was created."
+                    errorMessage = "Cancelled. No data was shared."
                     isWorking = false
+                    SyncPreparationState.shared.detail = nil
+                    Settings.shared.syncPreparationDetail = nil
                     return
                 }
+                // Timeout vs normal failure – both surfaced, but we keep sheet open for retry/cancel
                 items[index].status = .failed("Failed")
                 errorMessage = "Couldn’t decrypt \(items[index].name): \(msg)"
                 isWorking = false
+                SyncPreparationState.shared.detail = nil
+                Settings.shared.syncPreparationDetail = nil
                 return
             }
             try? await Task.sleep(nanoseconds: 250_000_000)
         }
         isWorking = false
+        SyncPreparationState.shared.detail = "Packaging unlocked engines…"
+        Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
         try? await Task.sleep(nanoseconds: 300_000_000)
+        SyncPreparationState.shared.detail = nil
+        Settings.shared.syncPreparationDetail = nil
         onComplete(decrypted)
     }
 }

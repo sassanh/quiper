@@ -8,9 +8,13 @@ final class TabRingQuickTapTests: XCTestCase {
     override func setUp() {
         super.setUp()
         Settings.shared.reset()
+        // Clean up leaked windows from prior tests and the host app; hasModalWindow
+        // scans NSApp.windows and would otherwise be polluted by 150+ live windows in CI.
+        NSApp.windows.forEach { $0.orderOut(nil) }
     }
 
     override func tearDown() {
+        NSApp.windows.forEach { $0.orderOut(nil) }
         Settings.shared.reset()
         super.tearDown()
     }
@@ -125,6 +129,13 @@ final class TabRingQuickTapTests: XCTestCase {
             Service(name: "Alpha", url: "https://alpha.test", focus_selector: "body"),
             Service(name: "Beta", url: "https://beta.test", focus_selector: "body")
         ]
+        // Ensure a clean window state before creating the controller, mirroring
+        // ModalWindowDetectionTests which orders out any existing visible window
+        // leaked by prior tests or the host app (156+ windows in CI).
+        NSApp.windows
+            .filter { $0.isVisible }
+            .forEach { $0.orderOut(nil) }
+
         let controller = MainWindowController(services: services)
         controller.switchSession(to: 0)
         return controller

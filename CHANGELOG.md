@@ -6,6 +6,7 @@
 
 - **Location Bar**: `Cmd+Shift+L` opens a slim address bar spanning the width of the Quiper window with a little margin to spare on each side, sitting right beside the toolbar on whichever edge it lives. It comes prefilled with the current page's address—edit it and press Enter or click the arrow button to navigate the active session there.
 - **Click-Away HUD Dismissal**: Clicking anywhere outside an open floating panel—the location bar, prompt history, Control Center, or the recent-tabs ring—now closes it.
+- **Temporary Settings Sync over Local Network**: Share your settings to another Mac or iPhone/iPad on the same Wi-Fi without writing a file. Pick Decrypt for Migration or Exclude Protected, see per-engine unlock progress, and discover sharers automatically; nothing is written to disk on the sender and the share stops when you close the window.
 - **Import/Export and Bulk Delete for Settings**: Import or export your full configuration as a `.quiper` file and erase all engines or actions from the Danger Zone, with proper handling for protected engines on both Mac and iOS.
 - **Automatic Re-securing on Import**: Engines that were exported decrypted for migration automatically get a new secure store on the importing device and have their tabs and metadata moved back into it.
 
@@ -15,6 +16,8 @@
 - **Quiper Stays Out of Element Fullscreen Spaces**: The overlay no longer appears in Spaces owned by fullscreen web content; shortcuts return focus to the fullscreen window and the overlay restores when fullscreen ends, with a clear banner while active.
 - **Server Error Pages Render Natively**: When a site responds with its own 404, 500, rate-limit, or challenge page, Quiper now shows that page instead of replacing it with a generic error panel. Quiper's error view remains for failures where the site returns nothing at all—connection failures, DNS errors, timeouts.
 - **Refined Routing Rules Editor**: Each routing rule sits in its own card tinted with its action's guide color—Internal green, Popup blue, Prompt orange, Safari red—so rules are identifiable at a glance. Rows animate when moved, added, or removed, the focused text field travels with its rule, and clicking anywhere on a row edits its pattern. The action picker shows full action names, and pattern fields use a monospaced font.
+- **Taller Sharing Window with Pinned Help Text**: The Sharing Settings window is 20% taller. The list of successful transfers scrolls on its own while the header and help text stay pinned, so messages are never pushed offscreen.
+- **Preparation Shows the One Particular Job**: Long-running share and export now show exactly what they are busy with right now — reading engines, unlocking a named engine, loading a specific script, encoding — instead of a generic spinner, with progressive disclosure after 5 seconds.
 
 ### Fixed
 
@@ -22,6 +25,9 @@
 - **Recent-Tabs Ring Sticking After Quick Taps**: A quick `Cmd+\`` tap no longer leaves the tab-ring HUD stuck on screen. The ring now closes and commits the switch even when ⌘ is released before the hotkey event finishes processing, when a system input popup holds key status, or when the window loses focus mid-gesture.
 - **Shortcuts Surviving System Popups**: The tiny Siri-related popup that appears spontaneously on recent macOS betas no longer disables Quiper's keyboard shortcuts while it is on screen.
 - **No More False "Page Failed to Load" on Redirects**: Navigations that WebKit interrupts for policy reasons—such as Google rerouting a search to its CAPTCHA page—no longer show the generic "unexpected error" panel with a useless Retry button.
+- **Instant Sharing Preparation**: Sharing no longer hangs for minutes on Packaging snapshot; the snapshot now prepares instantly with live per-step status.
+- **No Config Loss During Share**: Unlocking for share or export no longer clears the sender's own engine URLs and sync switches.
+- **Honest Preparing State**: Preparing no longer shows a spinner alongside a timed-out message or spins silently for minutes; after 5 seconds it explains the particular job, and on timeout it shows a closeable error without a spinner.
 
 ## [5.0.0] - 2026-08-25
 

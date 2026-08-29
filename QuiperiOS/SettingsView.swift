@@ -26,6 +26,10 @@ struct SettingsView: View {
     @State private var pendingImportTotalProtected = 0
     @State private var shouldProceedWithSecureExport = false
     @State private var pendingDecryptedEngines: [AppEnvironment.DecryptedEngineForExport]? = nil
+    @State private var showingSyncProviderSetup = false
+    @State private var showingSyncProviderActive = false
+    @State private var syncProviderData: Data?
+    @State private var showingSyncBrowser = false
 
     var body: some View {
         rootNavigation
@@ -213,6 +217,38 @@ struct SettingsView: View {
                         pendingImportData = nil
                     }
                 )
+            }
+            .sheet(isPresented: $showingSyncProviderSetup) {
+                QuiperSyncProviderSetupSheet(onCancel: { showingSyncProviderSetup = false }, onReady: { data in
+                    syncProviderData = data
+                    showingSyncProviderSetup = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        showingSyncProviderActive = true
+                    }
+                })
+                .environmentObject(environment)
+            }
+            .sheet(isPresented: $showingSyncProviderActive) {
+                Group {
+                    if let data = syncProviderData {
+                        QuiperSyncProviderSheet(syncData: data) {
+                            showingSyncProviderActive = false
+                            syncProviderData = nil
+                        }
+                    } else {
+                        SyncProviderPreparationFallbackView(onClose: {
+                            showingSyncProviderActive = false
+                            syncProviderData = nil
+                        })
+                    }
+                }
+            }
+            .sheet(isPresented: $showingSyncBrowser) {
+                QuiperSyncBrowserSheet(onClose: { showingSyncBrowser = false }, onSuccess: {
+                    showingSyncBrowser = false
+                    dismiss()
+                })
+                    .environmentObject(environment)
             }
     }
 
@@ -497,10 +533,43 @@ struct SettingsView: View {
                 Label("Import Config", systemImage: "square.and.arrow.down")
             }
             .accessibilityIdentifier("import-config")
+            Button {
+                handleSyncShareTapped()
+            } label: {
+                Label("Share over Local Network", systemImage: "antenna.radiowaves.left.and.right")
+            }
+            .accessibilityIdentifier("share-config")
+            Button {
+                showingSyncBrowser = true
+            } label: {
+                Label("Receive from Local Network", systemImage: "magnifyingglass")
+            }
+            .accessibilityIdentifier("receive-config")
         } header: {
             Text("Config")
         } footer: {
-            Text("Export your setup to a backup file, or restore configuration from an existing backup. Importing overwrites all current engines, actions, and settings.")
+            Text("Export your setup to a backup file, or restore configuration from an existing backup. Importing overwrites all current engines, actions, and settings. Sync shares a snapshot on the local network; the sharer does not change.")
+        }
+    }
+
+    private func handleSyncShareTapped() {
+        if environment.hasEncryptedServices {
+            showingSyncProviderSetup = true
+        } else {
+            Task { @MainActor in
+                do {
+                    environment.syncPreparationDetail = "Reading engines…"
+                    environment.syncPreparationDetail = "Inlining scripts…"
+                    environment.syncPreparationDetail = "Encoding snapshot…"
+                    let data = try environment.exportConfiguration()
+                    environment.syncPreparationDetail = nil
+                    syncProviderData = data
+                    showingSyncProviderActive = true
+                } catch {
+                    environment.syncPreparationDetail = nil
+                    exportErrorMessage = error.localizedDescription
+                }
+            }
         }
     }
 
@@ -1386,5 +1455,59 @@ struct QuiperConfigDocument: FileDocument {
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: data)
+    }
+}
+
+private struct SyncProviderPreparationFallbackView: View {
+    var onClose: () -> Void
+    @EnvironmentObject private var environment: AppEnvironment
+    @ObservedObject private var prep = SyncPreparationState.shared
+    @State private var longWait = false
+    @State private var timedOut = false
+
+    var body: some View {
+        Group {
+            if timedOut {
+                VStack(spacing: 14) {
+                    Image(systemName: "exclamationmark.circle.fill").font(.system(size: 32)).foregroundStyle(.orange)
+                    Text("Sharing preparation timed out").font(.callout.weight(.semibold))
+                    if let detail = environment.syncPreparationDetail ?? prep.detail {
+                        Text(detail).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    }
+                    Text("Close and try again.").font(.caption2).foregroundStyle(.secondary)
+                    Button("Close", action: onClose).buttonStyle(.borderedProminent)
+                }
+            } else if longWait {
+                VStack(spacing: 14) {
+                    ProgressView()
+                    Text("Still preparing…").font(.callout.weight(.medium))
+                    if let detail = environment.syncPreparationDetail ?? prep.detail {
+                        VStack(spacing: 4) {
+                            Text("Packaging snapshot —").font(.caption2).foregroundStyle(.secondary)
+                            Text(detail.replacingOccurrences(of: "Packaging snapshot — ", with: "")).font(.caption.weight(.medium)).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 16)
+                        }
+                    } else {
+                        Text("Packaging snapshot…").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Button("Close", action: onClose).buttonStyle(.bordered)
+                }
+            } else {
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text("Preparing sharing…").font(.callout).foregroundStyle(.secondary)
+                    if let detail = environment.syncPreparationDetail ?? prep.detail {
+                        Text(detail).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
+        .task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if !timedOut { longWait = true }
+            try? await Task.sleep(nanoseconds: 25_000_000_000)
+            timedOut = true
+        }
     }
 }

@@ -8,5 +8,11 @@
     <string>Quiper requires camera access to enable video functionality in web applications like meetings and chat.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Quiper requires microphone access to enable audio functionality in web applications.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Quiper uses the local network to sync settings between your devices.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_quiper-sync._tcp</string>
+    </array>
 </dict>
 </plist>

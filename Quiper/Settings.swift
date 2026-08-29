@@ -281,6 +281,9 @@ class Settings: ObservableObject {
             saveSettings()
         }
     }
+    /// Single source of truth for what the current share/export preparation is busy with right now.
+    /// Set by preparation code, observed by fallback/status UI to show the particular job.
+    @Published var syncPreparationDetail: String? = nil
     
     func reset() {
         isPerformingWipe = true
@@ -812,17 +815,19 @@ class Settings: ObservableObject {
         // Already unlocked – use live in-memory service (authoritative after loadMetadata) and read secure tabs without prompting.
         if EncryptedVolumeManager.shared.isUnlocked(for: serviceID) {
             // Prefer live service which already has metadata applied; fall back to cached if needed.
+            // This path must never block MainActor on synchronous volume I/O – it is the hot path
+            // for share/export when engines are already unlocked. We avoid Data(contentsOf:) on MainActor.
             let live = services.first(where: { $0.id == serviceID }) ?? stub
             let service: Service
             if let cached = EngineMetadataMigrationManager.shared.cachedMetadata(for: serviceID) {
                 var copy = live
-                // Ensure we apply cached in case live hasn't been refreshed this session.
                 cached.apply(to: &copy)
                 service = copy.decryptedForExport
             } else if !live.hasMigratedMetadata {
                 service = live.decryptedForExport
             } else {
-                // No cached but unlocked and migrated – try reading directly (volume already mounted).
+                // No cached but unlocked and migrated – volume already mounted, read synchronously (small file, fast).
+                // If the filesystem stalls, the per-engine timeout in the progress sheet will surface it.
                 do {
                     let metadata = try EngineMetadataMigrationManager.shared.readMetadata(for: serviceID)
                     var copy = live
@@ -832,7 +837,7 @@ class Settings: ObservableObject {
                     service = live.decryptedForExport
                 }
             }
-            let tabState = Self.readSecureTabState(for: serviceID)
+            let tabState = await Self.readSecureTabStateAsync(for: serviceID)
             return DecryptedEngineForExport(service: service, tabState: tabState)
         }
 
@@ -842,6 +847,8 @@ class Settings: ObservableObject {
         }
 
         // Need to unlock: retrieve key and mount volume
+        // Bring app front so the Touch ID / password prompt is not hidden behind the progress panel/sheet.
+        await MainActor.run { NSApp.activate(ignoringOtherApps: true) }
         let context = LAContext()
         var authError: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &authError) else {
@@ -874,7 +881,7 @@ class Settings: ObservableObject {
 
         var copy = stub
         metadata.apply(to: &copy)
-        let tabState = Self.readSecureTabState(for: serviceID)
+        let tabState = await Self.readSecureTabStateAsync(for: serviceID)
         return DecryptedEngineForExport(service: copy.decryptedForExport, tabState: tabState)
     }
 
@@ -884,6 +891,16 @@ class Settings: ObservableObject {
         let url = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data)
+    }
+
+    private static func readSecureTabStateAsync(for serviceID: UUID) async -> MainWindowController.SecureTabState? {
+        guard Settings.shared.tabSurvivalPolicy != .never else { return nil }
+        guard EncryptedVolumeManager.shared.isUnlocked(for: serviceID) else { return nil }
+        let url = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
+        return await Task.detached(priority: .userInitiated) {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data)
+        }.value
     }
 
     enum SecureExportError: LocalizedError {

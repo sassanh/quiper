@@ -46,6 +46,7 @@ final class AppEnvironment: ObservableObject {
     @Published private(set) var shouldDismissSensitiveUI = false
     @Published private(set) var needsTemplateActionSyncMigrationPrompt = false
     @Published private(set) var needsIOSOnboarding = false
+    @Published var syncPreparationDetail: String? = nil
     private(set) var isRingOverlayActive = false
 
     private let settingsURL: URL

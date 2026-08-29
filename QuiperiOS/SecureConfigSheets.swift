@@ -279,50 +279,70 @@ struct SecureExportProgressSheet: View {
 
     private func runDecryption() async {
         isWorking = true
+        environment.syncPreparationDetail = "Unlocking protected engines…"
         var decrypted: [AppEnvironment.DecryptedEngineForExport] = []
         for index in progressItems.indices {
+            if Task.isCancelled {
+                isWorking = false
+                environment.syncPreparationDetail = nil
+                return
+            }
             let serviceID = progressItems[index].id
-            // Check current lock state at iteration time (may have timed out)
-            if environment.isServiceLocked(serviceID) {
-                progressItems[index].status = .unlocking
-                do {
-                    let engine = try await environment.decryptedServiceForExport(serviceID: serviceID)
-                    decrypted.append(engine)
-                    progressItems[index].status = .done
-                } catch {
-                    let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                    if message.lowercased().contains("cancel") {
-                        progressItems[index].status = .failed("Cancelled")
-                        errorMessage = "Export cancelled. No file was created."
-                        isWorking = false
-                        return
+            let name = progressItems[index].name
+            progressItems[index].status = .unlocking
+            environment.syncPreparationDetail = "Unlocking \(name) (\(index + 1)/\(progressItems.count))…"
+            // Per-engine timeout so a hidden biometrics prompt or stalled profile read never freezes share forever.
+            let result: Result<AppEnvironment.DecryptedEngineForExport?, Error> = await withTaskGroup(of: Result<AppEnvironment.DecryptedEngineForExport?, Error>.self) { group in
+                group.addTask {
+                    do {
+                        if self.environment.isServiceLocked(serviceID) {
+                            let engine = try await self.environment.decryptedServiceForExport(serviceID: serviceID)
+                            return .success(engine)
+                        } else if let service = self.environment.services.first(where: { $0.id == serviceID }) {
+                            let tabState = IOSSecuredTabState(serviceID: serviceID, state: self.environment.persistedTabState)
+                            let hasTabs = !(self.environment.persistedTabState.openTabs[serviceID]?.isEmpty ?? true)
+                            return .success(AppEnvironment.DecryptedEngineForExport(service: service.decryptedForExport, tabState: hasTabs ? tabState : nil))
+                        } else {
+                            return .success(nil)
+                        }
+                    } catch {
+                        return .failure(error)
                     }
-                    progressItems[index].status = .failed("Failed")
-                    errorMessage = "Couldn’t decrypt \(progressItems[index].name): \(message)"
+                }
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: 90_000_000_000)
+                    return .failure(NSError(domain: "QuiperSync", code: 408, userInfo: [NSLocalizedDescriptionKey: "Timed out while unlocking. If the system prompt is hidden, bring Quiper forward and try again."]))
+                }
+                let first = await group.next()!
+                group.cancelAll()
+                return first
+            }
+            switch result {
+            case .success(let engine):
+                if let engine { decrypted.append(engine) }
+                progressItems[index].status = engine == nil ? .skipped : .done
+                environment.syncPreparationDetail = "Unlocked \(name)…"
+            case .failure(let error):
+                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                if message.lowercased().contains("cancel") {
+                    progressItems[index].status = .failed("Cancelled")
+                    errorMessage = "Cancelled. No data was shared."
                     isWorking = false
+                    environment.syncPreparationDetail = nil
                     return
                 }
-            } else {
-                // Already unlocked – just take decrypted copy with current tab state
-                if let service = environment.services.first(where: { $0.id == serviceID }) {
-                    let tabState = IOSSecuredTabState(serviceID: serviceID, state: environment.persistedTabState)
-                    let hasTabs = !(environment.persistedTabState.openTabs[serviceID]?.isEmpty ?? true)
-                    let engine = AppEnvironment.DecryptedEngineForExport(
-                        service: service.decryptedForExport,
-                        tabState: hasTabs ? tabState : nil
-                    )
-                    decrypted.append(engine)
-                    progressItems[index].status = .done
-                } else {
-                    progressItems[index].status = .skipped
-                }
+                progressItems[index].status = .failed("Failed")
+                errorMessage = "Couldn’t decrypt \(progressItems[index].name): \(message)"
+                isWorking = false
+                environment.syncPreparationDetail = nil
+                return
             }
-            // Small delay to let UI update and to respect system auth sheet dismissal
             try? await Task.sleep(nanoseconds: 300_000_000)
         }
         isWorking = false
-        // Brief success pause so user sees completion
+        environment.syncPreparationDetail = "Packaging unlocked engines…"
         try? await Task.sleep(nanoseconds: 400_000_000)
+        environment.syncPreparationDetail = nil
         onComplete(decrypted)
     }
 }

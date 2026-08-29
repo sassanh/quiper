@@ -291,17 +291,14 @@ final class EngineMetadataMigrationManager {
 
             try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
             EncryptedVolumeManager.shared.markLocked(service.id)
-
-            if let index = Settings.shared.services.firstIndex(where: { $0.id == service.id }) {
-                Settings.shared.services[index].url = ""
-            }
         }
 
         panel.updateEngineName("")
         panel.updateStatus("Migration complete")
         try? await Task.sleep(nanoseconds: 1_000_000_000)
         panel.close()
-        Settings.shared.saveSettings()
+        // saveSettings already called per-service in migrateMetadata; no bulk clear needed
+        // Previously we cleared url here which raced with concurrent unlocks and wiped restored metadata
     }
 }
 

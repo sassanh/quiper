@@ -25,6 +25,10 @@
 	<string></string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Quiper connects to AI engines on your local network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_quiper-sync._tcp</string>
+	</array>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Quiper uses Face ID to unlock protected engines.</string>
 	<key>NSMicrophoneUsageDescription</key>
