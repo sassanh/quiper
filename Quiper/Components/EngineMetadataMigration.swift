@@ -67,27 +67,27 @@ final class EngineMetadataMigrationManager {
 
     private var inMemoryMetadata: [UUID: SecuredEngineMetadata] = [:]
 
-    /// Path for the metadata file within a mounted secure bundle.
+    /// Path for the metadata file within a mounted secure bundle. Delegates to the single persistence gate.
     func metadataFileURL(for serviceID: UUID) -> URL {
-        EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent(metadataFileName)
+        SettingsPersistence.metadataFileURL(for: serviceID)
     }
 
-    // MARK: - Bundle I/O
+    // MARK: - Bundle I/O — all file I/O goes through SettingsPersistence
 
-    /// Writes metadata to the mounted secure bundle atomically.
+    /// Writes metadata to the mounted secure bundle atomically. Single-gate wrapper.
     func writeMetadata(_ metadata: SecuredEngineMetadata, for serviceID: UUID) throws {
-        let url = metadataFileURL(for: serviceID)
-        let data = try JSONEncoder().encode(metadata)
-        try data.write(to: url, options: [.atomic])
-        inMemoryMetadata[serviceID] = metadata
+        try SettingsPersistence.writeSecureMetadata(metadata, for: serviceID)
         NSLog("[MetadataMigration] Wrote metadata to secure bundle for service %@", serviceID.uuidString)
     }
 
-    /// Reads metadata from the mounted secure bundle.
+    /// Caches metadata in memory without touching disk. Used by the single persistence gate.
+    func cache(_ metadata: SecuredEngineMetadata, for serviceID: UUID) {
+        inMemoryMetadata[serviceID] = metadata
+    }
+
+    /// Reads metadata from the mounted secure bundle. Single-gate wrapper.
     func readMetadata(for serviceID: UUID) throws -> SecuredEngineMetadata {
-        let url = metadataFileURL(for: serviceID)
-        let data = try Data(contentsOf: url)
-        let metadata = try JSONDecoder().decode(SecuredEngineMetadata.self, from: data)
+        let metadata = try SettingsPersistence.readSecureMetadata(for: serviceID)
         inMemoryMetadata[serviceID] = metadata
         return metadata
     }

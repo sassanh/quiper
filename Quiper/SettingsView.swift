@@ -598,12 +598,7 @@ struct GeneralSettingsView: View {
                 do {
                     SyncPreparationState.shared.detail = "Reading engines…"
                     settings.syncPreparationDetail = SyncPreparationState.shared.detail
-                    var ps = settings.makePersistedSettings()
-                    SyncPreparationState.shared.detail = "Packaging snapshot — preparing \(ps.services.count) engines…"
-                    settings.syncPreparationDetail = SyncPreparationState.shared.detail
-                    ConfigPortability.inlineFileScripts(into: &ps)
-                    // inlineFileScripts drives its own “Packaging snapshot — loading script…” and “…encoding…” details
-                    let data = try ConfigPortability.encode(ps)
+                    let data = try SettingsPersistence.prepareSnapshotForCurrentSettings()
                     SyncPreparationState.shared.detail = "Snapshot encoded (\(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))) — starting share…"
                     settings.syncPreparationDetail = SyncPreparationState.shared.detail
                     syncProviderData = data

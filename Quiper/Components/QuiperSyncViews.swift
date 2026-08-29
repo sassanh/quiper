@@ -345,9 +345,7 @@ struct QuiperSyncProviderSetupSheet: View {
                                 showingDecryptProgress = false
                                 Task { @MainActor in
                                     do {
-                                        var ps = settings.makePersistedSettings(secureChoice: .decryptForMigration, decryptedEngines: decrypted)
-                                        ConfigPortability.inlineFileScripts(into: &ps)
-                                        let data = try ConfigPortability.encode(ps)
+                                        let data = try SettingsPersistence.prepareSnapshot(secureChoice: .decryptForMigration, decryptedEngines: decrypted)
                                         onReady(data)
                                     } catch {
                                         errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -417,22 +415,14 @@ struct QuiperSyncProviderSetupSheet: View {
         do {
             let data: Data
             if encryptedServices.isEmpty {
-                var ps = settings.makePersistedSettings()
-                SyncPreparationState.shared.detail = "Packaging snapshot — preparing \(ps.services.count) engines…"
+                SyncPreparationState.shared.detail = "Packaging snapshot — preparing \(settings.services.count) engines…"
                 settings.syncPreparationDetail = SyncPreparationState.shared.detail
-                ConfigPortability.inlineFileScripts(into: &ps)
-                SyncPreparationState.shared.detail = "Encoding snapshot (\(ps.services.count) engines)…"
-                settings.syncPreparationDetail = SyncPreparationState.shared.detail
-                data = try ConfigPortability.encode(ps)
+                data = try SettingsPersistence.prepareSnapshotForCurrentSettings()
             } else {
                 // Only Exclude remains (Keep Locked treated as Exclude)
-                var ps = settings.makePersistedSettings(secureChoice: .exclude, decryptedEngines: [])
-                SyncPreparationState.shared.detail = "Packaging snapshot — preparing \(ps.services.count) engines…"
+                SyncPreparationState.shared.detail = "Packaging snapshot — preparing \(settings.services.filter { !$0.isEncrypted }.count) engines…"
                 settings.syncPreparationDetail = SyncPreparationState.shared.detail
-                ConfigPortability.inlineFileScripts(into: &ps)
-                SyncPreparationState.shared.detail = "Encoding snapshot (\(ps.services.count) engines)…"
-                settings.syncPreparationDetail = SyncPreparationState.shared.detail
-                data = try ConfigPortability.encode(ps)
+                data = try SettingsPersistence.prepareSnapshot(secureChoice: .exclude, decryptedEngines: [])
             }
             SyncPreparationState.shared.detail = "Starting local network…"
             settings.syncPreparationDetail = SyncPreparationState.shared.detail

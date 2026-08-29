@@ -328,31 +328,9 @@ class Settings: ObservableObject {
         )
     }
 
-    private let settingsFile: URL = {
-        // Use temporary directory during tests to avoid modifying real config
-        let isRunningTests = NSClassFromString("XCTestCase") != nil
-        let isUITesting = CommandLine.arguments.contains("--uitesting")
-        
-        let baseDir: URL
-        if isRunningTests || isUITesting {
-            // Tests use a temp directory that gets cleaned up
-            // Use process identifier to ensure isolation between parallel runs or sequential UI test launches
-            let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
-            baseDir = tempDir.appendingPathComponent("QuiperTests-\(ProcessInfo.processInfo.processIdentifier)")
-        } else {
-            // Production uses Application Support
-            baseDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-                .appendingPathComponent(Constants.APP_FOLDER_NAME)
-        }
-        
-        try? FileManager.default.createDirectory(at: baseDir, withIntermediateDirectories: true, attributes: nil)
-        return baseDir.appendingPathComponent("settings.json")
-    }()
+    private var settingsFile: URL { SettingsPersistence.settingsFile }
 
-    private let legacyHotkeyFile: URL = {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/quiper/hotkey_config.json")
-    }()
+    private var legacyHotkeyFile: URL { SettingsPersistence.legacyHotkeyFile }
 
 
     var defaultActionTemplates: [CustomAction] {
@@ -622,26 +600,9 @@ class Settings: ObservableObject {
                                             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
                                             iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
                                             quiperVersion: persistedQuiperVersionForSave())
-            let data = try JSONEncoder().encode(payload)
-            try data.write(to: settingsFile)
-            syncSecuredEngineMetadataToBundles()
+            try SettingsPersistence.write(payload)
         } catch {
-        }
-    }
-
-    /// For migrated+unlocked engines, writes current in-memory metadata back to
-    /// the secure bundle so edits made in Settings persist alongside the encrypted data.
-    private func syncSecuredEngineMetadataToBundles() {
-        for service in services where service.isEncrypted && service.hasMigratedMetadata {
-            guard EncryptedVolumeManager.shared.isUnlocked(for: service.id) else { continue }
-            guard EngineMetadataMigrationManager.shared.cachedMetadata(for: service.id) != nil else {
-                continue
-            }
-            do {
-                try EngineMetadataMigrationManager.shared.saveMetadataToBundle(for: service.id)
-            } catch {
-                NSLog("[Settings] Failed to sync metadata to bundle for %@: %@", service.name, error.localizedDescription)
-            }
+            NSLog("[Settings] Failed to persist settings: %@", error.localizedDescription)
         }
     }
 
@@ -823,6 +784,10 @@ class Settings: ObservableObject {
                 var copy = live
                 cached.apply(to: &copy)
                 service = copy.decryptedForExport
+                // Ensure live is not left as stub while unlocked (prevents sender config loss via SettingsPersistence.write).
+                if let index = services.firstIndex(where: { $0.id == serviceID }), services[index].url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    cached.apply(to: &services[index])
+                }
             } else if !live.hasMigratedMetadata {
                 service = live.decryptedForExport
             } else {
@@ -833,6 +798,9 @@ class Settings: ObservableObject {
                     var copy = live
                     metadata.apply(to: &copy)
                     service = copy.decryptedForExport
+                    if let index = services.firstIndex(where: { $0.id == serviceID }), services[index].url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        metadata.apply(to: &services[index])
+                    }
                 } catch {
                     service = live.decryptedForExport
                 }
@@ -881,6 +849,12 @@ class Settings: ObservableObject {
 
         var copy = stub
         metadata.apply(to: &copy)
+        // Populate live stub now that we have mounted and read the bundle.
+        // Without this, SettingsPersistence.write would see an unlocked stub and
+        // refuse to write or would overwrite the bundle with empty metadata (sender loss).
+        if let index = services.firstIndex(where: { $0.id == serviceID }) {
+            metadata.apply(to: &services[index])
+        }
         let tabState = await Self.readSecureTabStateAsync(for: serviceID)
         return DecryptedEngineForExport(service: copy.decryptedForExport, tabState: tabState)
     }
@@ -1430,96 +1404,7 @@ class Settings: ObservableObject {
     }
 
     private func readPersistedSettings() -> (PersistedSettings, Bool) {
-        if let data = try? Data(contentsOf: settingsFile) {
-            if let payload = try? JSONDecoder().decode(PersistedSettings.self, from: data) {
-                return (payload, true)
-            }
-            if let legacyServices = try? JSONDecoder().decode([Service].self, from: data) {
-                return (PersistedSettings(services: legacyServices,
-                                          hotkey: nil,
-                                          customActions: nil,
-                                          updatePreferences: nil,
-                                          serviceZoomLevels: nil), true)
-            }
-        }
-        // Check for parameterized custom engines argument
-        let customEnginesArg = CommandLine.arguments.first { $0.hasPrefix("--test-custom-engines=") }
-        let isCustomEnginesFlag = CommandLine.arguments.contains("--test-custom-engines")
-
-        // Check for custom path argument
-        let customEnginesPathArg = CommandLine.arguments.first { $0.hasPrefix("--test-custom-engines-path=") }
-        let customEnginesPath = customEnginesPathArg?.split(separator: "=").last.map(String.init)
-        
-        if let arg = customEnginesArg, let value = Int(arg.split(separator: "=").last ?? "") {
-             let count = value
-             let testEngines = (0..<count).map { i in
-                 let index = i + 1
-                 // Check for override file
-                 let overrideFilename = "test-custom-engine-\(index).html"
-                 let fileManager = FileManager.default
-                 let directoryURL: URL
-                 
-                 if let customPath = customEnginesPath {
-                     directoryURL = URL(fileURLWithPath: customPath)
-                 } else {
-                     directoryURL = URL(fileURLWithPath: fileManager.currentDirectoryPath)
-                 }
-                 
-                 let overrideFileObj = directoryURL.appendingPathComponent(overrideFilename)
-                 
-                 if fileManager.fileExists(atPath: overrideFileObj.path) {
-                     return Service(name: "Engine \(index)", url: overrideFileObj.absoluteString, focus_selector: "")
-                 } else {
-                     // Use "Content X" to distinguish from Service Name "Engine X" in UI tests
-                     // Add <title> for robust accessibility-based verification
-                     let html = "<html><head><title>Content \(index)</title></head><body><h1>Content \(index)</h1></body></html>"
-                     let dataURL = "data:text/html;charset=utf-8," + html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
-                     return Service(name: "Engine \(index)", url: dataURL, focus_selector: "")
-                 }
-             }
-             return (PersistedSettings(services: testEngines,
-                                       hotkey: nil,
-                                       customActions: nil,
-                                       updatePreferences: nil,
-                                       serviceZoomLevels: nil), false)
-        } else if isCustomEnginesFlag {
-            // Fallback for non-parameterized usage (default to 4)
-             let testEngines = (0..<4).map { i in
-                 let index = i + 1
-                 // Check for override file (duplicate logic for fallback case)
-                 let overrideFilename = "test-custom-engine-\(index).html"
-                 let fileManager = FileManager.default
-                 let directoryURL: URL
-                 
-                 if let customPath = customEnginesPath {
-                     directoryURL = URL(fileURLWithPath: customPath)
-                 } else {
-                     directoryURL = URL(fileURLWithPath: fileManager.currentDirectoryPath)
-                 }
-
-                 let overrideFileObj = directoryURL.appendingPathComponent(overrideFilename)
-                 
-                 if fileManager.fileExists(atPath: overrideFileObj.path) {
-                     return Service(name: "Engine \(index)", url: overrideFileObj.absoluteString, focus_selector: "")
-                 } else {
-                     let html = "<html><head><title>Content \(index)</title></head><body><h1>Content \(index)</h1></body></html>"
-                     let dataURL = "data:text/html;charset=utf-8," + html.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
-                     return Service(name: "Engine \(index)", url: dataURL, focus_selector: "")
-                 }
-             }
-             return (PersistedSettings(services: testEngines,
-                                       hotkey: nil,
-                                       customActions: nil,
-                                       updatePreferences: nil,
-                                       serviceZoomLevels: nil), false)
-        }
-        
-        let useDefaultServices = !CommandLine.arguments.contains("--no-default-services")
-        return (PersistedSettings(services: useDefaultServices ? defaultEngines : [],
-                                  hotkey: nil,
-                                  customActions: nil,
-                                  updatePreferences: nil,
-                                  serviceZoomLevels: nil), false)
+        SettingsPersistence.readPersistedSettings()
     }
 
     private func loadLegacyHotkeyConfiguration() -> HotkeyManager.Configuration? {

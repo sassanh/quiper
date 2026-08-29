@@ -13,21 +13,16 @@ enum ConfigPortManager {
     // MARK: – Export
 
     static func exportConfig() throws -> Data {
-        var ps = Settings.shared.makePersistedSettings()
-        ConfigPortability.inlineFileScripts(into: &ps)
-        return try ConfigPortability.encode(ps)
+        try SettingsPersistence.prepareSnapshotForCurrentSettings()
     }
 
     static func exportConfig(secureChoice: SecureExportChoice, decryptedServices: [Service] = []) throws -> Data {
-        var ps = Settings.shared.makePersistedSettings(secureChoice: secureChoice, decryptedServices: decryptedServices)
-        ConfigPortability.inlineFileScripts(into: &ps)
-        return try ConfigPortability.encode(ps)
+        let engines = decryptedServices.map { Settings.DecryptedEngineForExport(service: $0, tabState: nil) }
+        return try SettingsPersistence.prepareSnapshot(secureChoice: secureChoice, decryptedEngines: engines)
     }
 
     static func exportConfig(secureChoice: SecureExportChoice, decryptedEngines: [Settings.DecryptedEngineForExport]) throws -> Data {
-        var ps = Settings.shared.makePersistedSettings(secureChoice: secureChoice, decryptedEngines: decryptedEngines)
-        ConfigPortability.inlineFileScripts(into: &ps)
-        return try ConfigPortability.encode(ps)
+        try SettingsPersistence.prepareSnapshot(secureChoice: secureChoice, decryptedEngines: decryptedEngines)
     }
 
     static func exportConfigWithDecryption() async throws -> Data {
@@ -39,12 +34,13 @@ enum ConfigPortManager {
         return try exportConfig(secureChoice: .decryptForMigration, decryptedEngines: decrypted)
     }
 
-    // MARK: – Import
+    // MARK: – Import — single write gate
 
     static func importConfig(from data: Data) throws {
         let ps = try ConfigPortability.decode(from: data)
         Settings.shared.applyPersistedSettings(ps)
-        ConfigPortability.persistFileArtifacts(from: ps)
+        // SettingsPersistence.write handles file-backed scripts and secure bundles atomically;
+        // ConfigPortability.persistFileArtifacts is now only called inside the gate.
         Settings.shared.saveSettings()
     }
 
@@ -67,7 +63,6 @@ enum ConfigPortManager {
             }
         }
         Settings.shared.applyPersistedSettings(ps)
-        ConfigPortability.persistFileArtifacts(from: ps)
         Settings.shared.saveSettings()
     }
 
