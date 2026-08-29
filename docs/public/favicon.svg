@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Quiper">
+  <style>
+    .icon { fill: #000; stroke: #000; }
+    @media (prefers-color-scheme: dark) {
+      .icon { fill: #fff; stroke: #fff; }
+    }
+  </style>
+  <g class="icon">
+    <!-- antenna top -->
+    <circle cx="50" cy="14" r="8" stroke="none"/>
+    <!-- antenna stem -->
+    <rect x="48.2" y="22" width="3.6" height="9" rx="1" stroke="none"/>
+    <!-- antenna dome -->
+    <path d="M 33 38 A 17 12 0 0 1 67 38 Z" stroke="none"/>
+    <!-- outer body border (transparent center) -->
+    <rect x="22" y="44" width="56" height="44" rx="10" fill="none" stroke-width="6"/>
+    <!-- eyes as rings -->
+    <circle cx="38.5" cy="66" r="7.5" fill="none" stroke-width="5.5"/>
+    <circle cx="61.5" cy="66" r="7.5" fill="none" stroke-width="5.5"/>
+    <!-- side ears -->
+    <rect x="8" y="56" width="10" height="20" rx="2.5" stroke="none"/>
+    <rect x="82" y="56" width="10" height="20" rx="2.5" stroke="none"/>
+  </g>
+</svg>

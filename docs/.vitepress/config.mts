@@ -22,8 +22,13 @@ export default defineConfig({
   },
 
   head: [
-    ['link', { rel: 'icon', type: 'image/png', href: `${siteBase}logo.png` }],
-    ['link', { rel: 'apple-touch-icon', href: `${siteBase}logo.png` }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${siteBase}favicon.svg` }],
+    ['link', { rel: 'icon', type: 'image/png', sizes: '32x32', href: `${siteBase}favicon-32x32.png`, media: '(prefers-color-scheme: light)' }],
+    ['link', { rel: 'icon', type: 'image/png', sizes: '32x32', href: `${siteBase}favicon-32x32-dark.png`, media: '(prefers-color-scheme: dark)' }],
+    ['link', { rel: 'icon', type: 'image/png', sizes: '16x16', href: `${siteBase}favicon-16x16.png`, media: '(prefers-color-scheme: light)' }],
+    ['link', { rel: 'icon', type: 'image/png', sizes: '16x16', href: `${siteBase}favicon-16x16-dark.png`, media: '(prefers-color-scheme: dark)' }],
+    ['link', { rel: 'icon', type: 'image/x-icon', href: `${siteBase}favicon.ico` }],
+    ['link', { rel: 'apple-touch-icon', sizes: '180x180', href: `${siteBase}apple-touch-icon.png` }],
     ['meta', { name: 'theme-color', content: '#7c3aed' }],
     ['script', {}, `if (location.hostname === 'sassanh.github.io') { location.replace('https://quiper.sassanh.com' + location.pathname.replace(/^\\/quiper\\/?/, '/') + location.search + location.hash); }`],
   ],
@@ -39,7 +44,7 @@ export default defineConfig({
     const canonicalUrl = pageUrl(pageData.relativePath)
     const imagePath = typeof pageData.frontmatter.image === 'string'
       ? pageData.frontmatter.image
-      : '/logo.png'
+      : '/og-image.png'
     const imageUrl = new URL(`${siteBase}${imagePath.replace(/^\//, '')}`, siteUrl).href
 
     const head = [
@@ -67,7 +72,7 @@ export default defineConfig({
   },
 
   themeConfig: {
-    logo: '/logo.png',
+    logo: { light: '/logo-light.png', dark: '/logo-dark.png' },
 
     nav: [
       { text: 'Guide', link: '/getting-started' },
