@@ -9,7 +9,11 @@ enum QuiperSyncClientError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .connectionFailed(let msg): return "Connection failed: \(msg)"
+        case .connectionFailed(let msg):
+            if msg.localizedCaseInsensitiveContains("reset by peer") || msg.localizedCaseInsensitiveContains("connection reset") {
+                return "Connection reset by sharer before transfer finished. Keep both Macs awake and on the same Wi-Fi, keep the Sharing window open, and try again. If it repeats, try sharing with fewer protected engines."
+            }
+            return "Connection failed: \(msg)"
         case .invalidResponse(let msg): return "Invalid response: \(msg)"
         case .httpError(let code, let msg): return "Provider error (\(code)): \(msg)"
         case .emptyData: return "Provider returned empty data."
@@ -18,10 +22,42 @@ enum QuiperSyncClientError: LocalizedError {
 }
 
 enum QuiperSyncClient {
+    private static let clientQueue = DispatchQueue(label: "app.sassanh.quiper.sync.client")
+
+    private static func makeParameters() -> NWParameters {
+        let p = NWParameters.tcp
+        p.includePeerToPeer = true
+        return p
+    }
+
     static func fetch(from endpoint: NWEndpoint) async throws -> Data {
+        // Retry once on RST – the provider previously RST'd large payloads
+        // due to immediate `cancel()` after `send`. Provider fix uses
+        // graceful `isComplete` shutdown, but retry makes the receiver
+        // tolerant of transient resets on congested Wi-Fi.
+        var lastError: Error?
+        for attempt in 0..<2 {
+            do {
+                return try await fetchOnce(from: endpoint)
+            } catch {
+                lastError = error
+                let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                let isReset = msg.localizedCaseInsensitiveContains("reset by peer") || msg.localizedCaseInsensitiveContains("connection reset")
+                if isReset && attempt == 0 {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    continue
+                }
+                throw error
+            }
+        }
+        throw lastError ?? QuiperSyncClientError.connectionFailed("unknown")
+    }
+
+    private static func fetchOnce(from endpoint: NWEndpoint) async throws -> Data {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
-            let queue = DispatchQueue.main
-            let connection = NWConnection(to: endpoint, using: .tcp)
+            let queue = clientQueue
+            let parameters = makeParameters()
+            let connection = NWConnection(to: endpoint, using: parameters)
             final class StateBox: @unchecked Sendable {
                 var hasResumed = false
                 var buffer = Data()
@@ -153,8 +189,9 @@ enum QuiperSyncClient {
         guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
         do {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                let queue = DispatchQueue.main
-                let connection = NWConnection(to: endpoint, using: .tcp)
+                let queue = clientQueue
+                let parameters = makeParameters()
+                let connection = NWConnection(to: endpoint, using: parameters)
                 final class AckBox: @unchecked Sendable {
                     var hasResumed = false
                     let lock = NSLock()

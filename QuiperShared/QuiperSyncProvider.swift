@@ -21,7 +21,7 @@ final class QuiperSyncProvider: ObservableObject, @unchecked Sendable {
 
     private var listener: NWListener?
     private let syncData: Data
-    private let queue = DispatchQueue.main
+    private let queue = DispatchQueue(label: "app.sassanh.quiper.sync.provider")
     private var connections: [NWConnection] = []
 
     private final class WeakBox: @unchecked Sendable {
@@ -202,9 +202,7 @@ final class QuiperSyncProvider: ObservableObject, @unchecked Sendable {
         header += "\r\n"
         var response = Data(header.utf8)
         response.append(bodyData)
-        connection.send(content: response, completion: .contentProcessed { _ in
-            connection.cancel()
-        })
+        sendGracefully(response, on: connection)
     }
 
     private func serveConfig(on connection: NWConnection) {
@@ -217,9 +215,7 @@ final class QuiperSyncProvider: ObservableObject, @unchecked Sendable {
         var response = Data(header.utf8)
         response.append(syncData)
         // Do not count as served yet; wait for ack
-        connection.send(content: response, completion: .contentProcessed { _ in
-            connection.cancel()
-        })
+        sendGracefully(response, on: connection)
     }
 
     private func sendError(on connection: NWConnection, status: Int, message: String) {
@@ -231,8 +227,34 @@ final class QuiperSyncProvider: ObservableObject, @unchecked Sendable {
         header += "\r\n"
         var response = Data(header.utf8)
         response.append(body)
-        connection.send(content: response, completion: .contentProcessed { _ in
-            connection.cancel()
+        sendGracefully(response, on: connection)
+    }
+
+    /// Sends `data` then half-closes the TCP stream (FIN) instead of
+    /// immediately `cancel()`-ing. Immediate cancel before the peer has
+    /// drained the send buffer produces `RST` ("Connection reset by peer")
+    /// especially for large `syncData`. The `nw_endpoint_fallback` log
+    /// quoted by the beta tester is benign Happy Eyeballs probing;
+    /// the `tcp_input [R]` + `Receive failed ... reset by peer` is this RST.
+    private func sendGracefully(_ data: Data, on connection: NWConnection) {
+        connection.send(content: data, completion: .contentProcessed { error in
+            if let error {
+                NSLog("[QuiperSync] send failed: %@", error.localizedDescription)
+                connection.cancel()
+                return
+            }
+            // Half-close: send FIN so the receiver sees `isComplete`
+            // after all bytes are delivered. Don't RST by cancelling
+            // while bytes are still in flight.
+            connection.send(content: nil, isComplete: true, completion: .contentProcessed { _ in
+                // Keep the NWConnection alive until the peer closes or
+                // a short grace period expires; the `stateUpdateHandler`
+                // will clean `connections` on `.cancelled`.
+                let queue = self.queue
+                queue.asyncAfter(deadline: .now() + 4) {
+                    connection.cancel()
+                }
+            })
         })
     }
 

@@ -17,7 +17,7 @@ final class QuiperSyncBrowser: ObservableObject, @unchecked Sendable {
     @Published var errorMessage: String?
 
     private var browser: NWBrowser?
-    private let queue = DispatchQueue.main
+    private let queue = DispatchQueue(label: "app.sassanh.quiper.sync.browser")
     private var endpointMap: [String: DiscoveredSyncPeer] = [:]
 
     private final class WeakBox: @unchecked Sendable {
