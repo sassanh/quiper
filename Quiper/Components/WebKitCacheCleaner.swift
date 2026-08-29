@@ -138,11 +138,6 @@ final class WebKitCacheCleaner {
             
             NSLog("[WebKitCacheCleaner] Purging orphaned leftovers at: \(url.path)")
             try? fileManager.removeItem(at: url)
-            
-            // Delete matching key from Keychain on the MainActor
-            DispatchQueue.main.async {
-                SecureStorageManager.shared.deleteKeyFromKeychain(for: uuid)
-            }
         }
     }
     
