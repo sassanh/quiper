@@ -902,6 +902,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func completeLaunch() {
+        if presentCorruptedSettingsRecoveryIfNeeded() {
+            return
+        }
+
         statusBarController = StatusBarController()
 
         NotificationDispatcher.shared.configure(delegate: statusBarController.appController)
@@ -921,6 +925,73 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // but stay hidden if launched automatically by a LaunchAgent at system boot (parent is launchd, pid 1)
         if !isAutoLaunch {
             statusBarController.appController.showWindow(nil)
+        }
+    }
+
+    @MainActor
+    private func presentCorruptedSettingsRecoveryIfNeeded() -> Bool {
+        guard !AppController.isRunningTests, !Constants.LaunchMode.shouldSuppressInterferenceUI else { return false }
+        // Ensure Settings has attempted to load; this populates SettingsPersistence.corruptedState under the single gate.
+        _ = Settings.shared
+        guard let state = SettingsPersistence.corruptedState else { return false }
+
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
+        let backups = SettingsPersistence.availableBackups().filter { $0 != state.backupFile && $0 != state.file }
+        let mostRecentBackup = backups.first
+        let backupList = backups.prefix(3).map { $0.lastPathComponent }.joined(separator: ", ")
+        let previewSnippet = String(state.preview.prefix(500))
+
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Quiper settings are corrupted"
+        var info = "Your settings file could not be read and was not overwritten.\n\n"
+        info += "File: \(state.file.path)\n"
+        info += "Backup of corrupted file: \(state.backupFile.path)\n"
+        if !backupList.isEmpty {
+            info += "Recent backups: \(backupList)\n"
+        }
+        info += "\nError: \(String(describing: state.underlying))\n"
+        if !previewSnippet.isEmpty {
+            info += "\nPreview: \(previewSnippet)\n"
+        }
+        info += "\nChoose Quit to keep the file for manual repair, Reveal to show it in Finder, "
+        if mostRecentBackup != nil {
+            info += "Restore to replace it with \(mostRecentBackup!.lastPathComponent), "
+        }
+        info += "or Reset to start with defaults (the corrupted file stays backed up)."
+        alert.informativeText = info
+
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Reveal in Finder")
+        if mostRecentBackup != nil {
+            alert.addButton(withTitle: "Restore Backup")
+        }
+        alert.addButton(withTitle: "Reset to Defaults")
+
+        let response = alert.runModal()
+        // Button order: Quit=1000, Reveal=1001, (Restore=1002 if present), Reset=last
+        let hasRestore = mostRecentBackup != nil
+        if response == .alertFirstButtonReturn {
+            NSApp.terminate(nil)
+            return true
+        } else if response == .alertSecondButtonReturn {
+            NSWorkspace.shared.activateFileViewerSelecting([state.file, state.backupFile])
+            NSApp.terminate(nil)
+            return true
+        } else if hasRestore && response == .alertThirdButtonReturn {
+            if let backup = mostRecentBackup {
+                Settings.shared.restoreCorruptedConfig(from: backup)
+                // Continue launch after restore
+                return false
+            }
+            NSApp.terminate(nil)
+            return true
+        } else {
+            // Reset (third without restore, or fourth with restore)
+            Settings.shared.resetCorruptedConfigToDefaults()
+            return false
         }
     }
 

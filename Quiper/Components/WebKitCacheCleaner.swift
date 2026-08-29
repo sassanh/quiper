@@ -86,7 +86,7 @@ final class WebKitCacheCleaner {
                 purgeOrphanedFiles(in: scriptsDir, fileExtension: nil, activeIDs: activeIDs, fileManager: fileManager)
                 
                 let encryptedDir = appSupportDir.appendingPathComponent("EncryptedStores", isDirectory: true)
-                purgeOrphanedFiles(in: encryptedDir, fileExtension: "sparsebundle", activeIDs: activeIDs, fileManager: fileManager)
+                moveOrphanedEncryptedStores(in: encryptedDir, activeIDs: activeIDs, fileManager: fileManager, appSupportDir: appSupportDir)
             }
         }
     }
@@ -146,6 +146,39 @@ final class WebKitCacheCleaner {
         }
     }
     
+    private static func moveOrphanedEncryptedStores(in directory: URL, activeIDs: Set<UUID>, fileManager: FileManager, appSupportDir: URL) {
+        guard fileManager.fileExists(atPath: directory.path) else { return }
+        guard let contents = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return }
+        let recoveryDir = appSupportDir.appendingPathComponent("OrphanedEncryptedStores", isDirectory: true)
+        var movedCount = 0
+        for url in contents {
+            guard url.pathExtension.lowercased() == "sparsebundle" else { continue }
+            let nameWithoutExtension = url.deletingPathExtension().lastPathComponent
+            guard isOrphanedStore(folderName: nameWithoutExtension, activeIDs: activeIDs) else { continue }
+            do {
+                try fileManager.createDirectory(at: recoveryDir, withIntermediateDirectories: true)
+                let dest = recoveryDir.appendingPathComponent(url.lastPathComponent)
+                if fileManager.fileExists(atPath: dest.path) {
+                    try fileManager.removeItem(at: dest)
+                }
+                try fileManager.moveItem(at: url, to: dest)
+                NSLog("[WebKitCacheCleaner] Moved orphaned EncryptedStore %@ to recovery at %@", url.lastPathComponent, dest.path)
+                movedCount += 1
+                // Do not delete Keychain key — keep it for recovery
+            } catch {
+                NSLog("[WebKitCacheCleaner] Failed to move orphaned EncryptedStore %@: %@", url.path, error.localizedDescription)
+            }
+        }
+        if movedCount > 0 {
+            UserDefaults.standard.set(true, forKey: "QuiperOrphanedEncryptedStoresExist")
+            UserDefaults.standard.set(recoveryDir.path, forKey: "QuiperOrphanedEncryptedStoresPath")
+            NSLog("[WebKitCacheCleaner] %d orphaned EncryptedStores moved to %@ — user will be informed", movedCount, recoveryDir.path)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .orphanedEncryptedStoresFound, object: nil, userInfo: ["count": movedCount, "path": recoveryDir.path])
+            }
+        }
+    }
+
     /// Pure function for testing whether a specific folder represents an orphaned data store.
     internal static func isOrphanedStore(folderName: String, activeIDs: Set<UUID>) -> Bool {
         // 1. Strict UUID checking - completely ignores system folders (.default, safe browsing, etc.)
@@ -160,4 +193,8 @@ final class WebKitCacheCleaner {
         
         return true
     }
+}
+
+extension Notification.Name {
+    static let orphanedEncryptedStoresFound = Notification.Name("QuiperOrphanedEncryptedStoresFound")
 }

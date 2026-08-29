@@ -383,10 +383,38 @@ class Settings: ObservableObject {
         migrationDisposition(for: .engineSettingsShortcut) == .awaitingPrompt
     }
 
+    var isCorruptedConfig: Bool { SettingsPersistence.corruptedState != nil }
+
+    var corruptedConfigPreview: String? { SettingsPersistence.corruptedState?.preview }
+    var corruptedConfigError: String? { SettingsPersistence.corruptedState.map { String(describing: $0.underlying) } }
+    var corruptedConfigFile: URL? { SettingsPersistence.corruptedState?.file }
+    var corruptedConfigBackupFile: URL? { SettingsPersistence.corruptedState?.backupFile }
+
+    func revealCorruptedConfigInFinder() {
+        guard let file = SettingsPersistence.corruptedState?.file else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([file])
+    }
+
+    func resetCorruptedConfigToDefaults() {
+        SettingsPersistence.clearCorruption()
+        _ = loadSettings()
+        saveSettings()
+    }
+
+    func restoreCorruptedConfig(from backup: URL) {
+        let file = SettingsPersistence.settingsFile
+        try? FileManager.default.removeItem(at: file)
+        try? FileManager.default.copyItem(at: backup, to: file)
+        SettingsPersistence.clearCorruption()
+        _ = loadSettings()
+    }
+
     init() {
         FaviconFetcher.configure(imageProcessor: AppKitFaviconImageProcessor.self)
         _ = loadSettings()
-        enrichMissingIconsIfNeeded()
+        if !isCorruptedConfig {
+            enrichMissingIconsIfNeeded()
+        }
     }
 
     func enrichMissingIconsIfNeeded() {
@@ -559,6 +587,9 @@ class Settings: ObservableObject {
 
     func saveSettings() {
         if isPerformingWipe || isLoadingSettings {
+            return
+        }
+        if isCorruptedConfig {
             return
         }
         do {

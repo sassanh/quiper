@@ -19,7 +19,37 @@ enum ConfigPortability {
 
     static func makeDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            // 1. Try Double (deferredToDate: timeIntervalSinceReferenceDate)
+            if let doubleValue = try? container.decode(Double.self) {
+                return Date(timeIntervalSinceReferenceDate: doubleValue)
+            }
+            // 2. Try Int (also reference date, for old files writing 806344477)
+            if let intValue = try? container.decode(Int.self) {
+                return Date(timeIntervalSinceReferenceDate: Double(intValue))
+            }
+            // 3. Try ISO8601 string (current encoder: .iso8601 -> "2026-08-29T16:34:36Z")
+            if let stringValue = try? container.decode(String.self) {
+                // With fractional seconds
+                let isoWithFractional = ISO8601DateFormatter()
+                isoWithFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let date = isoWithFractional.date(from: stringValue) {
+                    return date
+                }
+                let iso = ISO8601DateFormatter()
+                iso.formatOptions = [.withInternetDateTime]
+                if let date = iso.date(from: stringValue) {
+                    return date
+                }
+                // Fallback: try default ISO8601 without explicit options (handles Z)
+                let isoDefault = ISO8601DateFormatter()
+                if let date = isoDefault.date(from: stringValue) {
+                    return date
+                }
+            }
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode Date: expected Double, Int, or ISO8601 string")
+        }
         return decoder
     }
 

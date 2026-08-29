@@ -610,11 +610,10 @@ struct PersistedSettings: Codable {
             forKey: .serviceZoomLevels
         ) {
             serviceZoomLevels = currentZoomLevels
-        } else {
-            let legacyZoomLevels = try container.decode(
-                [String: Double].self,
-                forKey: .serviceZoomLevels
-            )
+        } else if let legacyZoomLevels = try? container.decode(
+            [String: Double].self,
+            forKey: .serviceZoomLevels
+        ) {
             var migratedZoomLevels: [UUID: Double] = [:]
             for (serviceURL, zoomLevel) in legacyZoomLevels {
                 // URL-keyed zoom levels applied to every engine sharing that URL.
@@ -624,6 +623,10 @@ struct PersistedSettings: Codable {
             }
             serviceZoomLevels = migratedZoomLevels
             didDecodeLegacyServiceIdentifiers = true
+        } else {
+            // Old files sometimes encoded empty serviceZoomLevels as [] (array) or had unexpected type.
+            // Treat any unparseable value as empty to keep the file readable.
+            serviceZoomLevels = [:]
         }
         #if os(macOS)
         appShortcuts = try container.decodeIfPresent(AppShortcutBindings.self, forKey: .appShortcuts)
@@ -645,17 +648,17 @@ struct PersistedSettings: Codable {
             && (decodedEngineSelectorDisplayMode == nil || decodedSessionSelectorDisplayMode == nil)
         topBarVisibility = try container.decodeIfPresent(TopBarVisibility.self, forKey: .topBarVisibility)
         dragAreaPosition = try container.decodeIfPresent(DragAreaPosition.self, forKey: .dragAreaPosition)
-        showHiddenBarOnModifiers = try container.decodeIfPresent(Bool.self, forKey: .showHiddenBarOnModifiers)
+        showHiddenBarOnModifiers = try container.decodeBoolIfPresent(forKey: .showHiddenBarOnModifiers)
         windowAppearance = try container.decodeIfPresent(WindowAppearanceSettings.self, forKey: .windowAppearance)
         colorScheme = try container.decodeIfPresent(AppColorScheme.self, forKey: .colorScheme)
-        automaticallySwitchEngineOnLastSessionClose = try container.decodeIfPresent(Bool.self, forKey: .automaticallySwitchEngineOnLastSessionClose)
-        autoCreateSessionOnEmptyEngineActivation = try container.decodeIfPresent(Bool.self, forKey: .autoCreateSessionOnEmptyEngineActivation)
-        shouldPurgeDanglingWebData = try container.decodeIfPresent(Bool.self, forKey: .shouldPurgeDanglingWebData)
-        hasCompletedGhostOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedGhostOnboarding)
-        hasCompletedIOSOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedIOSOnboarding)
-        enableHUDDoubleTapCmd = try container.decodeIfPresent(Bool.self, forKey: .enableHUDDoubleTapCmd)
-        enableHUDCmdEscape = try container.decodeIfPresent(Bool.self, forKey: .enableHUDCmdEscape)
-        showOnAllSpaces = try container.decodeIfPresent(Bool.self, forKey: .showOnAllSpaces)
+        automaticallySwitchEngineOnLastSessionClose = try container.decodeBoolIfPresent(forKey: .automaticallySwitchEngineOnLastSessionClose)
+        autoCreateSessionOnEmptyEngineActivation = try container.decodeBoolIfPresent(forKey: .autoCreateSessionOnEmptyEngineActivation)
+        shouldPurgeDanglingWebData = try container.decodeBoolIfPresent(forKey: .shouldPurgeDanglingWebData)
+        hasCompletedGhostOnboarding = try container.decodeBoolIfPresent(forKey: .hasCompletedGhostOnboarding)
+        hasCompletedIOSOnboarding = try container.decodeBoolIfPresent(forKey: .hasCompletedIOSOnboarding)
+        enableHUDDoubleTapCmd = try container.decodeBoolIfPresent(forKey: .enableHUDDoubleTapCmd)
+        enableHUDCmdEscape = try container.decodeBoolIfPresent(forKey: .enableHUDCmdEscape)
+        showOnAllSpaces = try container.decodeBoolIfPresent(forKey: .showOnAllSpaces)
         settingsColorStyle = try container.decodeIfPresent(SettingsColorStyle.self, forKey: .settingsColorStyle)
         tabSurvivalPolicy = try container.decodeIfPresent(TabSurvivalPolicy.self, forKey: .tabSurvivalPolicy)
         if !container.contains(.persistedTabState) {
@@ -671,31 +674,44 @@ struct PersistedSettings: Codable {
             didDecodeLegacyServiceIdentifiers =
                 didDecodeLegacyServiceIdentifiers || decodedTabState.didMigrateLegacyIdentifiers
         }
-        enablePromptHistory = try container.decodeIfPresent(Bool.self, forKey: .enablePromptHistory)
+        enablePromptHistory = try container.decodeBoolIfPresent(forKey: .enablePromptHistory)
 
         if let style = try container.decodeIfPresent(PromptRecordingIndicatorStyle.self, forKey: .promptRecordingIndicatorStyle) {
             promptRecordingIndicatorStyle = style
-        } else if let legacyGlow = try legacyContainer.decodeIfPresent(Bool.self, forKey: .showPromptRecordingGlow) {
+        } else if let legacyGlow = try legacyContainer.decodeBoolIfPresent(forKey: .showPromptRecordingGlow) {
             promptRecordingIndicatorStyle = legacyGlow ? .dashed : .off
         } else {
             promptRecordingIndicatorStyle = .dashed
         }
 
-        promptHistoryRecordOnSubmit = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnSubmit)
-        promptHistoryRecordOnCmdBackspace = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnCmdBackspace)
-        promptHistoryRecordOnSelectionClear = try container.decodeIfPresent(Bool.self, forKey: .promptHistoryRecordOnSelectionClear)
+        promptHistoryRecordOnSubmit = try container.decodeBoolIfPresent(forKey: .promptHistoryRecordOnSubmit)
+        promptHistoryRecordOnCmdBackspace = try container.decodeBoolIfPresent(forKey: .promptHistoryRecordOnCmdBackspace)
+        promptHistoryRecordOnSelectionClear = try container.decodeBoolIfPresent(forKey: .promptHistoryRecordOnSelectionClear)
         promptHistoryLimit = try container.decodeIfPresent(Int.self, forKey: .promptHistoryLimit)
         tabNavigationRingSize = try container.decodeIfPresent(Int.self, forKey: .tabNavigationRingSize)
-        hideQuiperWhenRetriggeringActiveEngineShortcut = try container.decodeIfPresent(Bool.self, forKey: .hideQuiperWhenRetriggeringActiveEngineShortcut)
-        didResolveEngineSettingsShortcutMigration = try container.decodeIfPresent(Bool.self, forKey: .didResolveEngineSettingsShortcutMigration)
-        hasDismissedEngineSettingsShortcutNotice = try container.decodeIfPresent(Bool.self, forKey: .hasDismissedEngineSettingsShortcutNotice)
-        globalEngineDigitShortcutsEnabled = try container.decodeIfPresent(Bool.self, forKey: .globalEngineDigitShortcutsEnabled)
+        hideQuiperWhenRetriggeringActiveEngineShortcut = try container.decodeBoolIfPresent(forKey: .hideQuiperWhenRetriggeringActiveEngineShortcut)
+        didResolveEngineSettingsShortcutMigration = try container.decodeBoolIfPresent(forKey: .didResolveEngineSettingsShortcutMigration)
+        hasDismissedEngineSettingsShortcutNotice = try container.decodeBoolIfPresent(forKey: .hasDismissedEngineSettingsShortcutNotice)
+        globalEngineDigitShortcutsEnabled = try container.decodeBoolIfPresent(forKey: .globalEngineDigitShortcutsEnabled)
         iosHardwareKeyboardSettings = try container.decodeIfPresent(
             IOSHardwareKeyboardSettings.self,
             forKey: .iosHardwareKeyboardSettings
         )
         quiperVersion = try container.decodeIfPresent(String.self, forKey: .quiperVersion)
         version = try container.decodeIfPresent(Int.self, forKey: .version)
+    }
+}
+
+extension KeyedDecodingContainer {
+    func decodeBoolIfPresent(forKey key: Key) throws -> Bool? {
+        if let b = try? decodeIfPresent(Bool.self, forKey: key) { return b }
+        if let i = try? decodeIfPresent(Int.self, forKey: key) { return i != 0 }
+        if let s = try? decodeIfPresent(String.self, forKey: key) {
+            let lower = s.lowercased()
+            if lower == "true" || lower == "1" { return true }
+            if lower == "false" || lower == "0" { return false }
+        }
+        return nil
     }
 }
 
@@ -870,11 +886,10 @@ struct PersistedTabState: Codable {
             forKey: .tabHistory
         ) {
             tabHistory = currentTabHistory
-        } else {
-            let legacyTabHistory = try legacyContainer.decode(
-                [LegacyTabIdentifier].self,
-                forKey: .tabHistory
-            )
+        } else if let legacyTabHistory = try? legacyContainer.decode(
+            [LegacyTabIdentifier].self,
+            forKey: .tabHistory
+        ) {
             tabHistory = legacyTabHistory.compactMap { tab in
                 guard let serviceID = services.first(where: { $0.url == tab.serviceURL })?.id else {
                     return nil
@@ -882,6 +897,8 @@ struct PersistedTabState: Codable {
                 return TabIdentifier(serviceID: serviceID, sessionIndex: tab.sessionIndex)
             }
             didMigrateLegacyIdentifiers = true
+        } else {
+            tabHistory = nil
         }
 
         return (
@@ -924,7 +941,9 @@ struct PersistedTabState: Codable {
             return ([:], false)
         }
 
-        let legacyValue = try legacyContainer.decode(legacyType, forKey: legacyKey)
+        guard let legacyValue = try? legacyContainer.decode(legacyType, forKey: legacyKey) else {
+            return ([:], false)
+        }
         var migratedValue: [UUID: Value] = [:]
         for (serviceURL, value) in legacyValue {
             // Legacy tab state selected the first engine matching a URL.

@@ -46,23 +46,60 @@ enum SettingsPersistence {
             .appendingPathComponent("Library/Logs/quiper/hotkey_config.json")
     }
 
+    // MARK: - Corruption handling (single gate, never silently wipe)
+
+    struct CorruptedState {
+        let file: URL
+        let backupFile: URL
+        let preview: String
+        let underlying: Error
+    }
+
+    static var corruptedState: CorruptedState?
+
     // MARK: - Single read gate
 
     /// Reads the persisted snapshot exactly as stored on disk, returning
     /// whether the data came from disk. This mirrors `Settings.readPersistedSettings()`
     /// but is the only place that touches `settings.json`.
+    /// If the file exists but is unreadable, it is backed up to `settings.json.corrupted.<timestamp>`
+    /// and a `CorruptedError` is stored in `corruptedState` — the caller must ask the user, never silently reset.
     static func readPersistedSettings() -> (PersistedSettings, Bool) {
-        if let data = try? Data(contentsOf: settingsFile) {
-            if let payload = try? JSONDecoder().decode(PersistedSettings.self, from: data) {
+        let file = settingsFile
+        let isRunningTests = NSClassFromString("XCTestCase") != nil
+        let isUITesting = CommandLine.arguments.contains("--uitesting") || CommandLine.arguments.contains("--screenshot-mode")
+        if let data = try? Data(contentsOf: file) {
+            if let payload = try? ConfigPortability.makeDecoder().decode(PersistedSettings.self, from: data) {
+                corruptedState = nil
                 return (payload, true)
             }
-            if let legacyServices = try? JSONDecoder().decode([Service].self, from: data) {
+            if let legacyServices = try? ConfigPortability.makeDecoder().decode([Service].self, from: data) {
+                corruptedState = nil
                 return (PersistedSettings(services: legacyServices,
                                           hotkey: nil,
                                           customActions: nil,
                                           updatePreferences: nil,
                                           serviceZoomLevels: nil), true)
             }
+            // File exists but neither payload decodes — do not silently wipe.
+            // Tests and UI tests use isolated temp directories and must not block.
+            if !isRunningTests && !isUITesting {
+                let preview = String(data: data.prefix(1200), encoding: .utf8) ?? "<binary \(data.count) bytes>"
+                var underlying: Error = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Unknown decoding failure"))
+                do {
+                    _ = try ConfigPortability.makeDecoder().decode(PersistedSettings.self, from: data)
+                } catch let error {
+                    underlying = error
+                }
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyyMMddHHmmss"
+                let stamp = formatter.string(from: Date())
+                let backup = file.deletingLastPathComponent().appendingPathComponent("settings.json.corrupted.\(stamp)")
+                try? data.write(to: backup, options: .atomic)
+                corruptedState = CorruptedState(file: file, backupFile: backup, preview: preview, underlying: underlying)
+            }
+        } else {
+            corruptedState = nil
         }
         // Check for parameterized custom engines argument (for UI tests)
         let customEnginesArg = CommandLine.arguments.first { $0.hasPrefix("--test-custom-engines=") }
@@ -109,6 +146,9 @@ enum SettingsPersistence {
     }
 
     static func read() throws -> PersistedSettings {
+        if let state = corruptedState {
+            throw PersistenceError.corruptedFile(file: state.file, backup: state.backupFile, underlying: state.underlying)
+        }
         let (payload, _) = readPersistedSettings()
         return payload
     }
@@ -139,6 +179,9 @@ enum SettingsPersistence {
     /// Atomically writes the snapshot. The only place that touches
     /// `settings.json`, `quiper_engine_metadata.json`, or file-backed scripts for writing.
     static func write(_ snapshot: PersistedSettings) throws {
+        if corruptedState != nil {
+            throw PersistenceError.corruptedFile(file: settingsFile, backup: corruptedState!.backupFile, underlying: corruptedState!.underlying)
+        }
         // 1. Validate: never persist an empty secure metadata for a migrated+unlocked service.
         for service in snapshot.services where service.isEncrypted && service.hasMigratedMetadata {
             if EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
@@ -253,12 +296,45 @@ enum SettingsPersistence {
         }
     }
 
+    static func clearCorruption() {
+        corruptedState = nil
+    }
+
+    static func availableBackups() -> [URL] {
+        let dir = settingsFile.deletingLastPathComponent()
+        let fm = FileManager.default
+        let candidates = [
+            "settings.json.bak",
+            "settings.json.pre-unsync",
+            "settings-o.json",
+            "settings.json.corrupted"
+        ]
+        var urls: [URL] = []
+        if let contents = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles) {
+            for url in contents {
+                let name = url.lastPathComponent
+                if candidates.contains(where: { name == $0 || name.hasPrefix($0 + ".") }) {
+                    urls.append(url)
+                }
+            }
+            urls.sort { (a, b) in
+                let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return da > db
+            }
+        }
+        return urls
+    }
+
     enum PersistenceError: LocalizedError {
         case wouldWriteEmptySecureMetadata(serviceID: UUID, serviceName: String)
+        case corruptedFile(file: URL, backup: URL, underlying: Error)
         var errorDescription: String? {
             switch self {
             case .wouldWriteEmptySecureMetadata(_, let name):
                 return "Refusing to overwrite secure storage for \(name) with empty metadata — live service is still a stub while unlocked. This would wipe the bundle."
+            case .corruptedFile(let file, let backup, let underlying):
+                return "Settings file is corrupted at \(file.path) (backup at \(backup.path)): \(underlying.localizedDescription)"
             }
         }
     }

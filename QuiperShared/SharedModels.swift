@@ -221,14 +221,14 @@ struct Service: Codable, Identifiable {
 
         customCSS = try container.decodeIfPresent(String.self, forKey: .customCSS)
         iconBase64 = try container.decodeIfPresent(String.self, forKey: .iconBase64)
-        iconManuallyUnset = try container.decodeIfPresent(Bool.self, forKey: .iconManuallyUnset)
-        isEncrypted = try container.decodeIfPresent(Bool.self, forKey: .isEncrypted) ?? false
-        usesDiskutilSparseBundle = try container.decodeIfPresent(Bool.self, forKey: .usesDiskutilSparseBundle) ?? false
-        hasMigratedMetadata = try container.decodeIfPresent(Bool.self, forKey: .hasMigratedMetadata) ?? false
-        originatedFromSecureStorage = try container.decodeIfPresent(Bool.self, forKey: .originatedFromSecureStorage) ?? false
+        iconManuallyUnset = try container.decodeBoolIfPresent(forKey: .iconManuallyUnset)
+        isEncrypted = try container.decodeBoolIfPresent(forKey: .isEncrypted) ?? false
+        usesDiskutilSparseBundle = try container.decodeBoolIfPresent(forKey: .usesDiskutilSparseBundle) ?? false
+        hasMigratedMetadata = try container.decodeBoolIfPresent(forKey: .hasMigratedMetadata) ?? false
+        originatedFromSecureStorage = try container.decodeBoolIfPresent(forKey: .originatedFromSecureStorage) ?? false
 
-        let switchAway = try container.decodeIfPresent(Bool.self, forKey: .lockOnSwitchAway)
-        let inactivity = try container.decodeIfPresent(Bool.self, forKey: .lockAfterInactivity)
+        let switchAway = try container.decodeBoolIfPresent(forKey: .lockOnSwitchAway)
+        let inactivity = try container.decodeBoolIfPresent(forKey: .lockAfterInactivity)
 
         if let switchAway = switchAway, let inactivity = inactivity {
             self.lockOnSwitchAway = switchAway
@@ -242,10 +242,10 @@ struct Service: Codable, Identifiable {
         }
 
         autoLockInactivityTimeout = try container.decodeIfPresent(Int.self, forKey: .autoLockInactivityTimeout) ?? 5
-        preservePrompt = try container.decodeIfPresent(Bool.self, forKey: .preservePrompt) ?? true
+        preservePrompt = try container.decodeBoolIfPresent(forKey: .preservePrompt) ?? true
         templateActionScriptSync = try container.decodeIfPresent([UUID: Bool].self, forKey: .templateActionScriptSync) ?? [:]
-        templatePromptInputSelectorSync = try container.decodeIfPresent(Bool.self, forKey: .templatePromptInputSelectorSync) ?? false
-        templateCustomCSSSync = try container.decodeIfPresent(Bool.self, forKey: .templateCustomCSSSync) ?? false
+        templatePromptInputSelectorSync = try container.decodeBoolIfPresent(forKey: .templatePromptInputSelectorSync) ?? false
+        templateCustomCSSSync = try container.decodeBoolIfPresent(forKey: .templateCustomCSSSync) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
