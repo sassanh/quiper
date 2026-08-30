@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
+## [6.0.1] - 2026-08-30
+
+This release makes local-network sync resilient when the firewall blocks incoming connections and shows the older-storage prompt only when unlocking actually fails.
+
 ### Fixed
 
 - **Legacy Prompt Only on Failure**: The older-format message now appears only when a protected engine actually fails to mount, not at launch.
+- **Local Sync Handles Firewall Blocks**: Sharing now detects when macOS Firewall blocks incoming connections, surfaces an actionable error with a button to open Firewall Settings, and keeps large transfers alive longer; connection-reset and empty-state copy now refer to any device.
 
 ## [6.0.0] - 2026-08-30
 
