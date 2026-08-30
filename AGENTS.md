@@ -38,8 +38,11 @@
 - **Treat changelog updates as release bookkeeping: include the file when appropriate, but never mention changelog maintenance in a commit subject or body. Describe the user-facing change instead.**
 - Use a bulleted list (`- Details...`) in the body for multiple changes, starting each bullet with a capital letter. **CRITICAL: Do NOT use multiple `-m` flags for bullet points (e.g. `git commit -m "sub" -m "- 1" -m "- 2"`), as this inserts a blank line between every single bullet. Instead, pass the body as a single multiline string or use a temporary file to keep bullet points adjacent.**
 - **Write changelog entries only as what the final version delivers to the user** — the value delivered, not the journey. Never describe implementation details, intermediate failures, fixes done along the way, or debugging that led to the result. Readers see only the diff and the final behavior; the changelog must describe exactly that, in a few concise bullets.
-- **Never work around commit signing.** If `git commit` fails during the signing step, do NOT retry with `--no-gpg-sign`, do NOT modify `commit.gpgSign`, `user.signingkey`, or any git config to force it, and do NOT attempt any other bypass. Stop and report the failure so the user can decide (e.g., make the key available, or approve the action). Follow the same rule for any git failure: run the requested command plainly, and if it fails, report back rather than hacking around it.
 - PRs should summarize behavior change, list manual tests, and note platform (macOS version, Intel/Apple Silicon). Add screenshots or short screen recordings for UI-facing edits and mention if settings schema changes.
+
+## Releases
+
+- A release preparation commit should add a small paragraph at the top of the relevant changelog section explaining the main things done since last commits, only highlights, not more than 3 items.
 
 ## Configuration & Security Notes
 
