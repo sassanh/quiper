@@ -109,7 +109,6 @@ final class AppController: NSObject, NSWindowDelegate {
         registerEngineHotkeys()
         UpdateManager.shared.handleLaunchIfNeeded()
         presentTemplateActionSyncMigrationPromptIfNeeded()
-        presentSparseBundleMigrationPromptIfNeeded()
         presentEngineShortcutToggleMigrationPromptIfNeeded()
         presentEngineSettingsShortcutMigrationPromptIfNeeded()
         presentEngineMetadataMigrationPromptIfNeeded()
@@ -200,54 +199,6 @@ final class AppController: NSObject, NSWindowDelegate {
         }
     }
     
-    private func presentSparseBundleMigrationPromptIfNeeded() {
-        guard !Self.isRunningTests, !Constants.LaunchMode.shouldSuppressInterferenceUI else { return }
-        let legacyServices = Settings.shared.services.filter {
-            $0.isEncrypted && EncryptedVolumeManager.shared.bundleExists(for: $0.id)
-        }
-        guard !legacyServices.isEmpty else { return }
-        // Detect legacy hdiutil bundles: check creation date before 5.0.0 (2026-08-25) or raw flag in settings.json
-        let cutoff = Date(timeIntervalSince1970: 1787683200) // 2026-08-25
-        var hasLegacy = false
-        for service in legacyServices {
-            let bundleURL = EncryptedVolumeManager.shared.getBundleURL(for: service.id)
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: bundleURL.path),
-               let creation = attrs[.creationDate] as? Date, creation < cutoff {
-                hasLegacy = true
-                break
-            }
-        }
-        if !hasLegacy {
-            // Also check raw settings.json for legacy flag that may still be on disk from older versions
-            if let data = try? Data(contentsOf: SettingsPersistence.settingsFile),
-               let raw = String(data: data, encoding: .utf8),
-               raw.contains("usesDiskutilSparseBundle") && raw.contains(": false") {
-                hasLegacy = true
-            }
-        }
-        guard hasLegacy else { return }
-        DispatchQueue.main.async {
-            NSApp.activate(ignoringOtherApps: true)
-            let alert = NSAlert()
-            alert.messageText = "Older Secure Storage Requires Quiper 5.0.0"
-            alert.informativeText = "Some of your protected engines were created with an older secure storage format that this version of Quiper no longer supports.\n\nPlease download Quiper 5.0.0 from the releases page, open it once so it can migrate your protected engines to the current format, then update to this version again. 5.0.0 was the last version that can open and convert those older bundles.\n\nIf you continue without migrating, those engines will fail to unlock."
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.addButton(withTitle: "Reveal Storage Folder")
-            alert.buttons[1].keyEquivalent = "\u{1b}"
-            let response = alert.runModal()
-            if response == .alertSecondButtonReturn {
-                let folder = EncryptedVolumeManager.shared.getBundleURL(for: legacyServices.first!.id).deletingLastPathComponent()
-                NSWorkspace.shared.open(folder)
-            }
-        }
-    }
-    
-    @MainActor
-    private func runSparseBundleMigrationForAllLegacyEngines() async {
-        presentSparseBundleMigrationPromptIfNeeded()
-    }
-
     #if DEBUG
     private func startTemplateValidationServer() {
         guard let concreteWindowController = windowController as? MainWindowController else {

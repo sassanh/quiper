@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Legacy Prompt Only on Failure**: The older-format message now appears only when a protected engine actually fails to mount, not at launch.
+
 ## [6.0.0] - 2026-08-30
 
 This release hardens settings persistence against corruption, refines the locked-engine experience with clearer layout and recovery, and polishes Config and dialog interactions.
