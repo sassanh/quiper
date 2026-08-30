@@ -94,6 +94,7 @@ export default defineConfig({
           { text: 'Daily Workflow & Shortcuts', link: '/daily-workflow' },
           { text: 'Setting Up Engines', link: '/engines-setup', items: [
             { text: 'Gemini', link: '/engines-setup/gemini' },
+            { text: 'Grok', link: '/engines-setup/grok' },
           ] },
           { text: 'Managing Engines', link: '/engines' },
           { text: 'Application Settings', link: '/settings' },
