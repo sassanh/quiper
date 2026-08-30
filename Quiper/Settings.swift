@@ -374,7 +374,6 @@ class Settings: ObservableObject {
     var needsTemplateActionSyncMigrationPrompt: Bool {
         migrationDisposition(for: .templateActionScriptSync) == .awaitingPrompt
     }
-    private(set) var needsSparseBundleMigrationPrompt = false
     var needsEngineShortcutToggleMigrationPrompt: Bool {
         migrationDisposition(for: .engineShortcutToggle) == .awaitingPrompt
     }
@@ -545,10 +544,6 @@ class Settings: ObservableObject {
         applyEngineSettingsShortcutMigrationSetting(
             persistedValue: persisted.didResolveEngineSettingsShortcutMigration
         )
-        needsSparseBundleMigrationPrompt =
-            services.contains(where: { $0.isEncrypted })
-            && EncryptedVolumeManager.shared.hasAnyLegacyBundles(in: services)
-
         var shouldSaveAfterLoad = false
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
@@ -762,7 +757,6 @@ class Settings: ObservableObject {
         stub.templateCustomCSSSync = false
         stub.isEncrypted = true
         stub.hasMigratedMetadata = true
-        stub.usesDiskutilSparseBundle = false
         return stub
     }
 
@@ -1037,7 +1031,6 @@ class Settings: ObservableObject {
                 }
                 services[index].originatedFromSecureStorage = false
                 services[index].hasMigratedMetadata = true
-                services[index].usesDiskutilSparseBundle = true
                 saveSettings()
             } catch {
                 NSLog("[Settings] Failed to auto-reenable Secure Storage for %@: %@", services[index].name, error.localizedDescription)

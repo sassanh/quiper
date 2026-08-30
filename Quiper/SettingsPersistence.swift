@@ -167,7 +167,23 @@ enum SettingsPersistence {
             let service = snapshot.services[index]
             guard service.isEncrypted, service.hasMigratedMetadata else { continue }
             guard EncryptedVolumeManager.shared.isUnlocked(for: service.id) else { continue }
-            if let metadata = try? readSecureMetadata(for: service.id) {
+            if var metadata = try? readSecureMetadata(for: service.id) {
+                var didMigrate = false
+                if metadata.lockOnSwitchAway == nil {
+                    metadata.lockOnSwitchAway = service.lockOnSwitchAway
+                    didMigrate = true
+                }
+                if metadata.lockAfterInactivity == nil {
+                    metadata.lockAfterInactivity = service.lockAfterInactivity
+                    didMigrate = true
+                }
+                if metadata.autoLockInactivityTimeout == nil {
+                    metadata.autoLockInactivityTimeout = service.autoLockInactivityTimeout
+                    didMigrate = true
+                }
+                if didMigrate {
+                    try? writeSecureMetadata(metadata, for: service.id)
+                }
                 metadata.apply(to: &snapshot.services[index])
             }
         }

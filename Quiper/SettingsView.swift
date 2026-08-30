@@ -7,6 +7,43 @@ import UserNotifications
 import WebKit
 import LocalAuthentication
 
+private struct AlwaysVisibleScrollView<Content: View>: NSViewRepresentable {
+    let content: Content
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = false
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.scrollerStyle = .legacy
+        let hosting = NSHostingView(rootView: content)
+        hosting.translatesAutoresizingMaskIntoConstraints = true
+        hosting.autoresizingMask = [.width]
+        let fitting = hosting.fittingSize
+        hosting.frame = NSRect(x: 0, y: 0, width: 280, height: max(fitting.height, 140))
+        scrollView.documentView = hosting
+        scrollView.verticalScroller?.isHidden = false
+        return scrollView
+    }
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        if let hosting = nsView.documentView as? NSHostingView<Content> {
+            hosting.rootView = content
+            DispatchQueue.main.async {
+                let fitting = hosting.fittingSize
+                var frame = hosting.frame
+                frame.size.height = max(fitting.height, 140)
+                frame.size.width = 280
+                hosting.frame = frame
+                nsView.autohidesScrollers = false
+                nsView.hasVerticalScroller = true
+                nsView.verticalScroller?.isHidden = false
+            }
+        }
+    }
+}
+
 struct SettingsView: View {
     @State private var selectedTab = "Engines"
     @StateObject private var shortcutState = ShortcutRecordingState()
@@ -1167,6 +1204,8 @@ struct ServiceDetailView: View {
     @State private var showGlobalEngineDigitShortcutPrompt = false
     @State private var isUnlockingEngine = false
     @State private var unlockErrorMessage: String? = nil
+    @State private var showDeleteLockedEngineConfirmation = false
+    @State private var lastUnlockError: Error? = nil
 
     private var detailSelectionBinding: Binding<DetailSelection?> {
         Binding(
@@ -1256,6 +1295,7 @@ struct ServiceDetailView: View {
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
                 .frame(width: 64, height: 64)
+                .disabled(service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id))
                 .onHover { hovering in
                     withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
                         isHoveringIcon = hovering
@@ -1300,63 +1340,147 @@ struct ServiceDetailView: View {
                                 .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
-                    
-                    HStack(spacing: 8) {
-                        Text("URL:")
-                            .font(.callout)
-                            .foregroundColor(.secondary)
-                            .frame(width: 50, alignment: .trailing)
-                        TextField("URL", text: $service.url)
-                            .focused($isUrlFieldFocused)
-                            .textFieldStyle(.roundedBorder)
+                    if !(service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)) {
+                        HStack(spacing: 8) {
+                            Text("URL:")
+                                .font(.callout)
+                                .foregroundColor(.secondary)
+                                .frame(width: 50, alignment: .trailing)
+                            TextField("URL", text: $service.url)
+                                .focused($isUrlFieldFocused)
+                                .textFieldStyle(.roundedBorder)
+                        }
                     }
                 }
             }
             .padding([.horizontal, .top])
             .padding(.bottom, 8)
-            
-            // Layout below the divider handles floating hover preview seamlessly
-            ZStack(alignment: .topLeading) {
-                advancedPane
-                
-                if isHoveringIcon,
-                   let iconBase64 = service.iconBase64,
-                   let data = Data(base64Encoded: iconBase64),
-                   let nsImage = NSImage(data: data) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("High-Res Preview")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.secondary)
+
+            // Secured content: URL and engine details, hidden when locked but name/shortcut remain visible
+            ZStack {
+                VStack(alignment: .leading, spacing: 0) {
+                    ZStack(alignment: .topLeading) {
+                        advancedPane
                         
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(NSColor.controlBackgroundColor))
-                                .frame(width: 160, height: 160)
-                                .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
-                            
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .interpolation(.high)
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 140, height: 140)
-                                .cornerRadius(8)
+                        if isHoveringIcon,
+                           let iconBase64 = service.iconBase64,
+                           let data = Data(base64Encoded: iconBase64),
+                           let nsImage = NSImage(data: data) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("High-Res Preview")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.secondary)
+                                
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color(NSColor.controlBackgroundColor))
+                                        .frame(width: 160, height: 160)
+                                        .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                                    
+                                    Image(nsImage: nsImage)
+                                        .resizable()
+                                        .interpolation(.high)
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 140, height: 140)
+                                        .cornerRadius(8)
+                                }
+                            }
+                            .padding(12)
+                            .background(.ultraThinMaterial)
+                            .cornerRadius(16)
+                            .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 6)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                            )
+                            .padding(.leading, 24)
+                            .padding(.top, 16)
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.92, anchor: .topLeading)),
+                                removal: .opacity.combined(with: .scale(scale: 0.95, anchor: .topLeading))
+                            ))
+                            .zIndex(100)
                         }
                     }
-                    .padding(12)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(16)
-                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 6)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                    )
-                    .padding(.leading, 24)
-                    .padding(.top, 16)
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .scale(scale: 0.92, anchor: .topLeading)),
-                        removal: .opacity.combined(with: .scale(scale: 0.95, anchor: .topLeading))
-                    ))
-                    .zIndex(100)
+                }
+                if service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
+                    ZStack {
+                        Color.black.opacity(0.15)
+                            .background(.ultraThinMaterial)
+                        VStack(spacing: 16) {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 48))
+                                .foregroundColor(.secondary)
+                            Text("\(service.name) is Locked")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                            Text("Authenticate to access \(service.name) settings")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let errorMessage = unlockErrorMessage {
+                                AlwaysVisibleScrollView {
+                                    VStack(spacing: 8) {
+                                        Text(errorMessage)
+                                            .font(.caption)
+                                            .foregroundColor(.red)
+                                            .multilineTextAlignment(.center)
+                                            .lineLimit(nil)
+                                            .frame(width: 260)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .textSelection(.enabled)
+                                            .padding(.horizontal)
+                                        if isFundamentalUnlockError(lastUnlockError) || errorMessage.lowercased().contains("not found") || errorMessage.lowercased().contains("older") || errorMessage.lowercased().contains("no longer supports") {
+                                            Text("If you can't recover the key from a backup or another device and no longer need the protected data, you can remove this engine. This will permanently delete its encrypted storage and history.")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                                .multilineTextAlignment(.center)
+                                                .lineLimit(nil)
+                                                .frame(width: 260)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                                .padding(.horizontal)
+                                            Button(role: .destructive) {
+                                                showDeleteLockedEngineConfirmation = true
+                                            } label: {
+                                                Label("Remove Engine", systemImage: "trash")
+                                            }
+                                            .buttonStyle(.bordered)
+                                            .controlSize(.small)
+                                        }
+                                    }
+                                    .padding(.vertical, 4)
+                                }
+                                .frame(width: 280, height: 140)
+                            }
+                            if unlockErrorMessage == nil {
+                                BiometricUnlockView(
+                                serviceName: service.name,
+                                onSuccess: { context in
+                                    unlockEngine(context: context)
+                                },
+                                onFailure: { error in
+                                    unlockErrorMessage = error
+                                    if lastUnlockError == nil {
+                                        lastUnlockError = NSError(domain: "BiometricUnlockView", code: 0, userInfo: [NSLocalizedDescriptionKey: error])
+                                    }
+                                }
+                            )
+                            .frame(width: 140, height: 120)
+                                .padding(.top, 8)
+                            }
+                        }
+                        .padding(20)
+                        .frame(maxWidth: 320, maxHeight: 380)
+                        .background(Color(NSColor.windowBackgroundColor).opacity(0.95))
+                        .cornerRadius(16)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                        )
+                        .shadow(color: Color.black.opacity(0.25), radius: 20, x: 0, y: 10)
+                    }
+                    .transition(.opacity.animation(.easeInOut(duration: 0.15)))
                 }
             }
             
@@ -1421,57 +1545,6 @@ struct ServiceDetailView: View {
             }
             }
             
-            let isEngineLocked = service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
-            if isEngineLocked {
-                ZStack {
-                    Color.black.opacity(0.15)
-                        .background(.ultraThinMaterial)
-                        .ignoresSafeArea()
-                    
-                    VStack(spacing: 16) {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 48))
-                            .foregroundColor(.secondary)
-                        
-                        Text("\(service.name) is Locked")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                        
-                        Text("Authenticate to access \(service.name) settings")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                        
-                        if let errorMessage = unlockErrorMessage {
-                            Text(errorMessage)
-                                .font(.caption)
-                                .foregroundColor(.red)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                        }
-                        
-                        BiometricUnlockView(
-                            serviceName: service.name,
-                            onSuccess: { context in
-                                unlockEngine(context: context)
-                            },
-                            onFailure: { error in
-                                unlockErrorMessage = error
-                            }
-                        )
-                        .frame(width: 140, height: 160)
-                    }
-                    .padding(32)
-                    .frame(maxWidth: 320)
-                    .background(Color(NSColor.windowBackgroundColor).opacity(0.95))
-                    .cornerRadius(16)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                    )
-                    .shadow(color: Color.black.opacity(0.25), radius: 20, x: 0, y: 10)
-                }
-                .transition(.opacity.animation(.easeInOut(duration: 0.15)))
-            }
             
             if isMigratingData {
                 ZStack {
@@ -1510,6 +1583,14 @@ struct ServiceDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("\(engineDigitShortcutLabel) already selects this engine inside Quiper. Enable the primary Go to engine 1–10 shortcuts everywhere in macOS?")
+        }
+        .alert("Remove Locked Engine?", isPresented: $showDeleteLockedEngineConfirmation) {
+            Button("Remove", role: .destructive) {
+                deleteLockedEngine()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete \(service.name) and its encrypted storage, including all sessions and local data. This can't be undone. If you have a backup, you can restore it later.")
         }
     }
 
@@ -1579,10 +1660,53 @@ struct ServiceDetailView: View {
                     isUnlockingEngine = false
                     if (error as? LAError)?.code == .userCancel {
                         unlockErrorMessage = nil
+                        lastUnlockError = nil
                     } else {
                         unlockErrorMessage = error.localizedDescription
+                        lastUnlockError = error
                     }
                 }
+            }
+        }
+    }
+
+    private func isFundamentalUnlockError(_ error: Error?) -> Bool {
+        guard let error else { return false }
+        if let laError = error as? LAError, laError.code == .userCancel { return false }
+        let message = error.localizedDescription.lowercased()
+        if message.contains("not found") || message.contains("older") || message.contains("no longer supports") || message.contains("missing") || message.contains("damaged") || message.contains("corrupt") || message.contains("failed to read") || message.contains("bundle") {
+            return true
+        }
+        if let keyError = error as? SecureStorageManager.KeychainError {
+            switch keyError {
+            case .itemNotFound: return true
+            case .authenticationFailed: return false
+            case .unknown: return message.contains("not found")
+            }
+        }
+        if let nsError = error as NSError?, nsError.domain == "EncryptedVolumeManager" { return true }
+        if error is MetadataMigrationError { return true }
+        return false
+    }
+
+    private func deleteLockedEngine() {
+        let serviceID = service.id
+        Task { @MainActor in
+            try? await EncryptedVolumeManager.shared.unmountVolume(for: serviceID)
+            EncryptedVolumeManager.shared.deleteVolume(for: serviceID)
+            SecureStorageManager.shared.deleteKeyFromKeychain(for: serviceID)
+            ActionScriptStorage.deleteScripts(for: serviceID)
+            CustomCSSStorage.deleteCSS(for: serviceID)
+            FocusSelectorStorage.deleteSelector(for: serviceID)
+            WKWebsiteDataStore.remove(forIdentifier: serviceID) { _ in }
+            if let index = settings.services.firstIndex(where: { $0.id == serviceID }) {
+                settings.services.remove(at: index)
+                settings.saveSettings()
+                selectedServiceID = settings.services.first?.id
+                appController?.reloadServices()
+            } else {
+                settings.saveSettings()
+                appController?.reloadServices()
             }
         }
     }
@@ -2260,62 +2384,65 @@ struct ServiceDetailView: View {
                         
                         if service.isEncrypted {
                             Divider()
-                            
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Auto-Lock Policy")
-                                    .font(.body)
-                                    .fontWeight(.medium)
-                                    .padding(.bottom, 2)
-                                
-                                HStack {
-                                    Toggle("Lock immediately on switch away", isOn: Binding(
-                                        get: { service.lockOnSwitchAway },
-                                        set: { newValue in
-                                            service.lockOnSwitchAway = newValue
-                                            settings.saveSettings()
-                                            appController?.reloadServices()
-                                        }
-                                    ))
-                                    .toggleStyle(.checkbox)
-                                }
-                                
-                                HStack {
-                                    Toggle("Lock after a period of inactivity", isOn: Binding(
-                                        get: { service.lockAfterInactivity },
-                                        set: { newValue in
-                                            service.lockAfterInactivity = newValue
-                                            settings.saveSettings()
-                                            appController?.reloadServices()
-                                        }
-                                    ))
-                                    .toggleStyle(.checkbox)
-                                }
-                            }
-                            
-                            if service.lockAfterInactivity {
-                                Divider()
-                                
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Inactivity Timeout")
-                                            .font(.body)
-                                        Text("Specify minutes of idle time before this engine locks.")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .fixedSize(horizontal: false, vertical: true)
+
+                            let isEngineLocked = service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+                            if !isEngineLocked {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("Auto-Lock Policy")
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                        .padding(.bottom, 2)
+                                    
+                                    HStack {
+                                        Toggle("Lock immediately on switch away", isOn: Binding(
+                                            get: { service.lockOnSwitchAway },
+                                            set: { newValue in
+                                                service.lockOnSwitchAway = newValue
+                                                settings.saveSettings()
+                                                appController?.reloadServices()
+                                            }
+                                        ))
+                                        .toggleStyle(.checkbox)
                                     }
-                                    Spacer()
-                                    Stepper(value: Binding(
-                                        get: { service.autoLockInactivityTimeout },
-                                        set: { newValue in
-                                            service.autoLockInactivityTimeout = max(1, newValue)
-                                            settings.saveSettings()
-                                            appController?.reloadServices()
+                                    
+                                    HStack {
+                                        Toggle("Lock after a period of inactivity", isOn: Binding(
+                                            get: { service.lockAfterInactivity },
+                                            set: { newValue in
+                                                service.lockAfterInactivity = newValue
+                                                settings.saveSettings()
+                                                appController?.reloadServices()
+                                            }
+                                        ))
+                                        .toggleStyle(.checkbox)
+                                    }
+                                }
+                                
+                                if service.lockAfterInactivity {
+                                    Divider()
+                                    
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Inactivity Timeout")
+                                                .font(.body)
+                                            Text("Specify minutes of idle time before this engine locks.")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                                .fixedSize(horizontal: false, vertical: true)
                                         }
-                                    ), in: 1...1440) {
-                                        Text("\(service.autoLockInactivityTimeout) min")
-                                            .font(.body.monospacedDigit())
-                                            .frame(minWidth: 60, alignment: .trailing)
+                                        Spacer()
+                                        Stepper(value: Binding(
+                                            get: { service.autoLockInactivityTimeout },
+                                            set: { newValue in
+                                                service.autoLockInactivityTimeout = max(1, newValue)
+                                                settings.saveSettings()
+                                                appController?.reloadServices()
+                                            }
+                                        ), in: 1...1440) {
+                                            Text("\(service.autoLockInactivityTimeout) min")
+                                                .font(.body.monospacedDigit())
+                                                .frame(minWidth: 60, alignment: .trailing)
+                                        }
                                     }
                                 }
                             }

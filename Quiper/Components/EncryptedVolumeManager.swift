@@ -1,18 +1,11 @@
 import Foundation
 
-enum SparseBundleFormat: Equatable {
-    case legacyHdiutil
-    case modernDiskutil
-}
-
 @MainActor
 final class EncryptedVolumeManager {
     static let shared = EncryptedVolumeManager()
     
     private init() {}
     
-    // Mount/unmount operations can be re-entered while awaiting Process completion.
-    // Keep one in-flight task per service so duplicate unlock events cannot race.
     private var activeVolumeOperations: [UUID: Task<Void, Error>] = [:]
     
     private let baseStorageDir: URL = {
@@ -32,7 +25,6 @@ final class EncryptedVolumeManager {
         return baseDir
     }()
     
-    /// Path to the sparsebundle store on host disk
     func getBundleURL(for serviceID: UUID) -> URL {
         return baseStorageDir.appendingPathComponent("EncryptedStores").appendingPathComponent("\(serviceID.uuidString).sparsebundle")
     }
@@ -41,7 +33,6 @@ final class EncryptedVolumeManager {
         getBundleURL(for: serviceID).appendingPathExtension("hdiutil-backup")
     }
     
-    /// Path where the sparsebundle is mounted
     func getMountPointURL(for serviceID: UUID) -> URL {
         let fileManager = FileManager.default
         let libraryURL = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first!
@@ -54,54 +45,9 @@ final class EncryptedVolumeManager {
             .appendingPathComponent(serviceID.uuidString)
     }
     
-    /// Checks if the sparsebundle is physically present on disk
     func bundleExists(for serviceID: UUID) -> Bool {
         let bundlePath = getBundleURL(for: serviceID).path
         return FileManager.default.fileExists(atPath: bundlePath)
-    }
-    
-    /// Detects whether an on-disk sparsebundle should be mounted with diskutil or legacy hdiutil.
-    func bundleFormat(for serviceID: UUID) -> SparseBundleFormat? {
-        guard bundleExists(for: serviceID) else { return nil }
-        
-        if Settings.shared.services.first(where: { $0.id == serviceID })?.usesDiskutilSparseBundle == true {
-            return .modernDiskutil
-        }
-        
-        return .legacyHdiutil
-    }
-    
-    func hasAnyLegacyBundles(in services: [Service]) -> Bool {
-        services.contains { service in
-            service.isEncrypted && bundleExists(for: service.id) && !service.usesDiskutilSparseBundle
-        }
-    }
-    
-    func markUsesDiskutilSparseBundle(_ serviceID: UUID) {
-        guard let index = Settings.shared.services.firstIndex(where: { $0.id == serviceID }) else { return }
-        guard !Settings.shared.services[index].usesDiskutilSparseBundle else { return }
-        Settings.shared.services[index].usesDiskutilSparseBundle = true
-        Settings.shared.saveSettings()
-        NSLog("[VolumeManager] Marked service %@ as using diskutil sparsebundle format", serviceID.uuidString)
-    }
-    
-    func clearUsesDiskutilSparseBundle(_ serviceID: UUID) {
-        guard let index = Settings.shared.services.firstIndex(where: { $0.id == serviceID }) else { return }
-        guard Settings.shared.services[index].usesDiskutilSparseBundle else { return }
-        Settings.shared.services[index].usesDiskutilSparseBundle = false
-        Settings.shared.saveSettings()
-        NSLog("[VolumeManager] Cleared diskutil sparsebundle format marker for service %@", serviceID.uuidString)
-    }
-    
-    /// Ensures no stale mount state remains before a migration attempt.
-    func resetMountStateForMigration(for serviceID: UUID) async {
-        if isMounted(for: serviceID) {
-            try? await unmountVolume(for: serviceID)
-        }
-        
-        let mountPointURL = getMountPointURL(for: serviceID)
-        try? FileManager.default.removeItem(at: mountPointURL)
-        markLocked(serviceID)
     }
     
     private var unlockedServiceIDs: Set<UUID> = []
@@ -119,7 +65,6 @@ final class EncryptedVolumeManager {
         EngineMetadataMigrationManager.shared.clearCachedMetadata(for: serviceID)
     }
     
-    /// Checks if the volume is currently mounted
     func isMounted(for serviceID: UUID) -> Bool {
         let mountPoint = getMountPointURL(for: serviceID).path
         var isDir: ObjCBool = false
@@ -140,8 +85,7 @@ final class EncryptedVolumeManager {
         Constants.IS_DEV ? "QuiperDevEngine-\(serviceID.uuidString)" : "QuiperEngine-\(serviceID.uuidString)"
     }
     
-    /// Creates an encrypted APFS sparsebundle using diskutil.
-    func createVolume(for serviceID: UUID, passphrase: String, markAsDiskutilFormat: Bool = true) async throws {
+    func createVolume(for serviceID: UUID, passphrase: String) async throws {
         let bundleURL = getBundleURL(for: serviceID)
         let parentDir = bundleURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
@@ -164,20 +108,11 @@ final class EncryptedVolumeManager {
             passphrase: passphrase,
             failureLabel: "diskutil image create"
         )
-        
-        if markAsDiskutilFormat {
-            markUsesDiskutilSparseBundle(serviceID)
-        }
 
         ensureSpotlightExclusion(for: serviceID, includeMountPoint: false)
     }
     
-    /// Mounts the encrypted sparsebundle using the passphrase.
-    func mountVolume(
-        for serviceID: UUID,
-        passphrase: String,
-        format override: SparseBundleFormat? = nil
-    ) async throws {
+    func mountVolume(for serviceID: UUID, passphrase: String) async throws {
         if let activeOperation = activeVolumeOperations[serviceID] {
             try await activeOperation.value
             if isMounted(for: serviceID) {
@@ -188,7 +123,7 @@ final class EncryptedVolumeManager {
         
         let operation = Task { @MainActor [weak self] in
             guard let self = self else { return }
-            try await self.performMountVolume(for: serviceID, passphrase: passphrase, format: override)
+            try await self.performMountVolume(for: serviceID, passphrase: passphrase)
         }
         activeVolumeOperations[serviceID] = operation
         defer { activeVolumeOperations[serviceID] = nil }
@@ -196,11 +131,7 @@ final class EncryptedVolumeManager {
         try await operation.value
     }
     
-    private func performMountVolume(
-        for serviceID: UUID,
-        passphrase: String,
-        format override: SparseBundleFormat? = nil
-    ) async throws {
+    private func performMountVolume(for serviceID: UUID, passphrase: String) async throws {
         let bundleURL = getBundleURL(for: serviceID)
         let mountPointURL = getMountPointURL(for: serviceID)
         let fileManager = FileManager.default
@@ -238,19 +169,20 @@ final class EncryptedVolumeManager {
         
         try fileManager.createDirectory(at: mountPointURL, withIntermediateDirectories: true)
         
-        let format = override ?? bundleFormat(for: serviceID) ?? .legacyHdiutil
-        
         do {
-            try await attachVolume(bundleURL: bundleURL, mountPointURL: mountPointURL, passphrase: passphrase, format: format)
+            try await attachVolume(bundleURL: bundleURL, mountPointURL: mountPointURL, passphrase: passphrase)
         } catch {
             let message = error.localizedDescription
             if message.localizedCaseInsensitiveContains("resource busy") {
-                NSLog("[VolumeManager] Attach reported busy mount point for service %@. Forcing cleanup and retrying once.", serviceID.uuidString)
+                NSLog("[VolumeManager] Attach reported busy mount point for service %@: Forcing cleanup and retrying once.", serviceID.uuidString)
                 try? await ejectVolume(at: mountPointURL)
                 try? fileManager.removeItem(at: mountPointURL)
                 try fileManager.createDirectory(at: mountPointURL, withIntermediateDirectories: true)
                 try await Task.sleep(nanoseconds: 300_000_000)
-                try await attachVolume(bundleURL: bundleURL, mountPointURL: mountPointURL, passphrase: passphrase, format: format)
+                try await attachVolume(bundleURL: bundleURL, mountPointURL: mountPointURL, passphrase: passphrase)
+            } else if message.localizedCaseInsensitiveContains("incorrect passphrase") || message.localizedCaseInsensitiveContains("authentication") || message.localizedCaseInsensitiveContains("no such file") {
+                // Legacy hdiutil bundles fail with diskutil. Surface a clear migration message.
+                throw NSError(domain: "EncryptedVolumeManager", code: 1, userInfo: [NSLocalizedDescriptionKey: legacyBundleMessage(for: serviceID)])
             } else {
                 throw error
             }
@@ -273,7 +205,11 @@ final class EncryptedVolumeManager {
         markUnlocked(serviceID)
     }
 
-    /// Applies Spotlight indexing exclusions to all engines that already use secure storage.
+    private func legacyBundleMessage(for serviceID: UUID) -> String {
+        let name = Settings.shared.services.first(where: { $0.id == serviceID })?.name ?? "This engine"
+        return "\(name) uses an older secure storage format that this version of Quiper no longer supports. Please download Quiper 5.0.0, open it once so it can migrate your protected engines, then update to this version again. You can find 5.0.0 on the releases page."
+    }
+
     func applySpotlightExclusionToAllSecuredEngines() {
         for service in Settings.shared.services where service.isEncrypted {
             ensureSpotlightExclusion(for: service.id, includeMountPoint: isMounted(for: service.id))
@@ -294,7 +230,6 @@ final class EncryptedVolumeManager {
         SpotlightExclusion.ensureExcluded(at: mountPointURL)
     }
     
-    /// Unmounts the volume
     func unmountVolume(for serviceID: UUID) async throws {
         if let activeOperation = activeVolumeOperations[serviceID] {
             try await activeOperation.value
@@ -328,7 +263,6 @@ final class EncryptedVolumeManager {
         markLocked(serviceID)
     }
     
-    /// Securely removes the sparsebundle storage from disk when encryption is disabled or service is deleted
     func deleteVolume(for serviceID: UUID) {
         markLocked(serviceID)
         let bundleURL = getBundleURL(for: serviceID)
@@ -339,43 +273,8 @@ final class EncryptedVolumeManager {
         try? FileManager.default.removeItem(at: mountPointURL)
     }
     
-    private func attachVolume(
-        bundleURL: URL,
-        mountPointURL: URL,
-        passphrase: String,
-        format: SparseBundleFormat
-    ) async throws {
-        switch format {
-        case .legacyHdiutil:
-            try await attachLegacyVolume(bundleURL: bundleURL, mountPointURL: mountPointURL, passphrase: passphrase)
-        case .modernDiskutil:
-            do {
-                try await attachModernVolume(bundleURL: bundleURL, mountPointURL: mountPointURL, passphrase: passphrase)
-            } catch {
-                let message = error.localizedDescription
-                if message.localizedCaseInsensitiveContains("incorrect passphrase") {
-                    NSLog("[VolumeManager] diskutil attach reported incorrect passphrase; retrying with legacy hdiutil attach")
-                    try await attachLegacyVolume(bundleURL: bundleURL, mountPointURL: mountPointURL, passphrase: passphrase)
-                } else {
-                    throw error
-                }
-            }
-        }
-    }
-    
-    private func attachLegacyVolume(bundleURL: URL, mountPointURL: URL, passphrase: String) async throws {
-        try await runProcessWithStdinPassphrase(
-            executable: "/usr/bin/hdiutil",
-            arguments: [
-                "attach",
-                "-nobrowse",
-                "-mountpoint", mountPointURL.path,
-                "-stdinpass",
-                bundleURL.path
-            ],
-            passphrase: passphrase,
-            failureLabel: "hdiutil attach"
-        )
+    private func attachVolume(bundleURL: URL, mountPointURL: URL, passphrase: String) async throws {
+        try await attachModernVolume(bundleURL: bundleURL, mountPointURL: mountPointURL, passphrase: passphrase)
     }
     
     private func attachModernVolume(bundleURL: URL, mountPointURL: URL, passphrase: String) async throws {
@@ -425,12 +324,7 @@ final class EncryptedVolumeManager {
         }.value
     }
     
-    private func runProcessWithStdinPassphrase(
-        executable: String,
-        arguments: [String],
-        passphrase: String,
-        failureLabel: String
-    ) async throws {
+    private func runProcessWithStdinPassphrase(executable: String, arguments: [String], passphrase: String, failureLabel: String) async throws {
         try await Task.detached(priority: .userInitiated) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: executable)
@@ -461,11 +355,7 @@ final class EncryptedVolumeManager {
             
             guard process.terminationStatus == 0 else {
                 NSLog("[VolumeManager] %@ failed with status: %d, stderr: %@", failureLabel, process.terminationStatus, errStr)
-                throw NSError(
-                    domain: "EncryptedVolumeManager",
-                    code: Int(process.terminationStatus),
-                    userInfo: [NSLocalizedDescriptionKey: "Failed to \(failureLabel): \(errStr.trimmingCharacters(in: .whitespacesAndNewlines))"]
-                )
+                throw NSError(domain: "EncryptedVolumeManager", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "Failed to \(failureLabel): \(errStr.trimmingCharacters(in: .whitespacesAndNewlines))"])
             }
         }.value
     }

@@ -384,7 +384,6 @@ final class AppEnvironment: ObservableObject {
             unlockedServiceIDs.insert(serviceID)
             services[index].isEncrypted = true
             services[index].hasMigratedMetadata = true
-            services[index].usesDiskutilSparseBundle = false
             // The stylesheet and scripts are sealed in the profile now; drop
             // any plaintext files so protection covers them completely.
             EngineFileStorage.deleteCustomCSS(for: serviceID)
@@ -440,7 +439,6 @@ final class AppEnvironment: ObservableObject {
             var restoredService = profile.metadata.applying(to: originalService)
             restoredService.isEncrypted = false
             restoredService.hasMigratedMetadata = false
-            restoredService.usesDiskutilSparseBundle = false
             services[index] = restoredService
             if tabSurvivalPolicy != .never {
                 profile.tabState?.applying(to: &persistedTabState, serviceID: serviceID)
@@ -498,7 +496,28 @@ final class AppEnvironment: ObservableObject {
             guard currentScenePhase != .background || !services[index].lockOnSwitchAway else {
                 return false
             }
-            let profile = try secureProfileStore.loadProfile(for: serviceID, key: key)
+            var profile = try secureProfileStore.loadProfile(for: serviceID, key: key)
+            // Migrate lock settings from unencrypted storage to encrypted profile only at decrypt time.
+            var metadata = profile.metadata
+            var didMigrateLock = false
+            if metadata.lockOnSwitchAway == nil {
+                metadata.lockOnSwitchAway = services[index].lockOnSwitchAway
+                didMigrateLock = true
+            }
+            if metadata.lockAfterInactivity == nil {
+                metadata.lockAfterInactivity = services[index].lockAfterInactivity
+                didMigrateLock = true
+            }
+            if metadata.autoLockInactivityTimeout == nil {
+                metadata.autoLockInactivityTimeout = services[index].autoLockInactivityTimeout
+                didMigrateLock = true
+            }
+            if didMigrateLock {
+                var updatedProfile = profile
+                updatedProfile.metadata = metadata
+                try secureProfileStore.saveProfile(updatedProfile, key: key)
+                profile = updatedProfile
+            }
             var restoredService = profile.metadata.applying(to: services[index])
             let validActionIDs = Set(customActions.map(\.id))
             restoredService.actionScripts = restoredService.actionScripts.filter { validActionIDs.contains($0.key) }
@@ -626,7 +645,6 @@ final class AppEnvironment: ObservableObject {
         stub.templateCustomCSSSync = false
         stub.isEncrypted = true
         stub.hasMigratedMetadata = true
-        stub.usesDiskutilSparseBundle = false
         return stub
     }
 

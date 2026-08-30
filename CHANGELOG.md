@@ -9,6 +9,7 @@
 - **Temporary Settings Sync over Local Network**: Share your settings to another Mac or iPhone/iPad on the same Wi-Fi without writing a file. Pick Decrypt for Migration or Exclude Protected, see per-engine unlock progress, and discover sharers automatically; nothing is written to disk on the sender and the share stops when you close the window.
 - **Import/Export and Bulk Delete for Settings**: Import or export your full configuration as a `.quiper` file and erase all engines or actions from the Danger Zone, with proper handling for protected engines on both Mac and iOS.
 - **Automatic Re-securing on Import**: Engines that were exported decrypted for migration automatically get a new secure store on the importing device and have their tabs and metadata moved back into it.
+- **Locked-Engine Recovery**: Unlock failures from a missing Keychain key or an unsupported legacy format now show the full error with an always-visible native scrollbar and an inline Remove Engine action after confirmation.
 
 ### Changed
 
@@ -18,6 +19,9 @@
 - **Refined Routing Rules Editor**: Each routing rule sits in its own card tinted with its action's guide color—Internal green, Popup blue, Prompt orange, Safari red—so rules are identifiable at a glance. Rows animate when moved, added, or removed, the focused text field travels with its rule, and clicking anywhere on a row edits its pattern. The action picker shows full action names, and pattern fields use a monospaced font.
 - **Taller Sharing Window with Pinned Help Text**: The Sharing Settings window is 20% taller. The list of successful transfers scrolls on its own while the header and help text stay pinned, so messages are never pushed offscreen.
 - **Preparation Shows the One Particular Job**: Long-running share and export now show exactly what they are busy with right now — reading engines, unlocking a named engine, loading a specific script, encoding — instead of a generic spinner, with progressive disclosure after 5 seconds.
+- **Locked-Engine Settings Layout**: Name and shortcut remain editable when locked, the icon dims, URL lives below Name to the right of the icon and hides when locked, and the lock card uses a 16pt composition with a taller error scroll (hidden fingerprint when an error is present).
+- **Secure Storage Scope**: Auto-lock policies now live inside the encrypted bundle and migrate on next unlock; legacy `hdiutil` sparsebundles are no longer mounted and require a one-time open with 5.0.0 to migrate.
+- **Config Actions**: Export, Import, Share and Receive are now side-by-side graphical cards.
 
 ### Fixed
 
@@ -28,6 +32,10 @@
 - **Instant Sharing Preparation**: Sharing no longer hangs for minutes on Packaging snapshot; the snapshot now prepares instantly with live per-step status.
 - **No Config Loss During Share**: Unlocking for share or export no longer clears the sender's own engine URLs and sync switches.
 - **Honest Preparing State**: Preparing no longer shows a spinner alongside a timed-out message or spins silently for minutes; after 5 seconds it explains the particular job, and on timeout it shows a closeable error without a spinner.
+- **No Silent Settings Reset**: An unreadable `settings.json` is now backed up to `settings.json.corrupted.<timestamp>` and the app prompts to Quit, Reveal in Finder, Restore Backup or Reset to Defaults instead of overwriting.
+- **Orphaned Stores Kept**: An empty engine list no longer wipes encrypted stores or Keychain keys; orphans are moved to `OrphanedEncryptedStores`.
+- **Microphone and Local Network Preserved**: Release builds preserve generated entitlements and re-sign with hardened runtime and timestamp only for distribution identity; ad-hoc builds keep the Xcode signature.
+- **URL Alignment**: The engine URL field now sits below Name to the right of the icon.
 
 ## [5.0.0] - 2026-08-25
 

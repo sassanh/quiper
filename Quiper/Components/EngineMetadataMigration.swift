@@ -18,6 +18,9 @@ struct SecuredEngineMetadata: Codable, Equatable {
     var templateActionScriptSync: [UUID: Bool]
     var templatePromptInputSelectorSync: Bool
     var templateCustomCSSSync: Bool
+    var lockOnSwitchAway: Bool?
+    var lockAfterInactivity: Bool?
+    var autoLockInactivityTimeout: Int?
 
     enum CodingKeys: String, CodingKey {
         case url, focusSelector, iconBase64, iconManuallyUnset
@@ -25,6 +28,7 @@ struct SecuredEngineMetadata: Codable, Equatable {
         case customCSS, routingRules, actionScripts
         case preservePrompt, templateActionScriptSync
         case templatePromptInputSelectorSync, templateCustomCSSSync
+        case lockOnSwitchAway, lockAfterInactivity, autoLockInactivityTimeout
     }
 
     init(from service: Service) {
@@ -40,6 +44,9 @@ struct SecuredEngineMetadata: Codable, Equatable {
         self.templateActionScriptSync = service.templateActionScriptSync
         self.templatePromptInputSelectorSync = service.templatePromptInputSelectorSync
         self.templateCustomCSSSync = service.templateCustomCSSSync
+        self.lockOnSwitchAway = service.lockOnSwitchAway
+        self.lockAfterInactivity = service.lockAfterInactivity
+        self.autoLockInactivityTimeout = service.autoLockInactivityTimeout
     }
 
     func apply(to service: inout Service) {
@@ -54,6 +61,15 @@ struct SecuredEngineMetadata: Codable, Equatable {
         service.templateActionScriptSync = templateActionScriptSync
         service.templatePromptInputSelectorSync = templatePromptInputSelectorSync
         service.templateCustomCSSSync = templateCustomCSSSync
+        if let lockOnSwitchAway {
+            service.lockOnSwitchAway = lockOnSwitchAway
+        }
+        if let lockAfterInactivity {
+            service.lockAfterInactivity = lockAfterInactivity
+        }
+        if let autoLockInactivityTimeout {
+            service.autoLockInactivityTimeout = autoLockInactivityTimeout
+        }
     }
 }
 
@@ -192,11 +208,34 @@ final class EngineMetadataMigrationManager {
             return Settings.shared.services[index]
         }
 
-        let metadata: SecuredEngineMetadata
+        var metadata: SecuredEngineMetadata
         do {
             metadata = try readMetadata(for: serviceID)
         } catch {
             throw MetadataMigrationError.readFailed(error.localizedDescription)
+        }
+
+        // Migrate lock settings from unencrypted storage to encrypted bundle only at decrypt time.
+        // If the bundle does not yet contain them but the outer service does, move them.
+        // If both contain them, drop the outer copy by not writing it back and let apply overwrite.
+        if metadata.lockOnSwitchAway == nil || metadata.lockAfterInactivity == nil || metadata.autoLockInactivityTimeout == nil {
+            let outer = Settings.shared.services[index]
+            var didMigrate = false
+            if metadata.lockOnSwitchAway == nil {
+                metadata.lockOnSwitchAway = outer.lockOnSwitchAway
+                didMigrate = true
+            }
+            if metadata.lockAfterInactivity == nil {
+                metadata.lockAfterInactivity = outer.lockAfterInactivity
+                didMigrate = true
+            }
+            if metadata.autoLockInactivityTimeout == nil {
+                metadata.autoLockInactivityTimeout = outer.autoLockInactivityTimeout
+                didMigrate = true
+            }
+            if didMigrate {
+                try? writeMetadata(metadata, for: serviceID)
+            }
         }
 
         metadata.apply(to: &Settings.shared.services[index])

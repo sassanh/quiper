@@ -43,7 +43,6 @@ struct Service: Codable, Identifiable {
     var iconManuallyUnset: Bool?
     var isEncrypted: Bool = false
     /// True once this engine's sparsebundle was created or migrated with diskutil.
-    var usesDiskutilSparseBundle: Bool = false
     /// True once this engine's metadata has been migrated into the secure bundle.
     /// After migration, metadata fields are no longer persisted in settings.json.
     var hasMigratedMetadata: Bool = false
@@ -73,7 +72,6 @@ struct Service: Codable, Identifiable {
         case iconBase64
         case iconManuallyUnset
         case isEncrypted
-        case usesDiskutilSparseBundle
         case hasMigratedMetadata
         case originatedFromSecureStorage
         case lockOnSwitchAway
@@ -98,7 +96,6 @@ struct Service: Codable, Identifiable {
          iconBase64: String? = nil,
          iconManuallyUnset: Bool? = nil,
          isEncrypted: Bool = false,
-         usesDiskutilSparseBundle: Bool = false,
          hasMigratedMetadata: Bool = false,
          originatedFromSecureStorage: Bool = false,
          lockOnSwitchAway: Bool = true,
@@ -119,7 +116,6 @@ struct Service: Codable, Identifiable {
         self.iconBase64 = iconBase64
         self.iconManuallyUnset = iconManuallyUnset
         self.isEncrypted = isEncrypted
-        self.usesDiskutilSparseBundle = usesDiskutilSparseBundle
         self.hasMigratedMetadata = hasMigratedMetadata
         self.originatedFromSecureStorage = originatedFromSecureStorage
         self.lockOnSwitchAway = lockOnSwitchAway
@@ -141,7 +137,6 @@ struct Service: Codable, Identifiable {
          iconBase64: String? = nil,
          iconManuallyUnset: Bool? = nil,
          isEncrypted: Bool = false,
-         usesDiskutilSparseBundle: Bool = false,
          hasMigratedMetadata: Bool = false,
          originatedFromSecureStorage: Bool = false,
          lockOnSwitchAway: Bool = true,
@@ -161,7 +156,6 @@ struct Service: Codable, Identifiable {
         self.iconBase64 = iconBase64
         self.iconManuallyUnset = iconManuallyUnset
         self.isEncrypted = isEncrypted
-        self.usesDiskutilSparseBundle = usesDiskutilSparseBundle
         self.hasMigratedMetadata = hasMigratedMetadata
         self.originatedFromSecureStorage = originatedFromSecureStorage
         self.lockOnSwitchAway = lockOnSwitchAway
@@ -223,7 +217,6 @@ struct Service: Codable, Identifiable {
         iconBase64 = try container.decodeIfPresent(String.self, forKey: .iconBase64)
         iconManuallyUnset = try container.decodeBoolIfPresent(forKey: .iconManuallyUnset)
         isEncrypted = try container.decodeBoolIfPresent(forKey: .isEncrypted) ?? false
-        usesDiskutilSparseBundle = try container.decodeBoolIfPresent(forKey: .usesDiskutilSparseBundle) ?? false
         hasMigratedMetadata = try container.decodeBoolIfPresent(forKey: .hasMigratedMetadata) ?? false
         originatedFromSecureStorage = try container.decodeBoolIfPresent(forKey: .originatedFromSecureStorage) ?? false
 
@@ -287,21 +280,18 @@ struct Service: Codable, Identifiable {
             if templateCustomCSSSync {
                 try container.encode(templateCustomCSSSync, forKey: .templateCustomCSSSync)
             }
+            try container.encode(lockOnSwitchAway, forKey: .lockOnSwitchAway)
+            try container.encode(lockAfterInactivity, forKey: .lockAfterInactivity)
+            try container.encode(autoLockInactivityTimeout, forKey: .autoLockInactivityTimeout)
         }
 
         try container.encode(isEncrypted, forKey: .isEncrypted)
-        if usesDiskutilSparseBundle {
-            try container.encode(usesDiskutilSparseBundle, forKey: .usesDiskutilSparseBundle)
-        }
         if isEncrypted {
             try container.encode(hasMigratedMetadata, forKey: .hasMigratedMetadata)
         }
         if originatedFromSecureStorage {
             try container.encode(originatedFromSecureStorage, forKey: .originatedFromSecureStorage)
         }
-        try container.encode(lockOnSwitchAway, forKey: .lockOnSwitchAway)
-        try container.encode(lockAfterInactivity, forKey: .lockAfterInactivity)
-        try container.encode(autoLockInactivityTimeout, forKey: .autoLockInactivityTimeout)
     }
 }
 

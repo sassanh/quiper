@@ -13,6 +13,9 @@ struct IOSSecuredEngineMetadata: Codable, Equatable {
     var templateActionScriptSync: [UUID: Bool]
     var templatePromptInputSelectorSync: Bool
     var templateCustomCSSSync: Bool
+    var lockOnSwitchAway: Bool?
+    var lockAfterInactivity: Bool?
+    var autoLockInactivityTimeout: Int?
 
     init(service: Service) {
         url = service.url
@@ -26,6 +29,9 @@ struct IOSSecuredEngineMetadata: Codable, Equatable {
         templateActionScriptSync = service.templateActionScriptSync
         templatePromptInputSelectorSync = service.templatePromptInputSelectorSync
         templateCustomCSSSync = service.templateCustomCSSSync
+        lockOnSwitchAway = service.lockOnSwitchAway
+        lockAfterInactivity = service.lockAfterInactivity
+        autoLockInactivityTimeout = service.autoLockInactivityTimeout
     }
 
     func applying(to service: Service) -> Service {
@@ -41,6 +47,15 @@ struct IOSSecuredEngineMetadata: Codable, Equatable {
         service.templateActionScriptSync = templateActionScriptSync
         service.templatePromptInputSelectorSync = templatePromptInputSelectorSync
         service.templateCustomCSSSync = templateCustomCSSSync
+        if let lockOnSwitchAway {
+            service.lockOnSwitchAway = lockOnSwitchAway
+        }
+        if let lockAfterInactivity {
+            service.lockAfterInactivity = lockAfterInactivity
+        }
+        if let autoLockInactivityTimeout {
+            service.autoLockInactivityTimeout = autoLockInactivityTimeout
+        }
         return service
     }
 }

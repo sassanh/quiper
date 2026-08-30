@@ -43,7 +43,6 @@ extension Service {
         var copy = self
         copy.isEncrypted = false
         copy.hasMigratedMetadata = false
-        copy.usesDiskutilSparseBundle = false
         copy.originatedFromSecureStorage = true
         return copy
     }
