@@ -73,6 +73,9 @@ final class QuiperSyncProvider: ObservableObject, @unchecked Sendable {
                     case .ready:
                         self.isAdvertising = true
                         self.errorMessage = nil
+                        #if os(macOS)
+                        self.checkFirewallIfBlocked()
+                        #endif
                     case .failed(let error):
                         self.isAdvertising = false
                         self.errorMessage = error.localizedDescription
@@ -248,15 +251,51 @@ final class QuiperSyncProvider: ObservableObject, @unchecked Sendable {
             // while bytes are still in flight.
             connection.send(content: nil, isComplete: true, completion: .contentProcessed { _ in
                 // Keep the NWConnection alive until the peer closes or
-                // a short grace period expires; the `stateUpdateHandler`
-                // will clean `connections` on `.cancelled`.
+                // a longer grace period expires; the `stateUpdateHandler`
+                // will clean `connections` on `.cancelled`. 4s was too short
+                // for large configs on slow Wi-Fi (en0 MTU 1500 vs lo0 16384).
                 let queue = self.queue
-                queue.asyncAfter(deadline: .now() + 4) {
+                queue.asyncAfter(deadline: .now() + 15) {
                     connection.cancel()
                 }
             })
         })
     }
+
+    #if os(macOS)
+    private func checkFirewallIfBlocked() {
+        let waitBox = WeakBox(self)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self = waitBox.target, self.isAdvertising, self.errorMessage == nil else { return }
+            let executablePath = Bundle.main.executablePath ?? ""
+            guard !executablePath.isEmpty else { return }
+            let isBlocked: Bool = await Task.detached(priority: .utility) {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/libexec/ApplicationFirewall/socketfilterfw")
+                process.arguments = ["--getappblocked", executablePath]
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = pipe
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    // Output for Block: "Incoming connection to the application is blocked" or "Block incoming connections"
+                    if output.localizedCaseInsensitiveContains("Block") {
+                        return true
+                    }
+                    return false
+                } catch {
+                    return false
+                }
+            }.value
+            guard isBlocked, let self = waitBox.target, self.isAdvertising, self.errorMessage == nil else { return }
+            self.errorMessage = "Firewall is blocking incoming connections — receivers will see “Connection reset by sharer”. Open System Settings → Network → Firewall → Options and set Quiper to Allow incoming connections, then close and re-open sharing. Also turn on Automatically allow downloaded signed software."
+        }
+    }
+    #endif
 
     deinit {
         listener?.cancel()

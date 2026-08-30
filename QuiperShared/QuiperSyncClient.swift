@@ -11,7 +11,7 @@ enum QuiperSyncClientError: LocalizedError {
         switch self {
         case .connectionFailed(let msg):
             if msg.localizedCaseInsensitiveContains("reset by peer") || msg.localizedCaseInsensitiveContains("connection reset") {
-                return "Connection reset by sharer before transfer finished. Keep both Macs awake and on the same Wi-Fi, keep the Sharing window open, and try again. If it repeats, try sharing with fewer protected engines."
+                return "Connection reset by sharer before transfer finished. Keep both devices awake and on the same Wi-Fi, keep the Sharing window open, and try again. If it repeats, check System Settings → Network → Firewall → Options on the sharing Mac and set Quiper to Allow incoming connections, and try sharing with fewer protected engines."
             }
             return "Connection failed: \(msg)"
         case .invalidResponse(let msg): return "Invalid response: \(msg)"

@@ -153,8 +153,6 @@ struct QuiperSyncProviderSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("On the other device, open Settings → Config → Sync → Receive and select this device.", systemImage: "info.circle")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Label("The share stops when you close this screen or tap Stop. Nothing is written to disk on this device.", systemImage: "lock.shield")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

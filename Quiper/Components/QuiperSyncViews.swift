@@ -63,6 +63,10 @@ struct QuiperSyncProviderSheet: View {
         .frame(width: 520, height: 504)
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
+            #if os(macOS)
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.keyWindow?.orderFrontRegardless()
+            #endif
             provider.start()
         }
         .onDisappear {
@@ -186,6 +190,15 @@ struct QuiperSyncProviderSheet: View {
                     .font(.caption)
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
+                if error.localizedCaseInsensitiveContains("Firewall") {
+                    Button("Open Firewall Settings") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.Network-Settings") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                }
             }
         }
         .padding(12)
@@ -195,11 +208,7 @@ struct QuiperSyncProviderSheet: View {
 
     private var info: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("On the other Mac, open Settings → Config → Sync → Receive and select this device.", systemImage: "info.circle")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Label("The share stops when you close this sheet or click Stop Sharing. Nothing is written to disk on this Mac.", systemImage: "lock.shield")
+            Label("On the other device, open Settings → Config → Sync → Receive and select this device.", systemImage: "info.circle")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -493,7 +502,7 @@ struct QuiperSyncBrowserSheet: View {
                             Text("No devices sharing nearby")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
-                            Text("On the other Mac, open Settings → Config → Sync → Share. Both Macs must be on the same Wi-Fi or wired network and have Local Network access allowed.")
+                            Text("On the other device, open Settings → Config → Sync → Share. Both devices must be on the same Wi-Fi or wired network and have Local Network access allowed.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
