@@ -294,26 +294,45 @@ struct GeneralSettingsView: View {
                         icon: "doc.badge.gearshape.fill",
                         iconColor: .green
                     ) {
-                        HStack(spacing: 8) {
-                            Button(action: {
-                                handleExportTapped()
-                            }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "square.and.arrow.up")
+                        HStack(spacing: 12) {
+                            Button(action: { handleExportTapped() }) {
+                                VStack(spacing: 8) {
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                                            .frame(width: 44, height: 36)
+                                        Image(systemName: "square.and.arrow.up")
+                                            .font(.system(size: 18, weight: .medium))
+                                            .foregroundStyle(Color.green.settingsResolved)
+                                    }
+                                    .frame(width: 44, height: 36)
+                                    .padding(8)
+                                    .pickerCardStyle(isSelected: false, accentColor: .green)
                                     Text("Export")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(.primary)
                                 }
                             }
-                            .buttonStyle(.bordered)
-                            
-                            Button(action: {
-                                handleImportTapped()
-                            }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "square.and.arrow.down")
+                            .buttonStyle(.plain)
+                            Button(action: { handleImportTapped() }) {
+                                VStack(spacing: 8) {
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                                            .frame(width: 44, height: 36)
+                                        Image(systemName: "square.and.arrow.down")
+                                            .font(.system(size: 18, weight: .medium))
+                                            .foregroundStyle(Color.green.settingsResolved)
+                                    }
+                                    .frame(width: 44, height: 36)
+                                    .padding(8)
+                                    .pickerCardStyle(isSelected: false, accentColor: .green)
                                     Text("Import")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(.primary)
                                 }
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.plain)
                         }
                         .frame(width: 260, alignment: .trailing)
                     }
@@ -324,30 +343,47 @@ struct GeneralSettingsView: View {
                         title: "Sync over Local Network",
                         message: "Temporarily share this config on the local network, or discover nearby devices to pull their config.",
                         icon: "antenna.radiowaves.left.and.right",
-                        iconColor: .blue
+                        iconColor: .green
                     ) {
-                        HStack(spacing: 8) {
-                            Button(action: {
-                                handleSyncShareTapped()
-                            }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        HStack(spacing: 12) {
+                            Button(action: { handleSyncShareTapped() }) {
+                                VStack(spacing: 8) {
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                                            .frame(width: 44, height: 36)
+                                        Image(systemName: "antenna.radiowaves.left.and.right")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundStyle(Color.green.settingsResolved)
+                                    }
+                                    .frame(width: 44, height: 36)
+                                    .padding(8)
+                                    .pickerCardStyle(isSelected: false, accentColor: .green)
                                     Text("Share")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(.primary)
                                 }
                             }
-                            .buttonStyle(.bordered)
-                            .tint(Color.blue.settingsResolved)
-
-                            Button(action: {
-                                showingSyncBrowser = true
-                            }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "magnifyingglass")
+                            .buttonStyle(.plain)
+                            Button(action: { showingSyncBrowser = true }) {
+                                VStack(spacing: 8) {
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                                            .frame(width: 44, height: 36)
+                                        Image(systemName: "magnifyingglass")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundStyle(Color.green.settingsResolved)
+                                    }
+                                    .frame(width: 44, height: 36)
+                                    .padding(8)
+                                    .pickerCardStyle(isSelected: false, accentColor: .green)
                                     Text("Receive")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(.primary)
                                 }
                             }
-                            .buttonStyle(.bordered)
-                            .tint(Color.blue.settingsResolved)
+                            .buttonStyle(.plain)
                         }
                         .frame(width: 260, alignment: .trailing)
                     }

@@ -279,6 +279,7 @@ struct QuiperSyncProviderSetupSheet: View {
                                 Text("Choose Exclude to skip them, or unlock and repair them before sharing.")
                                     .font(.caption2).foregroundStyle(.secondary)
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(10)
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.08)))
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.3), lineWidth: 1))
