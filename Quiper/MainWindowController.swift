@@ -569,6 +569,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         alert.accessoryView = checkbox
 
         alert.addButton(withTitle: "OK")
+        alert.buttons[0].keyEquivalent = "\u{1b}"
         alert.beginSheetModal(for: window) { _ in
             if checkbox.state == .on {
                 Settings.shared.hasDismissedEngineSettingsShortcutNotice = true

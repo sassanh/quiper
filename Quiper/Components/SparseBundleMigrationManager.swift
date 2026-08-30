@@ -50,6 +50,7 @@ final class SparseBundleMigrationManager {
         }
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
+        alert.buttons[0].keyEquivalent = "\u{1b}"
         if let window {
             alert.beginSheetModal(for: window, completionHandler: { _ in })
         } else {

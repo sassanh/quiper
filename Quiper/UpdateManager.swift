@@ -292,6 +292,7 @@ final class UpdateManager: NSObject, ObservableObject {
         alert.informativeText = "\(Constants.APP_NAME) updated to version \(release.version). Relaunch now to finish installing."
         alert.addButton(withTitle: "Relaunch Now")
         alert.addButton(withTitle: "Later")
+        alert.buttons[1].keyEquivalent = "\u{1b}"
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
             DispatchQueue.main.async {

@@ -24,6 +24,11 @@ enum MigrationAlertPresenter {
         if let secondaryButton {
             alert.addButton(withTitle: secondaryButton)
         }
+        if alert.buttons.count > 1 {
+            alert.buttons[1].keyEquivalent = "\u{1b}"
+        } else if alert.buttons.count == 1 {
+            alert.buttons[0].keyEquivalent = "\u{1b}"
+        }
         applyTone(tone, to: alert)
         return alert
     }

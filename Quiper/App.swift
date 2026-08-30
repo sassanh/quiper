@@ -146,6 +146,7 @@ final class AppController: NSObject, NSWindowDelegate {
             alert.informativeText = "Quiper can reconnect actions that match built-in templates to the latest bundled scripts. Choose Update to keep those template scripts in sync automatically. Choose Keep Custom to leave existing scripts editable and unchanged."
             alert.addButton(withTitle: "Update")
             alert.addButton(withTitle: "Keep Custom")
+            alert.buttons[1].keyEquivalent = "\u{1b}"
 
             let shouldUpdate = alert.runModal() == .alertFirstButtonReturn
             Settings.shared.resolveTemplateActionSyncMigration(updateScripts: shouldUpdate)
@@ -169,6 +170,7 @@ final class AppController: NSObject, NSWindowDelegate {
             alert.informativeText = "Right now, pressing an engine's global shortcut while Quiper is already open on that engine does nothing. Enable this to hide Quiper instead—same idea as the main Show/Hide shortcut. You can change this later in Shortcuts settings."
             alert.addButton(withTitle: "Enable")
             alert.addButton(withTitle: "Keep Current")
+            alert.buttons[1].keyEquivalent = "\u{1b}"
 
             let shouldEnable = alert.runModal() == .alertFirstButtonReturn
             Settings.shared.resolveEngineShortcutToggleMigration(enable: shouldEnable)
@@ -191,6 +193,7 @@ final class AppController: NSObject, NSWindowDelegate {
             alert.informativeText = "Cmd+, can open the active engine's own Settings — the same way Cmd+N starts a new session. Add it to your engines? Quiper's own Settings stays on Cmd+Shift+,. You can change it later in Shortcuts settings."
             alert.addButton(withTitle: "Add")
             alert.addButton(withTitle: "Not Now")
+            alert.buttons[1].keyEquivalent = "\u{1b}"
 
             let shouldAdd = alert.runModal() == .alertFirstButtonReturn
             Settings.shared.resolveEngineSettingsShortcutMigration(add: shouldAdd)
@@ -231,6 +234,7 @@ final class AppController: NSObject, NSWindowDelegate {
             alert.alertStyle = .warning
             alert.addButton(withTitle: "OK")
             alert.addButton(withTitle: "Reveal Storage Folder")
+            alert.buttons[1].keyEquivalent = "\u{1b}"
             let response = alert.runModal()
             if response == .alertSecondButtonReturn {
                 let folder = EncryptedVolumeManager.shared.getBundleURL(for: legacyServices.first!.id).deletingLastPathComponent()
@@ -267,6 +271,7 @@ final class AppController: NSObject, NSWindowDelegate {
         alert.informativeText = "The app is ready. Click 'Go' to start.\n\nFor each screenshot, a small floating window will appear. You can interact with the app, and click 'Take Screenshot' when you're ready."
         alert.addButton(withTitle: "Go")
         alert.addButton(withTitle: "Cancel")
+        alert.buttons[1].keyEquivalent = "\u{1b}"
 
         let response = alert.runModal()
         if response != .alertFirstButtonReturn {
@@ -1090,6 +1095,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             alert.addButton(withTitle: "Keep Tabs")
             alert.addButton(withTitle: "Close All Tabs")
             alert.addButton(withTitle: "Cancel")
+            alert.buttons[1].keyEquivalent = "\u{1b}"
             alert.alertStyle = .informational
 
             let response = alert.runModal()

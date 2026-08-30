@@ -294,6 +294,7 @@ extension MainWindowController {
         alert.informativeText = "The current engine (\(service.name)) is not secured. Would you like to enable secure storage for this engine?"
         alert.addButton(withTitle: "Enable Secure Storage")
         alert.addButton(withTitle: "Cancel")
+        alert.buttons[1].keyEquivalent = "\u{1b}"
         
         if let window = window {
             alert.beginSheetModal(for: window) { response in

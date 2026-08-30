@@ -493,6 +493,13 @@ struct GeneralSettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
+        .onExitCommand {
+            if showingSecureExportChoice { showingSecureExportChoice = false }
+            else if showingSecureImportChoice { showingSecureImportChoice = false }
+            else if showingSyncProviderSetup { showingSyncProviderSetup = false }
+            else if showingSyncProviderActive { showingSyncProviderActive = false }
+            else if showingSyncBrowser { showingSyncBrowser = false }
+        }
         .onAppear {
             launchAtLogin = Launcher.isInstalledAtLogin()
             Task { await notificationDispatcher.refreshNotificationStatus() }

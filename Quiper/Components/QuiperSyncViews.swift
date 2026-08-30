@@ -597,6 +597,11 @@ struct QuiperSyncBrowserSheet: View {
                     errorMessage = "Sync cancelled."
                 }
             )
+            .onExitCommand {
+                showingImportChoice = false
+                pendingData = nil
+                errorMessage = "Sync cancelled."
+            }
         }
     }
 

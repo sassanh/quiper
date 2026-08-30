@@ -272,6 +272,7 @@ final class EngineMetadataMigrationManager {
         alert.informativeText = "\(legacyServices.count) secured engine\(legacyServices.count == 1 ? "" : "s") still store metadata (URL, icons, scripts) in unencrypted settings. Migrating moves this data into each engine's encrypted storage bundle where only you can access it after authenticating.\n\nYou can migrate now by unlocking each engine, or skip and they'll be migrated automatically the next time you unlock them."
         alert.addButton(withTitle: "Migrate Now")
         alert.addButton(withTitle: "Skip")
+        alert.buttons[1].keyEquivalent = "\u{1b}"
         alert.alertStyle = .informational
 
         NSApp.activate(ignoringOtherApps: true)

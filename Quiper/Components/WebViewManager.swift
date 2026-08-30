@@ -1529,6 +1529,7 @@ fileprivate final class PopupUIDelegate: NSObject, WKUIDelegate {
         let alert = NSAlert()
         alert.messageText = message
         alert.addButton(withTitle: "OK")
+        alert.buttons[0].keyEquivalent = "\u{1b}"
         if let window = webView.window {
             alert.beginSheetModal(for: window) { _ in completionHandler() }
         } else {
@@ -1543,6 +1544,7 @@ fileprivate final class PopupUIDelegate: NSObject, WKUIDelegate {
         alert.messageText = message
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Cancel")
+        alert.buttons[1].keyEquivalent = "\u{1b}"
         if let window = webView.window {
             alert.beginSheetModal(for: window) { response in
                 completionHandler(response == .alertFirstButtonReturn)
@@ -1558,6 +1560,7 @@ fileprivate final class PopupUIDelegate: NSObject, WKUIDelegate {
         alert.messageText = prompt
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Cancel")
+        alert.buttons[1].keyEquivalent = "\u{1b}"
         
         let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
         input.stringValue = defaultText ?? ""

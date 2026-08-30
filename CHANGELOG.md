@@ -36,6 +36,7 @@
 - **Orphaned Stores Kept**: An empty engine list no longer wipes encrypted stores or Keychain keys; orphans are moved to `OrphanedEncryptedStores`.
 - **Microphone and Local Network Preserved**: Release builds preserve generated entitlements and re-sign with hardened runtime and timestamp only for distribution identity; ad-hoc builds keep the Xcode signature.
 - **URL Alignment**: The engine URL field now sits below Name to the right of the icon.
+- **Escape to Dismiss**: Dismissible alerts and sheets now close with Escape; the corrupted-settings prompt remains blocking and is not dismissible.
 
 ## [5.0.0] - 2026-08-25
 

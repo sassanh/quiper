@@ -404,6 +404,7 @@ extension MainWindowController {
             alert.informativeText = "\(instantiatedSessions.count) session\(instantiatedSessions.count == 1 ? "" : "s") will be closed."
             alert.addButton(withTitle: "Close All")
             alert.addButton(withTitle: "Cancel")
+            alert.buttons[1].keyEquivalent = "\u{1b}"
             alert.alertStyle = .warning
             
             let response = alert.runModal()
