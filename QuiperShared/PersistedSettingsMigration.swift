@@ -7,7 +7,6 @@ enum PersistedSettingsMigration: Hashable, Sendable {
     case engineShortcutToggle
     case selectorDisplayModes
     case serviceIdentifiers
-    case engineSettingsShortcut
 }
 
 enum PersistedSettingsMigrationPresentation: Sendable {

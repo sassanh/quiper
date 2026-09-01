@@ -380,7 +380,6 @@ struct PersistedSettings: Codable {
     var promptHistoryLimit: Int?
     var tabNavigationRingSize: Int?
     var hideQuiperWhenRetriggeringActiveEngineShortcut: Bool?
-    var didResolveEngineSettingsShortcutMigration: Bool?
     var hasDismissedEngineSettingsShortcutNotice: Bool?
     var globalEngineDigitShortcutsEnabled: Bool?
     var iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings?
@@ -416,7 +415,6 @@ struct PersistedSettings: Codable {
         case promptHistoryLimit
         case tabNavigationRingSize
         case hideQuiperWhenRetriggeringActiveEngineShortcut
-        case didResolveEngineSettingsShortcutMigration
         case hasDismissedEngineSettingsShortcutNotice
         case globalEngineDigitShortcutsEnabled
         case iosHardwareKeyboardSettings
@@ -465,7 +463,6 @@ struct PersistedSettings: Codable {
          promptHistoryLimit: Int? = nil,
          tabNavigationRingSize: Int? = nil,
          hideQuiperWhenRetriggeringActiveEngineShortcut: Bool? = nil,
-         didResolveEngineSettingsShortcutMigration: Bool? = nil,
          hasDismissedEngineSettingsShortcutNotice: Bool? = nil,
          globalEngineDigitShortcutsEnabled: Bool? = nil,
          iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings? = nil,
@@ -505,7 +502,6 @@ struct PersistedSettings: Codable {
         self.promptHistoryLimit = promptHistoryLimit
         self.tabNavigationRingSize = tabNavigationRingSize
         self.hideQuiperWhenRetriggeringActiveEngineShortcut = hideQuiperWhenRetriggeringActiveEngineShortcut
-        self.didResolveEngineSettingsShortcutMigration = didResolveEngineSettingsShortcutMigration
         self.hasDismissedEngineSettingsShortcutNotice = hasDismissedEngineSettingsShortcutNotice
         self.globalEngineDigitShortcutsEnabled = globalEngineDigitShortcutsEnabled
         self.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
@@ -545,7 +541,6 @@ struct PersistedSettings: Codable {
          promptHistoryLimit: Int? = nil,
          tabNavigationRingSize: Int? = nil,
          hideQuiperWhenRetriggeringActiveEngineShortcut: Bool? = nil,
-         didResolveEngineSettingsShortcutMigration: Bool? = nil,
          hasDismissedEngineSettingsShortcutNotice: Bool? = nil,
          globalEngineDigitShortcutsEnabled: Bool? = nil,
          iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings? = nil,
@@ -583,7 +578,6 @@ struct PersistedSettings: Codable {
         self.promptHistoryLimit = promptHistoryLimit
         self.tabNavigationRingSize = tabNavigationRingSize
         self.hideQuiperWhenRetriggeringActiveEngineShortcut = hideQuiperWhenRetriggeringActiveEngineShortcut
-        self.didResolveEngineSettingsShortcutMigration = didResolveEngineSettingsShortcutMigration
         self.hasDismissedEngineSettingsShortcutNotice = hasDismissedEngineSettingsShortcutNotice
         self.globalEngineDigitShortcutsEnabled = globalEngineDigitShortcutsEnabled
         self.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
@@ -690,7 +684,6 @@ struct PersistedSettings: Codable {
         promptHistoryLimit = try container.decodeIfPresent(Int.self, forKey: .promptHistoryLimit)
         tabNavigationRingSize = try container.decodeIfPresent(Int.self, forKey: .tabNavigationRingSize)
         hideQuiperWhenRetriggeringActiveEngineShortcut = try container.decodeBoolIfPresent(forKey: .hideQuiperWhenRetriggeringActiveEngineShortcut)
-        didResolveEngineSettingsShortcutMigration = try container.decodeBoolIfPresent(forKey: .didResolveEngineSettingsShortcutMigration)
         hasDismissedEngineSettingsShortcutNotice = try container.decodeBoolIfPresent(forKey: .hasDismissedEngineSettingsShortcutNotice)
         globalEngineDigitShortcutsEnabled = try container.decodeBoolIfPresent(forKey: .globalEngineDigitShortcutsEnabled)
         iosHardwareKeyboardSettings = try container.decodeIfPresent(

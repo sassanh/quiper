@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Engine Settings Shortcut Prompt Removed**: The one-time "Add the Cmd+, engine Settings shortcut?" dialog is gone. New installs already include that shortcut, and you can still add or change it in Shortcuts settings.
+
 ## [6.0.1] - 2026-08-30
 
 This release makes local-network sync resilient when the firewall blocks incoming connections and shows the older-storage prompt only when unlocking actually fails.

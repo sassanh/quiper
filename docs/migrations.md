@@ -53,7 +53,6 @@ only when its disposition is `runAutomatically`.
 | --- | --- | --- | --- |
 | Template action-script sync | Existing unversioned settings plus a matching bundled template/action candidate | Prompt | Keeps `quiperVersion` absent until resolved, then writes the current version |
 | Engine-shortcut toggle | Existing settings with the preference key absent | Prompt | Keeps the key absent until resolved; future or unknown source versions defer without prompting |
-| Engine Settings shortcut | Existing settings with the `didResolveEngineSettingsShortcutMigration` marker absent | Prompt | Adds the `Cmd+,` engine Settings action on resolve; keeps the marker absent while unresolved, then writes it on resolution |
 | Independent selector display modes | Legacy shared `selectorDisplayMode` decoded into both current fields | Automatic | Rewrites only for an eligible source and never encodes the obsolete shared key |
 
 ### Decoder-boundary compatibility

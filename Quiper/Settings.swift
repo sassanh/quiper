@@ -291,7 +291,6 @@ class Settings: ObservableObject {
         services = []
         hotkeyConfiguration = HotkeyManager.defaultConfiguration
         customActions = []
-        didResolveEngineSettingsShortcutMigration = nil
         updatePreferences = UpdatePreferences()
         serviceZoomLevels = [:]
         appShortcutBindings = .defaults
@@ -376,10 +375,6 @@ class Settings: ObservableObject {
     }
     var needsEngineShortcutToggleMigrationPrompt: Bool {
         migrationDisposition(for: .engineShortcutToggle) == .awaitingPrompt
-    }
-    private var didResolveEngineSettingsShortcutMigration: Bool?
-    var needsEngineSettingsShortcutMigrationPrompt: Bool {
-        migrationDisposition(for: .engineSettingsShortcut) == .awaitingPrompt
     }
 
     var isCorruptedConfig: Bool { SettingsPersistence.corruptedState != nil }
@@ -541,9 +536,6 @@ class Settings: ObservableObject {
         persistedTabState = persisted.persistedTabState
         tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2
         configureTemplateActionSyncMigration()
-        applyEngineSettingsShortcutMigrationSetting(
-            persistedValue: persisted.didResolveEngineSettingsShortcutMigration
-        )
         var shouldSaveAfterLoad = false
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
@@ -621,7 +613,6 @@ class Settings: ObservableObject {
                                             promptHistoryLimit: promptHistoryLimit,
                                             tabNavigationRingSize: tabNavigationRingSize,
                                             hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
-            didResolveEngineSettingsShortcutMigration: persistedEngineSettingsShortcutMigrationForSave(),
                                             hasDismissedEngineSettingsShortcutNotice: hasDismissedEngineSettingsShortcutNotice,
                                             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
                                             iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
@@ -735,7 +726,6 @@ class Settings: ObservableObject {
             promptHistoryLimit: promptHistoryLimit,
             tabNavigationRingSize: tabNavigationRingSize,
             hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
-            didResolveEngineSettingsShortcutMigration: persistedEngineSettingsShortcutMigrationForSave(),
             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
             iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
             quiperVersion: persistedQuiperVersionForSave()
@@ -931,9 +921,6 @@ class Settings: ObservableObject {
         services = persisted.services
         customActions = persisted.customActions ?? []
         configureTemplateActionSyncMigration()
-        applyEngineSettingsShortcutMigrationSetting(
-            persistedValue: persisted.didResolveEngineSettingsShortcutMigration
-        )
         hasDismissedEngineSettingsShortcutNotice = persisted.hasDismissedEngineSettingsShortcutNotice ?? false
         updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
         serviceZoomLevels = (persisted.serviceZoomLevels ?? [:]).mapValues { CGFloat($0) }
@@ -1208,28 +1195,6 @@ class Settings: ObservableObject {
         saveSettings()
     }
 
-    /// Installs (or declines) the Cmd+, engine-Settings shortcut for existing
-    /// settings that predate it. Opt-in, so the action and per-engine scripts are
-    /// added to the current schema only when the user accepts.
-    func resolveEngineSettingsShortcutMigration(add: Bool) {
-        if add,
-           let settingsAction = DefaultActions.defaults.first(where: { $0.id == DefaultEngineDefinitions.openSettingsActionID }) {
-            if !customActions.contains(where: { $0.id == settingsAction.id }) {
-                customActions.append(settingsAction)
-            }
-            for serviceIndex in services.indices
-            where isTemplateActionScript(services[serviceIndex], action: settingsAction) {
-                let serviceID = services[serviceIndex].id
-                services[serviceIndex].templateActionScriptSync[settingsAction.id] = true
-                services[serviceIndex].actionScripts.removeValue(forKey: settingsAction.id)
-                ActionScriptStorage.deleteScript(serviceID: serviceID, actionID: settingsAction.id)
-            }
-        }
-        didResolveEngineSettingsShortcutMigration = add
-        clearMigrationDisposition(for: .engineSettingsShortcut)
-        saveSettings()
-    }
-
     /// User-facing setter that also settles any pending migration for this preference.
     func setHideQuiperWhenRetriggeringActiveEngineShortcut(_ enabled: Bool) {
         hideQuiperWhenRetriggeringActiveEngineShortcut = enabled
@@ -1262,30 +1227,6 @@ class Settings: ObservableObject {
                 presentation: .prompted
             ),
             for: .engineShortcutToggle
-        )
-    }
-
-    private func applyEngineSettingsShortcutMigrationSetting(persistedValue: Bool?) {
-        if !persistedSettingsMigrationContext.isExistingSettings {
-            didResolveEngineSettingsShortcutMigration = nil
-            clearMigrationDisposition(for: .engineSettingsShortcut)
-            return
-        }
-        if let persistedValue {
-            didResolveEngineSettingsShortcutMigration = persistedValue
-            clearMigrationDisposition(for: .engineSettingsShortcut)
-            return
-        }
-
-        // Existing settings predating the Cmd+, engine-Settings action: offer to
-        // install it unless the user already added the action another way.
-        let settingsActionInstalled = customActions.contains { $0.id == DefaultEngineDefinitions.openSettingsActionID }
-        setMigrationDisposition(
-            persistedSettingsMigrationContext.disposition(
-                whenDetected: !settingsActionInstalled,
-                presentation: .prompted
-            ),
-            for: .engineSettingsShortcut
         )
     }
 
@@ -1324,12 +1265,6 @@ class Settings: ObservableObject {
         migrationDisposition(for: .engineShortcutToggle).isUnresolved
             ? nil
             : hideQuiperWhenRetriggeringActiveEngineShortcut
-    }
-
-    private func persistedEngineSettingsShortcutMigrationForSave() -> Bool? {
-        migrationDisposition(for: .engineSettingsShortcut).isUnresolved
-            ? nil
-            : didResolveEngineSettingsShortcutMigration
     }
 
     private func migrationDisposition(

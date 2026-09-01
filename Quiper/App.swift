@@ -110,7 +110,6 @@ final class AppController: NSObject, NSWindowDelegate {
         UpdateManager.shared.handleLaunchIfNeeded()
         presentTemplateActionSyncMigrationPromptIfNeeded()
         presentEngineShortcutToggleMigrationPromptIfNeeded()
-        presentEngineSettingsShortcutMigrationPromptIfNeeded()
         presentEngineMetadataMigrationPromptIfNeeded()
     }
 
@@ -176,29 +175,6 @@ final class AppController: NSObject, NSWindowDelegate {
         }
     }
 
-    private func presentEngineSettingsShortcutMigrationPromptIfNeeded() {
-        guard Settings.shared.needsEngineSettingsShortcutMigrationPrompt,
-              !Self.isRunningTests,
-              !Constants.LaunchMode.shouldSuppressInterferenceUI else {
-            return
-        }
-
-        DispatchQueue.main.async {
-            guard Settings.shared.needsEngineSettingsShortcutMigrationPrompt else { return }
-
-            let alert = NSAlert()
-            alert.alertStyle = .informational
-            alert.messageText = "Add the Cmd+, engine Settings shortcut?"
-            alert.informativeText = "Cmd+, can open the active engine's own Settings — the same way Cmd+N starts a new session. Add it to your engines? Quiper's own Settings stays on Cmd+Shift+,. You can change it later in Shortcuts settings."
-            alert.addButton(withTitle: "Add")
-            alert.addButton(withTitle: "Not Now")
-            alert.buttons[1].keyEquivalent = "\u{1b}"
-
-            let shouldAdd = alert.runModal() == .alertFirstButtonReturn
-            Settings.shared.resolveEngineSettingsShortcutMigration(add: shouldAdd)
-        }
-    }
-    
     #if DEBUG
     private func startTemplateValidationServer() {
         guard let concreteWindowController = windowController as? MainWindowController else {
