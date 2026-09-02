@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import SwiftUI
 import LocalAuthentication
 import LocalAuthenticationEmbeddedUI
@@ -376,7 +377,7 @@ final class LockOverlayView: NSView {
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
-            if event.charactersIgnoringModifiers == "p" || event.charactersIgnoringModifiers == "P" {
+            if event.keyCode == UInt16(kVK_ANSI_P) {
                 if activeFallbackContext == nil {
                     usePasswordClicked()
                     return true

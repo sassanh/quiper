@@ -327,13 +327,12 @@ extension MainWindowController {
         let appShortcuts = Settings.shared.appShortcutBindings
         let config = HotkeyManager.Configuration(keyCode: UInt32(keyCode), modifierFlags: modifiers.rawValue)
 
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         let isControl = modifiers.contains(.control)
         let isOption = modifiers.contains(.option)
         let isShift = modifiers.contains(.shift)
         let isCommand = modifiers.contains(.command)
 
-        if isControl && isShift && key == "q" {
+        if isControl && isShift && keyCode == UInt16(kVK_ANSI_Q) {
             NSApp.terminate(nil)
             return true
         }
@@ -399,17 +398,17 @@ extension MainWindowController {
             }
             
             if isCommand {
-                switch key {
-                case "m":
+                switch keyCode {
+                case UInt16(kVK_ANSI_M):
                     toggleWindowSize()
                     return true
-                case "h", "q":
+                case UInt16(kVK_ANSI_H), UInt16(kVK_ANSI_Q):
                     hide()
                     return true
-                case "y":
+                case UInt16(kVK_ANSI_Y):
                     togglePromptHistoryHUD()
                     return true
-                case ",":
+                case UInt16(kVK_ANSI_Comma):
                     guard isShift else {
                         break
                     }
@@ -505,36 +504,36 @@ extension MainWindowController {
         }
 
         if isControl || isOption {
-            if key == "i" {
+            if keyCode == UInt16(kVK_ANSI_I) {
                 toggleInspector()
                 return true
-            } else if key == "r" {
+            } else if keyCode == UInt16(kVK_ANSI_R) {
                 // Allow Option+Command+R to fall through
             } else {
                 return false
             }
         }
 
-        switch key {
-        case "m":
+        switch keyCode {
+        case UInt16(kVK_ANSI_M):
             toggleWindowSize()
             return true
-        case "h", "q":
+        case UInt16(kVK_ANSI_H), UInt16(kVK_ANSI_Q):
             hide()
             return true
-        case "y":
+        case UInt16(kVK_ANSI_Y):
             togglePromptHistoryHUD()
             return true
-        case "l":
+        case UInt16(kVK_ANSI_L):
             guard isShift else {
                 return false
             }
             toggleLocationBarHUD()
             return true
-        case "w":
+        case UInt16(kVK_ANSI_W):
             closeCurrentTab()
             return true
-        case "r":
+        case UInt16(kVK_ANSI_R):
             guard !isInspectorFocused() else {
                 return false
             }
@@ -546,31 +545,31 @@ extension MainWindowController {
                 reloadActiveWebView(nil)
             }
             return true
-        case "f":
+        case UInt16(kVK_ANSI_F):
             guard !isInspectorFocused() else {
                 return false
             }
             findBarViewController.show()
             return true
-        case "g":
+        case UInt16(kVK_ANSI_G):
             guard !isInspectorFocused() else {
                 return false
             }
             findBarViewController.handleFindRepeat(shortcutShifted: isShift)
             return true
-        case ",":
+        case UInt16(kVK_ANSI_Comma):
             guard isShift else {
                 return false
             }
             NotificationCenter.default.post(name: .showSettings, object: nil)
             return true
-        case "=":
+        case UInt16(kVK_ANSI_Equal):
             guard !isInspectorFocused() else {
                 return false
             }
             zoom(by: Zoom.step)
             return true
-        case "-":
+        case UInt16(kVK_ANSI_Minus):
             guard !isInspectorFocused() else {
                 return false
             }

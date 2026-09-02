@@ -49,11 +49,11 @@ enum ShortcutFormatter {
     }
 
     private static func keyName(for keyCode: UInt16, fallback: String?) -> String {
-        if let fallback, let scalar = fallback.uppercased().first, scalar.isLetter || scalar.isNumber {
-            return String(scalar)
-        }
         if let mapped = keyCodeToCharacter[keyCode] {
             return mapped
+        }
+        if let fallback, let scalar = fallback.uppercased().first, scalar.isLetter || scalar.isNumber {
+            return String(scalar)
         }
         return "Key \(keyCode)"
     }

@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- **Shortcuts Work with Any Keyboard Layout**: All local shortcuts (find, reload, location bar, prompt history, window toggle, zoom, lock-screen fallback, etc.) now trigger by physical key position, so `Cmd+R`, `Cmd+F`, `Cmd+Shift+,` and similar bindings work while typing in French, German, Persian, Russian or any other layout. iOS hardware-keyboard recording and the shortcut label formatter were also made layout-independent.
 - **Engine Settings Shortcut Prompt Removed**: The one-time "Add the Cmd+, engine Settings shortcut?" dialog is gone. New installs already include that shortcut, and you can still add or change it in Shortcuts settings.
 
 ## [6.0.1] - 2026-08-30

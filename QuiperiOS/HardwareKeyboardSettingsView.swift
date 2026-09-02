@@ -416,14 +416,69 @@ private struct UIKitKeyPressCapture: UIViewRepresentable {
             case 0x2A, 0x4C: // Backspace or forward delete
                 onResult?(.clear)
             default:
-                guard !key.charactersIgnoringModifiers.isEmpty else { return }
+                let input = Self.usCharacter(forHID: Int(key.keyCode.rawValue)) ?? key.charactersIgnoringModifiers
+                guard !input.isEmpty else { return }
                 let shortcut = IOSKeyboardShortcutValidator.normalize(
                     IOSKeyboardShortcut(
-                        key.charactersIgnoringModifiers,
+                        input,
                         modifiers: IOSKeyboardModifiers(key.modifierFlags)
                     )
                 )
                 onResult?(.shortcut(shortcut))
+            }
+        }
+
+        private static func usCharacter(forHID hid: Int) -> String? {
+            switch hid {
+            case 0x04: return "a"
+            case 0x05: return "b"
+            case 0x06: return "c"
+            case 0x07: return "d"
+            case 0x08: return "e"
+            case 0x09: return "f"
+            case 0x0A: return "g"
+            case 0x0B: return "h"
+            case 0x0C: return "i"
+            case 0x0D: return "j"
+            case 0x0E: return "k"
+            case 0x0F: return "l"
+            case 0x10: return "m"
+            case 0x11: return "n"
+            case 0x12: return "o"
+            case 0x13: return "p"
+            case 0x14: return "q"
+            case 0x15: return "r"
+            case 0x16: return "s"
+            case 0x17: return "t"
+            case 0x18: return "u"
+            case 0x19: return "v"
+            case 0x1A: return "w"
+            case 0x1B: return "x"
+            case 0x1C: return "y"
+            case 0x1D: return "z"
+            case 0x1E: return "1"
+            case 0x1F: return "2"
+            case 0x20: return "3"
+            case 0x21: return "4"
+            case 0x22: return "5"
+            case 0x23: return "6"
+            case 0x24: return "7"
+            case 0x25: return "8"
+            case 0x26: return "9"
+            case 0x27: return "0"
+            case 0x2C: return " "
+            case 0x2D: return "-"
+            case 0x2E: return "="
+            case 0x2F: return "["
+            case 0x30: return "]"
+            case 0x31: return "\\"
+            case 0x33: return ";"
+            case 0x34: return "'"
+            case 0x35: return "`"
+            case 0x36: return ","
+            case 0x37: return "."
+            case 0x38: return "/"
+            default: return nil
             }
         }
     }

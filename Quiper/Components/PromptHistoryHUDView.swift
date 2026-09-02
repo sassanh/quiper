@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 
 @MainActor
 final class PromptHistoryHUDView: NSView {
@@ -413,8 +414,7 @@ final class PromptHistoryHUDView: NSView {
             return true
         }
         if isCmdPressed {
-            let key = event.charactersIgnoringModifiers?.lowercased()
-            if key == "r" {
+            if event.keyCode == UInt16(kVK_ANSI_R) {
                 toggleRecordHistory()
                 return true
             }
