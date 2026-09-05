@@ -101,6 +101,7 @@ export default defineConfig({
             { text: 'Gemini', link: '/engines-setup/gemini' },
             { text: 'Grok', link: '/engines-setup/grok' },
             { text: 'DeepSeek', link: '/engines-setup/deepseek' },
+            { text: 'Qwen', link: '/engines-setup/qwen' },
           ] },
           { text: 'Managing Engines', link: '/engines' },
           { text: 'Application Settings', link: '/settings' },
