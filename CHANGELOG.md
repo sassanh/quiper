@@ -2,10 +2,16 @@
 
 ## [Unreleased]
 
+## [6.0.2] - 2026-09-05
+
+This release makes shortcuts work on any keyboard layout, restores page layout and all-Spaces behavior after element fullscreen, and removes the one-time engine Settings shortcut prompt.
+
 ### Fixed
 
 - **Shortcuts Work with Any Keyboard Layout**: All local shortcuts (find, reload, location bar, prompt history, window toggle, zoom, lock-screen fallback, etc.) now trigger by physical key position, so `Cmd+R`, `Cmd+F`, `Cmd+Shift+,` and similar bindings work while typing in French, German, Persian, Russian or any other layout. iOS hardware-keyboard recording and the shortcut label formatter were also made layout-independent.
 - **Engine Settings Shortcut Prompt Removed**: The one-time "Add the Cmd+, engine Settings shortcut?" dialog is gone. New installs already include that shortcut, and you can still add or change it in Shortcuts settings.
+- **Viewport Restores After Element Fullscreen**: Exiting fullscreen web content now restores the page to the overlay size instead of leaving it stretched at screen width with broken layout.
+- **Show on All Spaces Survives Element Fullscreen**: The "Show on all Spaces" setting now stays active after element fullscreen ends instead of sticking Quiper to a single Space until toggled.
 
 ## [6.0.1] - 2026-08-30
 
