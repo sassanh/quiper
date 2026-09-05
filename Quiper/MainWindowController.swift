@@ -1479,6 +1479,19 @@ struct SecureTabState: Codable {
         webFullScreenWindow = window
         isWebContentFullscreen = true
 
+        // Pin the overlay to a single Space while the fullscreen Space
+        // exists so `.canJoinAllSpaces` does not keep it on the fullscreen
+        // Space. The CGS move on exit will bring it back, and
+        // `clearElementFullscreenState` will restore `canJoinAllSpaces` if
+        // the setting is enabled — the change from `.stationary` to
+        // `.canJoinAllSpaces` is what forces WindowServer to re-add the
+        // window to all Spaces. Without this pin the window stays
+        // `.canJoinAllSpaces` through the session and the CGS move on exit
+        // pins it to a single Space with no subsequent behavior change to
+        // undo it (hence “show on all Spaces” sticks on one Space until
+        // toggled).
+        updateCollectionBehaviorForVisibilityState()
+
         // The element's fullscreen Space is now owned by Quiper's own web
         // content, and a visible overlay would be dragged into it by
         // `.moveToActiveSpace` on the Space switch. Hide it for the duration
@@ -1546,21 +1559,51 @@ struct SecureTabState: Codable {
 
         // Immediate pass if the webView is already back in its wrapper.
         updateWindowMarginAndLayout()
+        updateCollectionBehaviorForVisibilityState()
         webViewManager.refreshViewportAfterFullscreenExit()
         repairPopupIfNeeded()
 
         // didExit re-parent can be one runloop turn later; cover it.
         DispatchQueue.main.async { [weak self] in
             self?.updateWindowMarginAndLayout()
+            self?.updateCollectionBehaviorForVisibilityState()
             self?.webViewManager.refreshViewportAfterFullscreenExit()
             repairPopupIfNeeded()
         }
         // Fullscreen exit animation is ~0.3s; a late pass catches any
-        // remaining stale frame.
+        // remaining stale frame and ensures WindowServer re-adds the window
+        // to all Spaces when “Show on all Spaces” is enabled. The CGS move
+        // in `exitingFullscreen` can pin a `.canJoinAllSpaces` window to a
+        // single Space with no subsequent behavior change to undo it, so
+        // force a toggle if still stuck.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
             self?.updateWindowMarginAndLayout()
             self?.webViewManager.refreshViewportAfterFullscreenExit()
             repairPopupIfNeeded()
+            guard let self, let window = self.window else { return }
+            // If the setting says “all Spaces” but WindowServer still has
+            // the window on a single Space (e.g. CGS move left it pinned),
+            // a no-op set to the same behavior does not trigger a
+            // re-add. Toggle through the opposite value to force it.
+            if Settings.shared.showOnAllSpaces,
+               !window.collectionBehavior.contains(.canJoinAllSpaces) {
+                self.updateCollectionBehaviorForVisibilityState()
+            } else if Settings.shared.showOnAllSpaces {
+                // Already reports canJoinAllSpaces but may still be visually
+                // single-Space due to the CGS pin with no behavior change.
+                // Check actual Spaces as ground truth.
+                let spaces = CGSFuncs.spaces(for: window)
+                // Heuristic: if on a single Space while setting says all,
+                // force a re-assert by toggling.
+                if spaces.count == 1, let active = CGSFuncs.activeSpace(for: window.screen), spaces.first == active {
+                    // Only force if we suspect a stale single-Space state;
+                    // toggling is harmless and immediately restored.
+                    window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .stationary]
+                    self.updateCollectionBehaviorForVisibilityState()
+                }
+            } else {
+                self.updateCollectionBehaviorForVisibilityState()
+            }
         }
     }
 
