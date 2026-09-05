@@ -19,6 +19,7 @@ export default defineConfig({
 
   sitemap: {
     hostname: siteUrl,
+    transformItems: (items) => items.filter((item) => !item.url.includes('TODO')),
   },
 
   head: [
@@ -34,6 +35,10 @@ export default defineConfig({
   ],
 
   transformHead({ pageData }) {
+    if (pageData.relativePath === 'engines-setup/TODO.md') {
+      return [['meta', { name: 'robots', content: 'noindex' }]]
+    }
+
     const isBlogPost = pageData.frontmatter.blog === true
     const isBlogIndex = pageData.frontmatter.blogIndex === true
 

@@ -2,13 +2,13 @@
 
 Every engine Quiper ships as a one-click template should eventually get a setup guide under this folder, following the same shape as [gemini.md](gemini.md): a "starting point" table, numbered steps from zero to a working engine, optional refinements, and a troubleshooting table.
 
-**Done so far:** Gemini ✅
+**Done so far:** Gemini ✅, Grok ✅
 
 ## Cloud engines
 
 - [ ] **ChatGPT** — `https://chatgpt.com` — OpenAI account creation and sign-in; keep the auth flow inside the overlay via routing rules (mirror Gemini's accounts.google.com treatment).
 - [ ] **Claude** — `https://claude.ai` — Anthropic account creation and sign-in.
-- [ ] **Grok** — `https://grok.com` — sign-in with an X account; call out the overlap with both the X guide and Gemini's hotkey-conflict note if relevant.
+- [x] **Grok** — `https://grok.com` — sign-in with an X account; call out the overlap with both the X guide and Gemini's hotkey-conflict note if relevant.
 - [ ] **X** — `https://x.com/i/grok` — uses the Grok assistant integrated into X; requires an X account, not a separate Grok signup.
 - [ ] **DeepSeek** — `https://chat.deepseek.com` — account creation (email/phone).
 - [ ] **Kimi** — `https://www.kimi.com` — Moonshot AI account creation and sign-in.
