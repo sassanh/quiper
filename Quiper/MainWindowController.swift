@@ -1397,6 +1397,7 @@ struct SecureTabState: Codable {
         NotificationCenter.default.addObserver(self, selector: #selector(handleServicesIconsUpdated), name: .servicesIconsUpdated, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowEnteredWebFullScreen), name: NSWindow.didEnterFullScreenNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowWillExitWebFullScreen), name: NSWindow.willExitFullScreenNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidExitWebFullScreen), name: NSWindow.didExitFullScreenNotification, object: nil)
         
         if let window = self.window {
             NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidResize), name: NSWindow.didResizeNotification, object: window)
@@ -1492,7 +1493,19 @@ struct SecureTabState: Codable {
         clearElementFullscreenState()
     }
 
+    @objc private func handleWindowDidExitWebFullScreen(_ notification: Notification) {
+        // WebKit re-parents the webView back to its wrapper between
+        // willExit and didExit. The wrapper is already at the correct
+        // overlay size, but the webView is still sized to the fullscreen
+        // window; force it back and dispatch a resize so media queries
+        // recompute (otherwise the viewport stays at screen width and the
+        // page overflows / looks zoomed-out).
+        guard notification.object as? NSWindow !== self.window else { return }
+        restoreWebViewLayoutAfterFullscreen()
+    }
+
     private func clearElementFullscreenState() {
+        let previousFullscreenWebView = elementFullscreenWebView
         elementFullscreenWebView = nil
         elementFullscreenOriginSpace = nil
         webFullScreenWindow = nil
@@ -1504,6 +1517,51 @@ struct SecureTabState: Codable {
         // could not bleed into the owned fullscreen Space).
         shouldRestoreCollectionBehaviorAfterElementFullscreen = false
         updateCollectionBehaviorForVisibilityState()
+        // willExit fires before WebKit moves the webView back to its
+        // wrapper. Schedule the viewport fix for after the re-parent, and
+        // also handle the case where didExit is not delivered (e.g. the
+        // window was closed programmatically).
+        restoreWebViewLayoutAfterFullscreen(previousFullscreenWebView: previousFullscreenWebView)
+    }
+
+    private func restoreWebViewLayoutAfterFullscreen(previousFullscreenWebView: WKWebView? = nil) {
+        // Capture the specific fullscreen webView before it is nil-ed so
+        // popup windows (whose webView is not in WebViewManager) are also
+        // repaired. For managed webViews the manager iteration below is
+        // sufficient, but this covers the unmanaged popup case.
+        let capturedPopupWebView = previousFullscreenWebView ?? elementFullscreenWebView
+
+        func repairPopupIfNeeded() {
+            guard let webView = capturedPopupWebView,
+                  let superview = webView.superview else { return }
+            // Popup webViews are hosted directly in a ModalPopupWindow's
+            // contentView. After fullscreen WebKit leaves them sized to
+            // screen dimensions; clamp back to superview bounds.
+            if webView.frame != superview.bounds {
+                webView.frame = superview.bounds
+            }
+            webView.needsLayout = true
+            webView.evaluateJavaScript("window.dispatchEvent(new Event('resize'));", completionHandler: nil)
+        }
+
+        // Immediate pass if the webView is already back in its wrapper.
+        updateWindowMarginAndLayout()
+        webViewManager.refreshViewportAfterFullscreenExit()
+        repairPopupIfNeeded()
+
+        // didExit re-parent can be one runloop turn later; cover it.
+        DispatchQueue.main.async { [weak self] in
+            self?.updateWindowMarginAndLayout()
+            self?.webViewManager.refreshViewportAfterFullscreenExit()
+            repairPopupIfNeeded()
+        }
+        // Fullscreen exit animation is ~0.3s; a late pass catches any
+        // remaining stale frame.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.updateWindowMarginAndLayout()
+            self?.webViewManager.refreshViewportAfterFullscreenExit()
+            repairPopupIfNeeded()
+        }
     }
 
     /// Called before an encrypted service's webViews are torn down for locking.

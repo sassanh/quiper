@@ -1104,6 +1104,27 @@ final class WebViewManager: NSObject {
                         wrapper.frame = frame
                     }
                     updateMaskedCorners(for: wrapper)
+                    // After element-fullscreen, WebKit leaves the webView sized to
+                    // the fullscreen window. The wrapper itself is already the
+                    // correct (small) size, so autoresizing does not fire and the
+                    // web process keeps a fullscreen viewport (innerWidth stays at
+                    // screen width, media queries stay desktop). Force the webView
+                    // back to the wrapper bounds so the viewport recomputes.
+                    if webView.frame != wrapper.bounds {
+                        webView.frame = wrapper.bounds
+                    }
+                }
+            }
+        }
+        // Wrappers whose webView is currently hosted in the WebKit fullscreen
+        // window have no superview link at this moment; ensure the wrapper
+        // itself is still at the correct size so the webView has a correct
+        // target to be restored into on didExit.
+        for wrapperMap in wrappersByID.values {
+            for wrapper in wrapperMap.values {
+                if wrapper.superview != nil, wrapper.frame != frame {
+                    wrapper.frame = frame
+                    updateMaskedCorners(for: wrapper)
                 }
             }
         }
@@ -1120,6 +1141,26 @@ final class WebViewManager: NSObject {
             } else {
                 // Top bar is at the bottom, so we want the top corners of the webview to be rounded
                 wrapper.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+            }
+        }
+    }
+
+    /// Forces every visible webView's viewport to recompute after the WebKit
+    /// element-fullscreen exit. WebKit re-parents the webView from the
+    /// fullscreen window back to its wrapper but leaves the webView's frame
+    /// at fullscreen size; `updateLayout()` above corrects the frame, and a
+    /// synthetic resize event forces media queries / JS listeners to reflow.
+    func refreshViewportAfterFullscreenExit() {
+        updateLayout()
+        containerView?.needsLayout = true
+        containerView?.layoutSubtreeIfNeeded()
+        for sessionMap in webviewsByID.values {
+            for webView in sessionMap.values {
+                webView.superview?.needsLayout = true
+                webView.superview?.layoutSubtreeIfNeeded()
+                webView.needsLayout = true
+                // Dispatch resize in the web process; harmless for background tabs.
+                webView.evaluateJavaScript("window.dispatchEvent(new Event('resize'));", completionHandler: nil)
             }
         }
     }
