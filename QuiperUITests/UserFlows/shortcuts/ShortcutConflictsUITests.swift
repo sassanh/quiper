@@ -163,11 +163,9 @@ final class ShortcutConflictsUITests: BaseUITest {
             return
         }
         
-        btn.click()
+        clickToOpenRecorder(btn, description: "record button")
         
         let overlay = app.staticTexts["Press the new shortcut"]
-        XCTAssertEqual(true, overlay.waitForExistence(timeout: 2.0), "Shortcut recording overlay did not appear")
-        
         app.typeKey(key, modifierFlags: modifiers)
         XCTAssertEqual(true, overlay.waitForNonExistence(timeout: 2.0), "Overlay did not dismiss after recording")
     }
@@ -177,8 +175,7 @@ final class ShortcutConflictsUITests: BaseUITest {
              XCTFail("Could not find record button")
              return
         }
-        btn.click()
-        XCTAssertEqual(true, app.staticTexts["Press the new shortcut"].waitForExistence(timeout: 2.0))
+        clickToOpenRecorder(btn, description: "record button")
     }
     
     func cancelRecording() {
@@ -192,6 +189,19 @@ final class ShortcutConflictsUITests: BaseUITest {
         // Find by identifier "ShortcutRecorder" (default from ShortcutButton)
         return cell.descendants(matching: .any).matching(identifier: "ShortcutRecorder").firstMatch
     }
+
+    /// Click a shortcut record button until the recording overlay appears.
+    /// A click can be swallowed if the Shortcuts tab is still settling after
+    /// a tab switch on a loaded runner, so retry instead of failing immediately.
+    /// Fails the test (which stops it, per continueAfterFailure = false) if the
+    /// recorder never opens.
+    func clickToOpenRecorder(_ button: XCUIElement, description: String) {
+        for _ in 0..<3 {
+            button.click()
+            if app.staticTexts["Press the new shortcut"].waitForExistence(timeout: 2.0) { return }
+        }
+        XCTFail("Clicked \(description) but recording overlay didn't appear.")
+    }
     
     func setGlobalLaunchShortcut(key: String, modifiers: XCUIElement.KeyModifierFlags) {
         let label = app.staticTexts["Show/Hide Quiper"]
@@ -201,13 +211,7 @@ final class ShortcutConflictsUITests: BaseUITest {
         let btn = app.descendants(matching: .any).matching(identifier: "GlobalShortcutButton").firstMatch
         XCTAssertEqual(true, btn.waitForExistence(timeout: 2.0), "Global Shortcut Button not found")
         
-        btn.click()
-        
-        // Check overlay
-        guard app.staticTexts["Press the new shortcut"].waitForExistence(timeout: 2.0) else {
-            XCTFail("Clicked button '\(btn.label)' but recording overlay didn't appear.")
-            return
-        }
+        clickToOpenRecorder(btn, description: "button '\(btn.label)'")
         app.typeKey(key, modifierFlags: modifiers)
         
         // Verify it was assigned

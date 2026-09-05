@@ -1837,6 +1837,107 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         }
     }
 
+    @MainActor
+    func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        ServerAuthenticationCoordinator.shared.handle(
+            challenge,
+            serviceName: service(for: webView)?.name,
+            completionHandler: completionHandler
+        ) { [weak self] prompt, respond in
+            guard let self else {
+                respond(.cancel)
+                return
+            }
+            self.presentAuthenticationPrompt(prompt, for: webView, completion: respond)
+        }
+    }
+
+    @MainActor
+    private func presentAuthenticationPrompt(_ prompt: ServerAuthenticationPrompt, for webView: WKWebView, completion: @escaping (ServerAuthenticationDecision) -> Void) {
+        guard let window = webView.window else {
+            completion(.cancel)
+            return
+        }
+
+        let alert = NSAlert()
+        if let serviceName = prompt.serviceName, !serviceName.isEmpty {
+            alert.messageText = "Sign in to \(serviceName)"
+        } else {
+            alert.messageText = "Sign in to \(prompt.displayHost)"
+        }
+        var details: [String] = []
+        if prompt.serviceName != nil {
+            details.append(prompt.displayHost)
+        }
+        if prompt.isRetry {
+            details.append("The previous user name or password was incorrect.")
+        }
+        if prompt.showsUnencryptedWarning {
+            details.append("Your password will be sent unencrypted.")
+        }
+        alert.informativeText = details.joined(separator: "\n")
+
+        let usernameField = NSTextField()
+        usernameField.placeholderString = "User Name"
+        usernameField.stringValue = prompt.suggestedUsername
+        let passwordField = NSSecureTextField()
+        passwordField.placeholderString = "Password"
+        let rememberCheckbox = NSButton(checkboxWithTitle: "Remember this password", target: nil, action: nil)
+        rememberCheckbox.font = .systemFont(ofSize: 11)
+        // NSAlert doesn't size stack-based accessories reliably (overlap/clipping),
+        // so lay the form out in an explicitly framed container instead.
+        let formWidth: CGFloat = 300
+        let fieldHeight: CGFloat = 24
+        let checkboxHeight: CGFloat = 18
+        let fieldSpacing: CGFloat = 8
+        let checkboxSpacing: CGFloat = 10
+        let formHeight = fieldHeight * 2 + checkboxHeight + fieldSpacing + checkboxSpacing
+        passwordField.frame = NSRect(x: 0, y: checkboxHeight + checkboxSpacing, width: formWidth, height: fieldHeight)
+        usernameField.frame = NSRect(
+            x: 0,
+            y: checkboxHeight + checkboxSpacing + fieldHeight + fieldSpacing,
+            width: formWidth,
+            height: fieldHeight
+        )
+        rememberCheckbox.frame = NSRect(x: 0, y: 0, width: formWidth, height: checkboxHeight)
+        let formView = NSView(frame: NSRect(x: 0, y: 0, width: formWidth, height: formHeight))
+        formView.addSubview(usernameField)
+        formView.addSubview(passwordField)
+        formView.addSubview(rememberCheckbox)
+        alert.accessoryView = formView
+
+        alert.addButton(withTitle: "Sign In")
+        let cancelButton = alert.addButton(withTitle: "Cancel")
+        cancelButton.keyEquivalent = "\u{1b}" // Escape key
+        let signInButton = alert.buttons[0]
+        signInButton.isEnabled = !usernameField.stringValue.isEmpty && !passwordField.stringValue.isEmpty
+
+        var observation: NSObjectProtocol?
+        observation = NotificationCenter.default.addObserver(
+            forName: NSControl.textDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            signInButton.isEnabled = !usernameField.stringValue.isEmpty && !passwordField.stringValue.isEmpty
+        }
+
+        alert.window.initialFirstResponder = prompt.suggestedUsername.isEmpty ? usernameField : passwordField
+        alert.beginSheetModal(for: window) { response in
+            if let observation {
+                NotificationCenter.default.removeObserver(observation)
+            }
+            guard response == .alertFirstButtonReturn else {
+                completion(.cancel)
+                return
+            }
+            completion(.signIn(
+                username: usernameField.stringValue,
+                password: passwordField.stringValue,
+                remember: rememberCheckbox.state == .on
+            ))
+        }
+    }
+
     @available(macOS 11.3, *)
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
         

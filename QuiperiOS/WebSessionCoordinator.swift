@@ -312,6 +312,98 @@ extension WebSessionCoordinator: WKNavigationDelegate {
         }
     }
 
+    func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,
+                  completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        ServerAuthenticationCoordinator.shared.handle(
+            challenge,
+            serviceName: service.name,
+            completionHandler: completionHandler
+        ) { [weak self] prompt, respond in
+            guard let self else {
+                respond(.cancel)
+                return
+            }
+            self.presentAuthenticationPrompt(prompt, completion: respond)
+        }
+    }
+
+    private func presentAuthenticationPrompt(_ prompt: ServerAuthenticationPrompt,
+                                             completion: @escaping (ServerAuthenticationDecision) -> Void) {
+        guard let presenter = topViewController() else {
+            completion(.cancel)
+            return
+        }
+        var details: [String] = []
+        if prompt.serviceName != nil {
+            details.append(prompt.displayHost)
+        }
+        if prompt.isRetry {
+            details.append("The previous user name or password was incorrect.")
+        }
+        if prompt.showsUnencryptedWarning {
+            details.append("Your password will be sent unencrypted.")
+        }
+        let alert = UIAlertController(
+            title: "Sign in to \(prompt.serviceName ?? prompt.displayHost)",
+            message: details.isEmpty ? nil : details.joined(separator: "\n"),
+            preferredStyle: .alert
+        )
+        alert.addTextField { textField in
+            textField.placeholder = "User Name"
+            textField.text = prompt.suggestedUsername
+            textField.autocapitalizationType = .none
+            textField.autocorrectionType = .no
+        }
+        alert.addTextField { textField in
+            textField.placeholder = "Password"
+            textField.isSecureTextEntry = true
+        }
+        var observation: NSObjectProtocol?
+        func done(_ decision: ServerAuthenticationDecision) {
+            if let observation {
+                NotificationCenter.default.removeObserver(observation)
+            }
+            completion(decision)
+        }
+        let signIn = UIAlertAction(title: "Sign In", style: .default) { _ in
+            done(.signIn(
+                username: alert.textFields?[0].text ?? "",
+                password: alert.textFields?[1].text ?? "",
+                remember: false
+            ))
+        }
+        let rememberAndSignIn = UIAlertAction(title: "Remember & Sign In", style: .default) { _ in
+            done(.signIn(
+                username: alert.textFields?[0].text ?? "",
+                password: alert.textFields?[1].text ?? "",
+                remember: true
+            ))
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in done(.cancel) })
+        alert.addAction(signIn)
+        alert.addAction(rememberAndSignIn)
+
+        let updateEnabled = { [weak alert] in
+            let username = alert?.textFields?[0].text ?? ""
+            let password = alert?.textFields?[1].text ?? ""
+            let complete = !username.isEmpty && !password.isEmpty
+            signIn.isEnabled = complete
+            rememberAndSignIn.isEnabled = complete
+        }
+        updateEnabled()
+        observation = NotificationCenter.default.addObserver(
+            forName: UITextField.textDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in updateEnabled() }
+
+        presenter.present(alert, animated: true) {
+            if !prompt.suggestedUsername.isEmpty {
+                alert.textFields?[1].becomeFirstResponder()
+            }
+        }
+    }
+
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         onWebContentProcessTerminated?()
     }
