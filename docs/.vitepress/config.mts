@@ -100,6 +100,7 @@ export default defineConfig({
           { text: 'Setting Up Engines', link: '/engines-setup', items: [
             { text: 'Gemini', link: '/engines-setup/gemini' },
             { text: 'Grok', link: '/engines-setup/grok' },
+            { text: 'DeepSeek', link: '/engines-setup/deepseek' },
           ] },
           { text: 'Managing Engines', link: '/engines' },
           { text: 'Application Settings', link: '/settings' },
