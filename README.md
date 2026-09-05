@@ -67,6 +67,7 @@ Quiper ships with one-click templates for the most popular AI chat services — 
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) | Open source · self-hosted | Native macOS interface for a local llama.cpp server — run offline LLMs from the overlay. |
 | [oMLX](https://omlx.ai/) | Open source · self-hosted | Native oMLX desktop experience on macOS for Apple Silicon local inference at `http://localhost:8480`. |
 | [OpenClaw](https://openclaw.ai) | Open source · self-hosted | OpenClaw desktop app experience — control your agents' chat from the overlay with new sessions, history, share-as-markdown, and settings. |
+| [OpenCode](https://opencode.ai) | Open source · self-hosted | OpenCode desktop app experience — run `opencode web --port 4096` and drive your coding sessions from the overlay with new sessions, history, sharing, and settings. |
 
 ## Installation
 

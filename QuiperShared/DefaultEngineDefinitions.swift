@@ -13,7 +13,7 @@ enum DefaultEngineDefinitions {
     /// Names of bundled templates that run locally on the user's machine rather
     /// than as cloud services. Used to group the Add Engine menu into cloud and
     /// local templates, matching macOS.
-    static let localTemplateNames: Set<String> = ["open webui", "llama.cpp", "omlx", "openclaw"]
+    static let localTemplateNames: Set<String> = ["open webui", "llama.cpp", "omlx", "openclaw", "opencode"]
 
     static let actionScriptHelpers = """
     function waitFor(check, timeoutMs = 1000) {
@@ -2289,6 +2289,109 @@ enum DefaultEngineDefinitions {
                   ]) || quiperFindByText(["Settings"]);
                   await quiperClickElement(entry, "Settings button not found");
                   await waitFor(openclawSettingsVisible, 3000);
+                }
+                """,
+            ],
+            customCSS: """
+            body {
+              background-color: transparent !important;
+            }
+            """
+        ),
+        Service(
+            name: "OpenCode",
+            url: "http://127.0.0.1:4096",
+            focus_selector: "div[data-component='prompt-input'][contenteditable='true'], div[role='textbox'][contenteditable='true'], textarea, div[contenteditable='true']",
+            actionScripts: [
+                DefaultEngineDefinitions.newSessionActionID: """
+                \(DefaultEngineDefinitions.actionScriptHelpers)
+                const newSession = quiperFind([
+                  "button[data-action='session-new']",
+                  "button[data-action='new-session']",
+                  "button[aria-label='New session']",
+                  "[aria-label='New session']",
+                  "a[href*='new-session']"
+                ]) || quiperFindByText(["New session", "New Session", "New chat"]);
+                if (newSession) {
+                  await quiperClickElement(newSession, "New session button not found");
+                } else {
+                  window.location.assign("/");
+                }
+                """,
+                DefaultEngineDefinitions.historyActionID: """
+                \(DefaultEngineDefinitions.actionScriptHelpers)
+                function opencodeSessionRailVisible() {
+                  return [...document.querySelectorAll("a[href*='/session/']")]
+                    .some((el) => {
+                      if (!quiperIsVisible(el)) { return false; }
+                      return el.getBoundingClientRect().x >= 0;
+                    });
+                }
+
+                if (opencodeSessionRailVisible()) {
+                  const collapse = quiperFind([
+                    "button[aria-label='Collapse sidebar']",
+                    "button[aria-label='Close sidebar']",
+                    "button[aria-label='Toggle sidebar']",
+                    "[aria-label='Collapse sidebar']",
+                    "[aria-label='Toggle sidebar']"
+                  ]) || quiperFindByText(["Collapse sidebar", "Close sidebar", "Toggle sidebar"]);
+                  if (!collapse) {
+                    return;
+                  }
+                  await quiperClickElement(collapse, "Sidebar/collapse button not found");
+                  return;
+                }
+
+                const expand = quiperFind([
+                  "button[aria-label='Expand sidebar']",
+                  "button[aria-label='Open sidebar']",
+                  "button[aria-label='Toggle sidebar']",
+                  "[aria-label='Expand sidebar']",
+                  "[aria-label='Toggle sidebar']"
+                ]) || quiperFindByText(["Expand sidebar", "Open sidebar", "Toggle sidebar", "Menu", "Sessions", "History"]);
+                if (!expand) {
+                  throw new Error("Sidebar/expand button not found");
+                }
+                await quiperClickElement(expand, "Sidebar/expand button not found");
+                try {
+                  await waitFor(opencodeSessionRailVisible, 2000);
+                } catch {}
+                """,
+                DefaultEngineDefinitions.shareActionID: """
+                \(DefaultEngineDefinitions.actionScriptHelpers)
+                await quiperClick(
+                  [
+                    "button[data-action='session-share']",
+                    "button[aria-label='Share']",
+                    "[aria-label='Share']"
+                  ],
+                  ["Share", "Copy link", "Copy Link"],
+                  "Share button not found"
+                );
+                """,
+                DefaultEngineDefinitions.openSettingsActionID: """
+                \(DefaultEngineDefinitions.actionScriptHelpers)
+                function opencodeSettingsVisible() {
+                  return quiperElements(["[role='dialog']"]).some((element) => {
+                    if (!quiperIsVisible(element)) { return false; }
+                    return /settings|providers|appearance|models/i.test(quiperText(element));
+                  });
+                }
+
+                if (opencodeSettingsVisible()) {
+                  const closeButton = quiperFind(["[aria-label='Close']", "button[aria-label='Close']"]);
+                  if (closeButton) {
+                    await quiperClickElement(closeButton, "Close settings button not found");
+                  }
+                } else {
+                  const entry = quiperFind([
+                    "button[data-action='settings']",
+                    "button[aria-label='Settings']",
+                    "[aria-label='Settings']"
+                  ]) || quiperFindByText(["Settings"]);
+                  await quiperClickElement(entry, "Settings button not found");
+                  await waitFor(opencodeSettingsVisible, 3000);
                 }
                 """,
             ],

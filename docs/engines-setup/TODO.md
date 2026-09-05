@@ -24,6 +24,7 @@ These guides need a "run the server first" prerequisite section before the stand
 - [ ] **llama.cpp** — `http://localhost:8080` — building/launching `llama-server` with a model before opening the engine.
 - [ ] **oMLX** — `http://localhost:8480/admin/chat` — Apple Silicon local inference; getting the server running and loading models.
 - [ ] **OpenClaw** — `http://127.0.0.1:18789` — controlling local agents from the overlay; also document its bundled actions (new session, session-history rail, share as markdown, open settings).
+- [ ] **OpenCode** — `http://127.0.0.1:4096` — run `opencode web --port 4096` first, then drive coding sessions from the overlay; also document its bundled actions (new session, session-history rail, share, open settings).
 
 ## Per-guide checklist
 

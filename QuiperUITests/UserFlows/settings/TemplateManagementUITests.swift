@@ -56,6 +56,7 @@ final class TemplateManagementUITests: BaseUITest {
             "Grok",
             "Kimi",
             "OpenClaw",
+            "OpenCode",
             "Qwen",
             "X",
             "Z.ai",

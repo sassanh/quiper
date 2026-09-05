@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **OpenCode Engine Template**: Quiper now ships a bundled OpenCode template for driving local coding sessions in the overlay. Run `opencode web --port 4096`, add the engine, and use the default shortcuts to start a new session, toggle the session history rail, share conversations, and open OpenCode's settings.
+
 ## [6.0.2] - 2026-09-05
 
 This release makes shortcuts work on any keyboard layout, restores page layout and all-Spaces behavior after element fullscreen, and removes the one-time engine Settings shortcut prompt.
