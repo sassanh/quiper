@@ -2,7 +2,7 @@
 
 Every engine Quiper ships as a one-click template should eventually get a setup guide under this folder, following the same shape as [gemini.md](gemini.md): a "starting point" table, numbered steps from zero to a working engine, optional refinements, and a troubleshooting table.
 
-**Done so far:** Gemini ✅, Grok ✅
+**Done so far:** Gemini ✅, Grok ✅, DeepSeek ✅, Qwen ✅, OpenCode ✅
 
 ## Cloud engines
 
@@ -10,9 +10,9 @@ Every engine Quiper ships as a one-click template should eventually get a setup 
 - [ ] **Claude** — `https://claude.ai` — Anthropic account creation and sign-in.
 - [x] **Grok** — `https://grok.com` — sign-in with an X account; call out the overlap with both the X guide and Gemini's hotkey-conflict note if relevant.
 - [ ] **X** — `https://x.com/i/grok` — uses the Grok assistant integrated into X; requires an X account, not a separate Grok signup.
-- [ ] **DeepSeek** — `https://chat.deepseek.com` — account creation (email/phone).
+- [x] **DeepSeek** — `https://chat.deepseek.com` — account creation (email/phone).
 - [ ] **Kimi** — `https://www.kimi.com` — Moonshot AI account creation and sign-in.
-- [ ] **Qwen** — `https://chat.qwen.ai` — account creation and sign-in.
+- [x] **Qwen** — `https://chat.qwen.ai` — account creation and sign-in.
 - [ ] **Z.ai** — `https://chat.z.ai` — Z.ai account creation and sign-in.
 - [ ] **Google** — `https://www.google.com` — works without an account for plain search; cover what signing in adds (personalized results, AI features).
 
@@ -24,7 +24,7 @@ These guides need a "run the server first" prerequisite section before the stand
 - [ ] **llama.cpp** — `http://localhost:8080` — building/launching `llama-server` with a model before opening the engine.
 - [ ] **oMLX** — `http://localhost:8480/admin/chat` — Apple Silicon local inference; getting the server running and loading models.
 - [ ] **OpenClaw** — `http://127.0.0.1:18789` — controlling local agents from the overlay; also document its bundled actions (new session, session-history rail, share as markdown, open settings).
-- [ ] **OpenCode** — `http://127.0.0.1:4096` — run `opencode web --port 4096` first, then drive coding sessions from the overlay; also document its bundled actions (new session, session-history rail, share, open settings).
+- [x] **OpenCode** — `http://127.0.0.1:4096` — run `opencode2 serve --port 4096` (v2) or `opencode web --port 4096` (v1) first, then drive coding sessions from the overlay; also document its bundled actions (new session, session-history rail, share, open settings).
 
 ## Per-guide checklist
 

@@ -102,6 +102,7 @@ export default defineConfig({
             { text: 'Grok', link: '/engines-setup/grok' },
             { text: 'DeepSeek', link: '/engines-setup/deepseek' },
             { text: 'Qwen', link: '/engines-setup/qwen' },
+            { text: 'OpenCode', link: '/engines-setup/opencode' },
           ] },
           { text: 'Managing Engines', link: '/engines' },
           { text: 'Application Settings', link: '/settings' },

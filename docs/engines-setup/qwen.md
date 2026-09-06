@@ -65,14 +65,9 @@ The overlay is now your home base: press `⌥ Space` from any app to summon it.
 
 Qwen runs on your Qwen account at `chat.qwen.ai`. If you already use Qwen on the web or in the mobile app, skip this step.
 
-1.  Open [chat.qwen.ai](https://chat.qwen.ai) in your browser.
-2.  Click **Log in** / **Sign up** and follow the prompts to create your account. The exact verification steps (email or phone code, or a third-party sign-in) vary by region.
-3.  Accept Qwen's Terms and Privacy Policy when asked. You will land in a fresh chat session.
+Create your account at [chat.qwen.ai](https://chat.qwen.ai) — click **Log in** / **Sign up** and follow the prompts there.
 
 You can also create an account later from inside Quiper — the sign-in screen in the next step offers the same **Sign up** path.
-
-> [!TIP]
-> Pick one sign-in method and stick with it across devices. Signing in with different methods can create separate accounts with separate histories.
 
 ---
 

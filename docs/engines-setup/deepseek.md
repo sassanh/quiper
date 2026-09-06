@@ -63,19 +63,11 @@ The overlay is now your home base: press `⌥ Space` from any app to summon it.
 
 ## 3. Create a DeepSeek account (only if you don't have one)
 
-DeepSeek runs on your DeepSeek chat account at `chat.deepseek.com`. If you already use DeepSeek on the web or in the mobile app, skip this step. The chat account is separate from the developer account at `platform.deepseek.com` (API keys and billing, see [api-docs.deepseek.com](https://api-docs.deepseek.com)); you only need the chat account for this guide.
+DeepSeek runs on your DeepSeek chat account at `chat.deepseek.com`. If you already use DeepSeek on the web or in the mobile app, skip this step. The chat account is separate from the developer account at `platform.deepseek.com` (API keys and billing); you only need the chat account for this guide.
 
-DeepSeek's web sign-up offers **Email** and **Mobile (phone + SMS)** tabs, plus **Continue with Google** on the web; the mobile apps add **Sign in with Apple** (see [deepseek.com/en/news/deepseek-app](https://www.deepseek.com/en/news/deepseek-app/) and [deepseekai.guide](https://deepseekai.guide/guides/deepseek-sign-up/): Email/Mobile with verification code, Google on web, Apple in app). You only need one method.
+DeepSeek offers **Email** and **Mobile (phone + SMS)** sign-in plus **Continue with Google** on the web; the mobile apps also offer **Sign in with Apple**. You only need one method. Create your account at [chat.deepseek.com/sign_up](https://chat.deepseek.com/sign_up) and follow the prompts there.
 
-1.  Open [chat.deepseek.com](https://chat.deepseek.com) in your browser (or `chat.deepseek.com/sign_up` directly).
-2.  Click **Sign up** in the top-right. Choose the **Email** or **Mobile** tab, or click **Continue with Google** to skip verification.
-3.  For **Email**: enter your email, choose a password of at least eight characters, tick the terms box, and enter the verification code that arrives by email (codes expire after about 10 minutes; check spam, then request a new one after 60 seconds). For **Mobile**: enter your phone number and the SMS code where available in your region. For **Google**: complete the OAuth chooser.
-4.  Set a display name when prompted and accept DeepSeek's Terms and Privacy Policy. You will land in a fresh chat session.
-
-You can also create an account later from inside Quiper — the sign-in screen in the next step offers the same **Sign up** link and the same Google/Apple options.
-
-> [!TIP]
-> Pick one sign-in method and stick with it across devices. Mixing email + password and Google with the same address can create two separate accounts with separate histories.
+You can also create an account later from inside Quiper — the sign-in screen in the next step offers the same **Sign up** link.
 
 ---
 

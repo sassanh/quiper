@@ -65,9 +65,7 @@ The overlay is now your home base: press `⌥ Space` from any app to summon it.
 
 Gemini runs on your Google account. If you already use Gmail, YouTube, or any Google service, skip this step.
 
-1.  Open the [Google account sign-up page](https://accounts.google.com/signup) in your browser.
-2.  Follow the flow: enter your first and last name, choose a username and password, and add a phone number for verification.
-3.  Agree to Google's terms to finish creating the account.
+Create one at the [Google account sign-up page](https://accounts.google.com/signup) and follow the prompts there (see [Google Account Help](https://support.google.com/accounts/answer/27441) if you get stuck).
 
 You can also create an account later from inside Quiper — the sign-in screen (next step) offers a **Create account** link.
 

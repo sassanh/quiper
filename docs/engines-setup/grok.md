@@ -65,12 +65,7 @@ The overlay is now your home base: press `⌥ Space` from any app to summon it.
 
 Grok runs on your xAI account. If you already use Grok on the web or in the mobile apps, skip this step.
 
-Grok's sign-in page offers four methods — **Continue with X**, **Continue with Google**, **Continue with Apple**, and **Continue with email** — all on the same xAI account system at `accounts.x.ai` (see [accounts.x.ai/sign-in?redirect=grok-com](https://accounts.x.ai/sign-in?redirect=grok-com): "Login with Google / Login with 𝕏 / Login with Apple / Login with email"). You only need one of them; you do not need an X Premium subscription and you do not need to have an X account if you prefer Google, Apple, or email. You can also link an X account later at `grok.com → Settings → Account → Connect your X Account`.
-
-1.  Open [grok.com](https://grok.com) in your browser, or open the account sign-up directly at [accounts.x.ai/sign-up?redirect=grok-com](https://accounts.x.ai/sign-up?redirect=grok-com).
-2.  Click **Sign up** and choose your preferred method: **X**, **Google**, **Apple**, or **email**. For email, enter your address and follow the verification code flow.
-3.  Complete the confirmation step for that provider (X authorization, Google/Apple OAuth, or email code) and agree to xAI's terms to finish creating the account.
-4.  If you signed up with email, you can later add X/Google/Apple as additional sign-in methods at [accounts.x.ai](https://accounts.x.ai).
+Grok offers four sign-in methods on the same xAI account system — **X**, **Google**, **Apple**, and **email**. You only need one of them: you don't need an X Premium subscription, and you don't need an X account if you prefer Google, Apple, or email. Create your account at [accounts.x.ai/sign-up?redirect=grok-com](https://accounts.x.ai/sign-up?redirect=grok-com) and follow the prompts there.
 
 You can also create an account later from inside Quiper — the sign-in screen in the next step offers the same **Sign up** link.
 
