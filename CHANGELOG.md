@@ -2,9 +2,20 @@
 
 ## [Unreleased]
 
+## [6.1.0] - 2026-09-10
+
+This release adds OpenCode as a bundled local engine with native sign-in for password-protected servers, and lets fresh installs pick their engines on a single setup page.
+
 ### Added
 
-- **OpenCode Engine Template**: Quiper now ships a bundled OpenCode template for driving local coding sessions in the overlay. Run `opencode web --port 4096`, add the engine, and use the default shortcuts to start a new session, toggle the session history rail, share conversations, and open OpenCode's settings.
+- **OpenCode Engine Template**: Quiper now ships a bundled OpenCode template for driving local coding sessions in the overlay. Start the server with `opencode2 serve --port 4096` (v2) or `opencode web --port 4096` (v1), add the engine, and use the default shortcuts to start a new session, toggle the session history rail, share conversations, and open OpenCode's settings.
+- **Server Sign-In for Protected Engines**: Password-protected local engines now show a native sign-in sheet instead of a failing page. One sign-in unlocks every session on that server, and remembered passwords are reused automatically.
+- **First-Run Engine Picker**: Fresh installs now choose which bundled engines to add — each with its own secure-storage switch — on a single alphabetical setup page.
+- **Engine Icons in Notifications**: System notifications now carry the engine's icon so the source is visible at a glance.
+
+### Fixed
+
+- **Notification Clicks Stay Open**: Clicking an engine notification now opens the overlay on the right engine and session and keeps it open instead of flashing it shut.
 
 ## [6.0.2] - 2026-09-05
 
