@@ -35,7 +35,10 @@ final class WebSessionCoordinator: NSObject {
             serviceID: service.id,
             serviceName: service.name,
             sessionIndex: sessionIndex,
-            redactsContent: service.isEncrypted
+            redactsContent: service.isEncrypted,
+            iconProvider: { [weak self] in
+                self?.service.iconBase64.flatMap { Data(base64Encoded: $0) }
+            }
         )
         self.notificationBridge = bridge
 

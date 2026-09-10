@@ -17,19 +17,25 @@ final class WebNotificationBridge: NSObject {
     private var serviceName: String
     private let sessionIndex: Int
     private var redactsContent: Bool
+    /// Resolves the engine's icon on demand so favicons that arrive after the
+    /// bridge is attached are still picked up. Supplied by the platform, which
+    /// owns settings access the shared target must not reach into.
+    private let iconProvider: (() -> Data?)?
 
     init(
         webView: WKWebView,
         serviceID: UUID,
         serviceName: String,
         sessionIndex: Int,
-        redactsContent: Bool = false
+        redactsContent: Bool = false,
+        iconProvider: (() -> Data?)? = nil
     ) {
         self.webView = webView
         self.serviceID = serviceID
         self.serviceName = serviceName
         self.sessionIndex = sessionIndex
         self.redactsContent = redactsContent
+        self.iconProvider = iconProvider
         super.init()
         handlerProxy.delegate = self
         installBridge()
@@ -140,6 +146,13 @@ final class WebNotificationBridge: NSObject {
                 userInfo[NotificationMetadata.sessionIndexKey] = sessionIndex
                 content.userInfo = userInfo
 
+                // Locked engines stay anonymous: no icon that would identify them.
+                if !self.redactsContent,
+                   let iconPNG = Self.notificationIconPNG(from: self.iconProvider?()),
+                   let iconAttachment = Self.iconAttachment(pngData: iconPNG) {
+                    content.attachments = [iconAttachment]
+                }
+
                 let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.2, repeats: false)
                 let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
                 do {
@@ -160,12 +173,25 @@ final class WebNotificationBridge: NSObject {
     private func pushPermissionState(_ state: String, requestId: Int?) {
         guard let webView else { return }
         let escaped = Self.escapeForJavaScript(state)
-        let script: String
+        let setter: String
         if let requestId {
-            script = "window.__quiperNotificationBridge && window.__quiperNotificationBridge.resolve(\(requestId), '\(escaped)');"
+            setter = "window.__quiperNotificationBridge && window.__quiperNotificationBridge.resolve(\(requestId), '\(escaped)');"
         } else {
-            script = "window.__quiperNotificationBridge && window.__quiperNotificationBridge.setPermission('\(escaped)');"
+            setter = "window.__quiperNotificationBridge && window.__quiperNotificationBridge.setPermission('\(escaped)');"
         }
+        // Each frame keeps its own bridge state, but evaluateJavaScript runs
+        // in the main frame only, so propagate the push to same-origin
+        // frames (cross-origin access throws and is skipped). Without this a
+        // notifier running in an iframe would permanently read 'default'.
+        let script = setter + """
+            try {
+                for (const __quiperFrame of window.frames) {
+                    try {
+                        __quiperFrame.__quiperNotificationBridge && __quiperFrame.__quiperNotificationBridge.setPermission('\(escaped)');
+                    } catch (_) {}
+                }
+            } catch (_) {}
+            """
         DispatchQueue.main.async {
             webView.evaluateJavaScript(script, completionHandler: nil)
         }
@@ -196,6 +222,90 @@ final class WebNotificationBridge: NSObject {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "'", with: "\\'")
             .replacingOccurrences(of: "\n", with: "\\n")
+    }
+
+    /// Normalizes raw icon bytes (favicon PNG/JPEG/ICO, user-uploaded image)
+    /// to a small PNG attachment payload. Returns nil when the bytes are not
+    /// a decodable image. Capped at 256px: banners only render a thumbnail.
+    private static let iconMaxDimension = 256
+
+    private static func notificationIconPNG(from data: Data?) -> Data? {
+        guard let data, !data.isEmpty else { return nil }
+        #if os(macOS)
+        guard let image = NSImage(data: data),
+              let tiff = image.tiffRepresentation,
+              let base = NSBitmapImageRep(data: tiff) else { return nil }
+        let width = base.pixelsWide, height = base.pixelsHigh
+        guard width > 0, height > 0 else { return nil }
+        let scale = min(1.0, Double(iconMaxDimension) / Double(max(width, height)))
+        let targetWidth = max(1, Int(Double(width) * scale))
+        let targetHeight = max(1, Int(Double(height) * scale))
+        let rep: NSBitmapImageRep
+        if scale < 1.0 {
+            guard let scaled = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: targetWidth,
+                pixelsHigh: targetHeight,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            ) else { return nil }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: scaled)
+            image.draw(in: NSRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+            NSGraphicsContext.restoreGraphicsState()
+            rep = scaled
+        } else {
+            rep = base
+        }
+        return rep.representation(using: .png, properties: [:])
+        #else
+        guard let image = UIImage(data: data) else { return nil }
+        let width = image.size.width, height = image.size.height
+        guard width > 0, height > 0 else { return nil }
+        let scale = min(1.0, CGFloat(iconMaxDimension) / max(width, height))
+        if scale < 1.0 {
+            let target = CGSize(width: width * scale, height: height * scale)
+            let renderer = UIGraphicsImageRenderer(size: target)
+            return renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: target))
+            }.pngData()
+        }
+        return image.pngData()
+        #endif
+    }
+
+    private static func iconAttachment(pngData: Data) -> UNNotificationAttachment? {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("quiper-notification-icons", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            pruneIconAttachments(in: directory)
+            let url = directory.appendingPathComponent(UUID().uuidString + ".png")
+            try pngData.write(to: url, options: .atomic)
+            return try UNNotificationAttachment(identifier: "engine-icon", url: url)
+        } catch {
+            NSLog("[Quiper] Failed to attach engine icon to notification: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private static func pruneIconAttachments(in directory: URL) {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: .skipsHiddenFiles
+        ) else { return }
+        let cutoff = Date().addingTimeInterval(-24 * 3600)
+        for file in files {
+            guard let date = try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                  date < cutoff else { continue }
+            try? FileManager.default.removeItem(at: file)
+        }
     }
 
     private static func makeUserScript() -> WKUserScript {
@@ -359,6 +469,32 @@ final class WebNotificationBridge: NSObject {
             NativeNotification.__quiperBridgeInstalled = true;
             NativeNotification.prototype.close = function() {};
             window.Notification = NativeNotification;
+
+            // Service-worker delivery (`navigator.serviceWorker.ready.then(reg =>
+            // reg.showNotification(...))`) runs in page context when invoked
+            // from the page, so it can be intercepted here the same way.
+            // Calls originating inside the worker itself remain invisible to
+            // page scripts and still cannot be bridged.
+            try {
+                if (typeof ServiceWorkerRegistration !== 'undefined'
+                    && ServiceWorkerRegistration.prototype
+                    && typeof ServiceWorkerRegistration.prototype.showNotification === 'function'
+                    && !ServiceWorkerRegistration.prototype.__quiperBridgeInstalled) {
+                    ServiceWorkerRegistration.prototype.__quiperBridgeInstalled = true;
+                    ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
+                        if (permissionState === 'granted') {
+                            try {
+                                send({
+                                    type: 'showNotification',
+                                    title: String((title === undefined || title === null) ? '' : title),
+                                    options: normalize(options)
+                                });
+                            } catch (_) {}
+                        }
+                        return Promise.resolve();
+                    };
+                }
+            } catch (_) {}
 
             if (navigator.permissions && typeof navigator.permissions.query === 'function') {
                 const originalQuery = navigator.permissions.query.bind(navigator.permissions);

@@ -43,6 +43,11 @@ final class AppController: NSObject, NSWindowDelegate {
         private let notificationDispatcher: NotificationDispatching
         private var lastNonQuiperApplication: NSRunningApplication?
         private var lastActiveTime: Date?
+        /// Set when a notification click summons the overlay. macOS delivers a
+        /// reopen event as part of the same activation; it must show, not
+        /// toggle-hide, the overlay it just summoned. Consumed by the reopen
+        /// handler, cleared whenever the overlay hides or the app deactivates.
+        private var pendingNotificationActivation = false
         private let testDataStore: WKWebsiteDataStore
         private var screenshotPromptController: ScreenshotPromptController?
         #if DEBUG
@@ -217,7 +222,16 @@ final class AppController: NSObject, NSWindowDelegate {
     }
 
     @objc func hideWindow(_ sender: Any?) {
+        pendingNotificationActivation = false
         windowController.hide()
+    }
+
+    /// True when a notification click summoned the overlay and its reopen event
+    /// has not been handled yet. Consumes the latch.
+    func consumeNotificationActivation() -> Bool {
+        guard pendingNotificationActivation else { return false }
+        pendingNotificationActivation = false
+        return true
     }
 
     private func isActiveSpaceFullscreen() -> Bool {
@@ -499,6 +513,7 @@ final class AppController: NSObject, NSWindowDelegate {
 
     @objc private func handleApplicationDidResignActive(_ notification: Notification) {
         lastActiveTime = Date()
+        pendingNotificationActivation = false
     }
 
     @objc private func handleActiveSpaceDidChange(_ notification: Notification) {
@@ -769,6 +784,7 @@ extension AppController: NotificationDispatcherDelegate {
     func notificationDispatcher(_ dispatcher: NotificationDispatcher,
                                 didActivateNotificationForServiceID serviceID: UUID?,
                                 sessionIndex: Int?) {
+        pendingNotificationActivation = true
         showWindow(nil)
         if let serviceID {
             _ = windowController.selectService(withID: serviceID)
@@ -1003,7 +1019,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         let appController = statusBarController.appController
-        if NSApp.isActive && appController.isWindowVisible {
+        if appController.consumeNotificationActivation() {
+            appController.showWindow(nil)
+        } else if NSApp.isActive && appController.isWindowVisible {
             appController.hideWindow(nil)
         } else {
             appController.showWindow(nil)

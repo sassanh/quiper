@@ -1328,7 +1328,11 @@ final class WebViewManager: NSObject {
             webView: webView,
             serviceID: service.id,
             serviceName: service.name,
-            sessionIndex: sessionIndex
+            sessionIndex: sessionIndex,
+            iconProvider: {
+                Settings.shared.services.first(where: { $0.id == service.id })?
+                    .iconBase64.flatMap { Data(base64Encoded: $0) }
+            }
         )
     }
 
