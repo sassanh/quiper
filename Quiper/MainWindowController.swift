@@ -1875,8 +1875,11 @@ struct SecureTabState: Codable {
         }
         
         focusInputInActiveWebviewWithFallback()
-        
-        GhostOnboardingManager.shared.start(in: self)
+
+        // Cold path: once onboarding completes, the manager is never entered.
+        if !Settings.shared.hasCompletedGhostOnboarding {
+            GhostOnboardingManager.shared.start(in: self)
+        }
     }
     
     func windowDidResignKey(_ notification: Notification) {
@@ -1896,7 +1899,9 @@ struct SecureTabState: Codable {
             collapsibleServiceSelector?.collapse()
             collapsibleSessionSelector?.collapse()
         }
-        GhostOnboardingManager.shared.windowDidResignKey()
+        if !Settings.shared.hasCompletedGhostOnboarding {
+            GhostOnboardingManager.shared.windowDidResignKey()
+        }
         hideModifierHUD()
         saveTabsState()
     }

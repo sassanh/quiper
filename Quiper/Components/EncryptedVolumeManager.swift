@@ -85,8 +85,19 @@ final class EncryptedVolumeManager {
         Constants.IS_DEV ? "QuiperDevEngine-\(serviceID.uuidString)" : "QuiperEngine-\(serviceID.uuidString)"
     }
     
-    func createVolume(for serviceID: UUID, passphrase: String) async throws {
-        let bundleURL = getBundleURL(for: serviceID)
+    /// Single gate for provisioning encrypted storage for an engine that has
+    /// none: generates a key, stores it in the Keychain, creates the volume
+    /// and mounts it. Callers then move metadata/data in and flip the service
+    /// flags. The unlock path is separate: it retrieves the existing key and
+    /// must never generate a new one.
+    func provisionSecureStorage(for serviceID: UUID) async throws {
+        let passphrase = SecureStorageManager.shared.generateRandomKey()
+        try SecureStorageManager.shared.saveKeyToKeychain(passphrase, for: serviceID)
+        try await createVolume(for: serviceID, passphrase: passphrase)
+        try await mountVolume(for: serviceID, passphrase: passphrase)
+    }
+
+    func createVolume(for serviceID: UUID, passphrase: String) async throws {        let bundleURL = getBundleURL(for: serviceID)
         let parentDir = bundleURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
         

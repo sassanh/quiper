@@ -46,7 +46,10 @@ extension MainWindowController {
         layoutSelectors()
         
         showHeaderTemporarily()
-        GhostOnboardingManager.shared.serviceDidSwitch()
+        // Cold path: once onboarding completes, the manager is never entered.
+        if !Settings.shared.hasCompletedGhostOnboarding {
+            GhostOnboardingManager.shared.serviceDidSwitch()
+        }
         saveTabsState()
     }
 
@@ -85,7 +88,10 @@ extension MainWindowController {
         layoutSelectors()
         
         showHeaderTemporarily()
-        GhostOnboardingManager.shared.sessionDidSwitch()
+        // Cold path: once onboarding completes, the manager is never entered.
+        if !Settings.shared.hasCompletedGhostOnboarding {
+            GhostOnboardingManager.shared.sessionDidSwitch()
+        }
         saveTabsState()
     }
 

@@ -7,9 +7,21 @@ import UserNotifications
 import WebKit
 import LocalAuthentication
 
-private struct AlwaysVisibleScrollView<Content: View>: NSViewRepresentable {
+struct AlwaysVisibleScrollView<Content: View>: NSViewRepresentable {
     let content: Content
-    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    let width: CGFloat
+    let minHeight: CGFloat
+    init(width: CGFloat = 280, minHeight: CGFloat = 140, @ViewBuilder content: () -> Content) {
+        self.width = width
+        self.minHeight = minHeight
+        self.content = content()
+    }
+    /// Legacy scrollers sit beside the document; reserve their width so row
+    /// borders and toggles never slide underneath.
+    private static var scrollerGutter: CGFloat {
+        NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
+    }
+    private var documentWidth: CGFloat { width - Self.scrollerGutter }
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
@@ -22,7 +34,7 @@ private struct AlwaysVisibleScrollView<Content: View>: NSViewRepresentable {
         hosting.translatesAutoresizingMaskIntoConstraints = true
         hosting.autoresizingMask = [.width]
         let fitting = hosting.fittingSize
-        hosting.frame = NSRect(x: 0, y: 0, width: 280, height: max(fitting.height, 140))
+        hosting.frame = NSRect(x: 0, y: 0, width: documentWidth, height: max(fitting.height, minHeight))
         scrollView.documentView = hosting
         scrollView.verticalScroller?.isHidden = false
         return scrollView
@@ -33,8 +45,8 @@ private struct AlwaysVisibleScrollView<Content: View>: NSViewRepresentable {
             DispatchQueue.main.async {
                 let fitting = hosting.fittingSize
                 var frame = hosting.frame
-                frame.size.height = max(fitting.height, 140)
-                frame.size.width = 280
+                frame.size.height = max(fitting.height, self.minHeight)
+                frame.size.width = self.documentWidth
                 hosting.frame = frame
                 nsView.autohidesScrollers = false
                 nsView.hasVerticalScroller = true
@@ -2496,10 +2508,7 @@ struct ServiceDetailView: View {
         migrationMessage = isSecuring ? "Securing engine storage..." : "Unsecuring engine storage..."
         
         if isSecuring {
-            // 1. Generate key first so we can mount/create
-            let randomKey = SecureStorageManager.shared.generateRandomKey()
-            
-            // 2. Backup if requested
+            // 1. Backup if requested
             let backupSuccess: Bool
             if transferData {
                 migrationMessage = "Backing up session data..."
@@ -2510,18 +2519,11 @@ struct ServiceDetailView: View {
             
             Task {
                 do {
-                    // 3. Save key to Keychain
-                    migrationMessage = "Saving key to Keychain..."
-                    try SecureStorageManager.shared.saveKeyToKeychain(randomKey, for: serviceID)
-                    
-                    // 4. Create volume & mount
-                    migrationMessage = "Creating encrypted volume..."
-                    try await EncryptedVolumeManager.shared.createVolume(for: serviceID, passphrase: randomKey)
-                    
-                    migrationMessage = "Mounting encrypted partition..."
-                    try await EncryptedVolumeManager.shared.mountVolume(for: serviceID, passphrase: randomKey)
-                    
-                    // 4. Restore backup if requested and backup succeeded
+                    // 2. Provision secure storage: key, Keychain, volume, mount.
+                    migrationMessage = "Provisioning secure storage..."
+                    try await EncryptedVolumeManager.shared.provisionSecureStorage(for: serviceID)
+
+                    // 3. Restore backup if requested and backup succeeded
                     if transferData && backupSuccess {
                         migrationMessage = "Transferring session data..."
                         SecureDataMigrationManager.shared.restoreData(for: serviceID)
@@ -2529,7 +2531,7 @@ struct ServiceDetailView: View {
                         SecureDataMigrationManager.shared.discardBackup(for: serviceID)
                     }
                     
-                    // 5. Secure engine metadata while the new volume is mounted.
+                    // 4. Secure engine metadata while the new volume is mounted.
                     service.hasMigratedMetadata = false
                     service.isEncrypted = true
                     migrationMessage = "Securing engine metadata..."

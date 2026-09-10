@@ -55,7 +55,10 @@ extension MainWindowController {
     }
     
     @objc func sessionActionsButtonTapped(_ sender: NSButton) {
-        GhostOnboardingManager.shared.advanceFromMenuClick()
+        // Cold path: once onboarding completes, the manager is never entered.
+        if !Settings.shared.hasCompletedGhostOnboarding {
+            GhostOnboardingManager.shared.advanceFromMenuClick()
+        }
         let menu = buildSessionActionsMenu()
         guard !menu.items.isEmpty else { return }
         let origin = NSPoint(x: 0, y: sender.bounds.height + 4)

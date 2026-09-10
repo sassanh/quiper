@@ -980,10 +980,7 @@ class Settings: ObservableObject {
                   services[index].originatedFromSecureStorage,
                   !services[index].isEncrypted else { continue }
             do {
-                let randomKey = SecureStorageManager.shared.generateRandomKey()
-                try SecureStorageManager.shared.saveKeyToKeychain(randomKey, for: serviceID)
-                try await EncryptedVolumeManager.shared.createVolume(for: serviceID, passphrase: randomKey)
-                try await EncryptedVolumeManager.shared.mountVolume(for: serviceID, passphrase: randomKey)
+                try await EncryptedVolumeManager.shared.provisionSecureStorage(for: serviceID)
                 // Mark for migration and move current plaintext metadata into the bundle.
                 services[index].hasMigratedMetadata = false
                 services[index].isEncrypted = true

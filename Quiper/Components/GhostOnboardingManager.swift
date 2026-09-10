@@ -18,12 +18,10 @@ final class GhostOnboardingManager {
         let shouldForceOnboarding = CommandLine.arguments.contains("--test-onboarding")
         
         guard (!isRunningTests && !Constants.LaunchMode.shouldSuppressInterferenceUI) || shouldForceOnboarding else {
-            NSLog("[GhostOnboardingManager] start ignored: running in test/validation environment")
             return
         }
         
         guard !Settings.shared.hasCompletedGhostOnboarding else {
-            NSLog("[GhostOnboardingManager] start ignored: onboarding already completed")
             return
         }
         
@@ -32,8 +30,6 @@ final class GhostOnboardingManager {
         if self.currentStep == 0 {
             self.currentStep = 1
         }
-        
-        NSLog("[GhostOnboardingManager] start/resume called: currentStep = %d, isResuming = %d", currentStep, isResuming ? 1 : 0)
         
         // Force the header to expand immediately during onboarding
         windowController.updateHeaderVisibility(animated: false)
@@ -60,15 +56,12 @@ final class GhostOnboardingManager {
         if isActive {
             // During onboarding, keep the HUD in place so the first click back
             // on the window can't reach underlying UI elements
-            NSLog("[GhostOnboardingManager] window resigned key during onboarding, keeping HUD")
             return
         }
-        NSLog("[GhostOnboardingManager] window resigned key, hiding onboarding HUD")
         windowController?.hideOnboardingHUD()
     }
     
     func serviceDidSwitch() {
-        NSLog("[GhostOnboardingManager] serviceDidSwitch, currentStep = %d", currentStep)
         if currentStep == 1 {
             currentStep = 2
             showCurrentStep()
@@ -76,7 +69,6 @@ final class GhostOnboardingManager {
     }
     
     func sessionDidSwitch() {
-        NSLog("[GhostOnboardingManager] sessionDidSwitch, currentStep = %d", currentStep)
         if currentStep == 2 {
             currentStep = 3
             showCurrentStep()
@@ -84,14 +76,12 @@ final class GhostOnboardingManager {
     }
     
     func advanceFromMenuClick() {
-        NSLog("[GhostOnboardingManager] advanceFromMenuClick, currentStep = %d", currentStep)
         if currentStep == 3 {
             completeOnboarding()
         }
     }
     
     func advanceStep() {
-        NSLog("[GhostOnboardingManager] advanceStep programmatically, currentStep = %d", currentStep)
         if currentStep == 1 {
             currentStep = 2
             showCurrentStep()
@@ -105,11 +95,8 @@ final class GhostOnboardingManager {
     
     private func showCurrentStep() {
         guard let wc = windowController, let window = wc.window, window.isVisible else {
-            NSLog("[GhostOnboardingManager] showCurrentStep cancelled: window not visible or controller nil")
             return
         }
-        
-        NSLog("[GhostOnboardingManager] showCurrentStep: step = %d", currentStep)
         
         switch currentStep {
         case 1:
@@ -125,8 +112,6 @@ final class GhostOnboardingManager {
                     text: "This is your service list. Use `⌃⌘1` to `⌃⌘9` to switch between AI services instantly.",
                     target: target
                 )
-            } else {
-                NSLog("[GhostOnboardingManager] Warning: activeServiceSelector is nil in step 1")
             }
         case 2:
             wc.layoutSelectors()
@@ -141,8 +126,6 @@ final class GhostOnboardingManager {
                     text: "Each service has 10 isolated slots. Press `⌘1` to `⌘0` to switch between slots instantly.",
                     target: target
                 )
-            } else {
-                NSLog("[GhostOnboardingManager] Warning: activeSessionSelector is nil in step 2")
             }
         case 3:
             wc.layoutSelectors()
@@ -160,13 +143,10 @@ final class GhostOnboardingManager {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
                     Task { @MainActor [weak self] in
                         if self?.currentStep == 3 {
-                            NSLog("[GhostOnboardingManager] Auto-dismissing step 3 after timeout")
                             self?.completeOnboarding()
                         }
                     }
                 }
-            } else {
-                NSLog("[GhostOnboardingManager] Warning: sessionActionsButton is nil in step 3")
             }
         default:
             completeOnboarding()
@@ -175,7 +155,6 @@ final class GhostOnboardingManager {
     
     func completeOnboarding() {
         guard currentStep <= 3 else { return }
-        NSLog("[GhostOnboardingManager] completeOnboarding: setting hasCompletedGhostOnboarding = true")
         currentStep = 4
         Settings.shared.hasCompletedGhostOnboarding = true
         
