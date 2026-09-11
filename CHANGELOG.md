@@ -7,6 +7,10 @@
 - **Default Engine Shortcuts**: Every bundled engine now has a global Option+letter shortcut out of the box, so fresh installs can jump straight to any engine.
 - **Setup Shortcuts and Privacy Step**: After picking engines, the first-run setup now shows each engine's shortcut for review and keeps the secure-storage switch alongside it.
 
+### Fixed
+
+- **ChatGPT History Toggles the Sidebar**: The History shortcut now hides and shows ChatGPT's left sidebar instead of opening its search panel without a way back.
+
 ## [6.1.0] - 2026-09-10
 
 This release adds OpenCode as a bundled local engine with native sign-in for password-protected servers, and lets fresh installs pick their engines on a single setup page.
