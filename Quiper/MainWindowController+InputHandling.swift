@@ -25,9 +25,7 @@ extension MainWindowController {
     func handleLocalEvent(_ event: NSEvent) -> NSEvent? {
         if event.type == .keyDown {
             if GhostOnboardingManager.shared.isActive {
-                if event.keyCode == kVK_Return || event.keyCode == kVK_Space {
-                    GhostOnboardingManager.shared.advanceStep()
-                }
+                GhostOnboardingManager.shared.handleTipKey(keyCode: event.keyCode)
                 // Swallow ALL keys during onboarding — no shortcuts, no typing
                 return nil
             }

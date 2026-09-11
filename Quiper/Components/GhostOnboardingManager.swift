@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 
 @MainActor
 final class GhostOnboardingManager {
@@ -92,6 +93,32 @@ final class GhostOnboardingManager {
             completeOnboarding()
         }
     }
+
+    func retreatStep() {
+        if currentStep == 3 {
+            currentStep = 2
+            showCurrentStep()
+        } else if currentStep == 2 {
+            currentStep = 1
+            showCurrentStep()
+        }
+    }
+
+    /// Single gate for tip navigation keys, shared by the event monitor and
+    /// the HUD view. Returns whether the key navigated.
+    @discardableResult
+    func handleTipKey(keyCode: UInt16) -> Bool {
+        switch keyCode {
+        case UInt16(kVK_Return), UInt16(kVK_Space), UInt16(kVK_Escape), UInt16(kVK_RightArrow):
+            advanceStep()
+            return true
+        case UInt16(kVK_LeftArrow), UInt16(kVK_Delete):
+            retreatStep()
+            return true
+        default:
+            return false
+        }
+    }
     
     private func showCurrentStep() {
         guard let wc = windowController, let window = wc.window, window.isVisible else {
@@ -136,7 +163,7 @@ final class GhostOnboardingManager {
                 wc.showOnboardingHUD(
                     step: 3,
                     title: "Settings & Options",
-                    text: "Press `⌘⇧,` to access Settings.\n\nDouble-tap `⌘` or press `⌘⎋` to toggle the Control Center.\n\nEnjoy using Quiper!",
+                    text: "Press `⌘⇧,` to access Settings.\n\nDouble-tap `⌘` to toggle the Control Center.\n\nEnjoy using Quiper!",
                     target: target
                 )
                 // Auto dismiss step 3 after 10 seconds if not clicked

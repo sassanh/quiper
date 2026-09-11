@@ -107,6 +107,8 @@ struct OnboardingWizardView: View {
     @State private var deleteLegacyData: Bool = true
     @State private var selectedEngines: Set<UUID>
     @State private var selectedSecureServices: Set<UUID> = []
+    @State private var launchShortcuts: [UUID: HotkeyManager.Configuration]
+    @StateObject private var shortcutRecorder = ShortcutRecordingState()
     @State private var isProcessing: Bool = false
     @State private var statusText: String = ""
     
@@ -116,32 +118,49 @@ struct OnboardingWizardView: View {
         self.hasLegacyData = hasLegacyData
         self.window = window
         self.completion = completion
-        // Every bundled engine starts selected; the first step lets the user
-        // drop the ones they never want added at all.
-        self._selectedEngines = State(initialValue: Set(Settings.shared.services.map { $0.id }))
+        // Every engine starts unselected; the first step lets the user
+        // pick the ones they want added at all.
+        self._selectedEngines = State(initialValue: [])
+        // Seed editable shortcuts from the bundled defaults so the second
+        // page shows each engine's global shortcut up front.
+        var shortcuts: [UUID: HotkeyManager.Configuration] = [:]
+        for service in Settings.shared.services {
+            if let shortcut = service.activationShortcut {
+                shortcuts[service.id] = shortcut
+            }
+        }
+        self._launchShortcuts = State(initialValue: shortcuts)
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            if isProcessing {
-                processingView
-            } else {
-                switch currentStep {
-                case 0:
-                    if hasLegacyData {
-                        legacyDataStepView
-                    } else {
-                        engineSetupStepView
+        ZStack {
+            VStack(spacing: 0) {
+                if isProcessing {
+                    processingView
+                } else {
+                    switch currentStep {
+                    case 0:
+                        if hasLegacyData {
+                            legacyDataStepView
+                        } else {
+                            engineSelectionStepView
+                        }
+                    case 1:
+                        if hasLegacyData {
+                            engineSelectionStepView
+                        } else {
+                            engineShortcutsStepView
+                        }
+                    default:
+                        engineShortcutsStepView
                     }
-                case 1:
-                    engineSetupStepView
-                default:
-                    EmptyView()
                 }
             }
+            .frame(width: 560, height: 420)
+            .background(Color(nsColor: .windowBackgroundColor))
+            ShortcutRecordingOverlay(state: shortcutRecorder)
         }
         .frame(width: 560, height: 420)
-        .background(Color(nsColor: .windowBackgroundColor))
     }
     
     private var legacyDataStepView: some View {
@@ -219,7 +238,17 @@ struct OnboardingWizardView: View {
         }
     }
 
-    private var engineSetupStepView: some View {
+    /// Shows only the host (plus port) so tracking queries never appear.
+    private func displayHost(for urlString: String) -> String {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let url = URL(string: trimmed),
+              let host = url.host, !host.isEmpty else { return "" }
+        if let port = url.port { return "\(host):\(port)" }
+        return host
+    }
+
+    private var engineSelectionStepView: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: "square.stack.3d.up.fill")
@@ -249,7 +278,7 @@ struct OnboardingWizardView: View {
             }
             .padding(.top, 24)
 
-            Text("Tick the engines you want to add — unticked ones are skipped and can be added later from Settings → Engines. The lock switch isolates that engine's sessions in secure encrypted storage.")
+            Text("Tick the engines you want to add — unticked ones are skipped and can be added later from Settings → Engines.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -259,51 +288,23 @@ struct OnboardingWizardView: View {
                     ForEach(orderedServices) { service in
                         let isIncluded = selectedEngines.contains(service.id)
                         HStack {
-                            Toggle("", isOn: Binding(
-                                get: { isIncluded },
-                                set: { selected in
-                                    if selected {
-                                        selectedEngines.insert(service.id)
-                                    } else {
-                                        selectedEngines.remove(service.id)
-                                        selectedSecureServices.remove(service.id)
-                                    }
-                                }
-                            ))
-                            .toggleStyle(.checkbox)
+                            Toggle("", isOn: .constant(isIncluded))
+                                .toggleStyle(.checkbox)
+                                .allowsHitTesting(false)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(service.name)
                                     .font(.body)
                                     .fontWeight(.medium)
-                                Text(service.url)
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if isIncluded {
-                                    selectedEngines.remove(service.id)
-                                    selectedSecureServices.remove(service.id)
-                                } else {
-                                    selectedEngines.insert(service.id)
+                                let host = displayHost(for: service.url)
+                                if !host.isEmpty {
+                                    Text(host)
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
                                 }
                             }
                             Spacer()
-                            Toggle("Secure", isOn: Binding(
-                                get: { selectedSecureServices.contains(service.id) },
-                                set: { selected in
-                                    if selected {
-                                        selectedSecureServices.insert(service.id)
-                                    } else {
-                                        selectedSecureServices.remove(service.id)
-                                    }
-                                }
-                            ))
-                            .toggleStyle(.switch)
-                            .disabled(!isIncluded)
-                            .help("Isolate in secure encrypted sandbox")
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -316,8 +317,21 @@ struct OnboardingWizardView: View {
                                     lineWidth: 1.5
                                 )
                         )
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if isIncluded {
+                                selectedEngines.remove(service.id)
+                                selectedSecureServices.remove(service.id)
+                            } else {
+                                selectedEngines.insert(service.id)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isButton)
                     }
+                    Spacer(minLength: 0)
                 }
+                .padding(2)
             }
             .frame(maxHeight: 200)
 
@@ -333,6 +347,99 @@ struct OnboardingWizardView: View {
 
                 Spacer()
 
+                Button("Continue") {
+                    advanceFromSelection()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(.bottom, 24)
+        }
+        .padding(.horizontal, 32)
+    }
+
+    private var selectedServices: [Service] {
+        orderedServices.filter { selectedEngines.contains($0.id) }
+    }
+
+    private var engineShortcutsStepView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Image(systemName: "keyboard.fill")
+                    .font(.system(size: 32))
+                    .foregroundColor(.accentColor)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Shortcuts & Privacy")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Text("\(selectedEngines.count) engines • shortcuts work everywhere in macOS")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+            }
+            .padding(.top, 24)
+
+            Text("Each engine gets a global shortcut. Click one to change it, or clear it to leave the engine without a shortcut. The lock switch isolates that engine in secure encrypted storage.")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            AlwaysVisibleScrollView(width: 480, minHeight: 200) {
+                VStack(spacing: 8) {
+                    if selectedServices.isEmpty {
+                        Text("No engines selected. Go back to pick at least one, or complete setup with none.")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .padding()
+                    }
+                    ForEach(selectedServices) { service in
+                        HStack {
+                            Text(service.name)
+                                .font(.body)
+                                .fontWeight(.medium)
+                            Spacer()
+                            ShortcutButton(
+                                text: launchShortcuts[service.id].map { ShortcutFormatter.string(for: $0) } ?? "Record Shortcut",
+                                isPlaceholder: launchShortcuts[service.id] == nil,
+                                onTap: { startShortcutCapture(for: service.id) },
+                                onClear: launchShortcuts[service.id] != nil ? { clearShortcut(for: service.id) } : nil,
+                                onReset: nil,
+                                width: 140,
+                                axIdentifier: "onboarding_shortcut_\(service.name)"
+                            )
+                            Toggle("Secure", isOn: Binding(
+                                get: { selectedSecureServices.contains(service.id) },
+                                set: { selected in
+                                    if selected {
+                                        selectedSecureServices.insert(service.id)
+                                    } else {
+                                        selectedSecureServices.remove(service.id)
+                                    }
+                                }
+                            ))
+                            .toggleStyle(.switch)
+                            .help("Isolate in secure encrypted sandbox")
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 4)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxHeight: 200)
+
+            Spacer()
+
+            HStack {
+                Button("Back") {
+                    retreatToSelection()
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
                 Button("Complete Setup") {
                     runSetup()
                 }
@@ -341,6 +448,67 @@ struct OnboardingWizardView: View {
             .padding(.bottom, 24)
         }
         .padding(.horizontal, 32)
+    }
+
+    private func advanceFromSelection() {
+        if hasLegacyData {
+            currentStep = 2
+        } else {
+            currentStep = 1
+        }
+    }
+
+    private func retreatToSelection() {
+        if hasLegacyData {
+            currentStep = 1
+        } else {
+            currentStep = 0
+        }
+    }
+
+    private func startShortcutCapture(for serviceID: UUID) {
+        let serviceName = settings.services.first(where: { $0.id == serviceID })?.name ?? "Service"
+        let session = StandardShortcutSession(onUpdate: { update in
+            shortcutRecorder.updateMessage(update)
+        }, onFinish: {
+            shortcutRecorder.cancel()
+        }, reservedActionCheck: { configuration in
+            MainActor.assumeIsolated {
+                reservedShortcutName(configuration, excluding: serviceID)
+            }
+        }, completion: { configuration in
+            if let configuration {
+                launchShortcuts[serviceID] = configuration
+            }
+        })
+        shortcutRecorder.start(session: session, title: "Launch \(serviceName)")
+    }
+
+    private func clearShortcut(for serviceID: UUID) {
+        launchShortcuts.removeValue(forKey: serviceID)
+    }
+
+    /// Validates a candidate against the wizard's pending shortcuts plus the
+    /// app-wide bindings. Engine clashes use the pending values (not the
+    /// still-unwritten Settings) so cleared or reassigned defaults free up.
+    private func reservedShortcutName(
+        _ configuration: HotkeyManager.Configuration,
+        excluding serviceID: UUID
+    ) -> String? {
+        if launchShortcuts[serviceID] == configuration { return nil }
+        for other in selectedServices where other.id != serviceID {
+            if launchShortcuts[other.id] == configuration {
+                let name = other.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return "Activate \(name.isEmpty ? "Service" : name)"
+            }
+        }
+        if configuration == Settings.shared.hotkeyConfiguration { return "Global Shortcut" }
+        guard let reserved = ShortcutValidator.reservedActionName(
+            modifiers: NSEvent.ModifierFlags(rawValue: configuration.modifierFlags),
+            keyCode: UInt16(configuration.keyCode)
+        ) else { return nil }
+        if reserved.hasPrefix("Activate ") { return nil }
+        return reserved
     }
 
     private var processingView: some View {
@@ -383,11 +551,21 @@ struct OnboardingWizardView: View {
             // 1. Create Data Store directory (marks onboarding as complete)
             try? fileManager.createDirectory(at: dataStoreDir, withIntermediateDirectories: true, attributes: nil)
 
-            // 2. Drop the engines the user did not select.
+            // 2. Apply the shortcuts reviewed on the second page. A missing
+            // entry means the user cleared that engine's shortcut.
+            let reviewedShortcuts = launchShortcuts
+            let reviewedSecure = selectedSecureServices
+            for index in settings.services.indices {
+                let id = settings.services[index].id
+                guard selectedEngines.contains(id) else { continue }
+                settings.services[index].activationShortcut = reviewedShortcuts[id]
+            }
+
+            // 3. Drop the engines the user did not select.
             settings.services.removeAll { !selectedEngines.contains($0.id) }
 
-            // 3. Configure encryption for chosen engines
-            for serviceID in selectedSecureServices {
+            // 4. Configure encryption for chosen engines
+            for serviceID in reviewedSecure {
                 if let idx = settings.services.firstIndex(where: { $0.id == serviceID }) {
                     let serviceName = settings.services[idx].name
                     statusText = "Securing \(serviceName)..."

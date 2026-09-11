@@ -333,8 +333,7 @@ final class GhostOnboardingHUDView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 36 || event.keyCode == 49 { // Return = 36, Space = 49
-            onNextHandler?()
+        if GhostOnboardingManager.shared.handleTipKey(keyCode: event.keyCode) {
             return
         }
         // Swallow everything else

@@ -136,12 +136,7 @@ enum SettingsPersistence {
             return (PersistedSettings(services: testEngines, hotkey: nil, customActions: nil, updatePreferences: nil, serviceZoomLevels: nil), false)
         }
         let useDefaultServices = !CommandLine.arguments.contains("--no-default-services")
-        let defaultServices = useDefaultServices ? DefaultEngineDefinitions.definitions.sorted { lhs, rhs in
-            let lhsIsLocal = isLocalEngine(lhs)
-            let rhsIsLocal = isLocalEngine(rhs)
-            if lhsIsLocal != rhsIsLocal { return !lhsIsLocal }
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        } : []
+        let defaultServices = useDefaultServices ? DefaultEngineLaunchShortcuts.sortedDefaultEngines : []
         return (PersistedSettings(services: defaultServices, hotkey: nil, customActions: nil, updatePreferences: nil, serviceZoomLevels: nil), false)
     }
 
@@ -151,11 +146,6 @@ enum SettingsPersistence {
         }
         let (payload, _) = readPersistedSettings()
         return payload
-    }
-
-    private static func isLocalEngine(_ service: Service) -> Bool {
-        guard let host = URL(string: service.url)?.host?.lowercased() else { return false }
-        return host == "localhost" || host == "127.0.0.1" || host == "::1"
     }
 
     /// Reads the snapshot with secure metadata applied for every

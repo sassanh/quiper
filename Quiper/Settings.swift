@@ -342,21 +342,7 @@ class Settings: ObservableObject {
 
 
     private var defaultEngines: [Service] {
-        DefaultEngineDefinitions.definitions.sorted { lhs, rhs in
-            let lhsIsLocal = Self.isLocalDefaultEngine(lhs)
-            let rhsIsLocal = Self.isLocalDefaultEngine(rhs)
-            if lhsIsLocal != rhsIsLocal {
-                return !lhsIsLocal
-            }
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        }
-    }
-
-    private static func isLocalDefaultEngine(_ service: Service) -> Bool {
-        guard let host = URL(string: service.url)?.host?.lowercased() else {
-            return false
-        }
-        return host == "localhost" || host == "127.0.0.1" || host == "::1"
+        DefaultEngineLaunchShortcuts.sortedDefaultEngines
     }
 
 
