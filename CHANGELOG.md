@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [6.1.1] - 2026-09-11
+
+This release gives every bundled engine a global Option+letter shortcut out of the box, adds a shortcuts and privacy review step to first-run setup, and makes ChatGPT's History shortcut toggle the sidebar.
+
 ### Added
 
 - **Default Engine Shortcuts**: Every bundled engine now has a global Option+letter shortcut out of the box, so fresh installs can jump straight to any engine.
