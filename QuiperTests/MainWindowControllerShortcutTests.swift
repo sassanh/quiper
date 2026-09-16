@@ -163,19 +163,21 @@ final class MainWindowControllerShortcutTests: XCTestCase {
         let findBar = try XCTUnwrap(controller.findBarViewController)
         let webView = try XCTUnwrap(findBar.webView)
         let wrapper = try XCTUnwrap(webView.superview)
+        // `NSView.hitTest` takes a point in the receiver's superview coordinates.
+        let container = try XCTUnwrap(wrapper.superview)
         findBar.show()
         defer { findBar.hide() }
 
         for control in findBar.view.subviews.compactMap({ $0 as? NSControl }) {
             let controlCenter = NSPoint(x: control.bounds.midX, y: control.bounds.midY)
-            let pointInWrapper = control.convert(controlCenter, to: wrapper)
-            let hitView = try XCTUnwrap(wrapper.hitTest(pointInWrapper))
+            let pointInContainer = control.convert(controlCenter, to: container)
+            let hitView = try XCTUnwrap(wrapper.hitTest(pointInContainer))
 
             XCTAssertFalse(hitView === webView)
             XCTAssertTrue(hitView === control || hitView.isDescendant(of: control))
         }
 
-        let backgroundPoint = findBar.view.convert(NSPoint(x: 4, y: 4), to: wrapper)
+        let backgroundPoint = findBar.view.convert(NSPoint(x: 4, y: 4), to: container)
         XCTAssertTrue(wrapper.hitTest(backgroundPoint) === findBar.view)
     }
 

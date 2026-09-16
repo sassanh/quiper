@@ -65,10 +65,18 @@ final class WebViewWrapperView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        if let overlay = interactiveOverlayView, !overlay.isHidden {
-            let overlayPoint = convert(point, to: overlay)
-            if overlay.bounds.contains(overlayPoint),
-               let hitView = overlay.hitTest(overlayPoint) {
+        // `point` arrives in the superview's coordinates (AppKit contract).
+        // Convert to our own coordinates to test against the overlay's frame.
+        if let overlay = interactiveOverlayView, !overlay.isHidden, overlay.superview === self {
+            let pointInSelf: NSPoint
+            if let parent = superview {
+                pointInSelf = convert(point, from: parent)
+            } else {
+                // No superview (isolated unit test): assume the point is already local.
+                pointInSelf = point
+            }
+            if overlay.frame.contains(pointInSelf),
+               let hitView = overlay.hitTest(pointInSelf) {
                 return hitView
             }
         }

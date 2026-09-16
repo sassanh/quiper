@@ -358,12 +358,22 @@ private final class FindDebouncer: NSObject {
 
 private final class FindBarEventView: NSVisualEffectView {
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard bounds.contains(point), !isHidden else { return nil }
+        // `point` arrives in the superview's coordinates (AppKit contract).
+        if isHidden { return nil }
+        let pointInSelf: NSPoint
+        if let parent = superview {
+            pointInSelf = convert(point, from: parent)
+        } else {
+            // No superview (isolated unit test): assume the point is already local.
+            pointInSelf = point
+        }
+        guard bounds.contains(pointInSelf) else { return nil }
 
         for subview in subviews.reversed() where !subview.isHidden && subview.alphaValue > 0 {
-            let subviewPoint = convert(point, to: subview)
-            guard subview.bounds.contains(subviewPoint) else { continue }
-            return subview.hitTest(subviewPoint) ?? subview
+            let pointInSubview = convert(pointInSelf, to: subview)
+            guard subview.bounds.contains(pointInSubview) else { continue }
+            // `hitTest` expects a point in the subview's superview (self).
+            return subview.hitTest(pointInSelf) ?? subview
         }
 
         return self

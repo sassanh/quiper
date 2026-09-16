@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Find Bar Responds to Mouse Clicks**: The find bar's search field, Previous/Next buttons, and Done button now receive clicks again instead of passing them to the page underneath.
+
 ## [6.1.1] - 2026-09-11
 
 This release gives every bundled engine a global Option+letter shortcut out of the box, adds a shortcuts and privacy review step to first-run setup, and makes ChatGPT's History shortcut toggle the sidebar.
