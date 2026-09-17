@@ -230,24 +230,31 @@ extension MainWindowController {
 
     @objc func manualLockTapped(_ sender: NSButton) {
         guard let service = currentService(), service.isEncrypted else { return }
-        
+
         NSLog("[MainWindowController] Manual lock requested for service: %@", service.name)
-        prepareForLockingEncryptedService(service)
-        webViewManager.tearDownAllWebViews(for: service)
-        
-        updateSessionSelector()
-        
         Task {
-            do {
-                try await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
-                await MainActor.run {
-                    updateActiveWebview(focusWebView: true, forceCreate: true)
-                    updateSessionSelector()
-                    refreshServiceSegments()
-                    layoutSelectors()
+            let tabs = (0..<10)
+                .filter { self.webViewManager.getWebView(for: service, sessionIndex: $0) != nil }
+                .map { TabIdentifier(serviceID: service.id, sessionIndex: $0) }
+            guard await self.requestCloseTabs(tabs, reason: .lockService(serviceName: service.name)) else { return }
+
+            self.prepareForLockingEncryptedService(service)
+            self.webViewManager.tearDownAllWebViews(for: service)
+
+            self.updateSessionSelector()
+
+            Task {
+                do {
+                    try await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
+                    await MainActor.run {
+                        self.updateActiveWebview(focusWebView: true, forceCreate: true)
+                        self.updateSessionSelector()
+                        self.refreshServiceSegments()
+                        self.layoutSelectors()
+                    }
+                } catch {
+                    NSLog("[MainWindowController] Manual lock unmount failed: %@", error.localizedDescription)
                 }
-            } catch {
-                NSLog("[MainWindowController] Manual lock unmount failed: %@", error.localizedDescription)
             }
         }
     }
@@ -272,10 +279,18 @@ extension MainWindowController {
                 promptToSecureEngine(service)
             }
         } else {
-            for service in secureServices {
-                if EncryptedVolumeManager.shared.isMounted(for: service.id) {
-                    prepareForLockingEncryptedService(service)
-                    webViewManager.tearDownAllWebViews(for: service)
+            let mountedServices = secureServices.filter { EncryptedVolumeManager.shared.isMounted(for: $0.id) }
+            guard !mountedServices.isEmpty else { return }
+            Task {
+                let tabs = mountedServices.flatMap { service in
+                    (0..<10)
+                        .filter { self.webViewManager.getWebView(for: service, sessionIndex: $0) != nil }
+                        .map { TabIdentifier(serviceID: service.id, sessionIndex: $0) }
+                }
+                guard await self.requestCloseTabs(tabs, reason: .lockAllServices) else { return }
+                for service in mountedServices {
+                    self.prepareForLockingEncryptedService(service)
+                    self.webViewManager.tearDownAllWebViews(for: service)
                     Task {
                         try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
                         if self.currentService()?.id == service.id {
@@ -444,13 +459,32 @@ extension MainWindowController {
     
     func handleSwitchAway(from service: Service) {
         guard service.isEncrypted && service.lockOnSwitchAway else { return }
-        
-        prepareForLockingEncryptedService(service)
-        webViewManager.tearDownAllWebViews(for: service)
+
+        // Runs async so `selectService` stays synchronous: the switch itself
+        // proceeds while the old engine's teardown waits for confirmation.
+        // Staying skips the teardown, leaving the engine mounted until the
+        // next switch-away re-arms the policy.
         Task {
-            try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
-            await MainActor.run {
+            let tabs = (0..<10)
+                .filter { self.webViewManager.getWebView(for: service, sessionIndex: $0) != nil }
+                .map { TabIdentifier(serviceID: service.id, sessionIndex: $0) }
+            guard await self.requestCloseTabs(tabs, reason: .switchService(serviceName: service.name)) else {
                 self.refreshServiceSegments()
+                return
+            }
+            self.prepareForLockingEncryptedService(service)
+            self.webViewManager.tearDownAllWebViews(for: service)
+            Task {
+                try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
+                await MainActor.run {
+                    // The switch already moved on, but the user may have
+                    // switched back while the dialog was up: recreate the
+                    // view instead of stranding torn-down tabs on screen.
+                    if self.currentService()?.id == service.id {
+                        self.updateActiveWebview(focusWebView: false)
+                    }
+                    self.refreshServiceSegments()
+                }
             }
         }
     }
@@ -493,21 +527,32 @@ extension MainWindowController {
     
     func checkInactivityLock() {
         let now = Date()
-        
+
         for service in services where service.isEncrypted && service.lockAfterInactivity {
             if EncryptedVolumeManager.shared.isMounted(for: service.id) {
                 let timeout: TimeInterval = TimeInterval(service.autoLockInactivityTimeout * 60)
                 if now.timeIntervalSince(lastActivityTime) >= timeout {
-                    prepareForLockingEncryptedService(service)
-                    webViewManager.tearDownAllWebViews(for: service)
                     Task {
-                        try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
-                        await MainActor.run {
-                            if self.currentService()?.id == service.id {
-                                self.updateActiveWebview(focusWebView: false)
+                        let tabs = (0..<10)
+                            .filter { self.webViewManager.getWebView(for: service, sessionIndex: $0) != nil }
+                            .map { TabIdentifier(serviceID: service.id, sessionIndex: $0) }
+                        guard await self.requestCloseTabs(tabs, reason: .autoLock) else {
+                            // Staying snoozes the timer so the dialog does not
+                            // re-fire on every tick while the user decides.
+                            self.lastActivityTime = Date()
+                            return
+                        }
+                        self.prepareForLockingEncryptedService(service)
+                        self.webViewManager.tearDownAllWebViews(for: service)
+                        Task {
+                            try? await EncryptedVolumeManager.shared.unmountVolume(for: service.id)
+                            await MainActor.run {
+                                if self.currentService()?.id == service.id {
+                                    self.updateActiveWebview(focusWebView: false)
+                                }
+                                self.refreshServiceSegments()
+                                self.layoutSelectors()
                             }
-                            self.refreshServiceSegments()
-                            self.layoutSelectors()
                         }
                     }
                 }

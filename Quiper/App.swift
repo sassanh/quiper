@@ -419,6 +419,12 @@ final class AppController: NSObject, NSWindowDelegate {
 
     }
 
+    /// Probe-only `beforeunload` query for Settings destructive actions.
+    /// The caller folds the warning into its own confirmation dialog.
+    func unloadInfosNeedingConfirmation(for serviceIDs: [UUID]) async -> [TabUnloadInfo] {
+        await windowController.unloadInfosNeedingConfirmation(for: serviceIDs)
+    }
+
     func updateOverlayHotkey(_ configuration: HotkeyManager.Configuration) {
         hotkeyManager.updateConfiguration(configuration)
         NotificationCenter.default.post(name: .hotkeyConfigurationChanged, object: nil)
@@ -1051,6 +1057,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } else if Settings.shared.tabSurvivalPolicy == .never {
             Settings.shared.discardSavedTabs()
+        }
+
+        // 1b. Web `beforeunload`: quitting destroys every tab, so pages
+        // reporting unsaved state get one shared confirmation. Synchronous
+        // by necessity (see below); cancelling aborts the quit.
+        if let mainWindow = statusBarController?.appController.window as? MainWindowController {
+            let blocking = mainWindow.openTabsNeedingUnloadConfirmationSync()
+            if !blocking.isEmpty {
+                NSApp.activate(ignoringOtherApps: true)
+                if !mainWindow.confirmUnloadSync(tabs: blocking, reason: .quit) {
+                    return .terminateCancel
+                }
+            }
         }
 
         // 1. Immediately lock all encrypted engines in state

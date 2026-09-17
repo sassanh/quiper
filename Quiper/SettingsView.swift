@@ -118,6 +118,7 @@ struct GeneralSettingsView: View {
 
     @State private var showClearWebConfirmation = false
     @State private var showEraseEnginesConfirmation = false
+    @State private var eraseEnginesHasUnsavedChanges = false
     @State private var showEraseActionsConfirmation = false
     @State private var showImportConfirmation = false
     @State private var exportError: String?
@@ -467,7 +468,12 @@ struct GeneralSettingsView: View {
                         iconColor: .red
                     ) {
                         Button(role: .destructive) {
-                            showEraseEnginesConfirmation = true
+                            Task {
+                                let ids = settings.services.map { $0.id }
+                                let blocking = await appController?.unloadInfosNeedingConfirmation(for: ids) ?? []
+                                eraseEnginesHasUnsavedChanges = !blocking.isEmpty
+                                showEraseEnginesConfirmation = true
+                            }
                         } label: {
                             HStack {
                                 Image(systemName: "xmark.bin")
@@ -530,7 +536,9 @@ struct GeneralSettingsView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Deletes every service and its local scripts.")
+            Text(eraseEnginesHasUnsavedChanges
+                ? "Deletes every service and its local scripts." + TabCloseGate.settingsWarningSuffix
+                : "Deletes every service and its local scripts.")
         }
         .alert("Erase all actions?", isPresented: $showEraseActionsConfirmation) {
             Button("Erase", role: .destructive) {
@@ -913,7 +921,9 @@ struct ServicesSettingsView: View {
         .alert(item: $pendingServiceDeletion) { pending in
             Alert(
                 title: Text(pending.title),
-                message: Text("Deleting a service clears its sessions and custom action scripts."),
+                message: Text(pending.hasUnsavedChanges
+                    ? "Deleting a service clears its sessions and custom action scripts." + TabCloseGate.settingsWarningSuffix
+                    : "Deleting a service clears its sessions and custom action scripts."),
                 primaryButton: .destructive(Text("Delete")) {
                     deleteServices(ids: pending.ids)
                 },
@@ -1123,7 +1133,13 @@ struct ServicesSettingsView: View {
         } else {
             title = "Delete \(ids.count) services?"
         }
-        pendingServiceDeletion = PendingServiceDeletion(ids: ids, title: title)
+        // Probe before showing the alert so the single delete dialog can
+        // also carry the unsaved-changes warning. The engine teardown in
+        // `reloadServices` is commit-only and relies on this pre-check.
+        Task {
+            let blocking = await appController?.unloadInfosNeedingConfirmation(for: ids) ?? []
+            pendingServiceDeletion = PendingServiceDeletion(ids: ids, title: title, hasUnsavedChanges: !blocking.isEmpty)
+        }
     }
     
     private func deleteServices(ids: [Service.ID]) {
@@ -1215,7 +1231,9 @@ struct ServiceDetailView: View {
     @State private var currentFetchTask: Task<Void, Never>? = nil
     @FocusState private var isUrlFieldFocused: Bool
     @State private var showResetConfirmation = false
+    @State private var resetHasUnsavedChanges = false
     @State private var showingDataMigrationAlert = false
+    @State private var migrationHasUnsavedChanges = false
     @State private var targetNewValue = false
     @State private var isMigratingData = false
     @State private var migrationMessage = ""
@@ -2394,8 +2412,12 @@ struct ServiceDetailView: View {
                             Toggle("", isOn: Binding(
                                 get: { service.isEncrypted },
                                 set: { newValue in
-                                    targetNewValue = newValue
-                                    showingDataMigrationAlert = true
+                                    Task {
+                                        let blocking = await appController?.unloadInfosNeedingConfirmation(for: [service.id]) ?? []
+                                        migrationHasUnsavedChanges = !blocking.isEmpty
+                                        targetNewValue = newValue
+                                        showingDataMigrationAlert = true
+                                    }
                                 }
                             ))
                             .toggleStyle(.switch)
@@ -2492,9 +2514,10 @@ struct ServiceDetailView: View {
                 // Do nothing
             }
         } message: {
-            Text(targetNewValue 
+            Text((targetNewValue
                 ? "Do you want to transfer your current login sessions, cookies, and local storage into the encrypted partition, or start with a clean slate?"
                 : "Do you want to extract your login sessions and web data out of the encrypted partition back to standard storage, or permanently discard all data?")
+                + (migrationHasUnsavedChanges ? TabCloseGate.settingsWarningSuffix : ""))
         }
     }
 
@@ -2701,7 +2724,11 @@ struct ServiceDetailView: View {
                                 .buttonStyle(.borderedProminent)
                                 
                                 Button(role: .destructive) {
-                                    showResetConfirmation = true
+                                    Task {
+                                        let blocking = await appController?.unloadInfosNeedingConfirmation(for: [service.id]) ?? []
+                                        resetHasUnsavedChanges = !blocking.isEmpty
+                                        showResetConfirmation = true
+                                    }
                                 } label: {
                                     Label("Reset Web Data...", systemImage: "trash")
                                 }
@@ -2729,7 +2756,8 @@ struct ServiceDetailView: View {
                 resetWebData()
             }
         } message: {
-            Text("This will permanently clear all cookies, local storage, databases, and cache for '\(service.name)'. You will be logged out of all sites within this engine.")
+            Text("This will permanently clear all cookies, local storage, databases, and cache for '\(service.name)'. You will be logged out of all sites within this engine."
+                + (resetHasUnsavedChanges ? TabCloseGate.settingsWarningSuffix : ""))
         }
         .onReceive(NotificationCenter.default.publisher(for: .showSettings)) { notification in
             if let userInfo = notification.userInfo, let subtab = userInfo["subtab"] as? String {
@@ -2848,6 +2876,7 @@ private struct PendingServiceDeletion: Identifiable {
     let id = UUID()
     let ids: [Service.ID]
     let title: String
+    let hasUnsavedChanges: Bool
 }
 
 private struct ActionScriptEditor: View {

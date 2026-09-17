@@ -16,6 +16,7 @@ protocol MainWindowControlling: AnyObject {
     func focusInputInActiveWebview()
     func focusInputInActiveWebviewWithFallback()
     func reloadServices()
+    func unloadInfosNeedingConfirmation(for serviceIDs: [UUID]) async -> [TabUnloadInfo]
     func setShortcutsEnabled(_ enabled: Bool)
     func performCustomAction(_ action: CustomAction)
     func selectService(at index: Int)

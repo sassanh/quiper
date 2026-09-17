@@ -97,6 +97,10 @@ class MockMainWindowController: MainWindowControlling {
         reloadServicesCalled = true
     }
 
+    func unloadInfosNeedingConfirmation(for serviceIDs: [UUID]) async -> [TabUnloadInfo] {
+        return []
+    }
+
     func setShortcutsEnabled(_ enabled: Bool) {
         setShortcutsEnabledCalled = true
     }

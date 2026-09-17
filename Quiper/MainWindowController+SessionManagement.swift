@@ -104,6 +104,9 @@ extension MainWindowController {
         updateServices(newServices: newServices)
     }
 
+    /// Commit-only behind `TabCloseGate`: engine deletes and encryption flips
+    /// destroy live tabs, so the settings flows that mutate services warn
+    /// through `unloadInfosNeedingConfirmation(for:)` before reaching this.
     private func updateServices(newServices: [Service]) {
         let incomingIDs = Set(newServices.map { $0.id })
         let existingIDs = Set(activeIndicesByID.keys)
@@ -188,9 +191,19 @@ extension MainWindowController {
     /// ephemeral one is created at the same index.
     func replaceSessionWithEphemeral(serviceID: UUID, sessionIndex: Int) {
         guard let service = services.first(where: { $0.id == serviceID }) else { return }
-        if webViewManager.getWebView(for: service, sessionIndex: sessionIndex) != nil {
-            removeWebViewAndCleanObserver(for: service, sessionIndex: sessionIndex)
+        let replacedTab = TabIdentifier(serviceID: serviceID, sessionIndex: sessionIndex)
+        guard webViewManager.webView(for: replacedTab) != nil else {
+            createEphemeralReplacement(service: service, sessionIndex: sessionIndex)
+            return
         }
+        Task {
+            guard await self.requestCloseTabs([replacedTab], reason: .replaceWithEphemeral) else { return }
+            guard let service = self.services.first(where: { $0.id == serviceID }) else { return }
+            self.createEphemeralReplacement(service: service, sessionIndex: sessionIndex)
+        }
+    }
+
+    private func createEphemeralReplacement(service: Service, sessionIndex: Int) {
         let webView = webViewManager.getOrCreateWebView(
             for: service,
             sessionIndex: sessionIndex,
@@ -199,7 +212,7 @@ extension MainWindowController {
         )
         setupSessionTitleObserver(for: service, sessionIndex: sessionIndex, webView: webView)
         refreshInstantiationState()
-        if currentService()?.id == serviceID {
+        if currentService()?.id == service.id {
             switchSession(to: sessionIndex)
         }
     }
@@ -337,27 +350,35 @@ extension MainWindowController {
         guard let service = currentService() else { return }
         let currentSession = activeIndicesByID[service.id] ?? 0
         let currentServiceIndex = services.firstIndex(where: { $0.id == service.id }) ?? 0
-
         let closedTab = TabIdentifier(serviceID: service.id, sessionIndex: currentSession)
-        tabHistory.removeAll { $0 == closedTab }
-        if lastActiveTab == closedTab {
-            lastActiveTab = nil
-        }
 
-        removeWebViewAndCleanObserver(for: service, sessionIndex: currentSession)
+        guard webViewManager.webView(for: closedTab) != nil else {
+            reselectAfterClosing(service: service, closedSession: currentSession, closedServiceIndex: currentServiceIndex)
+            return
+        }
+        Task {
+            guard await self.requestCloseTabs([closedTab], reason: .closeCurrentSession) else { return }
+            self.reselectAfterClosing(service: service, closedSession: currentSession, closedServiceIndex: currentServiceIndex)
+        }
+    }
+
+    /// Picks the tab to show after `closedSession` is gone: nearest live
+    /// session to the left, then right, then a neighboring engine when the
+    /// setting allows, otherwise the empty state. Shared by every path that
+    /// closes the active tab.
+    func reselectAfterClosing(service: Service, closedSession: Int, closedServiceIndex: Int) {
+        func nearestInstantiatedSession(in svc: Service, excluding: Int? = nil) -> Int? {
+            let sessions = (0..<10).filter { $0 != excluding && webViewManager.getWebView(for: svc, sessionIndex: $0) != nil }
+            return sessions.first
+        }
 
         let remainingSessionsCount = (0..<10).filter { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }.count
         if remainingSessionsCount == 0 {
             activeIndicesByID[service.id] = 0
         }
 
-        func nearestInstantiatedSession(in svc: Service, excluding: Int? = nil) -> Int? {
-            let sessions = (0..<10).filter { $0 != excluding && webViewManager.getWebView(for: svc, sessionIndex: $0) != nil }
-            return sessions.first
-        }
-
-        let leftSessions  = stride(from: currentSession - 1, through: 0, by: -1)
-        let rightSessions = stride(from: currentSession + 1, to: 10, by: 1)
+        let leftSessions  = stride(from: closedSession - 1, through: 0, by: -1)
+        let rightSessions = stride(from: closedSession + 1, to: 10, by: 1)
 
         for idx in leftSessions where webViewManager.getWebView(for: service, sessionIndex: idx) != nil {
             switchSession(to: idx)
@@ -371,8 +392,8 @@ extension MainWindowController {
         }
 
         if Settings.shared.automaticallySwitchEngineOnLastSessionClose {
-            let leftServices  = stride(from: currentServiceIndex - 1, through: 0, by: -1).map { services[$0] }
-            let rightServices = stride(from: currentServiceIndex + 1, to: services.count, by: 1).map { services[$0] }
+            let leftServices  = stride(from: closedServiceIndex - 1, through: 0, by: -1).map { services[$0] }
+            let rightServices = stride(from: closedServiceIndex + 1, to: services.count, by: 1).map { services[$0] }
 
             for svc in (leftServices + rightServices) {
                 let activeSession = activeIndicesByID[svc.id] ?? 0
@@ -383,7 +404,7 @@ extension MainWindowController {
                     targetSession = nearestInstantiatedSession(in: svc)
                 }
                 if let session = targetSession {
-                    let svcIndex = services.firstIndex(where: { $0.id == svc.id })!
+                    guard let svcIndex = services.firstIndex(where: { $0.id == svc.id }) else { continue }
                     activeIndicesByID[svc.id] = session
                     selectService(at: svcIndex)
                     refreshInstantiationState()
@@ -403,117 +424,102 @@ extension MainWindowController {
     func handleSessionMiddleClick(at segmentIndex: Int) {
         let sessionIndex = self.sessionIndex(forSegment: segmentIndex)
         guard let service = currentService() else { return }
-        
-        guard webViewManager.getWebView(for: service, sessionIndex: sessionIndex) != nil else { return }
-        
+
+        let closedTab = TabIdentifier(serviceID: service.id, sessionIndex: sessionIndex)
+        guard webViewManager.webView(for: closedTab) != nil else { return }
+
         let currentSession = activeIndicesByID[service.id] ?? 0
-        
-        removeWebViewAndCleanObserver(for: service, sessionIndex: sessionIndex)
-        
-        let remainingSessionsCount = (0..<10).filter { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }.count
-        if remainingSessionsCount == 0 {
-            activeIndicesByID[service.id] = 0
+        let currentServiceIndex = services.firstIndex(where: { $0.id == service.id }) ?? 0
+        Task {
+            guard await self.requestCloseTabs([closedTab], reason: .closeCurrentSession) else { return }
+
+            let remainingSessionsCount = (0..<10).filter { self.webViewManager.getWebView(for: service, sessionIndex: $0) != nil }.count
+            if remainingSessionsCount == 0 {
+                self.activeIndicesByID[service.id] = 0
+            }
+
+            if sessionIndex == currentSession {
+                self.reselectAfterClosing(service: service, closedSession: sessionIndex, closedServiceIndex: currentServiceIndex)
+            } else {
+                self.refreshInstantiationState()
+            }
         }
-        
-        if sessionIndex == currentSession {
-            let leftSessions  = stride(from: sessionIndex - 1, through: 0, by: -1)
-            let rightSessions = stride(from: sessionIndex + 1, to: 10, by: 1)
-            
-            for idx in leftSessions where webViewManager.getWebView(for: service, sessionIndex: idx) != nil {
-                switchSession(to: idx)
-                refreshInstantiationState()
-                return
-            }
-            for idx in rightSessions where webViewManager.getWebView(for: service, sessionIndex: idx) != nil {
-                switchSession(to: idx)
-                refreshInstantiationState()
-                return
-            }
-            
-            if Settings.shared.automaticallySwitchEngineOnLastSessionClose {
-                let currentServiceIndex = services.firstIndex(where: { $0.id == service.id }) ?? 0
-                let leftServices  = stride(from: currentServiceIndex - 1, through: 0, by: -1).map { services[$0] }
-                let rightServices = stride(from: currentServiceIndex + 1, to: services.count, by: 1).map { services[$0] }
-                
-                for svc in (leftServices + rightServices) {
-                    let activeSession = activeIndicesByID[svc.id] ?? 0
-                    if webViewManager.getWebView(for: svc, sessionIndex: activeSession) != nil {
-                        let svcIndex = services.firstIndex(where: { $0.id == svc.id })!
-                        selectService(at: svcIndex)
-                        refreshInstantiationState()
-                        return
-                    }
-                    if let anySession = (0..<10).first(where: { webViewManager.getWebView(for: svc, sessionIndex: $0) != nil }) {
-                        let svcIndex = services.firstIndex(where: { $0.id == svc.id })!
-                        activeIndicesByID[svc.id] = anySession
-                        selectService(at: svcIndex)
-                        refreshInstantiationState()
-                        return
-                    }
-                }
-            }
-            
-            showEmptyState()
-        }
-        
-        refreshInstantiationState()
     }
     
     func handleServiceMiddleClick(at serviceIndex: Int) {
         guard services.indices.contains(serviceIndex) else { return }
         let service = services[serviceIndex]
-        
+
         let instantiatedSessions = (0..<10).filter { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }
-        
+
         guard !instantiatedSessions.isEmpty else { return }
-        
+
         if instantiatedSessions.count == 1, currentServiceID == service.id {
-            let sessionIndex = instantiatedSessions[0]
-            removeWebViewAndCleanObserver(for: service, sessionIndex: sessionIndex)
-            activeIndicesByID[service.id] = 0
-            
-            navigateAwayFromService(at: serviceIndex)
-            refreshInstantiationState()
+            let closedTab = TabIdentifier(serviceID: service.id, sessionIndex: instantiatedSessions[0])
+            Task {
+                guard await self.requestCloseTabs([closedTab], reason: .closeCurrentSession) else { return }
+                self.activeIndicesByID[service.id] = 0
+
+                self.navigateAwayFromService(at: serviceIndex)
+                self.refreshInstantiationState()
+            }
         } else {
             collapsibleServiceSelector?.collapse()
             collapsibleSessionSelector?.collapse()
             collapsibleServiceSelector?.isInteractionEnabled = false
             collapsibleSessionSelector?.isInteractionEnabled = false
-            
-            let alert = NSAlert()
-            alert.messageText = "Close all sessions for \(service.name)?"
-            alert.informativeText = "\(instantiatedSessions.count) session\(instantiatedSessions.count == 1 ? "" : "s") will be closed."
-            alert.addButton(withTitle: "Close All")
-            alert.addButton(withTitle: "Cancel")
-            alert.buttons[1].keyEquivalent = "\u{1b}"
-            alert.alertStyle = .warning
-            
-            let response = alert.runModal()
-            
-            collapsibleServiceSelector?.isInteractionEnabled = true
-            collapsibleSessionSelector?.isInteractionEnabled = true
-            
-            if response == .alertFirstButtonReturn {
-                closeAllSessionsForService(at: serviceIndex)
+
+            Task {
+                let tabs = instantiatedSessions.map { TabIdentifier(serviceID: service.id, sessionIndex: $0) }
+                // Bulk closes always confirm. Without unsaved page state the
+                // gate shows the pre-existing count dialog; otherwise the
+                // unsaved-changes warning names the affected sessions.
+                let blocking = await self.webViewManager.tabsRequiringConfirmation(tabs)
+                let confirmed: Bool
+                if blocking.isEmpty {
+                    confirmed = self.runCloseAllSessionsAlert(serviceName: service.name, count: instantiatedSessions.count)
+                } else {
+                    confirmed = await self.confirmUnload(tabs: blocking, reason: .closeAllSessions(serviceName: service.name))
+                }
+
+                self.collapsibleServiceSelector?.isInteractionEnabled = true
+                self.collapsibleSessionSelector?.isInteractionEnabled = true
+
+                if confirmed {
+                    self.closeAllSessionsForService(at: serviceIndex)
+                }
             }
         }
     }
-    
+
+    private func runCloseAllSessionsAlert(serviceName: String, count: Int) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Close all sessions for \(serviceName)?"
+        alert.informativeText = "\(count) session\(count == 1 ? "" : "s") will be closed."
+        alert.addButton(withTitle: "Close All")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[1].keyEquivalent = "\u{1b}"
+        alert.alertStyle = .warning
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// Commit-only behind the gate: destroys every live session of the
+    /// engine and navigates away. Confirmation happens in
+    /// `handleServiceMiddleClick` before reaching this.
     func closeAllSessionsForService(at serviceIndex: Int) {
         guard services.indices.contains(serviceIndex) else { return }
         let service = services[serviceIndex]
-        
-        for sessionIndex in 0..<10 {
-            if webViewManager.getWebView(for: service, sessionIndex: sessionIndex) != nil {
-                removeWebViewAndCleanObserver(for: service, sessionIndex: sessionIndex)
-            }
-        }
+
+        let tabs = (0..<10)
+            .filter { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }
+            .map { TabIdentifier(serviceID: service.id, sessionIndex: $0) }
+        commitClosingTabs(tabs)
         activeIndicesByID[service.id] = 0
-        
+
         if currentServiceID == service.id {
             navigateAwayFromService(at: serviceIndex)
         }
-        
+
         refreshInstantiationState()
     }
     
@@ -610,11 +616,20 @@ extension MainWindowController {
     }
 
     func removeWebViewAndCleanObserver(for service: Service, sessionIndex: Int) {
-        webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
-        updateSessionTooltip(for: service, sessionIndex: sessionIndex)
-        let key = TabIdentifier(serviceID: service.id, sessionIndex: sessionIndex)
-        sessionTitleObservations[key] = nil
+        removeTabWithoutSaving(for: service.id, sessionIndex: sessionIndex)
         saveTabsState()
+    }
+
+    /// Single-tab teardown without persisting. Bulk closes batch through
+    /// `commitClosingTabs`, which persists once at the end.
+    func removeTabWithoutSaving(for serviceID: UUID, sessionIndex: Int) {
+        if let service = services.first(where: { $0.id == serviceID }) {
+            webViewManager.removeWebView(for: service, sessionIndex: sessionIndex)
+            updateSessionTooltip(for: service, sessionIndex: sessionIndex)
+        } else {
+            webViewManager.removeWebView(for: serviceID, sessionIndex: sessionIndex)
+        }
+        sessionTitleObservations[TabIdentifier(serviceID: serviceID, sessionIndex: sessionIndex)] = nil
     }
 
     func hideEmptyState() {

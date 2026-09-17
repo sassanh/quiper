@@ -148,6 +148,9 @@ final class WebViewManager: NSObject {
     }
     
     func updateServices(_ newServices: [Service]) {
+        // Commit-only: engine deletes and encryption flips destroy live tabs,
+        // so the callers that mutate settings (Settings delete/erase/migrate
+        // flows) warn through TabCloseGate before reaching this.
         let incomingIDs = Set(newServices.map { $0.id })
         let existingIDs = Set(webviewsByID.keys)
 
@@ -254,14 +257,22 @@ final class WebViewManager: NSObject {
     }
     
     func removeWebView(for service: Service, sessionIndex: Int) {
-        guard let webView = webviewsByID[service.id]?[sessionIndex] else { return }
+        removeWebView(for: service.id, sessionIndex: sessionIndex)
+    }
+
+    /// Commit-only primitive behind `TabCloseGate` (`TabCloseGate.swift`):
+    /// destroying a webview drops whatever page state it holds, so callers
+    /// must confirm `beforeunload` through `requestCloseTabs` (or a
+    /// pre-confirmed settings/quit flow) before reaching this.
+    func removeWebView(for serviceID: UUID, sessionIndex: Int) {
+        guard let webView = webviewsByID[serviceID]?[sessionIndex] else { return }
         tearDownWebView(webView)
-        webviewsByID[service.id]?.removeValue(forKey: sessionIndex)
-        wrappersByID[service.id]?.removeValue(forKey: sessionIndex)
-        tabInputStates[service.id]?.removeValue(forKey: sessionIndex)
-        tabPromptHistories[service.id]?.removeValue(forKey: sessionIndex)
-        tabPromptHistoryEnabledOverrides[service.id]?.removeValue(forKey: sessionIndex)
-        tabQuiperPrivateStores[service.id]?.removeValue(forKey: sessionIndex)
+        webviewsByID[serviceID]?.removeValue(forKey: sessionIndex)
+        wrappersByID[serviceID]?.removeValue(forKey: sessionIndex)
+        tabInputStates[serviceID]?.removeValue(forKey: sessionIndex)
+        tabPromptHistories[serviceID]?.removeValue(forKey: sessionIndex)
+        tabPromptHistoryEnabledOverrides[serviceID]?.removeValue(forKey: sessionIndex)
+        tabQuiperPrivateStores[serviceID]?.removeValue(forKey: sessionIndex)
     }
 
     func getOpenSessionTitlesState() -> [UUID: [Int: String]] {
@@ -1524,6 +1535,7 @@ final class WebViewManager: NSObject {
         Settings.shared.saveSettings()
     }
     
+    /// Commit-only primitive behind `TabCloseGate`: see `removeWebView(for:)`.
     func tearDownAllWebViews(for service: Service) {
         guard let sessionMap = webviewsByID[service.id] else { return }
         for sessionIndex in Array(sessionMap.keys) {
@@ -2137,6 +2149,8 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         handleWebDataCleared(for: serviceID)
     }
 
+    /// Commit-only: the web-data reset flow warns through TabCloseGate
+    /// before clearing the store and posting `.webDataCleared`.
     private func handleWebDataCleared(for serviceID: UUID) {
         NSLog("[WebViewManager] Handling web data cleared for service: %@", serviceID.uuidString)
         
