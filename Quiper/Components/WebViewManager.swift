@@ -1486,23 +1486,45 @@ final class WebViewManager: NSObject {
     
     @MainActor
     private func openInPopup(url: URL, service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow) {
+        let popupWebView = makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow)
+        popupWebView.load(URLRequest(url: url))
+    }
+
+    /// Single gate for every popup webview: assigns the routing delegates and
+    /// registers the service association so links inside popups go through the
+    /// same `RoutingResolver` path as main-window webviews.
+    @MainActor
+    private func makePopupWebView(for service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow) -> WKWebView {
         configuration.preferences.isElementFullscreenEnabled = true
         let popupWindow = ModalPopupWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
             parentWindow: parentWindow
         )
         popupWindow.center()
-        
+
         let popupWebView = WKWebView(frame: popupWindow.contentView!.bounds, configuration: configuration)
         popupWebView.autoresizingMask = [.width, .height]
-        popupWebView.uiDelegate = PopupUIDelegate.shared
-        
+        popupWebView.uiDelegate = self
+        popupWebView.navigationDelegate = self
+
+        let token = ObjectIdentifier(popupWebView)
+        serviceIDsByWebView[token] = service.id
+        popupWindow.onClose = { [weak self] in
+            self?.unregisterPopupWebView(token: token)
+        }
+
         popupWindow.observeWebViewTitle(popupWebView, fallbackTitle: service.name)
-        
+
         popupWindow.contentView?.addSubview(popupWebView)
         popupWindow.makeKeyAndOrderFront(nil)
-        
-        popupWebView.load(URLRequest(url: url))
+
+        return popupWebView
+    }
+
+    @MainActor
+    private func unregisterPopupWebView(token: ObjectIdentifier) {
+        serviceIDsByWebView.removeValue(forKey: token)
+        removeLoadState(for: token)
     }
 
     @MainActor
@@ -1576,7 +1598,9 @@ final class WebViewManager: NSObject {
 
 // MARK: - WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
 
+@MainActor
 private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
+    var onClose: (@MainActor () -> Void)?
     private var shield: InteractionShieldView?
     private weak var parentWin: NSWindow?
     private var isCleaningUp = false
@@ -1663,6 +1687,10 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
         
         // 5. Break self-delegate cycle to allow deallocation
         self.delegate = nil
+
+        let onClose = onClose
+        self.onClose = nil
+        onClose?()
     }
     
     func windowWillClose(_ notification: Notification) {
@@ -1673,14 +1701,7 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
 @MainActor
 fileprivate final class PopupUIDelegate: NSObject, WKUIDelegate {
     static let shared = PopupUIDelegate()
-    
-    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = navigationAction.request.url {
-            webView.load(URLRequest(url: url))
-        }
-        return nil
-    }
-    
+
     func webViewDidClose(_ webView: WKWebView) {
         webView.window?.close()
     }
@@ -1800,21 +1821,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         switch action {
         case .openHere, .openNewWindow:
             guard let parentWindow = webView.window else { return nil }
-            let popupWindow = ModalPopupWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
-                parentWindow: parentWindow
-            )
-            popupWindow.center()
-            
-            let popupWebView = WKWebView(frame: popupWindow.contentView!.bounds, configuration: configuration)
-            popupWebView.autoresizingMask = [.width, .height]
-            popupWebView.uiDelegate = PopupUIDelegate.shared
-            
-            popupWindow.observeWebViewTitle(popupWebView, fallbackTitle: service.name)
-            popupWindow.contentView?.addSubview(popupWebView)
-            popupWindow.makeKeyAndOrderFront(nil)
-            
-            return popupWebView
+            return makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow)
         case .openExternal:
             NSWorkspace.shared.open(url)
             return nil
@@ -1843,6 +1850,15 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             return nil
         case .cancel:
             return nil
+        }
+    }
+
+    @MainActor
+    func webViewDidClose(_ webView: WKWebView) {
+        // `window.close()` from JS must only ever dismiss a popup. Main-window
+        // webviews are owned by the overlay and never close this way.
+        if webView.window is ModalPopupWindow {
+            webView.window?.close()
         }
     }
 
