@@ -376,8 +376,8 @@ final class LockOverlayView: NSView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
-            if event.keyCode == UInt16(kVK_ANSI_P) {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .option] {
+            if event.keyCode == UInt16(kVK_ANSI_L) {
                 if activeFallbackContext == nil {
                     usePasswordClicked()
                     return true

@@ -457,6 +457,14 @@ extension MainWindowController {
             return true
         }
         
+        // Hard temporary tab: Quiper-level shortcut, not an action. Opens an
+        // isolated ephemeral tab in the current engine. Checked before custom
+        // actions so it wins over any persisted soft-action shortcut.
+        if matches(config, ephemeralTemporaryShortcut) {
+            createQuiperPrivateTemporarySession()
+            return true
+        }
+
         if let action = Settings.shared.customActions.first(where: { $0.shortcut == config }) {
             performCustomAction(action)
             return true
@@ -641,7 +649,16 @@ extension MainWindowController {
         guard let rhs = rhs, !rhs.isDisabled else { return false }
         return lhs.keyCode == rhs.keyCode && lhs.modifierFlags == rhs.modifierFlags
     }
-    
+
+    /// Quiper-level hard-temporary shortcut: Cmd+P. Not a custom action;
+    /// it opens an isolated ephemeral tab directly.
+    private var ephemeralTemporaryShortcut: HotkeyManager.Configuration {
+        HotkeyManager.Configuration(
+            keyCode: UInt32(kVK_ANSI_P),
+            modifierFlags: NSEvent.ModifierFlags.command.rawValue
+        )
+    }
+
     // MARK: - Tab History Cycling & HUD Methods
     
     func showTabHistoryHUD() {

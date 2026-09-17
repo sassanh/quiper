@@ -46,7 +46,7 @@ extension MainWindowController {
     
     func updateTitleLabel(from webView: WKWebView) {
         let title = webView.title ?? ""
-        titleLabel?.stringValue = title
+        setTitleLabelText(title)
         
         let isLoading = webView.isLoading
         
@@ -104,7 +104,7 @@ extension MainWindowController {
     }
     
     func updateTitleLabel(withFallback fallback: String) {
-        titleLabel?.stringValue = fallback
+        setTitleLabelText(fallback)
         
         if let label = titleLabel {
             if label.isTruncated() {
@@ -125,5 +125,61 @@ extension MainWindowController {
         
         loadingBorderView?.stopAnimating()
         windowOutlineView?.setLoading(false)
+    }
+
+    /// Whether the active tab is temporary. Single read point for every
+    /// ephemeral-chrome refresh so the title, badge, and outline agree.
+    func isActiveTabTemporary() -> Bool {
+        guard let service = currentService(), webViewManager != nil else { return false }
+        return webViewManager.isTemporaryTab(
+            serviceID: service.id,
+            sessionIndex: activeIndicesByID[service.id] ?? 0
+        )
+    }
+
+    /// Sets the topbar title, refreshing all ephemeral chrome: a badge hugging
+    /// the title text and a dashed window outline. The title text itself lays
+    /// out exactly as plain titles do.
+    private func setTitleLabelText(_ raw: String) {
+        titleLabel?.stringValue = raw
+        let isTemporary = isActiveTabTemporary()
+        windowOutlineView?.setEphemeral(isTemporary)
+        positionEphemeralBadge()
+    }
+
+    /// Pins the badge just left of the rendered (centered) title text instead
+    /// of the title area's edge, so it sticks to the title. Hides when the
+    /// title is empty, truncated, or the area is crowded.
+    func positionEphemeralBadge() {
+        guard let badge = ephemeralBadgeView, let title = titleLabel, !title.isHidden else {
+            ephemeralBadgeView?.isHidden = true
+            return
+        }
+        guard isActiveTabTemporary() else {
+            badge.isHidden = true
+            return
+        }
+        let raw = title.stringValue
+        guard !raw.isEmpty else {
+            badge.isHidden = true
+            return
+        }
+        let font = title.font ?? .systemFont(ofSize: 12, weight: .medium)
+        let textWidth = (raw as NSString).size(withAttributes: [.font: font]).width
+        let badgeSize: CGFloat = 13
+        let gap: CGFloat = 5
+        let textX = title.frame.minX + max(0, (title.frame.width - textWidth) / 2)
+        let badgeX = textX - gap - badgeSize
+        guard badgeX >= title.frame.minX else {
+            badge.isHidden = true
+            return
+        }
+        badge.frame = NSRect(
+            x: badgeX,
+            y: title.frame.midY - badgeSize / 2,
+            width: badgeSize,
+            height: badgeSize
+        )
+        badge.isHidden = false
     }
 }

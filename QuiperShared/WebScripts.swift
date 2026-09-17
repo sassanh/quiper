@@ -1183,14 +1183,20 @@ enum WebScripts {
     // MARK: - Action runner
 
     /// Wraps a custom-action script body so thrown exceptions surface as a
-    /// `{ quiperError: ... }` result instead of failing silently.
+    /// `{ quiperError: ... }` result instead of failing silently. A script
+    /// requesting an ephemeral tab returns `{ ephemeral: true }`; the runner
+    /// forwards only that flag and collapses every other return to `"ok"`,
+    /// so pages cannot smuggle values into native code.
     static func makeActionRunnerScript(script: String) -> String {
         """
         try {
           const wrapper = async () => {
             \(script)
           };
-          await wrapper();
+          const result = await wrapper();
+          if (result && result.ephemeral === true) {
+            return { ephemeral: true };
+          }
           return "ok";
         } catch (err) {
           return { quiperError: (err && err.message) ? err.message : String(err) };

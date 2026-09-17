@@ -313,7 +313,10 @@ final class TemplateValidationServer {
           const wrapper = async () => {
             \(rawScript)
           };
-          await wrapper();
+          const result = await wrapper();
+          if (result && result.ephemeral === true) {
+            return { ephemeral: true };
+          }
           return { actionStatus: "ok" };
         } catch (err) {
           return { quiperError: (err && err.message) ? err.message : String(err) };

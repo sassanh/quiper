@@ -81,6 +81,33 @@ enum DefaultActions {
         name: "Settings"
     )
     #endif
+
+    /// Engine-independent fallback scripts, keyed by canonical action name.
+    /// Used only when neither a custom script nor an engine template provides
+    /// one. Kept deliberately small: most actions have no generic form.
+    private static let globalDefaultScripts: [String: String] = [
+        "share": """
+        const url = location.href;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(url);
+        } else {
+          throw new Error("Clipboard is unavailable");
+        }
+        """,
+        // No website automation exists for this engine: an anonymous tab is
+        // the honest answer. Throwing scripts still beep; this only fires
+        // when no script exists at any level above.
+        "new temporary session": "return { ephemeral: true };"
+    ]
+
+    /// The global default script for an action, regardless of engine.
+    /// This is the last resort before "not implemented": custom scripts and
+    /// engine template defaults always win.
+    static func globalDefaultScript(for action: CustomAction) -> String? {
+        let normalized = action.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return nil }
+        return globalDefaultScripts[normalized]
+    }
 }
 
 /// Default action-script resolution shared by both targets.
@@ -90,6 +117,14 @@ enum ActionScripts {
         let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty else { return nil }
         return DefaultActions.defaults.first { $0.name.lowercased() == normalized }?.id
+    }
+
+    /// Whether an action is the bundled action with the given ID, matched by
+    /// name. Action IDs are generated fresh per launch, so actions persisted
+    /// from earlier launches never equal the runtime IDs; names are the
+    /// stable identity. Single gate for all "is this the X action?" checks.
+    static func isDefaultAction(_ action: CustomAction, id: UUID) -> Bool {
+        defaultActionID(matching: action.name) == id
     }
 
     /// The bundled engine template matching a service name, case-insensitive.
@@ -133,16 +168,21 @@ enum ActionScripts {
     /// The action script actually used for a service and action, mirroring
     /// macOS `Settings.actionScript(for:action:)`: a synced template wins,
     /// otherwise the file-backed script with the engine's stored copy as
-    /// fallback.
+    /// fallback, otherwise the engine-independent global default. Empty means
+    /// the action is unimplemented for the engine.
     static func resolvedActionScript(for service: Service, action: CustomAction) -> String {
         if let syncedScript = syncedActionScript(for: service, action: action) {
             return syncedScript
         }
-        return EngineFileStorage.loadActionScript(
+        let stored = EngineFileStorage.loadActionScript(
             serviceID: service.id,
             actionID: action.id,
             fallback: service.actionScripts[action.id] ?? ""
         )
+        if !stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return stored
+        }
+        return DefaultActions.globalDefaultScript(for: action) ?? ""
     }
 
     /// The bundled default script when the engine tracks the template's value.

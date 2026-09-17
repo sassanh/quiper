@@ -504,6 +504,12 @@ final class IOSCommandExecutor {
            let message = dictionary["quiperError"] as? String {
             throw IOSCommandError.actionFailed(message)
         }
+        // iOS has no ephemeral tabs: a script asking for one fails honestly
+        // instead of dropping the request silently.
+        if let dictionary = value as? [String: Any],
+           dictionary["ephemeral"] as? Bool == true {
+            throw IOSCommandError.actionFailed("Ephemeral tabs are not available on this platform")
+        }
     }
 
     private func acquireExecutionTurn() async throws {

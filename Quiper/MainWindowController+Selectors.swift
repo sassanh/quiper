@@ -329,6 +329,8 @@ extension MainWindowController {
         )
         title.isHidden = shouldHideTitleArea
 
+        positionEphemeralBadge()
+
         repositionExpandedSelectors()
     }
 
@@ -415,6 +417,10 @@ extension MainWindowController {
                 fallbackTitle: webViewManager.sessionTitle(for: service, sessionIndex: sessionIndex),
                 sessionIndex: sessionIndex
             )
+        }.map { base in
+            webViewManager.isTemporaryTab(serviceID: service.id, sessionIndex: sessionIndex)
+                ? "\(base) (Temporary)"
+                : base
         }
         let segment = segmentIndex(forSession: sessionIndex)
 

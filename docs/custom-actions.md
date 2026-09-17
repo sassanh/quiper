@@ -13,7 +13,10 @@ try {
   const wrapper = async () => {
     // Your Custom Action Script Content Goes Here
   };
-  await wrapper();
+  const result = await wrapper();
+  if (result && result.ephemeral === true) {
+    return { ephemeral: true };
+  }
   return "ok";
 } catch (err) {
   return { quiperError: (err && err.message) ? err.message : String(err) };
@@ -21,6 +24,49 @@ try {
 ```
 
 If the script throws an error, the catch block intercepts it, prints it to the macOS logs, and triggers a system error beep to notify you.
+
+A script can ask for an ephemeral tab by returning `{ ephemeral: true }`.
+Quiper opens one with no beep, exactly as if you had pressed `Cmd+P`. The
+runner forwards only that flag; every other return value collapses to `"ok"`.
+Template guideline: return it when the website can't honor the request but an
+anonymous tab can (for example logged-out soft temporary); keep throwing on
+transient failures such as timeouts, where falling back risks duplicates.
+
+---
+
+## Temporary Tabs
+
+Quiper distinguishes two temporary modes with separate owners.
+
+* **Hard temporary (Quiper-level).** `Cmd+P` opens an isolated ephemeral
+tab in the current engine. The tab is temporary by construction: it runs on a
+separate non-persistent store that is never saved. Quiper owns this record;
+pages never participate. Ephemeral tabs receive no injected scripts or message
+handlers, so websites cannot detect Quiper through them. Ephemeral loads also
+drop Quiper's referral query item while keeping every other parameter. They
+never flip in
+place: leaving one means opening a normal tab or closing it. Engine shortcuts
+don't run inside them; the notice offers a normal tab instead. The topbar
+title carries an ephemeral badge while one is active, the window outline turns
+dashed, and the session
+tooltip shows `(Temporary)`.
+* **Soft temporary (website-level).** The `New Temporary Session` action
+(`Cmd+Shift+N` by default) only runs provider automation, such as clicking the
+site's own temporary-chat button. Whether the site is actually in its private
+mode is the site's business; Quiper neither tracks nor reports it. If the
+script throws, it beeps as any failed action does. When the site can't honor
+the request but an anonymous tab can — for example you're logged out — the
+script returns `{ ephemeral: true }` and Quiper opens an ephemeral tab with
+no beep.
+
+## Script Resolution
+
+For each engine and action, the script that runs is the first non-empty value
+in this order: a synced template default, your custom script, the action's
+engine-independent global default (Share copies the page URL; New Temporary
+Session opens an ephemeral tab when the engine has no automation), and finally
+nothing — which logs "Action not implemented" and beeps. A script that throws
+still beeps; the global default only fires when no script exists.
 
 ---
 

@@ -10,6 +10,32 @@ enum DefaultEngineDefinitions {
     static let historyActionID = UUID()
     static let openSettingsActionID = UUID()
 
+    /// The referral we attach to bundled template URLs. Ephemeral loads drop
+    /// exactly this query item so sites can't identify Quiper; everything
+    /// else in the URL stays untouched.
+    static let quiperReferralQueryItemName = "referrer"
+    static let quiperReferralValue = "https://github.io/sassanh/quiper"
+
+    /// Returns the URL without our referral query item. Non-matching
+    /// referrers, other parameters, and fragments are preserved; unparseable
+    /// input comes back unchanged.
+    static func urlStringWithoutQuiperReferral(_ urlString: String) -> String {
+        guard var components = URLComponents(string: urlString),
+              let items = components.queryItems,
+              items.contains(where: {
+                  $0.name == quiperReferralQueryItemName && $0.value == quiperReferralValue
+              }) else {
+            return urlString
+        }
+        components.queryItems = items.filter {
+            !($0.name == quiperReferralQueryItemName && $0.value == quiperReferralValue)
+        }
+        if components.queryItems?.isEmpty == true {
+            components.queryItems = nil
+        }
+        return components.string ?? urlString
+    }
+
     /// Names of bundled templates that run locally on the user's machine rather
     /// than as cloud services. Used to group the Add Engine menu into cloud and
     /// local templates, matching macOS.
@@ -240,7 +266,7 @@ enum DefaultEngineDefinitions {
                 }
 
                 if (!quiperFind(temporarySelectors) && (quiperFind(["button[aria-label='Sign in']"]) || quiperFindByText(["Sign in"]))) {
-                  throw new Error("Sign in to Gemini before creating a temporary chat");
+                  return { ephemeral: true };
                 }
 
                 await quiperOpenDisclosure(
@@ -341,7 +367,7 @@ enum DefaultEngineDefinitions {
             input-container, input-container::before {
               background: transparent !important;
             }
-            """
+            """,
         ),
         Service(
             name: "Claude",
@@ -480,7 +506,7 @@ enum DefaultEngineDefinitions {
             body, .bg-bg-500, .bg-bg-400, .bg-bg-300 {
               background-color: transparent !important;
             }
-            """
+            """,
         ),
         Service(
             name: "Grok",
@@ -658,7 +684,7 @@ enum DefaultEngineDefinitions {
               background-color: transparent;
               background-image: none;
             }
-            """
+            """,
         ),
         Service(
             name: "ChatGPT",
@@ -712,7 +738,7 @@ enum DefaultEngineDefinitions {
                   "[data-testid='temporary-chat-button'][aria-pressed='true']"
                 ];
                 if (!quiperFind(temporarySelectors) && (quiperFind(["[data-testid='login-button']"]) || quiperFindByText(["Log in"]))) {
-                  throw new Error("Sign in to ChatGPT before creating a temporary chat");
+                  return { ephemeral: true };
                 }
 
                 if (quiperFind(activeTemporarySelectors)) {
@@ -843,7 +869,7 @@ enum DefaultEngineDefinitions {
             html, body {
               background-color: transparent !important;
             }
-            """
+            """,
         ),
         Service(
             name: "X",
@@ -1111,7 +1137,7 @@ enum DefaultEngineDefinitions {
             body, div[data-testid="primaryColumn"] {
               background-color: transparent !important;
             }
-            """
+            """,
         ),
         Service(
             name: "Open WebUI",
@@ -1450,7 +1476,7 @@ enum DefaultEngineDefinitions {
             body, #app, .app>div, text-3d-flip-char>.backface-hidden  {
               background-color: transparent !important;
             }
-            """
+            """,
         ),
         Service(
             name: "Kimi",
@@ -1595,7 +1621,7 @@ enum DefaultEngineDefinitions {
             #chat-box {
               background-color: transparent !important;
             }
-            """
+            """,
         ),
         Service(
             name: "Qwen",
@@ -1720,7 +1746,7 @@ enum DefaultEngineDefinitions {
             .home-page-layout-main {
               background-color: transparent !important;
             }
-            """
+            """,
         ),
         Service(
             name: "DeepSeek",
@@ -1922,7 +1948,7 @@ enum DefaultEngineDefinitions {
             html, body {
               background-color: transparent !important;
             }
-            """
+            """,
         ),
         Service(
             name: "llama.cpp",
@@ -1967,7 +1993,7 @@ enum DefaultEngineDefinitions {
             body {
               background-color: transparent !important;
             }
-            """
+            """,
         ),
         Service(
             name: "oMLX",
@@ -2088,7 +2114,7 @@ enum DefaultEngineDefinitions {
             .right-sidebar-width, .sidebar-width {
               background-color: var(--bg-secondary);
             }
-            """
+            """,
         ),
         Service(
             name: "OpenClaw",
@@ -2183,7 +2209,7 @@ enum DefaultEngineDefinitions {
             body {
               background-color: transparent !important;
             }
-            """
+            """,
         ),
         Service(
             name: "OpenCode",
@@ -2286,7 +2312,7 @@ enum DefaultEngineDefinitions {
             body {
               background-color: transparent !important;
             }
-            """
+            """,
         ),
         Service(
             name: "Google",
@@ -2344,7 +2370,7 @@ enum DefaultEngineDefinitions {
             body, div[style*="max-width:100%;"] {
               background-color: transparent !important;
             }
-            """
+            """,
         )
     ]
 }

@@ -144,6 +144,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var sessionSelector: SegmentedControl?
     var collapsibleSessionSelector: CollapsibleSelector?
     var titleLabel: HoverTextField!
+    var ephemeralBadgeView: NSImageView!
     var navigationButtonGroup: NavigationButtonGroup!
     var refreshStopButton: RefreshStopButton!
     var trashSessionButton: HoverIconButton!
@@ -437,6 +438,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard !selector.isEmpty else { return }
         guard let webView = currentWebView() else { return }
         let sessionIdx = activeIndicesByID[service.id] ?? 0
+        if webViewManager.isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIdx) {
+            // Ephemeral tabs carry no Quiper markers: focus the composer plainly.
+            let escapedSelector = WebScripts.escapeForJavaScript(selector)
+            webView.evaluateJavaScript(
+                "(function(){var el=document.querySelector(\"\(escapedSelector)\");if(el&&el.focus)el.focus();})();",
+                completionHandler: nil
+            )
+            return
+        }
         let shouldRestore = service.preservePrompt
         let inputState = shouldRestore ? webViewManager?.getTabInputState(for: service.id, sessionIndex: sessionIdx) : nil
 
@@ -520,7 +530,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func performCustomAction(_ action: CustomAction) {
         guard let service = currentService(), let webView = currentWebView() else { return }
-        if action.id == DefaultEngineDefinitions.openSettingsActionID {
+        let activeIndex = activeIndicesByID[service.id] ?? 0
+        // Ephemeral tabs run no engine automation: every action, custom or
+        // bundled, explains itself instead of running. No identity checks;
+        // the tab's state alone decides.
+        if webViewManager.isQuiperPrivateTab(serviceID: service.id, sessionIndex: activeIndex) {
+            presentEphemeralLockdownNotice()
+            return
+        }
+        if ActionScripts.isDefaultAction(action, id: DefaultEngineDefinitions.openSettingsActionID) {
             presentEngineSettingsShortcutNoticeIfNeeded()
         }
         let effectiveService = Settings.shared.services.first(where: { $0.id == service.id }) ?? service
@@ -539,11 +557,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         webView.callAsyncJavaScript(wrappedScript, in: nil, in: .page) { [weak self] result in
             switch (result) {
             case .success (let value):
-                if let dict = value as? [String: Any], let message = dict["quiperError"] as? String {
-                    self?.playErrorSound()
-                    NSLog("[Quiper] Custom action script failed (caught exception): \(message)")
-                    self?.focusInputInActiveWebview()
-                    return
+                if let dict = value as? [String: Any] {
+                    // A script asking for an ephemeral tab is handled, not
+                    // failed: the anonymous tab replaces this one in place,
+                    // mirroring the website flow that would have transformed
+                    // it. No beep; the new tab takes focus.
+                    if dict["ephemeral"] as? Bool == true {
+                        self?.replaceSessionWithEphemeral(serviceID: service.id, sessionIndex: activeIndex)
+                        return
+                    }
+                    if let message = dict["quiperError"] as? String {
+                        self?.playErrorSound()
+                        NSLog("[Quiper] Custom action script failed (caught exception): \(message)")
+                        self?.focusInputInActiveWebview()
+                        return
+                    }
                 }
             case .failure (let error):
                 self?.playErrorSound()
@@ -554,6 +582,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
     
+    private func presentEphemeralLockdownNotice() {
+        guard !AppController.isRunningTests,
+              !Constants.LaunchMode.shouldSuppressInterferenceUI,
+              let window else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Engine shortcuts are disabled in ephemeral tabs"
+        alert.informativeText = "These shortcuts run website automation that assumes your logged-in session. To protect your privacy, they don't run here. This tab stays open — open a normal tab to use them."
+        alert.addButton(withTitle: "Open Normal Tab")
+        alert.addButton(withTitle: "Stay Here")
+        alert.buttons[1].keyEquivalent = "\u{1b}"
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.createNormalSessionAfterPrivate()
+        }
+    }
+
     private func presentEngineSettingsShortcutNoticeIfNeeded() {
         guard !AppController.isRunningTests,
               !Constants.LaunchMode.shouldSuppressInterferenceUI,
@@ -1283,6 +1328,19 @@ struct SecureTabState: Codable {
         title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         drag.addSubview(title)
         titleLabel = title
+
+        // Ephemeral badge: fixed overlay at the title area's leading edge so
+        // the centered title text lays out exactly as plain titles do.
+        let badge = NSImageView()
+        badge.imageScaling = .scaleProportionallyUpOrDown
+        if let symbol = NSImage(systemSymbolName: "eye.slash.fill", accessibilityDescription: "Ephemeral tab") {
+            symbol.isTemplate = true
+            badge.image = symbol
+        }
+        badge.contentTintColor = .secondaryLabelColor
+        badge.isHidden = true
+        drag.addSubview(badge)
+        ephemeralBadgeView = badge
 
         // Back/Forward Navigation Button Group
         let navGroup = NavigationButtonGroup()

@@ -151,6 +151,81 @@ extension MainWindowController {
         updateEmptyStateShortcuts()
     }
 
+    // MARK: - Temporary sessions
+    //
+    // Ephemeral hard-temporary tabs run on an isolated non-persistent store and
+    // are temporary by construction. They never flip in place: leaving one
+    // means opening a normal tab or closing the private one. No page script
+    // runs in them, so websites cannot detect Quiper through injection.
+
+    /// Opens a new ephemeral hard-temporary tab.
+    /// No-ops with an error sound when no free slot remains.
+    func createQuiperPrivateTemporarySession() {
+        guard let service = currentService() else { return }
+        guard let freeIndex = (0..<10).first(where: {
+            webViewManager.getWebView(for: service, sessionIndex: $0) == nil
+        }) else {
+            playErrorSound()
+            NSLog("[Quiper] No free session slot for temporary tab")
+            return
+        }
+        let webView = webViewManager.getOrCreateWebView(
+            for: service,
+            sessionIndex: freeIndex,
+            dragArea: dragArea,
+            isQuiperPrivate: true
+        )
+        setupSessionTitleObserver(for: service, sessionIndex: freeIndex, webView: webView)
+        refreshInstantiationState()
+        switchSession(to: freeIndex)
+    }
+
+    /// Replaces a session with an ephemeral tab in the same slot. Used by
+    /// action fallback: the website would have transformed this tab in place,
+    /// so the anonymous tab takes its slot instead of opening beside it. The
+    /// previous page (typically logged-out with nothing to keep) is discarded.
+    /// Never morphs a webview: the old page is torn down and a fresh
+    /// ephemeral one is created at the same index.
+    func replaceSessionWithEphemeral(serviceID: UUID, sessionIndex: Int) {
+        guard let service = services.first(where: { $0.id == serviceID }) else { return }
+        if webViewManager.getWebView(for: service, sessionIndex: sessionIndex) != nil {
+            removeWebViewAndCleanObserver(for: service, sessionIndex: sessionIndex)
+        }
+        let webView = webViewManager.getOrCreateWebView(
+            for: service,
+            sessionIndex: sessionIndex,
+            dragArea: dragArea,
+            isQuiperPrivate: true
+        )
+        setupSessionTitleObserver(for: service, sessionIndex: sessionIndex, webView: webView)
+        refreshInstantiationState()
+        if currentService()?.id == serviceID {
+            switchSession(to: sessionIndex)
+        }
+    }
+
+    /// Opens a normal persistent tab when leaving an ephemeral one. Used by
+    /// "New Session" from inside a Quiper-private tab.
+    func createNormalSessionAfterPrivate() {
+        guard let service = currentService() else { return }
+        guard let freeIndex = (0..<10).first(where: {
+            webViewManager.getWebView(for: service, sessionIndex: $0) == nil
+        }) else {
+            playErrorSound()
+            NSLog("[Quiper] No free session slot for new session")
+            return
+        }
+        let webView = webViewManager.getOrCreateWebView(
+            for: service,
+            sessionIndex: freeIndex,
+            dragArea: dragArea,
+            isQuiperPrivate: false
+        )
+        setupSessionTitleObserver(for: service, sessionIndex: freeIndex, webView: webView)
+        refreshInstantiationState()
+        switchSession(to: freeIndex)
+    }
+
     func currentService() -> Service? {
         if let currentID = currentServiceID,
            let match = services.first(where: { $0.id == currentID }) {

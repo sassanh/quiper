@@ -24,6 +24,10 @@ class WindowOutlineView: NSView {
     }
     
     private var outlineWidth: CGFloat = 1.0
+    private var isEphemeralOutline = false
+    private var effectiveOutlineWidth: CGFloat {
+        outlineWidth + (isEphemeralOutline ? 2.0 : 0)
+    }
     private let outlineLayer = CAShapeLayer()
     private let loadingBaseLayer = CAShapeLayer()
     private let loadingSegmentLayer = CAShapeLayer()
@@ -91,8 +95,14 @@ class WindowOutlineView: NSView {
         let settings = isDark ? Settings.shared.windowAppearance.dark : Settings.shared.windowAppearance.light
         
         outlineWidth = settings.outlineWidth
-        outlineLayer.lineWidth = outlineWidth
-        outlineLayer.strokeColor = settings.outlineColor.nsColor.cgColor
+        outlineLayer.lineWidth = effectiveOutlineWidth
+        if isEphemeralOutline {
+            // Themed contrast like the loading spinner: follows the user
+            // accent in both appearances instead of absolute colors.
+            outlineLayer.strokeColor = NSColor.controlAccentColor.cgColor
+        } else {
+            outlineLayer.strokeColor = settings.outlineColor.nsColor.cgColor
+        }
         loadingBaseLayer.strokeColor = NSColor.controlAccentColor.withAlphaComponent(0.2).cgColor
         loadingSegmentLayer.strokeColor = NSColor.controlAccentColor.cgColor
     }
@@ -124,6 +134,21 @@ class WindowOutlineView: NSView {
         }
     }
 
+    /// Dashes the window outline while an ephemeral tab is active, implying
+    /// "temporary": longer, thicker, widely spaced dashes in the accent
+    /// color. The loading arc goes dashed too. Solid otherwise.
+    /// Survives color/width updates.
+    func setEphemeral(_ ephemeral: Bool) {
+        guard isEphemeralOutline != ephemeral else { return }
+        isEphemeralOutline = ephemeral
+        outlineLayer.lineDashPattern = ephemeral ? [12, 8] as [NSNumber] : nil
+        updateColors()
+        updatePath(animated: false)
+        if isLoading {
+            addLoadingAnimation()
+        }
+    }
+
     func setLoading(_ loading: Bool) {
         guard isLoading != loading else { return }
         isLoading = loading
@@ -139,7 +164,7 @@ class WindowOutlineView: NSView {
     }
 
     private func updatePath(animated: Bool) {
-        let outlinePath = path(for: outlineWidth)
+        let outlinePath = path(for: effectiveOutlineWidth)
         let loadingPath = path(for: loadingLineWidth)
         loadingBaseLayer.path = loadingPath
         loadingSegmentLayer.path = loadingPath
@@ -159,8 +184,13 @@ class WindowOutlineView: NSView {
         let height = loadingPath.boundingBox.height
         let radius = cornerRadius + loadingLineWidth / 2.0
         let pathLength = 2 * (width - 2 * radius) + 2 * (height - 2 * radius) + 2 * .pi * radius
-        let segmentLength = max(pathLength * 0.15, 1.0)
-        loadingSegmentLayer.lineDashPattern = [segmentLength, max(pathLength - segmentLength, 1.0)] as [NSNumber]
+        if isEphemeralOutline {
+            // The comet becomes a rotating dashed ring while ephemeral.
+            loadingSegmentLayer.lineDashPattern = [10, 8] as [NSNumber]
+        } else {
+            let segmentLength = max(pathLength * 0.15, 1.0)
+            loadingSegmentLayer.lineDashPattern = [segmentLength, max(pathLength - segmentLength, 1.0)] as [NSNumber]
+        }
 
         if isLoading {
             addLoadingAnimation()
@@ -214,14 +244,16 @@ class WindowOutlineView: NSView {
         let dashAnimation = CABasicAnimation(keyPath: "lineDashPhase")
         dashAnimation.fromValue = 0
         dashAnimation.toValue = pathLength
-        dashAnimation.duration = 1.5
+        dashAnimation.duration = isEphemeralOutline ? 1.0 : 1.5
         dashAnimation.repeatCount = .infinity
         dashAnimation.timingFunction = CAMediaTimingFunction(name: .linear)
         loadingSegmentLayer.add(dashAnimation, forKey: "lineDashPhaseAnimation")
     }
 
     private func updateLayerOpacity() {
-        outlineLayer.opacity = isLoading ? 0.0 : (isRevealed ? 0.0 : 1.0)
+        // The reveal ring would hide the dashes; ephemeral keeps the outline
+        // above it so the temporary state stays visible while peeking.
+        outlineLayer.opacity = isLoading ? 0.0 : (isRevealed && !isEphemeralOutline ? 0.0 : 1.0)
         loadingBaseLayer.opacity = isLoading ? 1.0 : 0.0
         loadingSegmentLayer.opacity = isLoading ? 1.0 : 0.0
     }

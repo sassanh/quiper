@@ -138,9 +138,13 @@ Quiper comes pre-configured with four powerful custom scripts triggered by defau
 | Custom Action | Shortcut | Default Intent |
 | :--- | :--- | :--- |
 | **New Session** | `⌘ N` | Resets/clears the active chat or starts a new thread. |
-| **New Temporary Session** | `⌘ ⇧ N` | Starts a temporary, non-persisted chat slot. |
+| **New Temporary Session** | `⌘ ⇧ N` | Asks the website to start its own temporary chat. |
 | **Share** | `⌘ ⇧ S` | Generates a shareable URL link for the active thread. |
 | **History** | `⌘ ⇧ H` | Toggles or opens the conversation history list of the engine. |
+
+> **Hard temporary tabs:** `⌘ P` is a Quiper-level shortcut (not an action).
+> It opens an isolated ephemeral tab that never persists, regardless of engine.
+> Engine shortcuts don't run inside ephemeral tabs; the sheet offers a normal tab.
 
 ---
 

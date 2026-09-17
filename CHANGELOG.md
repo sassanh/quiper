@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Ephemeral Tabs for Private Browsing**: `Cmd+P` opens an isolated tab that never saves anything — no history, input, or titles reach disk. Engine shortcuts stay disabled inside it to protect your privacy, and a dashed window outline plus a title badge mark the mode. Ephemeral loads also drop Quiper's referral marker from engine URLs.
+- **Temporary Fallback Without Sign-In**: Starting a website temporary chat while logged out now opens an ephemeral tab in place instead of failing, and engines without temporary support do the same.
+
 ### Fixed
 
 - **Find Bar Responds to Mouse Clicks**: The find bar's search field, Previous/Next buttons, and Done button now receive clicks again instead of passing them to the page underneath.

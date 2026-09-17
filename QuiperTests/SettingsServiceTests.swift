@@ -216,6 +216,63 @@ struct SettingsServiceTests {
         #expect(Settings.shared.customCSS(for: customCSSService) == "body { color: red; }")
     }
 
+    @Test func actionScriptResolution_PrefersCustomOverEngineOverGlobal() {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        // An engine with no Share script anywhere falls back to the global default.
+        let plainEngine = Service(name: "Plain Test Engine", url: "https://example.com", focus_selector: "input")
+        let shareAction = CustomAction(name: "Share")
+        #expect(ActionScripts.resolvedActionScript(for: plainEngine, action: shareAction).contains("navigator.clipboard"))
+
+        // History has no global default, so it resolves empty.
+        let historyAction = CustomAction(name: "History")
+        #expect(ActionScripts.resolvedActionScript(for: plainEngine, action: historyAction).isEmpty)
+
+        // An engine with no temporary automation falls back to the global
+        // ephemeral default instead of beeping.
+        let temporaryAction = CustomAction(name: "New Temporary Session")
+        #expect(ActionScripts.resolvedActionScript(for: plainEngine, action: temporaryAction).contains("ephemeral"))
+
+        // An engine template default wins over the global one.
+        var geminiEngine = Service(name: "Gemini", url: "https://example.com", focus_selector: "input")
+        geminiEngine.templateActionScriptSync[shareAction.id] = true
+        let geminiShare = ActionScripts.resolvedActionScript(for: geminiEngine, action: shareAction)
+        #expect(geminiShare.contains("Share conversation"))
+        #expect(!geminiShare.contains("navigator.clipboard"))
+
+        // A custom script wins over both.
+        let customAction = CustomAction(id: UUID(), name: "Share")
+        var customEngine = plainEngine
+        customEngine.actionScripts[customAction.id] = "custom();"
+        #expect(ActionScripts.resolvedActionScript(for: customEngine, action: customAction) == "custom();")
+    }
+
+    @Test func actionRunner_ForwardsEphemeralFlag() {
+        let runner = WebScripts.makeActionRunnerScript(script: "return { ephemeral: true };")
+        #expect(runner.contains("result.ephemeral === true"))
+        #expect(runner.contains("return { ephemeral: true };"))
+        #expect(runner.contains("return \"ok\";"))
+    }
+
+    @Test func quiperReferral_StrippedOnlyWhenOurs() {
+        let referral = "referrer=https://github.io/sassanh/quiper"
+        #expect(DefaultEngineDefinitions.urlStringWithoutQuiperReferral(
+            "https://gemini.google.com?" + referral
+        ) == "https://gemini.google.com")
+        #expect(DefaultEngineDefinitions.urlStringWithoutQuiperReferral(
+            "https://example.com?foo=1&" + referral + "&bar=2#frag"
+        ) == "https://example.com?foo=1&bar=2#frag")
+        #expect(DefaultEngineDefinitions.urlStringWithoutQuiperReferral(
+            "https://example.com?referrer=https://other.example"
+        ) == "https://example.com?referrer=https://other.example")
+        #expect(DefaultEngineDefinitions.urlStringWithoutQuiperReferral(
+            "https://example.com?noref=1"
+        ) == "https://example.com?noref=1")
+        #expect(DefaultEngineDefinitions.urlStringWithoutQuiperReferral("not a url") == "not a url")
+    }
+
     @Test func engineShortcutToggle_NewUserDefaultsEnabledWithoutMigrationPrompt() {
         Settings.shared.wipeAllData()
         _ = Settings.shared.loadSettings()

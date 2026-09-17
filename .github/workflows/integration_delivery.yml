@@ -38,8 +38,8 @@ jobs:
             exit 0
           fi
 
-          LATEST=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName,publishedAt \
-            --jq '.[0]')
+          LATEST=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName,publishedAt \
+            --jq 'max_by(.publishedAt)')
 
           if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
             echo "No previous release found. Proceeding with build."

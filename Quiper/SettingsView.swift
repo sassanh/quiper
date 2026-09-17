@@ -1932,7 +1932,7 @@ struct ServiceDetailView: View {
                         copyFilePath: { copyFocusSelectorFilePath() }
                     )
                     .id("\(service.id)-prompt-input")
-                    .frame(height: 200)
+                    .frame(minHeight: 230)
 
                     Text("Disable latest default to edit this selector.")
                         .font(.footnote)
@@ -2892,7 +2892,7 @@ private struct ActionScriptEditor: View {
             .id("\(serviceID)-\(action.id)-action-script")
             .frame(maxHeight: .infinity)
             
-            Text(isInSync ? "Disable latest default to edit this script." : "Leave blank to log the default 'Action not implemented' message.")
+            Text(isInSync ? "Disable latest default to edit this script." : "Leave blank to use the action's global default, or log 'Action not implemented' when it has none.")
                 .font(.footnote)
                 .foregroundColor(.secondary)
         }

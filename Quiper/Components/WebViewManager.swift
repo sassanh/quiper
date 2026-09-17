@@ -116,6 +116,13 @@ final class WebViewManager: NSObject {
     private var tabInputStates: [UUID: [Int: TabInputState]] = [:]
     private var tabPromptHistories: [UUID: [Int: [PromptHistoryEntry]]] = [:]
     private var tabPromptHistoryEnabledOverrides: [UUID: [Int: Bool]] = [:]
+    // MARK: - Temporary-state tracking
+    // Hard-temporary state is owned entirely by Quiper: a tab is temporary
+    // exactly when it runs on an isolated ephemeral store. Creation seeds the
+    // flag; removal clears it. Page scripts never participate, and ephemeral
+    // tabs receive no injected scripts or handlers, so websites cannot detect
+    // Quiper through them.
+    private var tabQuiperPrivateStores: [UUID: [Int: Bool]] = [:]
     private var approvedURLs = Set<URL>()
     private var cancellables = Set<AnyCancellable>()
 
@@ -189,6 +196,11 @@ final class WebViewManager: NSObject {
                 tabPromptHistoryEnabledOverrides.removeValue(forKey: serviceID)
             }
         }
+        for serviceID in tabQuiperPrivateStores.keys {
+            if !incomingServiceIDs.contains(serviceID) {
+                tabQuiperPrivateStores.removeValue(forKey: serviceID)
+            }
+        }
     }
     
     func updateZoomLevels(_ levels: [UUID: CGFloat]) {
@@ -249,6 +261,7 @@ final class WebViewManager: NSObject {
         tabInputStates[service.id]?.removeValue(forKey: sessionIndex)
         tabPromptHistories[service.id]?.removeValue(forKey: sessionIndex)
         tabPromptHistoryEnabledOverrides[service.id]?.removeValue(forKey: sessionIndex)
+        tabQuiperPrivateStores[service.id]?.removeValue(forKey: sessionIndex)
     }
 
     func getOpenSessionTitlesState() -> [UUID: [Int: String]] {
@@ -257,6 +270,8 @@ final class WebViewManager: NSObject {
         for service in services {
             guard let sessionIndices = webviewsByID[service.id]?.keys else { continue }
             let titles = sessionIndices.reduce(into: [Int: String]()) { result, sessionIndex in
+                // Temporary tabs never persist, so their titles stay out of saved state.
+                guard !isTemporaryTab(serviceID: service.id, sessionIndex: sessionIndex) else { return }
                 if let title = sessionTitle(for: service, sessionIndex: sessionIndex) {
                     result[sessionIndex] = title
                 }
@@ -277,6 +292,8 @@ final class WebViewManager: NSObject {
             guard let sessionMap = webviewsByID[service.id] else { continue }
             var sessionURLs: [Int: String] = [:]
             for (idx, webView) in sessionMap {
+                // Temporary tabs never persist: no URL reaches disk.
+                guard !isTemporaryTab(serviceID: service.id, sessionIndex: idx) else { continue }
                 if let urlString = webView.url?.absoluteString, !urlString.isEmpty, urlString != "about:blank" {
                     sessionURLs[idx] = urlString
                 } else if let previouslySavedURL = currentSavedState?[service.id]?[idx], !previouslySavedURL.isEmpty {
@@ -292,8 +309,40 @@ final class WebViewManager: NSObject {
         return state
     }
 
+    // MARK: - Temporary-state record
+    //
+    // A tab is temporary exactly when it runs on an isolated ephemeral store.
+    // Creation seeds the flag; removal clears it. Nothing else writes it.
+
+    /// Whether the tab is a hard-temporary ephemeral tab. Never persists.
+    func isTemporaryTab(serviceID: UUID, sessionIndex: Int) -> Bool {
+        isQuiperPrivateTab(serviceID: serviceID, sessionIndex: sessionIndex)
+    }
+
+    /// Whether the tab runs on an isolated ephemeral store created for
+    /// hard-temporary use. Never flips in place by design.
+    func isQuiperPrivateTab(serviceID: UUID, sessionIndex: Int) -> Bool {
+        tabQuiperPrivateStores[serviceID]?[sessionIndex] ?? false
+    }
+
+    /// Seeds the creation flag. Normal tabs record false; ephemeral tabs true.
+    private func seedTemporaryState(isQuiperPrivate: Bool, for serviceID: UUID, sessionIndex: Int) {
+        if tabQuiperPrivateStores[serviceID] == nil {
+            tabQuiperPrivateStores[serviceID] = [:]
+        }
+        tabQuiperPrivateStores[serviceID]?[sessionIndex] = isQuiperPrivate
+    }
+
     func getOpenSessionsInputState() -> [UUID: [Int: TabInputState]] {
-        return tabInputStates
+        // Temporary tabs never persist; keep their live input out of saved state.
+        var filtered: [UUID: [Int: TabInputState]] = [:]
+        for (serviceID, sessions) in tabInputStates {
+            let kept = sessions.filter { !isTemporaryTab(serviceID: serviceID, sessionIndex: $0.key) }
+            if !kept.isEmpty {
+                filtered[serviceID] = kept
+            }
+        }
+        return filtered
     }
 
     func getTabInputState(for serviceID: UUID, sessionIndex: Int) -> TabInputState? {
@@ -319,11 +368,25 @@ final class WebViewManager: NSObject {
     }
 
     func getOpenSessionsPromptHistories() -> [UUID: [Int: [PromptHistoryEntry]]] {
-        return tabPromptHistories
+        var filtered: [UUID: [Int: [PromptHistoryEntry]]] = [:]
+        for (serviceID, sessions) in tabPromptHistories {
+            let kept = sessions.filter { !isTemporaryTab(serviceID: serviceID, sessionIndex: $0.key) }
+            if !kept.isEmpty {
+                filtered[serviceID] = kept
+            }
+        }
+        return filtered
     }
 
     func getOpenSessionsPromptHistoryOverrides() -> [UUID: [Int: Bool]] {
-        return tabPromptHistoryEnabledOverrides
+        var filtered: [UUID: [Int: Bool]] = [:]
+        for (serviceID, sessions) in tabPromptHistoryEnabledOverrides {
+            let kept = sessions.filter { !isTemporaryTab(serviceID: serviceID, sessionIndex: $0.key) }
+            if !kept.isEmpty {
+                filtered[serviceID] = kept
+            }
+        }
+        return filtered
     }
 
     func restoreTabPromptHistories(_ states: [UUID: [Int: [PromptHistoryEntry]]]) {
@@ -427,11 +490,13 @@ final class WebViewManager: NSObject {
     }
 
     func pushRecordingIndicatorState(to webView: WKWebView) {
-        guard let (service, sessionIndex) = findServiceAndSession(for: webView) else { return }
+        guard let (service, sessionIndex) = findServiceAndSession(for: webView),
+              !isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) else { return }
         pushRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
     }
 
     func pushRecordingIndicatorState(to webView: WKWebView, service: Service, sessionIndex: Int) {
+        guard !isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) else { return }
         applyRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
         // Re-evaluate rather than replaying stale state if visibility/settings change during the delay.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, weak webView] in
@@ -625,7 +690,7 @@ final class WebViewManager: NSObject {
         Settings.shared.services.first(where: { $0.id == service.id }) ?? service
     }
 
-    func getOrCreateWebView(for inputService: Service, sessionIndex: Int, dragArea: NSView?, targetURL: String? = nil, restoredTitle: String? = nil, loadImmediately: Bool = true) -> WKWebView {
+    func getOrCreateWebView(for inputService: Service, sessionIndex: Int, dragArea: NSView?, targetURL: String? = nil, restoredTitle: String? = nil, loadImmediately: Bool = true, isQuiperPrivate: Bool = false) -> WKWebView {
         let service = resolvedService(for: inputService)
         if let dragArea = dragArea {
             self.dragArea = dragArea
@@ -668,8 +733,16 @@ final class WebViewManager: NSObject {
         
         let isUnlocked = !service.isEncrypted || EncryptedVolumeManager.shared.isUnlocked(for: service.id)
         
-        // WebView inside Wrapper (ephemeral/non-persistent if locked, persistent if unlocked)
-        let webview = createWebViewInstance(for: service, sessionIndex: sessionIndex, bounds: wrapperView.bounds, isPersistent: isUnlocked)
+        // WebView inside Wrapper (ephemeral/non-persistent if locked, persistent if unlocked).
+        // Quiper-private temporary tabs always use an isolated ephemeral store
+        // and seed the temporary assumption; they never flip in place.
+        let webview = createWebViewInstance(
+            for: service,
+            sessionIndex: sessionIndex,
+            bounds: wrapperView.bounds,
+            isPersistent: isUnlocked && !isQuiperPrivate,
+            isQuiperPrivate: isQuiperPrivate
+        )
         wrapperView.addSubview(webview)
         installErrorView(for: webview, in: wrapperView)
 
@@ -691,6 +764,7 @@ final class WebViewManager: NSObject {
         wrappersByID[service.id]?[sessionIndex] = wrapperView
         
         serviceIDsByWebView[ObjectIdentifier(webview)] = service.id
+        seedTemporaryState(isQuiperPrivate: isQuiperPrivate, for: service.id, sessionIndex: sessionIndex)
         
         let token = ObjectIdentifier(webview)
         retainTitle(restoredTitle, for: webview)
@@ -703,11 +777,16 @@ final class WebViewManager: NSObject {
             }
         }
         
+        // Ephemeral tabs must not identify Quiper: our referral never loads.
+        let requestedURLString = isQuiperPrivate
+            ? DefaultEngineDefinitions.urlStringWithoutQuiperReferral(targetURL ?? service.url)
+            : (targetURL ?? service.url)
+
         // Load initial URL with encryption check
         if service.isEncrypted {
             if EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
                 if loadImmediately {
-                    let activeURLString = targetURL ?? service.url
+                    let activeURLString = requestedURLString
                     if let url = URL(string: activeURLString) {
                         if url.isFileURL {
                             webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -718,7 +797,7 @@ final class WebViewManager: NSObject {
                         showLoadError(WebLoadError(kind: .invalidURL), for: webview)
                     }
                 } else {
-                    pendingLazyLoadURLs[token] = targetURL ?? service.url
+                    pendingLazyLoadURLs[token] = requestedURLString
                 }
             } else {
                 // Show LockOverlayView on top of wrapper
@@ -809,6 +888,7 @@ final class WebViewManager: NSObject {
                             // Update maps
                             self.webviewsByID[unlockedService.id]?[sessionIndex] = realWebView
                             self.serviceIDsByWebView[ObjectIdentifier(realWebView)] = unlockedService.id
+                            self.seedTemporaryState(isQuiperPrivate: false, for: unlockedService.id, sessionIndex: sessionIndex)
                             
                             // Load real URL
                             var targetURLString = requestedURL ?? unlockedService.url
@@ -884,7 +964,7 @@ final class WebViewManager: NSObject {
             }
             
             if loadImmediately {
-                let activeURLString = targetURL ?? service.url
+                let activeURLString = requestedURLString
                 if let url = URL(string: activeURLString) {
                     if url.isFileURL {
                         webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -895,14 +975,14 @@ final class WebViewManager: NSObject {
                     showLoadError(WebLoadError(kind: .invalidURL), for: webview)
                 }
             } else {
-                pendingLazyLoadURLs[token] = targetURL ?? service.url
+                pendingLazyLoadURLs[token] = requestedURLString
             }
         }
         
         return webview
     }
     
-    private func createWebViewInstance(for service: Service, sessionIndex: Int, bounds: NSRect, isPersistent: Bool) -> WKWebView {
+    private func createWebViewInstance(for service: Service, sessionIndex: Int, bounds: NSRect, isPersistent: Bool, isQuiperPrivate: Bool = false) -> WKWebView {
         let userContentController = WKUserContentController()
         let config = WKWebViewConfiguration()
         config.userContentController = userContentController
@@ -917,26 +997,35 @@ final class WebViewManager: NSObject {
             config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
         }
 
-        let cssToInject = Settings.shared.customCSS(for: service)
+        let cssToInject = isQuiperPrivate ? "" : Settings.shared.customCSS(for: service)
         if !cssToInject.isEmpty {
             let userScript = WKUserScript(source: WebScripts.makeCustomCSSInjectionScript(css: cssToInject), injectionTime: .atDocumentEnd, forMainFrameOnly: false)
             userContentController.addUserScript(userScript)
         }
 
-        // Inject input setter interceptor script at document start
-        let startScript = WebScripts.makeValueSetterInterceptorScript()
-        userContentController.addUserScript(startScript)
+        if !isQuiperPrivate {
+            // Inject input setter interceptor script at document start
+            let startScript = WebScripts.makeValueSetterInterceptorScript()
+            userContentController.addUserScript(startScript)
 
-        // Inject input state tracking user script
-        let inputScript = WebScripts.makeInputStateTrackerScript(
-            selector: Settings.shared.promptInputSelector(for: service),
-            initiallyActive: false
+            // Inject input state tracking user script
+            let inputScript = WebScripts.makeInputStateTrackerScript(
+                selector: Settings.shared.promptInputSelector(for: service),
+                initiallyActive: false
+            )
+            userContentController.addUserScript(inputScript)
+
+            let inputHandler = InputStateScriptMessageHandler(manager: self)
+            userContentController.add(inputHandler, name: "quiperInputState")
+            userContentController.add(inputHandler, name: "quiperInputTrackerReady")
+        }
+        NSLog(
+            "[Quiper][Temporary] webview created for %@ session %d with %d scripts (private=%d)",
+            service.name,
+            sessionIndex,
+            userContentController.userScripts.count,
+            isQuiperPrivate ? 1 : 0
         )
-        userContentController.addUserScript(inputScript)
-        
-        let inputHandler = InputStateScriptMessageHandler(manager: self)
-        userContentController.add(inputHandler, name: "quiperInputState")
-        userContentController.add(inputHandler, name: "quiperInputTrackerReady")
 
         let webview = WKWebView(frame: bounds, configuration: config)
         webview.setValue(false, forKey: "drawsBackground")
@@ -946,7 +1035,11 @@ final class WebViewManager: NSObject {
         webview.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         webview.pageZoom = zoomLevels[service.id] ?? 1.0
         
-        attachNotificationBridge(to: webview, service: service, sessionIndex: sessionIndex)
+        // Ephemeral tabs get no notification bridge either: any page-visible
+        // handler name lets websites detect Quiper.
+        if !isQuiperPrivate {
+            attachNotificationBridge(to: webview, service: service, sessionIndex: sessionIndex)
+        }
         
         // Add observers
         webview.addObserver(self, forKeyPath: "title", options: .new, context: nil)
