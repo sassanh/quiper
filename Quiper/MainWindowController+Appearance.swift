@@ -177,8 +177,14 @@ extension MainWindowController {
         // the Space owned by Quiper's own fullscreen content: pin it to a
         // single Space instead of joining all of them, or every Space switch
         // would drag it into the fullscreen Space (`.moveToActiveSpace`).
-        if ownedElementFullscreenSpace != nil {
+        // Gate on the session flag, not on the fullscreen window identity,
+        // so the pin applies before WebKit's fullscreen window exists
+        // (`.enteringFullscreen` / `willEnterFullScreen`) — otherwise
+        // WindowServer clones the `canJoinAllSpaces` overlay into the new
+        // fullscreen Space for a frame and it blinks.
+        if isWebContentFullscreen {
             window.collectionBehavior = [.fullScreenAuxiliary, .stationary]
+            blurWindow?.collectionBehavior = [.fullScreenAuxiliary, .stationary, .ignoresCycle]
             return
         }
 

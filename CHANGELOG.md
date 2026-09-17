@@ -12,6 +12,7 @@
 
 ### Fixed
 
+- **No Flash When Entering Element Fullscreen**: Fullscreening page content now switches cleanly to the fullscreen Space without flashing the Quiper window at its original size, and the overlay returns to its origin Space on exit.
 - **Routing Rules Apply Inside Popup Windows**: Links clicked inside a popup window now follow the engine's routing rules — Internal stays in the popup, Popup opens a new window, Safari opens externally, and Prompt asks — instead of always loading in the same popup.
 - **Find Bar Responds to Mouse Clicks**: The find bar's search field, Previous/Next buttons, and Done button now receive clicks again instead of passing them to the page underneath.
 

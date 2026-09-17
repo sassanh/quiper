@@ -716,6 +716,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NotificationCenter.default.post(name: .windowDidHide, object: nil)
     }
 
+    /// Single gate for entering an element-fullscreen session: pins the
+    /// overlay to a single Space and hides it *before* WindowServer creates
+    /// the fullscreen Space, so the `canJoinAllSpaces` overlay is never
+    /// composited into the new Space (the blink). Idempotent: safe to call
+    /// from `.enteringFullscreen`, `.inFullscreen`, `willEnterFullScreen`
+    /// and `didEnterFullScreen`.
+    private func beginElementFullscreenSession() {
+        updateCollectionBehaviorForVisibilityState()
+        window?.orderOut(nil)
+    }
+
     func handleElementFullscreenStateChange(
         _ state: WKWebView.FullscreenState,
         for webView: WKWebView
@@ -729,9 +740,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 elementFullscreenOriginSpace = CGSFuncs.activeSpace(for: window.screen)
                     ?? CGSFuncs.spaces(for: window).first
             }
+            // Hide before WindowServer creates the fullscreen Space.
+            // Waiting for `didEnterFullScreen` lets the `canJoinAllSpaces`
+            // overlay appear in the new Space for a frame (the blink).
+            beginElementFullscreenSession()
         case .inFullscreen:
             elementFullscreenWebView = webView
             isWebContentFullscreen = true
+            // Covers a missed `.enteringFullscreen` KVO; idempotent.
+            beginElementFullscreenSession()
         case .exitingFullscreen:
             guard elementFullscreenWebView === webView, let window else { return }
 
@@ -1462,6 +1479,7 @@ struct SecureTabState: Codable {
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettings), name: .settingsWindowDidOpen, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleCloseSettings), name: .settingsWindowDidClose, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleServicesIconsUpdated), name: .servicesIconsUpdated, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleWindowWillEnterWebFullScreen), name: NSWindow.willEnterFullScreenNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowEnteredWebFullScreen), name: NSWindow.didEnterFullScreenNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowWillExitWebFullScreen), name: NSWindow.willExitFullScreenNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidExitWebFullScreen), name: NSWindow.didExitFullScreenNotification, object: nil)
@@ -1539,6 +1557,15 @@ struct SecureTabState: Codable {
         refreshServiceSegments()
     }
     
+    @objc private func handleWindowWillEnterWebFullScreen(_ notification: Notification) {
+        // Early backup for cases where the `fullscreenState` KVO has not
+        // fired yet (timing lag) or the fullscreen webView is an unmanaged
+        // popup (no KVO observer): hide before the Space switch, not after.
+        guard let window = notification.object as? NSWindow, window !== self.window else { return }
+        isWebContentFullscreen = true
+        beginElementFullscreenSession()
+    }
+
     @objc private func handleWindowEnteredWebFullScreen(_ notification: Notification) {
         // The notification's window is WebKit's element-fullscreen window (it is
         // the only non-overlay window in the app that can enter fullscreen). Use
@@ -1547,25 +1574,13 @@ struct SecureTabState: Codable {
         webFullScreenWindow = window
         isWebContentFullscreen = true
 
-        // Pin the overlay to a single Space while the fullscreen Space
-        // exists so `.canJoinAllSpaces` does not keep it on the fullscreen
-        // Space. The CGS move on exit will bring it back, and
-        // `clearElementFullscreenState` will restore `canJoinAllSpaces` if
-        // the setting is enabled — the change from `.stationary` to
-        // `.canJoinAllSpaces` is what forces WindowServer to re-add the
-        // window to all Spaces. Without this pin the window stays
-        // `.canJoinAllSpaces` through the session and the CGS move on exit
-        // pins it to a single Space with no subsequent behavior change to
-        // undo it (hence “show on all Spaces” sticks on one Space until
-        // toggled).
-        updateCollectionBehaviorForVisibilityState()
-
-        // The element's fullscreen Space is now owned by Quiper's own web
-        // content, and a visible overlay would be dragged into it by
-        // `.moveToActiveSpace` on the Space switch. Hide it for the duration
-        // of the session — the exitingFullscreen handler brings it back to
-        // its origin Space afterwards.
-        self.window?.orderOut(nil)
+        // The overlay was already pinned and hidden by
+        // `beginElementFullscreenSession` on `.enteringFullscreen` /
+        // `willEnterFullScreen`; re-assert here for sessions where those
+        // early signals were missed. The CGS move on exit brings it back,
+        // and `clearElementFullscreenState` restores `canJoinAllSpaces` if
+        // the setting is enabled.
+        beginElementFullscreenSession()
         NSLog("[FullSpace] entered: fsWindowSpaces=\(CGSFuncs.spaces(for: window).map(String.init(describing:)).joined(separator: ",")) overlaySpaces=\(self.window.map { CGSFuncs.spaces(for: $0).map(String.init(describing:)).joined(separator: ",") } ?? "nil")")
     }
     
