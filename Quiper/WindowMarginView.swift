@@ -22,6 +22,9 @@ class WindowMarginView: NSView {
     
     private(set) var currentThickEdge: ThickEdge = .none
     private(set) var isRevealed: Bool = false
+    private var isWindowFocused = true
+    private var lastFocusEffectOn = false
+    private var focusEffectOn: Bool { !isWindowFocused && Settings.shared.focusLossEffectEnabled }
     
     func configureBarEdge(_ edge: ThickEdge) {
         updatePath(animated: false)
@@ -133,15 +136,26 @@ class WindowMarginView: NSView {
         
         updatePath(animated: false)
         
+        let targetOpacity: Float = revealed ? (focusEffectOn ? 0.35 : 1.0) : 0.0
         if animated {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.2
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                borderLayer.opacity = revealed ? 1.0 : 0.0
+                borderLayer.opacity = targetOpacity
             }
         } else {
-            borderLayer.opacity = revealed ? 1.0 : 0.0
+            borderLayer.opacity = targetOpacity
         }
+    }
+
+    /// Dims the reveal ring when the focus-loss effect is active. No
+    /// animation; focus flips are state, not transitions to showcase.
+    func setWindowFocused(_ focused: Bool) {
+        let effectOn = !focused && Settings.shared.focusLossEffectEnabled
+        guard isWindowFocused != focused || lastFocusEffectOn != effectOn else { return }
+        isWindowFocused = focused
+        lastFocusEffectOn = effectOn
+        borderLayer.opacity = isRevealed ? (effectOn ? 0.35 : 1.0) : 0.0
     }
     
     private func updatePath(animated: Bool) {

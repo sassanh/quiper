@@ -38,6 +38,17 @@ struct KeyBindingsSettingsView: View {
                     )
                 }
 
+                Section("Engine Number Shortcuts") {
+                    SettingsLabeledControlRow(
+                        title: "Global Engine Number Shortcuts",
+                        detail: "Use the primary “Go to engine 1–10” modifier everywhere in macOS. The alternate modifier remains available only inside Quiper."
+                    ) {
+                        GlobalEngineNumberShortcutsPicker {
+                            appController?.reloadServices()
+                        }
+                    }
+                }
+
                 Section("Control Center HUD") {
                     SettingsLabeledControlRow(
                         title: "Double tap Command",

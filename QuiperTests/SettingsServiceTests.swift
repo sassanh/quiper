@@ -39,6 +39,54 @@ struct SettingsServiceTests {
         #expect(decoded.quiperVersion == Bundle.main.versionDisplayString)
     }
 
+    @Test func focusLossEffect_DefaultsToEnabledAndRoundTrips() throws {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        #expect(Settings.shared.focusLossEffectEnabled == true)
+
+        Settings.shared.focusLossEffectEnabled = false
+        let data = try JSONEncoder().encode(Settings.shared.makePersistedSettings())
+        let decoded = try JSONDecoder().decode(PersistedSettings.self, from: data)
+        #expect(decoded.focusLossEffectEnabled == false)
+
+        Settings.shared.applyPersistedSettings(decoded)
+        #expect(Settings.shared.focusLossEffectEnabled == false)
+
+        let legacyData = Data(
+            """
+            {
+              "services": [],
+              "version": 1
+            }
+            """.utf8
+        )
+        let legacy = try JSONDecoder().decode(PersistedSettings.self, from: legacyData)
+        #expect(legacy.focusLossEffectEnabled == nil)
+        Settings.shared.applyPersistedSettings(legacy)
+        #expect(Settings.shared.focusLossEffectEnabled == true)
+    }
+
+    @Test func focusLossBehavior_MapsBothBooleans() throws {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        #expect(Settings.shared.focusLossBehavior == .dim)
+
+        Settings.shared.focusLossBehavior = .unchanged
+        #expect(Settings.shared.hideOnFocusLoss == false)
+        #expect(Settings.shared.focusLossEffectEnabled == false)
+
+        Settings.shared.focusLossBehavior = .hide
+        #expect(Settings.shared.hideOnFocusLoss == true)
+
+        Settings.shared.focusLossBehavior = .dim
+        #expect(Settings.shared.hideOnFocusLoss == false)
+        #expect(Settings.shared.focusLossEffectEnabled == true)
+    }
+
     @Test func selectorDisplayModes_LegacySharedModeMigratesToBothSelectors() throws {
         Settings.shared.wipeAllData()
         _ = Settings.shared.loadSettings()

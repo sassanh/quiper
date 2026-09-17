@@ -441,6 +441,12 @@ final class QuickTooltip: NSPanel {
         }
     }
     
+    /// Freeze the tooltip spinner while the main window is unfocused.
+    /// Intent is preserved; it resumes if still loading on refocus.
+    func setWindowFocused(_ focused: Bool) {
+        loadingBorderView.setWindowFocused(focused)
+    }
+
     /// Hide the tooltip immediately and invalidate any delayed work.
     func hideImmediately() {
         hideTask?.cancel()

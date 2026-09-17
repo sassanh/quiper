@@ -133,6 +133,15 @@ class SettingsWindow: NSWindow {
     }
 }
 
+/// What Quiper does when it loses focus. UI-level view over the
+/// `hideOnFocusLoss` / `focusLossEffectEnabled` pair, which stay the
+/// persisted source of truth so no migration is needed.
+enum FocusLossBehavior: String, CaseIterable, Sendable {
+    case hide
+    case dim
+    case unchanged
+}
+
 @MainActor
 class Settings: ObservableObject {
     static let shared = Settings()
@@ -190,6 +199,35 @@ class Settings: ObservableObject {
     @Published var hideOnFocusLoss: Bool = false {
         didSet {
             saveSettings()
+        }
+    }
+    /// Dims chrome, fades content, and shields clicks when the overlay loses
+    /// focus. Animation freeze and the composer indicator hide always apply.
+    @Published var focusLossEffectEnabled: Bool = true {
+        didSet {
+            NotificationCenter.default.post(name: .focusLossEffectChanged, object: nil)
+            saveSettings()
+        }
+    }
+    /// Tri-state view over `hideOnFocusLoss` / `focusLossEffectEnabled` for
+    /// the Focus settings row. Hide wins on read; the effect value is left
+    /// untouched so switching back to Dim restores the previous choice.
+    var focusLossBehavior: FocusLossBehavior {
+        get {
+            if hideOnFocusLoss { return .hide }
+            return focusLossEffectEnabled ? .dim : .unchanged
+        }
+        set {
+            switch newValue {
+            case .hide:
+                hideOnFocusLoss = true
+            case .dim:
+                hideOnFocusLoss = false
+                focusLossEffectEnabled = true
+            case .unchanged:
+                hideOnFocusLoss = false
+                focusLossEffectEnabled = false
+            }
         }
     }
     @Published var automaticallySwitchEngineOnLastSessionClose: Bool = true
@@ -317,6 +355,7 @@ class Settings: ObservableObject {
         preservedIOSHardwareKeyboardSettings = nil
         showOnAllSpaces = false
         hideOnFocusLoss = false
+        focusLossEffectEnabled = true
         settingsColorStyle = .colorful
         tabSurvivalPolicy = .always
         tabNavigationRingSize = 2
@@ -519,6 +558,7 @@ class Settings: ObservableObject {
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         hideOnFocusLoss = persisted.hideOnFocusLoss ?? false
+        focusLossEffectEnabled = persisted.focusLossEffectEnabled ?? true
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
         enablePromptHistory = persisted.enablePromptHistory ?? true
         promptRecordingIndicatorStyle = persisted.promptRecordingIndicatorStyle ?? .dashed
@@ -596,6 +636,7 @@ class Settings: ObservableObject {
                                             enableHUDCmdEscape: enableHUDCmdEscape,
                                             showOnAllSpaces: showOnAllSpaces,
                                             hideOnFocusLoss: hideOnFocusLoss,
+                                            focusLossEffectEnabled: focusLossEffectEnabled,
                                             settingsColorStyle: settingsColorStyle,
                                             tabSurvivalPolicy: tabSurvivalPolicy,
                                             persistedTabState: persistedTabState,
@@ -710,6 +751,7 @@ class Settings: ObservableObject {
             enableHUDCmdEscape: enableHUDCmdEscape,
             showOnAllSpaces: showOnAllSpaces,
             hideOnFocusLoss: hideOnFocusLoss,
+            focusLossEffectEnabled: focusLossEffectEnabled,
             settingsColorStyle: settingsColorStyle,
             tabSurvivalPolicy: tabSurvivalPolicy,
             persistedTabState: tabStateForExport,
@@ -941,6 +983,7 @@ class Settings: ObservableObject {
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         hideOnFocusLoss = persisted.hideOnFocusLoss ?? false
+        focusLossEffectEnabled = persisted.focusLossEffectEnabled ?? true
         settingsColorStyle = persisted.settingsColorStyle ?? .colorful
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
         tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2

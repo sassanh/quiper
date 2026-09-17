@@ -25,6 +25,11 @@ class WindowOutlineView: NSView {
     
     private var outlineWidth: CGFloat = 1.0
     private var isEphemeralOutline = false
+    private var isWindowFocused = true
+    private var lastFocusEffectOn = false
+    /// Visual dimming applies only when the focus-loss effect is enabled.
+    /// Animation freezing follows focus regardless of the setting.
+    private var focusEffectOn: Bool { !isWindowFocused && Settings.shared.focusLossEffectEnabled }
     private var effectiveOutlineWidth: CGFloat {
         outlineWidth + (isEphemeralOutline ? 2.0 : 0)
     }
@@ -96,7 +101,12 @@ class WindowOutlineView: NSView {
         
         outlineWidth = settings.outlineWidth
         outlineLayer.lineWidth = effectiveOutlineWidth
-        if isEphemeralOutline {
+        if focusEffectOn {
+            // Gray border while the focus-loss effect is active so a
+            // visible-but-inactive overlay reads differently. Dash pattern
+            // (ephemeral) is preserved; only the color yields to the signal.
+            outlineLayer.strokeColor = NSColor.systemGray.cgColor
+        } else if isEphemeralOutline {
             // Themed contrast like the loading spinner: follows the user
             // accent in both appearances instead of absolute colors.
             outlineLayer.strokeColor = NSColor.controlAccentColor.cgColor
@@ -144,7 +154,7 @@ class WindowOutlineView: NSView {
         outlineLayer.lineDashPattern = ephemeral ? [12, 8] as [NSNumber] : nil
         updateColors()
         updatePath(animated: false)
-        if isLoading {
+        if isLoading && isWindowFocused {
             addLoadingAnimation()
         }
     }
@@ -154,12 +164,30 @@ class WindowOutlineView: NSView {
         isLoading = loading
         updatePath(animated: false)
 
-        if loading {
+        if loading && isWindowFocused {
             addLoadingAnimation()
         } else {
             loadingSegmentLayer.removeAnimation(forKey: "lineDashPhaseAnimation")
         }
 
+        updateLayerOpacity()
+    }
+
+    /// Tracks focus for animation freezing, which always applies, and
+    /// refreshes the gated gray/dim effect when the setting changes.
+    func setWindowFocused(_ focused: Bool) {
+        let effectOn = !focused && Settings.shared.focusLossEffectEnabled
+        guard isWindowFocused != focused || lastFocusEffectOn != effectOn else { return }
+        isWindowFocused = focused
+        lastFocusEffectOn = effectOn
+        updateColors()
+        if isLoading {
+            if focused {
+                addLoadingAnimation()
+            } else {
+                loadingSegmentLayer.removeAnimation(forKey: "lineDashPhaseAnimation")
+            }
+        }
         updateLayerOpacity()
     }
 
@@ -192,7 +220,7 @@ class WindowOutlineView: NSView {
             loadingSegmentLayer.lineDashPattern = [segmentLength, max(pathLength - segmentLength, 1.0)] as [NSNumber]
         }
 
-        if isLoading {
+        if isLoading && isWindowFocused {
             addLoadingAnimation()
         }
     }
@@ -251,10 +279,16 @@ class WindowOutlineView: NSView {
     }
 
     private func updateLayerOpacity() {
+        // While unfocused the loading animation is gone; the static outline
+        // stays visible so the window keeps its border, dimmed and gray when
+        // the focus-loss effect is enabled.
+        let isLoadingVisible = isLoading && isWindowFocused
+        let dimFactor: Float = focusEffectOn ? 0.6 : 1.0
         // The reveal ring would hide the dashes; ephemeral keeps the outline
         // above it so the temporary state stays visible while peeking.
-        outlineLayer.opacity = isLoading ? 0.0 : (isRevealed && !isEphemeralOutline ? 0.0 : 1.0)
-        loadingBaseLayer.opacity = isLoading ? 1.0 : 0.0
-        loadingSegmentLayer.opacity = isLoading ? 1.0 : 0.0
+        let baseOutlineOpacity: Float = isLoadingVisible ? 0.0 : (isRevealed && !isEphemeralOutline ? 0.0 : 1.0)
+        outlineLayer.opacity = baseOutlineOpacity * dimFactor
+        loadingBaseLayer.opacity = isLoadingVisible ? 1.0 : 0.0
+        loadingSegmentLayer.opacity = isLoadingVisible ? 1.0 : 0.0
     }
 }

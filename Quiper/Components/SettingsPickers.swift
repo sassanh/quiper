@@ -1215,60 +1215,87 @@ struct TabNavigationRingSizePicker: View {
     }
 }
 
-struct HideOnFocusLossPicker: View {
+struct FocusLossBehaviorPicker: View {
     @ObservedObject private var settings = Settings.shared
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: { settings.hideOnFocusLoss = true }) {
-                VStack(spacing: 8) {
-                    focusPreview(isEnabled: true)
-                        .padding(8)
-                        .pickerCardStyle(
-                            isSelected: settings.hideOnFocusLoss,
-                            accentColor: .blue
-                        )
+            optionButton(
+                behavior: .hide,
+                title: "Hide",
+                accessibilityIdentifier: "FocusLossBehaviorHide"
+            ) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                        .frame(width: 48, height: 32)
 
-                    Text("Hide")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(settings.hideOnFocusLoss ? .primary : .secondary)
+                    Image(systemName: "eye.slash.fill")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color.blue.settingsResolved)
                 }
+                .frame(width: 56, height: 36)
             }
-            .buttonStyle(.plain)
 
-            Button(action: { settings.hideOnFocusLoss = false }) {
-                VStack(spacing: 8) {
-                    focusPreview(isEnabled: false)
-                        .padding(8)
-                        .pickerCardStyle(
-                            isSelected: !settings.hideOnFocusLoss,
-                            accentColor: .blue
-                        )
+            optionButton(
+                behavior: .dim,
+                title: "Dim",
+                accessibilityIdentifier: "FocusLossBehaviorDim"
+            ) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(Color.gray, lineWidth: 1)
+                        .frame(width: 48, height: 32)
 
-                    Text("Keep visible")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(settings.hideOnFocusLoss ? .secondary : .primary)
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Color.blue.settingsResolved.opacity(0.3))
+                        .frame(width: 36, height: 20)
                 }
+                .frame(width: 56, height: 36)
             }
-            .buttonStyle(.plain)
+
+            optionButton(
+                behavior: .unchanged,
+                title: "Unchanged",
+                accessibilityIdentifier: "FocusLossBehaviorUnchanged"
+            ) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                        .frame(width: 48, height: 32)
+
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Color.blue.settingsResolved)
+                        .frame(width: 36, height: 20)
+                }
+                .frame(width: 56, height: 36)
+            }
         }
-        .frame(width: 260, alignment: .trailing)
+        .frame(width: 300, alignment: .trailing)
+        .accessibilityIdentifier("FocusLossBehavior")
     }
 
-    private func focusPreview(isEnabled: Bool) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
-                .frame(width: 48, height: 32)
+    private func optionButton<Preview: View>(
+        behavior: FocusLossBehavior,
+        title: String,
+        accessibilityIdentifier: String,
+        @ViewBuilder preview: () -> Preview
+    ) -> some View {
+        Button(action: { settings.focusLossBehavior = behavior }) {
+            VStack(spacing: 8) {
+                preview()
+                    .padding(8)
+                    .pickerCardStyle(
+                        isSelected: settings.focusLossBehavior == behavior,
+                        accentColor: .blue
+                    )
 
-            Image(systemName: isEnabled ? "eye.slash.fill" : "eye.fill")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(
-                    isEnabled
-                        ? Color.blue.settingsResolved
-                        : Color.secondary.opacity(0.5)
-                )
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(settings.focusLossBehavior == behavior ? .primary : .secondary)
+            }
         }
-        .frame(width: 56, height: 36)
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 }

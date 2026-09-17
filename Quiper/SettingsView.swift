@@ -241,20 +241,7 @@ struct GeneralSettingsView: View {
                     }
                 }
                 
-                SettingsSection(title: "Behavior", icon: "slider.horizontal.3", iconColor: .blue.settingsResolved) {
-                    SettingsRow(
-                        title: "Global Engine Number Shortcuts",
-                        message: "Use the primary “Go to engine 1–10” modifier everywhere in macOS. The alternate modifier remains available only inside Quiper.",
-                        icon: "keyboard.badge.ellipsis",
-                        iconColor: .blue.settingsResolved
-                    ) {
-                        GlobalEngineNumberShortcutsPicker {
-                            appController?.reloadServices()
-                        }
-                    }
-
-                    SettingsDivider()
-
+                SettingsSection(title: "Tabs", icon: "square.stack.3d.down.right.fill", iconColor: .blue.settingsResolved) {
                     SettingsRow(
                         title: "Session Switching",
                         message: "Manage automatic switching between engines and auto-creating empty sessions.",
@@ -285,16 +272,16 @@ struct GeneralSettingsView: View {
                     ) {
                         TabNavigationRingSizePicker()
                     }
+                }
 
-                    SettingsDivider()
-
+                SettingsSection(title: "Focus", icon: "eye.fill", iconColor: .blue.settingsResolved) {
                     SettingsRow(
-                        title: "Hide on focus loss",
-                        message: "Hide Quiper when it loses focus.",
+                        title: "On focus loss",
+                        message: "Choose what happens when Quiper loses focus. Animations stop regardless.",
                         icon: "eye.slash",
                         iconColor: .blue.settingsResolved
                     ) {
-                        HideOnFocusLossPicker()
+                        FocusLossBehaviorPicker()
                     }
                 }
 

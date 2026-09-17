@@ -3,6 +3,61 @@ import AppKit
 extension MainWindowController {
     
     // MARK: - Appearance & Theming
+
+    /// True only when the user can actually interact with the overlay content.
+    /// Settings and update prompts take key in child windows; the overlay
+    /// behind them counts as unfocused so its animations freeze.
+    var hasWindowFocus: Bool {
+        guard let window else { return false }
+        guard window.isKeyWindow, NSApp.isActive else { return false }
+        if AppDelegate.sharedSettingsWindow.isVisible { return false }
+        if UpdatePromptWindowController.shared.window?.isVisible == true { return false }
+        return true
+    }
+
+    /// Single gate for focus-driven chrome state. Animation freezing
+    /// (outline, title border, tooltip) and the composer indicator hide
+    /// always follow focus. Visuals (vibrancy, outline/margin dim, header
+    /// dim, content transparency, focus shield) follow the focus-loss
+    /// effect setting. Web content is only faded, never recolored.
+    func updateFocusAppearance() {
+        let focused = hasWindowFocus
+        let effectOn = !focused && Settings.shared.focusLossEffectEnabled
+        windowOutlineView?.setWindowFocused(focused)
+        windowMarginView?.setWindowFocused(focused)
+        loadingBorderView?.setWindowFocused(focused)
+        QuickTooltip.shared.setWindowFocused(focused)
+        webViewManager?.setWindowHasFocus(focused)
+        backgroundEffectView?.state = effectOn ? .inactive : .active
+        webViewManager?.setContentTransparent(effectOn)
+        emptyStateView?.alphaValue = effectOn ? 0.5 : 1.0
+        setHeaderDimmed(effectOn)
+        setFocusShieldHidden(!effectOn)
+    }
+
+    /// Shows the transparent focus shield when unfocused. Repositions it
+    /// directly below the header first: web wrappers added later also go
+    /// below the header and would otherwise end up above the shield.
+    private func setFocusShieldHidden(_ hidden: Bool) {
+        guard let shieldView = focusShieldView else { return }
+        if hidden {
+            shieldView.isHidden = true
+        } else {
+            if let contentView = window?.contentView, let drag = dragArea,
+               shieldView.superview === contentView {
+                contentView.addSubview(shieldView, positioned: .below, relativeTo: drag)
+            }
+            shieldView.isHidden = false
+        }
+    }
+
+    /// Dims header controls when unfocused. This gate owns dragArea
+    /// subviews' alphaValue; subviews must not manage their own alpha.
+    /// dragArea.alphaValue itself stays owned by header show/hide logic.
+    private func setHeaderDimmed(_ dimmed: Bool) {
+        let alpha: CGFloat = dimmed ? 0.5 : 1.0
+        dragArea?.subviews.forEach { $0.alphaValue = alpha }
+    }
     
     @objc func appearanceSettingsChanged() {
         updateWindowMarginAndLayout()
@@ -147,5 +202,9 @@ extension MainWindowController {
     
     @objc func handleShowOnAllSpacesChanged(_ notification: Notification) {
         updateCollectionBehaviorForVisibilityState()
+    }
+
+    @objc func handleFocusLossEffectChanged(_ notification: Notification) {
+        updateFocusAppearance()
     }
 }

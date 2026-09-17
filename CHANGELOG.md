@@ -6,7 +6,8 @@
 
 - **Unsaved-Changes Confirmation Before Closing Sessions**: Pages that report unsaved work now ask before the session closes — whether closing a tab, locking an engine, deleting it, resetting its data, or quitting. Staying keeps the session exactly as it was.
 - **Ephemeral Tabs for Private Browsing**: `Cmd+P` opens an isolated tab that never saves anything — no history, input, or titles reach disk. Engine shortcuts stay disabled inside it to protect your privacy, and a dashed window outline plus a title badge mark the mode. Ephemeral loads also drop Quiper's referral marker from engine URLs.
-- **Hide on Focus Loss**: A new Behavior setting hides Quiper automatically when it loses focus. It stays off by default and only hides the overlay when no other Quiper window is open.
+- **On Focus Loss Choice**: The new Focus settings offer Hide, Dim, or Unchanged when Quiper loses focus. Hide stays off unless chosen and only hides the overlay when no other Quiper window is open. Dim (the default) fades the window and its content so an inactive overlay is unmistakable, and the first click only refocuses instead of reaching the page. Loading and recording animations stop while unfocused regardless of the choice.
+- **Reorganized General Settings**: The Behavior section is now Tabs and Focus sections, and engine number shortcuts moved to the Shortcuts tab.
 - **Temporary Fallback Without Sign-In**: Starting a website temporary chat while logged out now opens an ephemeral tab in place instead of failing, and engines without temporary support do the same.
 
 ### Fixed

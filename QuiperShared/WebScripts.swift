@@ -286,6 +286,9 @@ enum WebScripts {
                     '  display: none;',
                     '  overflow: visible;',
                     '}',
+                    'html[data-quiper-focus="false"] #__quiper-recording-glow {',
+                    '  display: none !important;',
+                    '}',
                     '#__quiper-recording-glow svg {',
                     '  display: block;',
                     '  overflow: visible;',
@@ -465,6 +468,11 @@ enum WebScripts {
                 const indicatorStyle = recordingIndicatorStyle();
                 if (!window.__quiperRecordingEnabled || indicatorStyle === 'off') {
                     stopIndicatorTracking();
+                    return;
+                }
+                if (document.documentElement && document.documentElement.dataset.quiperFocus === 'false') {
+                    if (indicatorOverlay) indicatorOverlay.style.display = 'none';
+                    indicatedElement = null;
                     return;
                 }
                 const el = selector ? document.querySelector(selector) : null;

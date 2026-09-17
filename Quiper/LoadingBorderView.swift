@@ -9,17 +9,18 @@ class LoadingBorderView: NSView {
     private var containerLayer: CALayer?
     
     private(set) var isAnimating = false
+    private var isWindowFocused = true
     
     var cornerRadius: CGFloat = 6 {
-        didSet { if isAnimating { updateLayers() } }
+        didSet { if isAnimating && isWindowFocused { updateLayers() } }
     }
     
     var borderWidth: CGFloat = 2 {
-        didSet { if isAnimating { updateLayers() } }
+        didSet { if isAnimating && isWindowFocused { updateLayers() } }
     }
     
     var lineColor: NSColor = .controlAccentColor {
-        didSet { if isAnimating { updateLayers() } }
+        didSet { if isAnimating && isWindowFocused { updateLayers() } }
     }
     
     override init(frame frameRect: NSRect) {
@@ -40,7 +41,7 @@ class LoadingBorderView: NSView {
     
     override func layout() {
         super.layout()
-        if isAnimating {
+        if isAnimating && isWindowFocused {
             updateLayers()
         }
     }
@@ -106,9 +107,13 @@ class LoadingBorderView: NSView {
     func startAnimating() {
         guard !isAnimating else { return }
         isAnimating = true
-        isHidden = false
-        setAccessibilityElement(true)
-        updateLayers()
+        setAccessibilityElement(isWindowFocused)
+        if isWindowFocused {
+            isHidden = false
+            updateLayers()
+        } else {
+            isHidden = true
+        }
     }
     
     func stopAnimating() {
@@ -118,5 +123,24 @@ class LoadingBorderView: NSView {
         setAccessibilityElement(false)
         containerLayer?.removeFromSuperlayer()
         containerLayer = nil
+    }
+
+    /// Freezes the border animation while the window is unfocused, without
+    /// losing the intent. `isAnimating` keeps meaning "should animate when
+    /// focused" so existing callers are unaffected. No dimming here.
+    func setWindowFocused(_ focused: Bool) {
+        guard isWindowFocused != focused else { return }
+        isWindowFocused = focused
+        guard isAnimating else { return }
+        if focused {
+            isHidden = false
+            setAccessibilityElement(true)
+            updateLayers()
+        } else {
+            isHidden = true
+            setAccessibilityElement(false)
+            containerLayer?.removeFromSuperlayer()
+            containerLayer = nil
+        }
     }
 }

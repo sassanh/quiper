@@ -156,6 +156,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var windowMarginView: WindowMarginView!
     var windowOutlineView: WindowOutlineView!
     var loadingBorderView: LoadingBorderView!
+    var focusShieldView: FocusShieldView!
     var isLoadingObservation: NSKeyValueObservation?
     var sessionActionsButton: NSButton!
     var manualLockButton: NSButton!
@@ -888,7 +889,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         emptyStateView?.frame = cRect
         emptyStateView?.layer?.maskedCorners = contentMaskedCorners
         emptyStateView?.layer?.masksToBounds = true
-        
+
+        focusShieldView?.frame = cRect
+
         webViewManager.setContentFrame(cRect, animated: false)
         dragArea?.frame = dRect
         dragArea?.autoresizingMask = []
@@ -999,6 +1002,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         webViewManager.updateServices(services)
 
         restoreTabsState()
+
+        let shieldView = FocusShieldView(frame: .zero)
+        shieldView.isHidden = true
+        focusShieldView = shieldView
+        contentView.addSubview(shieldView, positioned: .below, relativeTo: dragArea)
 
         contentView.addSubview(windowMarginView, positioned: .below, relativeTo: dragArea)
         contentView.addSubview(windowOutlineView, positioned: .above, relativeTo: nil)
@@ -1450,6 +1458,7 @@ struct SecureTabState: Codable {
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleWorkspaceWake), name: NSWorkspace.didWakeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleColorSchemeChanged), name: .colorSchemeChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowOnAllSpacesChanged), name: .showOnAllSpacesChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleFocusLossEffectChanged), name: .focusLossEffectChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettings), name: .settingsWindowDidOpen, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleCloseSettings), name: .settingsWindowDidClose, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleServicesIconsUpdated), name: .servicesIconsUpdated, object: nil)
@@ -1500,6 +1509,7 @@ struct SecureTabState: Codable {
             hideLocationBarHUD()
         }
         updateHeaderVisibility(animated: true)
+        updateFocusAppearance()
     }
 
     @objc private func handleWorkspaceWake(_ notification: Notification) {
@@ -1913,11 +1923,13 @@ struct SecureTabState: Codable {
         let settingsWindow = AppDelegate.sharedSettingsWindow
         if settingsWindow.isVisible {
             settingsWindow.makeKeyAndOrderFront(nil)
+            updateFocusAppearance()
             return
         }
 
         if let updateWindow = UpdatePromptWindowController.shared.window, updateWindow.isVisible {
             updateWindow.makeKeyAndOrderFront(nil)
+            updateFocusAppearance()
             return
         }
 
@@ -1929,9 +1941,11 @@ struct SecureTabState: Codable {
             $0 != blurWindow
         } ?? []
         if !otherChildWindows.isEmpty {
+            updateFocusAppearance()
             return
         }
-        
+
+        updateFocusAppearance()
         focusInputInActiveWebviewWithFallback()
 
         // Cold path: once onboarding completes, the manager is never entered.
@@ -1949,6 +1963,7 @@ struct SecureTabState: Codable {
         }
 
         PreviousTabHotkeyManager.shared.unregister()
+        updateFocusAppearance()
         if let keyWindow = NSApp.keyWindow,
            window?.childWindows?.contains(keyWindow) == true {
             return

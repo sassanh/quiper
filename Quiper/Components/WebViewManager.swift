@@ -103,6 +103,7 @@ final class WebViewManager: NSObject {
     // State needed for logic
     private var services: [Service] = []
     private var zoomLevels: [UUID: CGFloat] = [:]
+    private(set) var windowHasFocus = true
     
     // Dependencies
     private weak var containerView: NSView?
@@ -528,9 +529,11 @@ final class WebViewManager: NSObject {
         case .off:
             style = "off"
         }
+        let focusValue = windowHasFocus ? "true" : "false"
         let js = """
         window.__quiperRecordingIndicatorStyle = "\(style)";
         window.__quiperRecordingEnabled = \(enabled ? "true" : "false");
+        document.documentElement.dataset.quiperFocus = "\(focusValue)";
         if (typeof window.__quiperUpdateRecordingIndicator === 'function') {
             window.__quiperUpdateRecordingIndicator();
         } else {
@@ -543,6 +546,33 @@ final class WebViewManager: NSObject {
         }
         """
         webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    /// Makes web content see-through when the focus-loss effect is active,
+    /// so focus loss reads through the page itself. Clicks are still caught
+    /// by the focus shield above the wrappers, never by the page.
+    private var lastContentTransparent = false
+    func setContentTransparent(_ transparent: Bool) {
+        guard lastContentTransparent != transparent else { return }
+        lastContentTransparent = transparent
+        let alpha: CGFloat = transparent ? 0.5 : 1.0
+        for wrapperMap in wrappersByID.values {
+            for wrapper in wrapperMap.values {
+                wrapper.alphaValue = alpha
+            }
+        }
+    }
+
+    /// Pushes window focus to every managed webview so the composer recording
+    /// indicator can hide its animations while unfocused. Ephemeral tabs are
+    /// skipped: they carry no Quiper markers and must stay marker-free.
+    func setWindowHasFocus(_ focused: Bool) {
+        guard windowHasFocus != focused else { return }
+        windowHasFocus = focused
+        // Re-evaluate indicator visibility against the new focus state.
+        // applyRecordingIndicatorState stamps the dataset, covering pages
+        // whose document was replaced since the last push.
+        refreshAllRecordingIndicators()
     }
 
     func refreshAllRecordingIndicators() {
