@@ -1214,3 +1214,61 @@ struct TabNavigationRingSizePicker: View {
         .frame(width: 260, alignment: .trailing)
     }
 }
+
+struct HideOnFocusLossPicker: View {
+    @ObservedObject private var settings = Settings.shared
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: { settings.hideOnFocusLoss = true }) {
+                VStack(spacing: 8) {
+                    focusPreview(isEnabled: true)
+                        .padding(8)
+                        .pickerCardStyle(
+                            isSelected: settings.hideOnFocusLoss,
+                            accentColor: .blue
+                        )
+
+                    Text("Hide")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.hideOnFocusLoss ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { settings.hideOnFocusLoss = false }) {
+                VStack(spacing: 8) {
+                    focusPreview(isEnabled: false)
+                        .padding(8)
+                        .pickerCardStyle(
+                            isSelected: !settings.hideOnFocusLoss,
+                            accentColor: .blue
+                        )
+
+                    Text("Keep visible")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.hideOnFocusLoss ? .secondary : .primary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 260, alignment: .trailing)
+    }
+
+    private func focusPreview(isEnabled: Bool) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                .frame(width: 48, height: 32)
+
+            Image(systemName: isEnabled ? "eye.slash.fill" : "eye.fill")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(
+                    isEnabled
+                        ? Color.blue.settingsResolved
+                        : Color.secondary.opacity(0.5)
+                )
+        }
+        .frame(width: 56, height: 36)
+    }
+}

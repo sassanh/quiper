@@ -369,6 +369,7 @@ struct PersistedSettings: Codable {
     var enableHUDDoubleTapCmd: Bool?
     var enableHUDCmdEscape: Bool?
     var showOnAllSpaces: Bool?
+    var hideOnFocusLoss: Bool?
     var settingsColorStyle: SettingsColorStyle?
     var tabSurvivalPolicy: TabSurvivalPolicy?
     var persistedTabState: PersistedTabState?
@@ -404,6 +405,7 @@ struct PersistedSettings: Codable {
         case enableHUDDoubleTapCmd
         case enableHUDCmdEscape
         case showOnAllSpaces
+        case hideOnFocusLoss
         case settingsColorStyle
         case tabSurvivalPolicy
         case persistedTabState
@@ -452,6 +454,7 @@ struct PersistedSettings: Codable {
          enableHUDDoubleTapCmd: Bool? = nil,
          enableHUDCmdEscape: Bool? = nil,
          showOnAllSpaces: Bool? = nil,
+         hideOnFocusLoss: Bool? = nil,
          settingsColorStyle: SettingsColorStyle? = nil,
          tabSurvivalPolicy: TabSurvivalPolicy? = nil,
          persistedTabState: PersistedTabState? = nil,
@@ -491,6 +494,7 @@ struct PersistedSettings: Codable {
         self.enableHUDDoubleTapCmd = enableHUDDoubleTapCmd
         self.enableHUDCmdEscape = enableHUDCmdEscape
         self.showOnAllSpaces = showOnAllSpaces
+        self.hideOnFocusLoss = hideOnFocusLoss
         self.settingsColorStyle = settingsColorStyle
         self.tabSurvivalPolicy = tabSurvivalPolicy
         self.persistedTabState = persistedTabState
@@ -530,6 +534,7 @@ struct PersistedSettings: Codable {
          enableHUDDoubleTapCmd: Bool? = nil,
          enableHUDCmdEscape: Bool? = nil,
          showOnAllSpaces: Bool? = nil,
+         hideOnFocusLoss: Bool? = nil,
          settingsColorStyle: SettingsColorStyle? = nil,
          tabSurvivalPolicy: TabSurvivalPolicy? = nil,
          persistedTabState: PersistedTabState? = nil,
@@ -567,6 +572,7 @@ struct PersistedSettings: Codable {
         self.enableHUDDoubleTapCmd = enableHUDDoubleTapCmd
         self.enableHUDCmdEscape = enableHUDCmdEscape
         self.showOnAllSpaces = showOnAllSpaces
+        self.hideOnFocusLoss = hideOnFocusLoss
         self.settingsColorStyle = settingsColorStyle
         self.tabSurvivalPolicy = tabSurvivalPolicy
         self.persistedTabState = persistedTabState
@@ -653,6 +659,7 @@ struct PersistedSettings: Codable {
         enableHUDDoubleTapCmd = try container.decodeBoolIfPresent(forKey: .enableHUDDoubleTapCmd)
         enableHUDCmdEscape = try container.decodeBoolIfPresent(forKey: .enableHUDCmdEscape)
         showOnAllSpaces = try container.decodeBoolIfPresent(forKey: .showOnAllSpaces)
+        hideOnFocusLoss = try container.decodeBoolIfPresent(forKey: .hideOnFocusLoss)
         settingsColorStyle = try container.decodeIfPresent(SettingsColorStyle.self, forKey: .settingsColorStyle)
         tabSurvivalPolicy = try container.decodeIfPresent(TabSurvivalPolicy.self, forKey: .tabSurvivalPolicy)
         if !container.contains(.persistedTabState) {

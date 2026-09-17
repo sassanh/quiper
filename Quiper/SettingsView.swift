@@ -285,6 +285,17 @@ struct GeneralSettingsView: View {
                     ) {
                         TabNavigationRingSizePicker()
                     }
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Hide on focus loss",
+                        message: "Hide Quiper when it loses focus.",
+                        icon: "eye.slash",
+                        iconColor: .blue.settingsResolved
+                    ) {
+                        HideOnFocusLossPicker()
+                    }
                 }
 
                 SettingsSection(

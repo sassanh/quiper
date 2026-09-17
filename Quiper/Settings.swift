@@ -187,6 +187,11 @@ class Settings: ObservableObject {
             saveSettings()
         }
     }
+    @Published var hideOnFocusLoss: Bool = false {
+        didSet {
+            saveSettings()
+        }
+    }
     @Published var automaticallySwitchEngineOnLastSessionClose: Bool = true
     @Published var autoCreateSessionOnEmptyEngineActivation: Bool = true
     @Published var shouldPurgeDanglingWebData: Bool = true
@@ -311,6 +316,7 @@ class Settings: ObservableObject {
         globalEngineDigitShortcutsEnabled = false
         preservedIOSHardwareKeyboardSettings = nil
         showOnAllSpaces = false
+        hideOnFocusLoss = false
         settingsColorStyle = .colorful
         tabSurvivalPolicy = .always
         tabNavigationRingSize = 2
@@ -512,6 +518,7 @@ class Settings: ObservableObject {
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
+        hideOnFocusLoss = persisted.hideOnFocusLoss ?? false
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
         enablePromptHistory = persisted.enablePromptHistory ?? true
         promptRecordingIndicatorStyle = persisted.promptRecordingIndicatorStyle ?? .dashed
@@ -588,6 +595,7 @@ class Settings: ObservableObject {
                                             enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
                                             enableHUDCmdEscape: enableHUDCmdEscape,
                                             showOnAllSpaces: showOnAllSpaces,
+                                            hideOnFocusLoss: hideOnFocusLoss,
                                             settingsColorStyle: settingsColorStyle,
                                             tabSurvivalPolicy: tabSurvivalPolicy,
                                             persistedTabState: persistedTabState,
@@ -701,6 +709,7 @@ class Settings: ObservableObject {
             enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
             enableHUDCmdEscape: enableHUDCmdEscape,
             showOnAllSpaces: showOnAllSpaces,
+            hideOnFocusLoss: hideOnFocusLoss,
             settingsColorStyle: settingsColorStyle,
             tabSurvivalPolicy: tabSurvivalPolicy,
             persistedTabState: tabStateForExport,
@@ -931,6 +940,7 @@ class Settings: ObservableObject {
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
+        hideOnFocusLoss = persisted.hideOnFocusLoss ?? false
         settingsColorStyle = persisted.settingsColorStyle ?? .colorful
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
         tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2

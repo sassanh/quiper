@@ -520,6 +520,25 @@ final class AppController: NSObject, NSWindowDelegate {
     @objc private func handleApplicationDidResignActive(_ notification: Notification) {
         lastActiveTime = Date()
         pendingNotificationActivation = false
+        hideOverlayForFocusLossIfNeeded()
+    }
+
+    /// Hides the overlay when it loses focus, if the user enabled
+    /// "Hide on focus loss". Only hides when Quiper is alone: any other
+    /// Quiper window (Settings, update prompt, attached sheet, modal) or an
+    /// in-progress fullscreen/onboarding session inhibits the hide so nothing
+    /// is dismissed out from under the user.
+    private func hideOverlayForFocusLossIfNeeded() {
+        guard Settings.shared.hideOnFocusLoss else { return }
+        guard !Self.isRunningTests, !Constants.LaunchMode.shouldSuppressInterferenceUI else { return }
+        guard isWindowVisible else { return }
+        guard !windowController.isWebContentFullscreen else { return }
+        guard windowController.window?.attachedSheet == nil else { return }
+        guard NSApp.modalWindow == nil else { return }
+        guard !AppDelegate.sharedSettingsWindow.isVisible else { return }
+        guard UpdatePromptWindowController.shared.window?.isVisible != true else { return }
+        guard !GhostOnboardingManager.shared.isActive else { return }
+        hideWindow(nil)
     }
 
     @objc private func handleActiveSpaceDidChange(_ notification: Notification) {
