@@ -106,6 +106,10 @@ extension MainWindowController {
             guard window !== mainWindow, window.isVisible, window.isKeyWindow else { return false }
             if window is ActivePanel || window is InteractiveHUDPanel { return false }
             if Self.isTransientSystemInputWindow(window) { return false }
+            // Session popups are Quiper's own UI, not foreign modals:
+            // shortcuts (session/service switching, hide, actions) must keep
+            // working while a popup holds key status.
+            if let manager = webViewManager, manager.isPopupWindow(window) { return false }
             return true
         }
     }
@@ -537,6 +541,14 @@ extension MainWindowController {
             toggleLocationBarHUD()
             return true
         case UInt16(kVK_ANSI_W):
+            // A popup is a window, not a tab: Cmd+W dismisses just the
+            // focused popup. A sheet attached to the popup is modal to it,
+            // so Cmd+W must not escape to the tab close path there either.
+            if let keyWindow = NSApp.keyWindow, let manager = webViewManager,
+               keyWindow.attachedSheet == nil, manager.isPopupWindow(keyWindow) {
+                keyWindow.close()
+                return true
+            }
             closeCurrentTab()
             return true
         case UInt16(kVK_ANSI_R):

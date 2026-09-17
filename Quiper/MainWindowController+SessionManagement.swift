@@ -298,6 +298,7 @@ extension MainWindowController {
         let hasAnySession = (0..<10).contains { webViewManager.getWebView(for: service, sessionIndex: $0) != nil }
         if !hasAnySession && !Settings.shared.autoCreateSessionOnEmptyEngineActivation && !forceCreate {
             webViewManager.hideAll()
+            webViewManager.hideAllSessionPopups()
             showEmptyState()
             return
         }
@@ -328,6 +329,12 @@ extension MainWindowController {
                 focusInputInActiveWebview()
             }
         }
+
+        // Sync last: restoring the active tab's popups re-keys them, so a
+        // session switch back to a popup-owning tab leaves the popup (not
+        // the shield-blocked webview behind it) holding focus. Matches the
+        // overlay show() path order.
+        webViewManager.syncPopupVisibility(forActiveTab: currentTab)
     }
     
     func stepSession(by delta: Int) {
@@ -549,6 +556,7 @@ extension MainWindowController {
         findBarViewController?.tabWillHide()
         findBarViewController = nil
         webViewManager.hideAll()
+        webViewManager.hideAllSessionPopups()
         windowOutlineView?.setLoading(false)
         
         canGoBackObservation = nil

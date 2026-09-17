@@ -93,6 +93,13 @@ final class WebViewManager: NSObject {
     var webviewsByID: [UUID: [Int: WKWebView]] = [:]
     private var wrappersByID: [UUID: [Int: NSView]] = [:]
     private var serviceIDsByWebView: [ObjectIdentifier: UUID] = [:]
+    // Session-owned popups: each popup webview maps to the tab that opened
+    // it (or the owner inherited from a parent popup). The window registry
+    // holds the windows until their close path unregisters them.
+    private var popupOwnerByToken: [ObjectIdentifier: TabIdentifier] = [:]
+    private var popupWindowsByToken: [ObjectIdentifier: ModalPopupWindow] = [:]
+    private var popupCreationOrder: [ObjectIdentifier: Int] = [:]
+    private var popupCreationCounter = 0
     private var pendingLazyLoadURLs: [ObjectIdentifier: String] = [:]
     private var lastKnownTitlesByWebView: [ObjectIdentifier: String] = [:]
     private var activeRequestURLsByWebView: [ObjectIdentifier: URL] = [:]
@@ -157,6 +164,7 @@ final class WebViewManager: NSObject {
 
         let removedIDs = existingIDs.subtracting(incomingIDs)
         for id in removedIDs {
+            closePopups(forServiceID: id)
             if let removedWebviews = webviewsByID[id] {
                 removedWebviews.values.forEach { tearDownWebView($0) }
             }
@@ -170,6 +178,7 @@ final class WebViewManager: NSObject {
                 if let oldService = self.services.first(where: { $0.id == newService.id }),
                    oldService.isEncrypted != newService.isEncrypted {
                     NSLog("[WebViewManager] Encryption status changed for service %@. Tearing down existing webviews.", newService.name)
+                    closePopups(forServiceID: newService.id)
                     existingWebviews.values.forEach { tearDownWebView($0) }
                     webviewsByID[newService.id] = [:]
                     wrappersByID[newService.id] = [:]
@@ -266,6 +275,9 @@ final class WebViewManager: NSObject {
     /// must confirm `beforeunload` through `requestCloseTabs` (or a
     /// pre-confirmed settings/quit flow) before reaching this.
     func removeWebView(for serviceID: UUID, sessionIndex: Int) {
+        // Close owned popups first: the tab's popups must go even when the
+        // webview itself is already gone (early return below).
+        closePopups(for: TabIdentifier(serviceID: serviceID, sessionIndex: sessionIndex))
         guard let webView = webviewsByID[serviceID]?[sessionIndex] else { return }
         tearDownWebView(webView)
         webviewsByID[serviceID]?.removeValue(forKey: sessionIndex)
@@ -1485,20 +1497,31 @@ final class WebViewManager: NSObject {
     }
     
     @MainActor
-    private func openInPopup(url: URL, service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow) {
-        let popupWebView = makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow)
+    private func openInPopup(url: URL, service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow, opener: WKWebView) {
+        let popupWebView = makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow, opener: opener)
         popupWebView.load(URLRequest(url: url))
     }
 
     /// Single gate for every popup webview: assigns the routing delegates and
     /// registers the service association so links inside popups go through the
     /// same `RoutingResolver` path as main-window webviews.
+    ///
+    /// The popup is owned by the tab that opened it (`opener`): popups opened
+    /// from inside another popup inherit that popup's owner, so the whole
+    /// chain hides and shows with the originating session. Ownership is the
+    /// single source for session-scoped visibility in
+    /// `syncPopupVisibility(forActiveTab:)`; callers never manage popup
+    /// windows directly.
     @MainActor
-    private func makePopupWebView(for service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow) -> WKWebView {
+    private func makePopupWebView(for service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow, opener: WKWebView) -> WKWebView {
         configuration.preferences.isElementFullscreenEnabled = true
+        // All popups attach directly to the Quiper window so they stick to it
+        // (move, spaces, hide/show) exactly like before; session scoping is
+        // handled purely through hide/show, never through the window parent.
+        let topParent = containerView?.window ?? parentWindow
         let popupWindow = ModalPopupWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
-            parentWindow: parentWindow
+            parentWindow: topParent
         )
         popupWindow.center()
 
@@ -1509,6 +1532,12 @@ final class WebViewManager: NSObject {
 
         let token = ObjectIdentifier(popupWebView)
         serviceIDsByWebView[token] = service.id
+        if let owner = ownerTab(for: opener) {
+            popupOwnerByToken[token] = owner
+        }
+        popupWindowsByToken[token] = popupWindow
+        popupCreationCounter += 1
+        popupCreationOrder[token] = popupCreationCounter
         popupWindow.onClose = { [weak self] in
             self?.unregisterPopupWebView(token: token)
         }
@@ -1521,9 +1550,100 @@ final class WebViewManager: NSObject {
         return popupWebView
     }
 
+    /// Resolves the owning session for a new popup opened from `opener`.
+    /// Popups opened from inside another popup inherit that popup's owner so
+    /// the whole chain stays bound to the originating session.
+    @MainActor
+    private func ownerTab(for opener: WKWebView) -> TabIdentifier? {
+        let openerToken = ObjectIdentifier(opener)
+        if let inherited = popupOwnerByToken[openerToken] {
+            return inherited
+        }
+        if let (service, sessionIndex) = findServiceAndSession(for: opener) {
+            return TabIdentifier(serviceID: service.id, sessionIndex: sessionIndex)
+        }
+        return nil
+    }
+
+    /// Whether `window` is one of this manager's session popup windows.
+    /// Single source for popup identity: callers (e.g. the shortcut modal
+    /// gate) never sniff window classes directly.
+    @MainActor
+    func isPopupWindow(_ window: NSWindow) -> Bool {
+        popupWindowsByToken.values.contains { $0 === window }
+    }
+
+    /// Hides every popup whose owner is not `active` and re-shows (at its
+    /// preserved frame) every popup owned by `active`. Popups without a known
+    /// owner stay visible for every session, preserving the pre-scoping
+    /// behavior for unresolvable openers. Visibility is driven only from the
+    /// session switch path and the overlay show path (AppKit re-shows
+    /// ordered-out children on parent show, so the show path must re-hide
+    /// inactive ones).
+    @MainActor
+    func syncPopupVisibility(forActiveTab active: TabIdentifier) {
+        // Two passes so a show can never be buried by a later hide, and
+        // restores follow creation order so the stacking matches before.
+        let orderedTokens = popupWindowsByToken.keys.sorted {
+            (popupCreationOrder[$0] ?? 0) < (popupCreationOrder[$1] ?? 0)
+        }
+        for token in orderedTokens {
+            if let owner = popupOwnerByToken[token], owner != active {
+                popupWindowsByToken[token]?.setSessionHidden(true)
+            }
+        }
+        for token in orderedTokens {
+            if popupOwnerByToken[token] == nil {
+                popupWindowsByToken[token]?.setSessionHidden(false)
+            } else if popupOwnerByToken[token] == active {
+                popupWindowsByToken[token]?.setSessionHidden(false)
+            }
+        }
+    }
+
+    /// Hides every session-owned popup without closing it. Used when the
+    /// overlay has no active session (empty state).
+    @MainActor
+    func hideAllSessionPopups() {
+        for popupWindow in popupWindowsByToken.values {
+            popupWindow.setSessionHidden(true)
+        }
+    }
+
+    /// Closes every popup owned by `tab`. Called when the owning session is
+    /// destroyed; the window's close path unregisters it.
+    @MainActor
+    private func closePopups(for tab: TabIdentifier) {
+        let tokens = popupOwnerByToken.filter { $0.value == tab }.map(\.key)
+        for token in tokens {
+            if let popupWindow = popupWindowsByToken[token] {
+                popupWindow.close()
+            } else {
+                unregisterPopupWebView(token: token)
+            }
+        }
+    }
+
+    /// Closes every popup associated with `serviceID`, owned or global.
+    @MainActor
+    private func closePopups(forServiceID serviceID: UUID) {
+        var tokens = Set(popupOwnerByToken.filter { $0.value.serviceID == serviceID }.map(\.key))
+        tokens.formUnion(serviceIDsByWebView.filter { $0.value == serviceID }.map(\.key).filter { popupWindowsByToken[$0] != nil })
+        for token in tokens {
+            if let popupWindow = popupWindowsByToken[token] {
+                popupWindow.close()
+            } else {
+                unregisterPopupWebView(token: token)
+            }
+        }
+    }
+
     @MainActor
     private func unregisterPopupWebView(token: ObjectIdentifier) {
         serviceIDsByWebView.removeValue(forKey: token)
+        popupOwnerByToken.removeValue(forKey: token)
+        popupWindowsByToken.removeValue(forKey: token)
+        popupCreationOrder.removeValue(forKey: token)
         removeLoadState(for: token)
     }
 
@@ -1605,7 +1725,6 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
     private weak var parentWin: NSWindow?
     private var isCleaningUp = false
     private var titleObservation: NSKeyValueObservation?
-    private var fallbackTitle: String = ""
     
     init(contentRect: NSRect, parentWindow: NSWindow) {
         self.parentWin = parentWindow
@@ -1635,15 +1754,35 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
     }
     
     func observeWebViewTitle(_ webView: WKWebView, fallbackTitle: String) {
-        self.fallbackTitle = fallbackTitle
         self.title = fallbackTitle
-        
+        let fallback = fallbackTitle
         titleObservation = webView.observe(\.title, options: [.new]) { [weak self] _, change in
-            guard let self = self else { return }
-            if let newTitle = change.newValue as? String, !newTitle.isEmpty {
-                self.title = "\(newTitle) - \(self.fallbackTitle)"
-            } else {
-                self.title = self.fallbackTitle
+            MainActor.assumeIsolated {
+                guard let self = self else { return }
+                if let newTitle = change.newValue as? String, !newTitle.isEmpty {
+                    self.title = "\(newTitle) - \(fallback)"
+                } else {
+                    self.title = fallback
+                }
+            }
+        }
+    }
+
+    /// Session-scoped hide/show. Hiding orders the window out (preserving its
+    /// frame for an exact restore) and hides its modal shield so the newly
+    /// active session stays interactive. Showing restores the shield and, when
+    /// the Quiper window itself is visible, re-orders the popup front at its
+    /// preserved frame. When Quiper is hidden the reorder is deferred to the
+    /// overlay show path, which re-syncs visibility after AppKit restores
+    /// child windows.
+    func setSessionHidden(_ hidden: Bool) {
+        if hidden {
+            shield?.isHidden = true
+            orderOut(nil)
+        } else {
+            shield?.isHidden = false
+            if parentWin?.isVisible == true, !isVisible {
+                makeKeyAndOrderFront(nil)
             }
         }
     }
@@ -1655,13 +1794,10 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
         titleObservation?.invalidate()
         titleObservation = nil
         
-        // 1. Remove shield and restore parent window interactivity synchronously
+        // 1. Remove only this popup's shield: other sessions' popups keep
+        // their own shields so the newly active session's modality survives.
         shield?.removeFromSuperview()
         shield = nil
-        
-        if let parent = parentWin, let contentView = parent.contentView {
-            contentView.subviews.filter { $0 is InteractionShieldView }.forEach { $0.removeFromSuperview() }
-        }
         
         // 2. Nil out webview delegates to avoid crashes from WebKit callbacks during deallocation
         contentView?.subviews.forEach {
@@ -1821,7 +1957,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         switch action {
         case .openHere, .openNewWindow:
             guard let parentWindow = webView.window else { return nil }
-            return makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow)
+            return makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow, opener: webView)
         case .openExternal:
             NSWorkspace.shared.open(url)
             return nil
@@ -1839,7 +1975,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
                     webView.load(URLRequest(url: url))
                 case .openNewWindow:
                     if let parentWindow = webView.window {
-                        self.openInPopup(url: url, service: service, configuration: configuration, parentWindow: parentWindow)
+                        self.openInPopup(url: url, service: service, configuration: configuration, parentWindow: parentWindow, opener: webView)
                     }
                 case .openExternal:
                     NSWorkspace.shared.open(url)
@@ -1857,8 +1993,8 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
     func webViewDidClose(_ webView: WKWebView) {
         // `window.close()` from JS must only ever dismiss a popup. Main-window
         // webviews are owned by the overlay and never close this way.
-        if webView.window is ModalPopupWindow {
-            webView.window?.close()
+        if let popupWindow = webView.window, isPopupWindow(popupWindow) {
+            popupWindow.close()
         }
     }
 
@@ -1938,7 +2074,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             
         case .openNewWindow:
             if let parentWindow = webView.window {
-                openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow)
+                openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow, opener: webView)
             }
             decisionHandler(.cancel)
             
@@ -1968,7 +2104,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
                     webView.load(URLRequest(url: url))
                 case .openNewWindow:
                     if let parentWindow = webView.window {
-                        self.openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow)
+                        self.openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow, opener: webView)
                     }
                 case .openExternal:
                     NSWorkspace.shared.open(url)
@@ -2203,8 +2339,9 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         // 1. Find all active session indices for this service ID
         guard let sessionMap = webviewsByID[serviceID] else { return }
         let sessionIndices = Array(sessionMap.keys)
-        
-        // 2. Tear down the old webviews
+
+        // 2. Tear down the old webviews (and their session-owned popups)
+        closePopups(forServiceID: serviceID)
         sessionMap.values.forEach { tearDownWebView($0) }
         webviewsByID[serviceID] = [:]
         wrappersByID[serviceID] = [:]

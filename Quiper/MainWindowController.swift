@@ -687,6 +687,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             focusInputInActiveWebviewWithFallback()
         }
 
+        // AppKit re-shows ordered-out child windows on parent show, so
+        // re-hide popups owned by inactive sessions and restore the active
+        // session's popups at their preserved frames. With no live session
+        // (empty state) everything stays hidden.
+        if let service = currentService() {
+            if webViewManager?.getOpenSessions(for: service).isEmpty == true {
+                webViewManager?.hideAllSessionPopups()
+            } else {
+                let activeIndex = activeIndicesByID[service.id] ?? 0
+                webViewManager?.syncPopupVisibility(
+                    forActiveTab: TabIdentifier(serviceID: service.id, sessionIndex: activeIndex)
+                )
+            }
+        }
+
         setShortcutsEnabled(true)
         if !didTeleport && ownedElementFullscreenSpace == nil {
             updateCollectionBehaviorForVisibilityState()
@@ -1951,6 +1966,7 @@ struct SecureTabState: Codable {
         raiseVisibleHUDs()
 
         let otherChildWindows = window?.childWindows?.filter {
+            $0.isVisible &&
             $0 != settingsWindow &&
             $0 != UpdatePromptWindowController.shared.window &&
             $0 != blurWindow
