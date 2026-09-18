@@ -10,7 +10,13 @@ extension Color {
 
 public final class InteractionShieldView: NSView {
     public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    public override func hitTest(_ point: NSPoint) -> NSView? { self }
+    public override func hitTest(_ point: NSPoint) -> NSView? {
+        // A hidden shield (or one under a hidden ancestor) must not swallow
+        // clicks: the override bypasses the hidden check in NSView's default
+        // implementation, so restate it here. Visible shields keep blocking.
+        if isHiddenOrHasHiddenAncestor { return nil }
+        return self
+    }
     public override func mouseDown(with event: NSEvent) {}
     public override func rightMouseDown(with event: NSEvent) {}
     public override func otherMouseDown(with event: NSEvent) {}

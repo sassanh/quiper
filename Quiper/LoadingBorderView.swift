@@ -18,6 +18,13 @@ class LoadingBorderView: NSView {
     var borderWidth: CGFloat = 2 {
         didSet { if isAnimating && isWindowFocused { updateLayers() } }
     }
+
+    /// When true, left-dragging this view moves the window (via
+    /// WindowDragTracker) and a plain click does nothing. Off by default so
+    /// non-chrome uses (e.g. tooltips) keep plain NSView behavior.
+    var enablesWindowDrag = false
+
+    private var dragTracker: WindowDragTracker?
     
     var lineColor: NSColor = .controlAccentColor {
         didSet { if isAnimating && isWindowFocused { updateLayers() } }
@@ -37,6 +44,32 @@ class LoadingBorderView: NSView {
         wantsLayer = true
         layer?.masksToBounds = false
         setAccessibilityIdentifier("LoadingIndicator")
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard enablesWindowDrag else {
+            super.mouseDown(with: event)
+            return
+        }
+        dragTracker = WindowDragTracker(window: window)
+        dragTracker?.begin()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard enablesWindowDrag else {
+            super.mouseDragged(with: event)
+            return
+        }
+        dragTracker?.update()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard enablesWindowDrag else {
+            super.mouseUp(with: event)
+            return
+        }
+        dragTracker?.end()
+        dragTracker = nil
     }
     
     override func layout() {

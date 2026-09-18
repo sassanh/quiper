@@ -65,6 +65,85 @@ extension MainWindowController {
         menu.popUp(positioning: nil, at: origin, in: sender)
     }
 
+    /// Builds the page-title context menu. AppKit positions and tracks it
+    /// (see HoverTextField.menu(for:)); no manual pop-up needed.
+    func makeTitleContextMenu() -> NSMenu {
+        let menu = NSMenu(title: "Page Title")
+        menu.autoenablesItems = false
+        let urlString = currentWebView()?.url?.absoluteString
+        let titleString = currentPageTitle()
+
+        let copyURLItem = NSMenuItem(
+            title: "Copy URL",
+            action: #selector(copyCurrentPageURL(_:)),
+            keyEquivalent: ""
+        )
+        copyURLItem.target = self
+        copyURLItem.isEnabled = urlString != nil && !(urlString?.isEmpty ?? true)
+        menu.addItem(copyURLItem)
+
+        let copyTitleItem = NSMenuItem(
+            title: "Copy Title",
+            action: #selector(copyCurrentPageTitle(_:)),
+            keyEquivalent: ""
+        )
+        copyTitleItem.target = self
+        copyTitleItem.isEnabled = titleString != nil
+        menu.addItem(copyTitleItem)
+
+        let openItem = NSMenuItem(
+            title: "Open in Default Browser",
+            action: #selector(openCurrentPageInBrowser(_:)),
+            keyEquivalent: ""
+        )
+        openItem.target = self
+        openItem.isEnabled = urlString != nil && !(urlString?.isEmpty ?? true)
+        menu.addItem(openItem)
+
+        menu.addItem(.separator())
+
+        let findItem = NSMenuItem(
+            title: "Find...",
+            action: #selector(presentFindPanelFromMenu(_:)),
+            keyEquivalent: "f"
+        )
+        findItem.target = self
+        findItem.isEnabled = currentWebView() != nil
+        menu.addItem(findItem)
+
+        return menu
+    }
+
+    /// The page title as shown in the toolbar: the webview's title, falling
+    /// back to the label text. Nil when there is nothing worth copying.
+    func currentPageTitle() -> String? {
+        if let title = currentWebView()?.title, !title.isEmpty {
+            return title
+        }
+        if let text = titleLabel?.stringValue, !text.isEmpty {
+            return text
+        }
+        return nil
+    }
+
+    @objc func copyCurrentPageURL(_ sender: Any?) {
+        guard let urlString = currentWebView()?.url?.absoluteString,
+              !urlString.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(urlString, forType: .string)
+    }
+
+    @objc func copyCurrentPageTitle(_ sender: Any?) {
+        guard let title = currentPageTitle() else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(title, forType: .string)
+    }
+
+    @objc func openCurrentPageInBrowser(_ sender: Any?) {
+        guard let url = currentWebView()?.url else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     @objc func promptHistoryButtonTapped(_ sender: HoverIconButton) {
         togglePromptHistoryHUD()
     }

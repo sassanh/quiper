@@ -1510,6 +1510,10 @@ struct SecureTabState: Codable {
         title.onClick = { [weak self] in
             self?.toggleLocationBarHUD()
         }
+        title.contextMenuProvider = { [weak self] _ in
+            self?.makeTitleContextMenu()
+        }
+        borderView.enablesWindowDrag = true
 
         // Session Actions Button
         let iconConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)

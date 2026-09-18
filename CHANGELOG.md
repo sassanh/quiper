@@ -10,9 +10,11 @@
 - **Reorganized General Settings**: The Behavior section is now Tabs and Focus sections, and engine number shortcuts moved to the Shortcuts tab.
 - **Temporary Fallback Without Sign-In**: Starting a website temporary chat while logged out now opens an ephemeral tab in place instead of failing, and engines without temporary support do the same.
 - **Popup Windows Reopen After Relaunch**: Popup windows now reopen where you left them — same session, address, size, and stacking — when you quit and relaunch, including for protected engines.
+- **Page Title Right-Click Menu**: Right-clicking the page title now offers Copy URL, Copy Title, Open in Default Browser, and Find. Left-click still opens the location editor, and dragging the title still moves the window.
 
 ### Fixed
 
+- **Hidden Overlays No Longer Swallow Clicks**: An invisible interaction shield (for example from a restored popup window) no longer blocks clicks on the main window behind it.
 - **No Flash When Entering Element Fullscreen**: Fullscreening page content now switches cleanly to the fullscreen Space without flashing the Quiper window at its original size, and the overlay returns to its origin Space on exit.
 - **Routing Rules Apply Inside Popup Windows**: Links clicked inside a popup window now follow the engine's routing rules — Internal stays in the popup, Popup opens a new window, Safari opens externally, and Prompt asks — instead of always loading in the same popup.
 - **Find Bar Responds to Mouse Clicks**: The find bar's search field, Previous/Next buttons, and Done button now receive clicks again instead of passing them to the page underneath.
