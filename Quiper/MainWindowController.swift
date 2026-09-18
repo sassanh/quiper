@@ -230,6 +230,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var locationBarHUDView: LocationBarHUDView?
     var onboardingHUD: GhostOnboardingHUDView?
 
+    var selectorSuggestWindowController: SelectorSuggestWindowController?
+    var selectorSuggestMessageHandler: SelectorPickerMessageHandler?
+    var selectorSuggestCandidates: [String] = []
+    weak var selectorSuggestWebView: WKWebView?
+    var isSelectorSuggestPicking = false
+
     private var isCompactMode = false
     private var previousWindowFrame: NSRect?
     var isWebContentFullscreen = false

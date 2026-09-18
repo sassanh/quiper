@@ -26,13 +26,25 @@ enum WebScripts {
     // MARK: - Value-setter interceptor (document start)
 
     /// Injects a `<style>` element with the engine's custom CSS at document end,
-    /// mirroring the macOS `WebViewManager` CSS injection.
+    /// mirroring the macOS `WebViewManager` CSS injection. The element carries
+    /// a stable id so later updates replace its text instead of piling up
+    /// nodes; the same script serves both the creation-time user script and
+    /// evaluated refreshes, so there is exactly one way CSS reaches the page.
     static func makeCustomCSSInjectionScript(css: String) -> String {
-        """
-        const style = document.createElement('style');
-        style.textContent = `/* Custom CSS */
-        \(css)`;
-        document.head.appendChild(style);
+        let escaped = escapeForJavaScript(css)
+        return """
+        (function() {
+          var root = document.head || document.documentElement;
+          if (!root) return;
+          var cssText = "\(escaped)";
+          var style = document.getElementById("__quiper-custom-css");
+          if (!style) {
+            style = document.createElement("style");
+            style.id = "__quiper-custom-css";
+            root.appendChild(style);
+          }
+          style.textContent = cssText;
+        })();
         """
     }
 
@@ -1216,5 +1228,465 @@ enum WebScripts {
     static func makeActionFallbackScript(actionName: String, serviceName: String) -> String {
         let message = "Action \(escapeForJavaScript(actionName.isEmpty ? "Action" : actionName)) not implemented for \(escapeForJavaScript(serviceName))"
         return "console.log(\"\(message)\")"
+    }
+
+    // MARK: - Selector suggest picker
+
+
+    /// Segment builders shared by the hover picker and the direct pick
+    /// below. Segments are verified against the live DOM here (stable
+    /// hooks first, never position), so this is the
+    /// single place that owns segment construction.
+    private static func selectorSegmentHelpersScript() -> String {
+        """
+        function escIdent(value) {
+          try {
+            if (window.CSS && window.CSS.escape) return window.CSS.escape(value);
+          } catch (e) {}
+          return String(value).replace(/[^a-zA-Z0-9_-]/g, function(ch) { return "\\\\" + ch; });
+        }
+        function stableId(id) {
+          if (!id || /\\s/.test(id)) return false;
+          if (id.indexOf(":") !== -1) return false;
+          if (/^ember/i.test(id)) return false;
+          return true;
+        }
+        function stableClasses(el) {
+          var out = [];
+          var list = [];
+          try { list = Array.prototype.slice.call(el.classList || []); } catch (e) {}
+          for (var i = 0; i < list.length; i++) {
+            var c = list[i];
+            if (!c || /\\s/.test(c)) continue;
+            if (c.indexOf("__quiper") === 0) continue;
+            if (/__[A-Za-z0-9]{3,}$/.test(c)) continue;
+            if (/^[0-9a-f]{6,}$/i.test(c)) continue;
+            if (/^(css|jss|emotion|styled|sc)-[A-Za-z0-9]+/i.test(c)) continue;
+            out.push(c);
+            if (out.length >= 3) break;
+          }
+          return out;
+        }
+        /// Builds the most stable segment for `el`: test attributes, then a
+        /// stable id, then meaningful classes (each verified against the live
+        /// DOM). Never positional: identical siblings honestly share their
+        /// selector, and the match count says so.
+        function uniqueSegment(el) {
+          var tag = "div";
+          try { tag = (el.tagName || "div").toLowerCase() || "div"; } catch (e) {}
+          var id = "";
+          try { id = el.getAttribute ? (el.getAttribute("id") || "") : ""; } catch (e) {}
+          if (stableId(id)) {
+            var idSegment = tag + "#" + escIdent(id);
+            try {
+              if (document.querySelectorAll(idSegment).length === 1) {
+                return { tag: tag, segment: idSegment };
+              }
+            } catch (e) {}
+          }
+          var testAttrs = ["data-testid", "data-test", "data-test-id", "data-qa", "data-cy"];
+          for (var a = 0; a < testAttrs.length; a++) {
+            var value = null;
+            try { value = el.getAttribute ? el.getAttribute(testAttrs[a]) : null; } catch (e) {}
+            if (!value) continue;
+            var attrSegment = tag + "[" + testAttrs[a] + "=\\\""
+              + String(value).replace(/\\\\/g, "\\\\\\\\").replace(/"/g, "\\\"") + "\\\"]";
+            try {
+              if (document.querySelectorAll(attrSegment).length === 1) {
+                return { tag: tag, segment: attrSegment };
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+          var stable = stableClasses(el);
+          var classPart = "";
+          for (var c = 0; c < stable.length; c++) {
+            classPart += "." + escIdent(stable[c]);
+          }
+          return { tag: tag, segment: tag + classPart };
+        }
+        """
+    }
+
+    /// Starts hover-to-pick mode in the page. Hovering shows a fixed overlay
+    /// box over the element under the cursor; clicking captures its ancestor
+    /// chain and posts `{ type: "picked", path: [...] }` to the
+    /// `quiperSelectorPicker` message handler, where each path entry is
+    /// `{ tag, segment }` ordered root-first. Segments are built and verified
+    /// against the live DOM here (stable hooks only, never position), so this
+    /// is the single place that owns segment construction. Page element
+    /// styles are never touched: hover, preview and the interaction shield
+    /// all render their own overlay divs.
+    static func makeSelectorPickerStartScript() -> String {
+        """
+        (function() {
+          try {
+            if (window.__quiperSelectorPickerCleanup) window.__quiperSelectorPickerCleanup();
+          } catch (e) {}
+          window.__quiperSelectorPickerActive = false;
+          window.__quiperSelectorPickerCleanup = null;
+          window.__quiperSelectorPickerActive = true;
+          var hoverEl = null;
+          var hoverBox = null;
+          function ensureHoverBox() {
+            if (hoverBox && hoverBox.isConnected) return hoverBox;
+            hoverBox = document.createElement("div");
+            hoverBox.id = "__quiper-selector-hover";
+            hoverBox.setAttribute("data-quiper-selector-hover", "true");
+            hoverBox.style.cssText = "position:fixed;pointer-events:none;z-index:2147483646;display:none;"
+              + "background:rgba(10,132,255,0.16);border:2px solid #0A84FF;border-radius:3px;box-sizing:border-box;";
+            (document.documentElement || document.body).appendChild(hoverBox);
+            return hoverBox;
+          }
+          function hideHover() {
+            hoverEl = null;
+            if (hoverBox) {
+              try { hoverBox.style.display = "none"; } catch (e) {}
+            }
+          }
+          function showHover(el) {
+            var rect = null;
+            try { rect = el.getBoundingClientRect(); } catch (e) { hideHover(); return; }
+            if (!rect || rect.width < 1 || rect.height < 1) { hideHover(); return; }
+            hoverEl = el;
+            var box = ensureHoverBox();
+            box.style.display = "block";
+            box.style.left = rect.left + "px";
+            box.style.top = rect.top + "px";
+            box.style.width = rect.width + "px";
+            box.style.height = rect.height + "px";
+          }
+          \(selectorSegmentHelpersScript())
+          function onMove(e) {
+            var el = (e && e.target && e.target.nodeType === 1) ? e.target : null;
+            if (!el) {
+              try { el = document.elementFromPoint(e.clientX, e.clientY); } catch (err) {}
+            }
+            if (!el || el.nodeType !== 1) { hideHover(); return; }
+            if (el === hoverEl) return;
+            showHover(el);
+          }
+          function onScroll() {
+            if (hoverEl && hoverEl.isConnected) {
+              showHover(hoverEl);
+            } else {
+              hideHover();
+            }
+          }
+          function cleanup() {
+            try { document.removeEventListener("mousemove", onMove, true); } catch (e) {}
+            try { document.removeEventListener("click", onClick, true); } catch (e) {}
+            try { document.removeEventListener("keydown", onKey, true); } catch (e) {}
+            try { window.removeEventListener("scroll", onScroll, true); } catch (e) {}
+            try { window.removeEventListener("resize", onScroll); } catch (e) {}
+            hideHover();
+            try {
+              if (hoverBox && hoverBox.parentNode) hoverBox.parentNode.removeChild(hoverBox);
+            } catch (e) {}
+            hoverBox = null;
+            try { document.body.style.cursor = window.__quiperSelectorPickerPrevCursor || ""; } catch (e) {}
+            window.__quiperSelectorPickerActive = false;
+            window.__quiperSelectorPickerCleanup = null;
+          }
+          function onClick(e) {
+            try { e.preventDefault(); } catch (err) {}
+            try { e.stopPropagation(); } catch (err) {}
+            var target = (e && e.target && e.target.nodeType === 1) ? e.target : null;
+            if (!target) {
+              try { target = document.elementFromPoint(e.clientX, e.clientY); } catch (err) {}
+            }
+            if (!target || target.nodeType !== 1) return;
+            var chain = [];
+            var cur = target;
+            while (cur && cur.nodeType === 1) {
+              chain.unshift(uniqueSegment(cur));
+              if (cur === document.documentElement) break;
+              cur = cur.parentElement;
+            }
+            cleanup();
+            try {
+              if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.quiperSelectorPicker) {
+                window.webkit.messageHandlers.quiperSelectorPicker.postMessage({ type: "picked", path: chain });
+              }
+            } catch (err) {}
+          }
+          function onKey(e) {
+            if (e && e.key === "Escape") {
+              try { e.stopPropagation(); } catch (err) {}
+              cleanup();
+              try {
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.quiperSelectorPicker) {
+                  window.webkit.messageHandlers.quiperSelectorPicker.postMessage({ type: "cancelled" });
+                }
+              } catch (err) {}
+            }
+          }
+          window.__quiperSelectorPickerCleanup = cleanup;
+          try {
+            window.__quiperSelectorPickerPrevCursor = document.body.style.cursor || "";
+            document.body.style.cursor = "crosshair";
+          } catch (e) {}
+          document.addEventListener("mousemove", onMove, true);
+          document.addEventListener("click", onClick, true);
+          document.addEventListener("keydown", onKey, true);
+          window.addEventListener("scroll", onScroll, true);
+          window.addEventListener("resize", onScroll);
+        })();
+        """
+    }
+
+    /// Removes picker listeners, the hover box and the crosshair cursor.
+    static func makeSelectorPickerStopScript() -> String {
+        """
+        (function() {
+          try {
+            if (window.__quiperSelectorPickerCleanup) {
+              window.__quiperSelectorPickerCleanup();
+            } else {
+              window.__quiperSelectorPickerActive = false;
+              try { document.body.style.cursor = ""; } catch (e) {}
+            }
+          } catch (e) {}
+        })();
+        """
+    }
+
+    /// Highlights every visible match of `selector` with fixed overlay boxes
+    /// (semi-transparent fill plus border) and returns the total match count.
+    /// Previous boxes are removed first, and our own helper nodes never count
+    /// as matches. A transparent shield covers the viewport while the dialog
+    /// is open so the page behind it cannot be clicked, scrolled or typed
+    /// into; boxes re-render on scroll and resize to track their elements.
+    /// Scrolling to the first match happens only when `scrollIntoView` is
+    /// true, so dragging the specificity slider never yanks the page.
+    static func makeSelectorPreviewScript(selector: String, scrollIntoView: Bool = true) -> String {
+        let escaped = escapeForJavaScript(selector)
+        let scrollLiteral = scrollIntoView ? "true" : "false"
+        return """
+        (function() {
+          var selector = "\(escaped)";
+          var shouldScroll = \(scrollLiteral);
+          function isHelper(el) {
+            try {
+              return el.hasAttribute("data-quiper-selector-preview")
+                || el.hasAttribute("data-quiper-selector-hover")
+                || el.hasAttribute("data-quiper-selector-shield");
+            } catch (e) {
+              return false;
+            }
+          }
+          function clearBoxes() {
+            var old = window.__quiperSelectorPreviewBoxes || [];
+            for (var i = 0; i < old.length; i++) {
+              try { old[i].remove(); } catch (e) {}
+            }
+            window.__quiperSelectorPreviewBoxes = [];
+          }
+          function detachReposition() {
+            if (window.__quiperSelectorPreviewReposition) {
+              try { window.removeEventListener("scroll", window.__quiperSelectorPreviewReposition, true); } catch (e) {}
+              try { window.removeEventListener("resize", window.__quiperSelectorPreviewReposition); } catch (e) {}
+              window.__quiperSelectorPreviewReposition = null;
+            }
+          }
+          function onShieldKey(e) {
+            try { e.preventDefault(); } catch (x) {}
+            try { e.stopPropagation(); } catch (x) {}
+          }
+          function onShieldPointer(e) {
+            try { e.preventDefault(); } catch (x) {}
+            try { e.stopPropagation(); } catch (x) {}
+          }
+          function removeShield() {
+            if (window.__quiperSelectorShieldKeys) {
+              try { document.removeEventListener("keydown", window.__quiperSelectorShieldKeys, true); } catch (e) {}
+              try { document.removeEventListener("keypress", window.__quiperSelectorShieldKeys, true); } catch (e) {}
+              try { document.removeEventListener("keyup", window.__quiperSelectorShieldKeys, true); } catch (e) {}
+              window.__quiperSelectorShieldKeys = null;
+            }
+            var shield = document.getElementById("__quiper-selector-shield");
+            if (shield) {
+              try { shield.remove(); } catch (e) {}
+            }
+          }
+          function ensureShield() {
+            var shield = document.getElementById("__quiper-selector-shield");
+            if (shield && shield.isConnected) return;
+            shield = document.createElement("div");
+            shield.id = "__quiper-selector-shield";
+            shield.setAttribute("data-quiper-selector-shield", "true");
+            shield.style.cssText = "position:fixed;left:0;top:0;width:100vw;height:100vh;"
+              + "z-index:2147483647;background:transparent;";
+            var pointerEvents = ["mousedown", "mouseup", "click", "dblclick", "contextmenu"];
+            for (var i = 0; i < pointerEvents.length; i++) {
+              shield.addEventListener(pointerEvents[i], onShieldPointer, true);
+            }
+            shield.addEventListener("wheel", onShieldPointer, { capture: true, passive: false });
+            shield.addEventListener("touchstart", onShieldPointer, { capture: true, passive: false });
+            shield.addEventListener("touchmove", onShieldPointer, { capture: true, passive: false });
+            (document.documentElement || document.body).appendChild(shield);
+            window.__quiperSelectorShieldKeys = onShieldKey;
+            document.addEventListener("keydown", onShieldKey, true);
+            document.addEventListener("keypress", onShieldKey, true);
+            document.addEventListener("keyup", onShieldKey, true);
+            try {
+              if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+            } catch (e) {}
+          }
+          function render() {
+            clearBoxes();
+            if (!selector) return 0;
+            var matches = [];
+            try {
+              matches = document.querySelectorAll(selector);
+            } catch (e) {
+              return 0;
+            }
+            var count = 0;
+            var viewportWidth = window.innerWidth || 0;
+            var viewportHeight = window.innerHeight || 0;
+            for (var j = 0; j < matches.length; j++) {
+              var el = matches[j];
+              if (isHelper(el)) continue;
+              count++;
+              var rect = null;
+              try { rect = el.getBoundingClientRect(); } catch (e) { continue; }
+              if (!rect || rect.width < 1 || rect.height < 1) continue;
+              if (rect.bottom < 0 || rect.top > viewportHeight || rect.right < 0 || rect.left > viewportWidth) continue;
+              var box = document.createElement("div");
+              box.setAttribute("data-quiper-selector-preview", "true");
+              box.style.cssText = "position:fixed;pointer-events:none;z-index:2147483646;"
+                + "background:rgba(255,59,48,0.16);border:2px solid #FF3B30;border-radius:3px;box-sizing:border-box;"
+                + "left:" + rect.left + "px;top:" + rect.top + "px;"
+                + "width:" + rect.width + "px;height:" + rect.height + "px;";
+              (document.documentElement || document.body).appendChild(box);
+              window.__quiperSelectorPreviewBoxes.push(box);
+            }
+            return count;
+          }
+          window.__quiperSelectorShieldCleanup = function() {
+            detachReposition();
+            removeShield();
+            clearBoxes();
+            window.__quiperSelectorPreviewSelector = null;
+          };
+          window.__quiperSelectorPreviewSelector = selector;
+          detachReposition();
+          ensureShield();
+          var reposition = function() { render(); };
+          window.__quiperSelectorPreviewReposition = reposition;
+          window.addEventListener("scroll", reposition, true);
+          window.addEventListener("resize", reposition);
+          var total = render();
+          if (shouldScroll && total > 0) {
+            try {
+              var all = document.querySelectorAll(selector);
+              for (var k = 0; k < all.length; k++) {
+                if (!isHelper(all[k])) {
+                  all[k].scrollIntoView({ block: "nearest", inline: "nearest" });
+                  break;
+                }
+              }
+            } catch (e) {}
+          }
+          return total;
+        })();
+        """
+    }
+
+    /// Removes preview boxes, the interaction shield and their listeners.
+    static func makeSelectorPreviewClearScript() -> String {
+        """
+        (function() {
+          try {
+            if (window.__quiperSelectorShieldCleanup) {
+              window.__quiperSelectorShieldCleanup();
+              window.__quiperSelectorShieldCleanup = null;
+            }
+          } catch (e) {}
+          try {
+            var boxes = window.__quiperSelectorPreviewBoxes || [];
+            for (var i = 0; i < boxes.length; i++) {
+              try { boxes[i].remove(); } catch (x) {}
+            }
+            window.__quiperSelectorPreviewBoxes = [];
+          } catch (e) {}
+          try {
+            var hover = document.getElementById("__quiper-selector-hover");
+            if (hover) hover.remove();
+          } catch (e) {}
+          try {
+            var shield = document.getElementById("__quiper-selector-shield");
+            if (shield) shield.remove();
+          } catch (e) {}
+          window.__quiperSelectorPreviewSelector = null;
+        })();
+        """
+    }
+
+    /// Picks the element at viewport point (`x`, `y`) without hover mode:
+    /// builds its root-first `{ tag, segment }` chain with the shared helpers
+    /// and posts `{ type: "picked", path }` to the `quiperSelectorPicker`
+    /// handler. Returns true when a pick was posted. Coordinates are viewport
+    /// (client) points, matching `document.elementFromPoint`. Prefers the
+    /// point recorded by the contextmenu recorder when fresh, so iframe
+    /// right-clicks and stale points fall back to the passed coordinates;
+    /// content inside frames resolves to the frame element itself, since a
+    /// single CSS selector cannot cross document boundaries.
+    static func makeSelectorDirectPickScript(x: Double, y: Double) -> String {
+        """
+        (function() {
+        \(selectorSegmentHelpersScript())
+          var x = \(x), y = \(y);
+          try {
+            var last = window.__quiperLastContextMenu;
+            if (last && typeof last.x === "number" && typeof last.y === "number"
+                && typeof last.t === "number" && (Date.now() - last.t) < 10000) {
+              x = last.x;
+              y = last.y;
+            }
+            window.__quiperLastContextMenu = null;
+          } catch (e) {}
+          var target = null;
+          try { target = document.elementFromPoint(x, y); } catch (e) {}
+          if (!target || target.nodeType !== 1) return false;
+          var chain = [];
+          var cur = target;
+          while (cur && cur.nodeType === 1) {
+            chain.unshift(uniqueSegment(cur));
+            if (cur === document.documentElement) break;
+            cur = cur.parentElement;
+          }
+          try {
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.quiperSelectorPicker) {
+              window.webkit.messageHandlers.quiperSelectorPicker.postMessage({ type: "picked", path: chain });
+              return true;
+            }
+          } catch (e) {}
+          return false;
+        })();
+        """
+    }
+
+    /// Records the last right-click point (viewport coordinates plus timestamp)
+    /// so a context menu action can resolve the clicked element without native
+    /// point math. Installed at document start, before page scripts run, so the
+    /// capture listener always records even on pages that suppress their own
+    /// menu.
+    static func makeContextMenuRecorderScript() -> WKUserScript {
+        let source = """
+        (function() {
+          if (window.__quiperContextMenuRecorderInstalled) return;
+          window.__quiperContextMenuRecorderInstalled = true;
+          window.__quiperLastContextMenu = null;
+          document.addEventListener("contextmenu", function(e) {
+            try {
+              window.__quiperLastContextMenu = { x: e.clientX, y: e.clientY, t: Date.now() };
+            } catch (err) {}
+          }, true);
+        })();
+        """
+        return WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false)
     }
 }

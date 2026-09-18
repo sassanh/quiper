@@ -10,6 +10,9 @@ protocol WebViewManagerDelegate: AnyObject {
     func webViewDidFinishNavigation(_ webView: WKWebView)
     func engineDidUnlock(serviceID: UUID)
     func inputStateRequestSave()
+    /// The user chose Suggest Selector in the webview context menu.
+    /// `viewPoint` is in the webview's own coordinates at click time.
+    func webViewDidRequestSelectorSuggest(_ webView: WKWebView, at viewPoint: NSPoint)
 }
 
 @MainActor
@@ -151,6 +154,7 @@ final class WebViewManager: NSObject {
         super.init()
         NotificationCenter.default.addObserver(self, selector: #selector(webDataClearedNotification(_:)), name: .webDataCleared, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(promptHistoryLimitChangedNotification(_:)), name: .promptHistoryLimitChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(engineCustomCSSChangedNotification(_:)), name: .engineCustomCSSChanged, object: nil)
         Settings.shared.$enablePromptHistory
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -244,6 +248,40 @@ final class WebViewManager: NSObject {
                 sessionMap.values.forEach { $0.pageZoom = level }
             }
         }
+    }
+
+    /// Single gate for engine stylesheet changes: pushes the engine's current
+    /// resolved CSS into every live session by updating the tagged style
+    /// element. Callers never care why it changed (user edit, Hide, template
+    /// sync toggle): persisting posts `.engineCustomCSSChanged`, which lands
+    /// here. Ephemeral tabs are skipped: their pages stay marker-free.
+    func refreshCustomCSS(for serviceID: UUID) {
+        guard let sessionMap = webviewsByID[serviceID] else { return }
+        sessionMap.values.forEach(applyCurrentCustomCSS(to:))
+    }
+
+    /// Pushes the webview's engine stylesheet into its live page. Idempotent:
+    /// the tagged node is created or updated, never duplicated. Also runs on
+    /// every finished navigation, since loads re-run the creation-time script
+    /// with whatever CSS was current at webview creation.
+    private func applyCurrentCustomCSS(to webView: WKWebView) {
+        guard let (snapshotService, sessionIndex) = findServiceAndSession(for: webView),
+              !isQuiperPrivateTab(serviceID: snapshotService.id, sessionIndex: sessionIndex),
+              let service = Self.authoritativeService(for: snapshotService.id, snapshot: services)
+        else { return }
+        webView.evaluateJavaScript(
+            WebScripts.makeCustomCSSInjectionScript(css: Settings.shared.customCSS(for: service)),
+            completionHandler: nil
+        )
+    }
+
+    /// Fresh settings record by ID, falling back to the snapshot. Manager
+    /// snapshots lag Settings mutations (e.g. a template-synced engine going
+    /// custom), and resolving CSS from stale flags pushes the wrong
+    /// stylesheet — typically the bare template on the first change.
+    static func authoritativeService(for serviceID: UUID, snapshot: [Service]) -> Service? {
+        Settings.shared.services.first(where: { $0.id == serviceID })
+            ?? snapshot.first(where: { $0.id == serviceID })
     }
     
     func getWebView(for service: Service, sessionIndex: Int) -> WKWebView? {
@@ -750,6 +788,11 @@ final class WebViewManager: NSObject {
         trimAllPromptHistories()
     }
 
+    @objc private func engineCustomCSSChangedNotification(_ notification: Notification) {
+        guard let serviceID = notification.object as? UUID else { return }
+        refreshCustomCSS(for: serviceID)
+    }
+
     
     private func resolvedService(for service: Service) -> Service {
         Settings.shared.services.first(where: { $0.id == service.id }) ?? service
@@ -1080,6 +1123,9 @@ final class WebViewManager: NSObject {
             )
             userContentController.addUserScript(inputScript)
 
+            // Record right-click points for context-menu direct picking
+            userContentController.addUserScript(WebScripts.makeContextMenuRecorderScript())
+
             let inputHandler = InputStateScriptMessageHandler(manager: self)
             userContentController.add(inputHandler, name: "quiperInputState")
             userContentController.add(inputHandler, name: "quiperInputTrackerReady")
@@ -1092,11 +1138,12 @@ final class WebViewManager: NSObject {
             isQuiperPrivate ? 1 : 0
         )
 
-        let webview = WKWebView(frame: bounds, configuration: config)
+        let webview = ContextMenuWebView(frame: bounds, configuration: config)
         webview.setValue(false, forKey: "drawsBackground")
         webview.autoresizingMask = [.width, .height]
         webview.uiDelegate = self
         webview.navigationDelegate = self
+        webview.contextMenuDelegate = self
         webview.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         webview.pageZoom = zoomLevels[service.id] ?? 1.0
         
@@ -2509,6 +2556,9 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         processTerminationRetryStates[token]?.reset()
         clearLoadError(for: webView)
         activeRequestURLsByWebView[token] = webView.url ?? activeRequestURLsByWebView[token]
+        // Loads re-run the creation-time stylesheet, so re-apply whatever is
+        // current (covers lazy tabs and post-edit navigations).
+        applyCurrentCustomCSS(to: webView)
         // A restored popup's load committed: the live URL takes over from
         // the pending one in snapshots and dedup.
         popupPendingURLByToken.removeValue(forKey: token)
@@ -2606,11 +2656,11 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
 
 private final class InputStateScriptMessageHandler: NSObject, WKScriptMessageHandler {
     private weak var manager: WebViewManager?
-    
+
     init(manager: WebViewManager) {
         self.manager = manager
     }
-    
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         let mgr = manager
         Task { @MainActor in
@@ -2623,5 +2673,24 @@ private final class InputStateScriptMessageHandler: NSObject, WKScriptMessageHan
                 break
             }
         }
+    }
+}
+
+// MARK: - Webview context menu
+//
+// WebKit exposes no delegate API for its context menu on macOS, but the
+// native menu passes through `NSView.willOpenMenu`, where
+// `ContextMenuWebView` inserts Suggest Selector on top of what WebKit built.
+// The manager only forwards the resulting action.
+
+@MainActor
+extension WebViewManager: WebViewContextMenuDelegate {
+    func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {
+        delegate?.webViewDidRequestSelectorSuggest(webView, at: point)
+    }
+
+    func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool {
+        guard let (service, sessionIndex) = findServiceAndSession(for: webView) else { return false }
+        return !isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex)
     }
 }

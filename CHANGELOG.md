@@ -11,6 +11,7 @@
 - **Temporary Fallback Without Sign-In**: Starting a website temporary chat while logged out now opens an ephemeral tab in place instead of failing, and engines without temporary support do the same.
 - **Popup Windows Reopen After Relaunch**: Popup windows now reopen where you left them — same session, address, size, and stacking — when you quit and relaunch, including for protected engines.
 - **Page Title Right-Click Menu**: Right-clicking the page title now offers Copy URL, Copy Title, Open in Default Browser, and Find. Left-click still opens the location editor, and dragging the title still moves the window.
+- **Suggest Selector**: Right-clicking the page title or any page element now offers Suggest Selector. Hovering highlights elements, and picking one opens a dialog with a robust CSS selector, a Root-to-Leaf specificity slider with a live preview and match count, Copy, and Hide — which adds a `display: none` rule to that engine's stylesheet. Ephemeral tabs stay excluded from every menu.
 
 ### Fixed
 

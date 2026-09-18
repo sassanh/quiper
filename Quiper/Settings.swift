@@ -1166,6 +1166,7 @@ class Settings: ObservableObject {
             CustomCSSStorage.saveCSS(defaultCSS, serviceID: serviceID)
         }
         saveSettings()
+        NotificationCenter.default.post(name: .engineCustomCSSChanged, object: serviceID)
     }
 
     func savePromptInputSelector(_ selector: String, serviceID: UUID) {
@@ -1182,6 +1183,7 @@ class Settings: ObservableObject {
         services[serviceIndex].customCSS = css
         CustomCSSStorage.saveCSS(css, serviceID: serviceID)
         saveSettings()
+        NotificationCenter.default.post(name: .engineCustomCSSChanged, object: serviceID)
     }
 
     func isTemplateActionScript(_ service: Service, action: CustomAction) -> Bool {

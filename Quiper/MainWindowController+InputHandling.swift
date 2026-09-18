@@ -40,6 +40,10 @@ extension MainWindowController {
                     self.cancelHistoryCycling()
                     return nil
                 }
+                if self.isSelectorSuggestActive {
+                    self.cancelSelectorSuggest()
+                    return nil
+                }
                 if let hud = self.locationBarHUDView, !hud.isHidden {
                     self.hideLocationBarHUD()
                     return nil

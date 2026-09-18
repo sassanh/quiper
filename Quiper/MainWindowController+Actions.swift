@@ -111,7 +111,25 @@ extension MainWindowController {
         findItem.isEnabled = currentWebView() != nil
         menu.addItem(findItem)
 
+        let suggestItem = NSMenuItem(
+            title: "Suggest Selector...",
+            action: #selector(startSelectorSuggestMode(_:)),
+            keyEquivalent: ""
+        )
+        suggestItem.target = self
+        suggestItem.isEnabled = currentWebView() != nil && !isCurrentTabEphemeral
+        menu.addItem(suggestItem)
+
         return menu
+    }
+
+    /// Whether the active tab is an ephemeral (Quiper private) tab. Ephemeral
+    /// tabs run no Quiper automation, so Suggest Selector stays unavailable.
+    /// Tabs with no resolvable service count as ephemeral (disabled).
+    var isCurrentTabEphemeral: Bool {
+        guard let service = currentService() else { return true }
+        let index = activeIndicesByID[service.id] ?? 0
+        return webViewManager.isQuiperPrivateTab(serviceID: service.id, sessionIndex: index)
     }
 
     /// The page title as shown in the toolbar: the webview's title, falling
@@ -783,6 +801,7 @@ extension MainWindowController: WebViewManagerDelegate {
     
     func webViewDidFinishNavigation(_ webView: WKWebView) {
         saveTabsState()
+        selectorSuggestDidReload(webView: webView)
         guard webView == currentWebView() else { return }
 
         // Ephemeral tabs run no tracker: leave their DOM untouched.

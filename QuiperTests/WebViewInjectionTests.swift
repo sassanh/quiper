@@ -83,7 +83,49 @@ final class WebViewInjectionTests: XCTestCase {
         let expectedCSS = try XCTUnwrap(Settings.shared.defaultCustomCSS(for: currentService))
         let expectedSelector = try XCTUnwrap(Settings.shared.defaultPromptInputSelector(for: currentService))
         let sources = webView.configuration.userContentController.userScripts.map(\.source)
-        XCTAssertTrue(sources.contains { $0.contains(expectedCSS) })
+        XCTAssertTrue(sources.contains { $0.contains(WebScripts.escapeForJavaScript(expectedCSS)) })
         XCTAssertTrue(sources.contains { $0.contains(expectedSelector) })
+    }
+
+    func testCustomCSSInjectionScriptUsesTaggedElement() {
+        let script = WebScripts.makeCustomCSSInjectionScript(css: "body { color: red; }")
+        XCTAssertTrue(script.contains("__quiper-custom-css"))
+        XCTAssertTrue(script.contains("getElementById"))
+        XCTAssertTrue(script.contains("body { color: red; }"))
+    }
+
+    func testRefreshCustomCSSWithNoSessionsIsNoOp() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let manager = WebViewManager(containerView: container)
+        manager.refreshCustomCSS(for: UUID())
+    }
+
+    func testAuthoritativeServicePrefersFreshSettingsOverStaleSnapshot() {
+        let serviceID = UUID()
+        let originalServices = Settings.shared.services
+        defer { Settings.shared.services = originalServices }
+        Settings.shared.services = [
+            Service(
+                id: serviceID,
+                name: "Test Engine",
+                url: "https://example.com",
+                focus_selector: "",
+                customCSS: "div { display: none; }",
+                templateCustomCSSSync: false
+            ),
+        ]
+        let staleSnapshot = [
+            Service(
+                id: serviceID,
+                name: "Test Engine",
+                url: "https://example.com",
+                focus_selector: "",
+                templateCustomCSSSync: true
+            ),
+        ]
+        let resolved = WebViewManager.authoritativeService(for: serviceID, snapshot: staleSnapshot)
+        XCTAssertEqual(resolved?.templateCustomCSSSync, false)
+        XCTAssertEqual(resolved?.customCSS, "div { display: none; }")
+        XCTAssertNil(WebViewManager.authoritativeService(for: UUID(), snapshot: staleSnapshot))
     }
 }
