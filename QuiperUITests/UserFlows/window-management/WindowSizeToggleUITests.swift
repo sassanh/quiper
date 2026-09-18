@@ -146,20 +146,18 @@ final class WindowSizeToggleUITests: BaseUITest {
         let relX = midX - windowOrigin.x
         let relY = midY - windowOrigin.y
         
-        // Create coordinate relative to the Window's top-left
-        let windowAnchor = mainWindow.coordinate(withNormalizedOffset: .zero)
-        let startCoord = windowAnchor.withOffset(CGVector(dx: relX, dy: relY))
-        
-        // Drag to move window to a different position
+        // Drag to move window to a different position, retrying: synthesized
+        // drags are occasionally dropped on loaded CI runners.
         let dragVector = CGVector(dx: 150, dy: 100)
-        let endCoord = windowAnchor.withOffset(
-            CGVector(dx: relX + dragVector.dx, dy: relY + dragVector.dy)
-        )
-        
-        startCoord.press(forDuration: 0.5, thenDragTo: endCoord)
-        Thread.sleep(forTimeInterval: 0.3)
-        
-        let repositionedFrame = mainWindow.frame
+        var repositionedFrame = mainWindow.frame
+        for _ in 0..<3 {
+            dragOverlayWindow(mainWindow, relX: relX, relY: relY, by: dragVector)
+            repositionedFrame = mainWindow.frame
+            if repositionedFrame.origin.x != initialFrame.origin.x
+                || repositionedFrame.origin.y != initialFrame.origin.y {
+                break
+            }
+        }
         
         // Verify the window actually moved
         XCTAssertNotEqual(repositionedFrame.origin.x, initialFrame.origin.x, "Window should have moved horizontally")

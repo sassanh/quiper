@@ -9,6 +9,7 @@
 - **On Focus Loss Choice**: The new Focus settings offer Hide, Dim, or Unchanged when Quiper loses focus. Hide stays off unless chosen and only hides the overlay when no other Quiper window is open. Dim (the default) fades the window and its content so an inactive overlay is unmistakable, and the first click only refocuses instead of reaching the page. Loading and recording animations stop while unfocused regardless of the choice.
 - **Reorganized General Settings**: The Behavior section is now Tabs and Focus sections, and engine number shortcuts moved to the Shortcuts tab.
 - **Temporary Fallback Without Sign-In**: Starting a website temporary chat while logged out now opens an ephemeral tab in place instead of failing, and engines without temporary support do the same.
+- **Popup Windows Reopen After Relaunch**: Popup windows now reopen where you left them — same session, address, size, and stacking — when you quit and relaunch, including for protected engines.
 
 ### Fixed
 

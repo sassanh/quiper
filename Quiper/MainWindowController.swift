@@ -170,6 +170,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var currentServiceName: String?
     var currentServiceID: UUID?
     var webViewManager: WebViewManager!
+    /// Launch-restored popups stashed by restoreTabsState and created on
+    /// first show(): attaching while the overlay is hidden silently fails,
+    /// so creation waits until the overlay is displayed.
+    var pendingPopupRestore: [PersistedPopupState]?
     var emptyStateView: EmptyStateView!
     var findBarViewController: FindBarViewController!
     var findBarViewControllers: [ObjectIdentifier: FindBarViewController] = [:]
@@ -678,6 +682,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                     self?.updateCollectionBehaviorForVisibilityState()
                 }
             }
+            // Commit the overlay's mapping before child popups show, so
+            // opener chains pin even when the whole tree shows at once.
+            CATransaction.flush()
         }
         NSApp.activate(ignoringOtherApps: true)
 
@@ -685,6 +692,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             sheet.makeKeyAndOrderFront(nil)
         } else if !GhostOnboardingManager.shared.isActive {
             focusInputInActiveWebviewWithFallback()
+        }
+
+        // First show consumes any launch-restored popups: attaching requires
+        // a displayed overlay, so creation waited until now. Display is
+        // forced first so opener chains attach to composited parents.
+        if let pending = pendingPopupRestore {
+            pendingPopupRestore = nil
+            window?.display()
+            webViewManager?.restorePopups(pending)
         }
 
         // AppKit re-shows ordered-out child windows on parent show, so
@@ -1057,6 +1073,7 @@ struct SecureTabState: Codable {
     var tabInputs: [Int: TabInputState]?
     var tabPromptHistories: [Int: [PromptHistoryEntry]]?
     var tabPromptHistoryEnabledOverrides: [Int: Bool]?
+    var popups: [PersistedPopupState]?
 
     enum CodingKeys: String, CodingKey {
         case activeIndex
@@ -1065,15 +1082,17 @@ struct SecureTabState: Codable {
         case tabInputs
         case tabPromptHistories
         case tabPromptHistoryEnabledOverrides
+        case popups
     }
 
-    init(activeIndex: Int, openTabs: [Int: String], tabTitles: [Int: String]?, tabInputs: [Int: TabInputState]?, tabPromptHistories: [Int: [PromptHistoryEntry]]?, tabPromptHistoryEnabledOverrides: [Int: Bool]?) {
+    init(activeIndex: Int, openTabs: [Int: String], tabTitles: [Int: String]?, tabInputs: [Int: TabInputState]?, tabPromptHistories: [Int: [PromptHistoryEntry]]?, tabPromptHistoryEnabledOverrides: [Int: Bool]?, popups: [PersistedPopupState]? = nil) {
         self.activeIndex = activeIndex
         self.openTabs = openTabs
         self.tabTitles = tabTitles
         self.tabInputs = tabInputs
         self.tabPromptHistories = tabPromptHistories
         self.tabPromptHistoryEnabledOverrides = tabPromptHistoryEnabledOverrides
+        self.popups = popups
     }
 
     init(from decoder: Decoder) throws {
@@ -1084,6 +1103,9 @@ struct SecureTabState: Codable {
         tabInputs = try container.decodeIfPresent([Int: TabInputState].self, forKey: .tabInputs)
         tabPromptHistories = try container.decodeIfPresent([Int: [PromptHistoryEntry]].self, forKey: .tabPromptHistories)
         tabPromptHistoryEnabledOverrides = try container.decodeIfPresent([Int: Bool].self, forKey: .tabPromptHistoryEnabledOverrides)
+        // Lenient like the global state: a corrupt popups array drops popups,
+        // never the engine's sessions.
+        popups = (try? container.decodeIfPresent([PersistedPopupState].self, forKey: .popups)) ?? nil
     }
 }
 
@@ -1115,6 +1137,7 @@ struct SecureTabState: Codable {
             var allTabInputs = manager.getOpenSessionsInputState()
             var allPromptHistories = manager.getOpenSessionsPromptHistories()
             var allPromptHistoryOverrides = manager.getOpenSessionsPromptHistoryOverrides()
+            var allPopups = manager.getPopupSnapshotState()
             
             // Filter out services with preservePrompt disabled
             for svc in services {
@@ -1133,13 +1156,15 @@ struct SecureTabState: Codable {
                         let secureInputs = allTabInputs[svc.id]
                         let secureHistories = allPromptHistories[svc.id]
                         let secureOverrides = allPromptHistoryOverrides[svc.id]
+                        let securePopups = allPopups.filter { $0.serviceID == svc.id }
                         let secureState = SecureTabState(
                             activeIndex: activeIdx,
                             openTabs: sessions,
                             tabTitles: secureTitles,
                             tabInputs: secureInputs,
                             tabPromptHistories: secureHistories,
-                            tabPromptHistoryEnabledOverrides: secureOverrides
+                            tabPromptHistoryEnabledOverrides: secureOverrides,
+                            popups: securePopups.isEmpty ? nil : securePopups
                         )
                         let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: svc.id).appendingPathComponent("quiper_tabs.json")
                         if let data = try? JSONEncoder().encode(secureState) {
@@ -1153,12 +1178,14 @@ struct SecureTabState: Codable {
                 allTabInputs.removeValue(forKey: svc.id)
                 allPromptHistories.removeValue(forKey: svc.id)
                 allPromptHistoryOverrides.removeValue(forKey: svc.id)
+                allPopups.removeAll { $0.serviceID == svc.id }
             }
             state.openTabs = allOpenTabs
             state.tabTitles = allTabTitles
             state.tabInputs = allTabInputs
             state.tabPromptHistories = allPromptHistories
             state.tabPromptHistoryEnabledOverrides = allPromptHistoryOverrides
+            state.popups = allPopups.isEmpty ? nil : allPopups
         }
 
         Settings.shared.persistedTabState = state
@@ -1191,6 +1218,11 @@ struct SecureTabState: Codable {
         webViewManager.restoreTabPromptHistoryOverrides(savedState.tabPromptHistoryEnabledOverrides)
 
         // Restore open tabs
+        // Global popups come first, then each unlocked engine's secure ones:
+        // cross-service order is irrelevant (only the active tab's popups
+        // ever show), within-service creation order is preserved on both
+        // the save split and this restore.
+        var restoredPopups = savedState.popups ?? []
         for (svcID, sessions) in savedState.openTabs {
             guard let service = services.first(where: { $0.id == svcID }) else { continue }
             
@@ -1210,6 +1242,9 @@ struct SecureTabState: Codable {
                     }
                     if let secureOverrides = secureState.tabPromptHistoryEnabledOverrides {
                         webViewManager.restoreTabPromptHistoryOverrides([service.id: secureOverrides])
+                    }
+                    if let securePopups = secureState.popups {
+                        restoredPopups.append(contentsOf: securePopups)
                     }
                 }
             }
@@ -1231,6 +1266,18 @@ struct SecureTabState: Codable {
            let service = services.first(where: { $0.id == activeID }) {
             currentServiceID = service.id
             currentServiceName = service.name
+        }
+
+        // Stash launch popups instead of creating them: the overlay is still
+        // hidden here and attaching to a hidden window silently fails (the
+        // restored window ends up parentless). First show() creates them
+        // after forcing display, then syncs visibility for the active tab.
+        pendingPopupRestore = restoredPopups.isEmpty ? nil : restoredPopups
+        if let service = currentService() {
+            let activeIndex = activeIndicesByID[service.id] ?? 0
+            webViewManager.syncPopupVisibility(
+                forActiveTab: TabIdentifier(serviceID: service.id, sessionIndex: activeIndex)
+            )
         }
 
         refreshInstantiationState()

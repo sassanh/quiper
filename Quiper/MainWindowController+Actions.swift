@@ -758,6 +758,10 @@ extension MainWindowController: WebViewManagerDelegate {
                         setupSessionTitleObserver(for: service, sessionIndex: sessionIndex, webView: webView)
                     }
                 }
+
+                if let securePopups = state.popups {
+                    webViewManager.restorePopups(securePopups)
+                }
                 
                 if currentServiceID == service.id {
                     updateActiveWebview()

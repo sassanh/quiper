@@ -57,6 +57,7 @@ enum ConfigPortManager {
                 ps.persistedTabState?.tabPromptHistories.removeValue(forKey: id)
                 ps.persistedTabState?.tabPromptHistoryEnabledOverrides.removeValue(forKey: id)
                 ps.persistedTabState?.tabHistory?.removeAll { $0.serviceID == id }
+                ps.persistedTabState?.popups?.removeAll { $0.serviceID == id }
                 if ps.persistedTabState?.activeServiceID == id {
                     ps.persistedTabState?.activeServiceID = ps.services.first?.id
                 }

@@ -352,6 +352,28 @@ struct TabIdentifier: Equatable, Codable, Hashable {
     let sessionIndex: Int
 }
 
+/// A persisted popup window: its owning session, current URL, frame, and
+/// position in creation order (oldest first) so restores reproduce stacking.
+struct PersistedPopupState: Equatable, Codable, Sendable {
+    var serviceID: UUID
+    var sessionIndex: Int
+    var url: String
+    var frameX: Double
+    var frameY: Double
+    var frameWidth: Double
+    var frameHeight: Double
+
+    var owner: TabIdentifier {
+        TabIdentifier(serviceID: serviceID, sessionIndex: sessionIndex)
+    }
+
+    /// Restore/merge identity: same owning session and URL regardless of
+    /// frame, so a moved window does not duplicate across sources.
+    func hasSameOwnerAndURL(as other: PersistedPopupState) -> Bool {
+        serviceID == other.serviceID && sessionIndex == other.sessionIndex && url == other.url
+    }
+}
+
 struct TabInputState: Codable, Equatable {
     var text: String
     var isContentEditable: Bool

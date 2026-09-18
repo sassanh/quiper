@@ -48,25 +48,27 @@ final class MainWindowPositionUITests: BaseUITest {
         let relX = midX - windowOrigin.x
         let relY = midY - windowOrigin.y
         
-        // Create coordinate relative to the Window's top-left
-        let windowAnchor = mainWindow.coordinate(withNormalizedOffset: .zero)
-        let startCoord = windowAnchor.withOffset(CGVector(dx: relX, dy: relY))
-        
         // Drag vector
         let dragVector = CGVector(dx: 150, dy: 100)
-        let endCoord = windowAnchor.withOffset(
-            CGVector(dx: relX + dragVector.dx, dy: relY + dragVector.dy)
-        )
-        
-        startCoord.press(forDuration: 0.5, thenDragTo: endCoord)
-        
+
+        // Synthesized drags are occasionally dropped on loaded CI runners:
+        // retry until the frame reflects the drag instead of asserting on
+        // a single gesture.
+        var finalFrame = mainWindow.frame
+        var didMove = false
+        for _ in 0..<3 {
+            dragOverlayWindow(mainWindow, relX: relX, relY: relY, by: dragVector)
+            finalFrame = mainWindow.frame
+            let dx = finalFrame.origin.x - initialFrame.origin.x
+            let dy = finalFrame.origin.y - initialFrame.origin.y
+            if abs(dx) > 10 || abs(dy) > 10 {
+                didMove = true
+                break
+            }
+        }
+
         // --- Step 5: Verify New Position ---
-        let finalFrame = mainWindow.frame
-        
-        let dx = finalFrame.origin.x - initialFrame.origin.x
-        let dy = finalFrame.origin.y - initialFrame.origin.y
-        
-        XCTAssertTrue(abs(dx) > 10 || abs(dy) > 10, "Window should have moved significantly")
+        XCTAssertTrue(didMove, "Window should have moved significantly")
         
         
         // --- Step 6: Move to Top-Center of Screen (Reset) ---
@@ -74,23 +76,25 @@ final class MainWindowPositionUITests: BaseUITest {
         // Target: Center X of screen, Top Y=100 (safely below menu bar)
         // We assume 1440x900 defaults or similar. Center approx 720.
         // Use finalFrame to calculate adjustment.
-        
+
         let screenWidth = 1440.0
         let targetX = (screenWidth / 2) - (finalFrame.width / 2)
         let targetY = 100.0 // Vertically top-ish
         
-        // Calculate required move to reach Top-Center
-        let resetDeltaX = targetX - finalFrame.origin.x
-        let resetDeltaY = targetY - finalFrame.origin.y
-        
-        // Use relative start coord again (same spot on window, even though window moved)
-        let resetAnchor = mainWindow.coordinate(withNormalizedOffset: .zero)
-        let resetSourceCoord = resetAnchor.withOffset(CGVector(dx: relX, dy: relY))
-        let resetTargetCoord = resetAnchor.withOffset(
-            CGVector(dx: relX + resetDeltaX, dy: relY + resetDeltaY)
-        )
-        
-        resetSourceCoord.press(forDuration: 0.5, thenDragTo: resetTargetCoord)
+        // Reset to top-center from a fresh frame each attempt: a single long
+        // drag can fall short under load, so re-issue the remaining delta
+        // until the window is near the top.
+        for _ in 0..<4 {
+            let current = mainWindow.frame
+            if current.minY < 200.0 {
+                break
+            }
+            let remaining = CGVector(
+                dx: targetX - current.origin.x,
+                dy: targetY - current.origin.y
+            )
+            dragOverlayWindow(mainWindow, relX: relX, relY: relY, by: remaining)
+        }
         
         // Verify
         let centeredFrame = mainWindow.frame

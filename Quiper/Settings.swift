@@ -709,6 +709,13 @@ class Settings: ObservableObject {
                         if let inputs = state.tabInputs { base.tabInputs[engine.service.id] = inputs }
                         if let histories = state.tabPromptHistories { base.tabPromptHistories[engine.service.id] = histories }
                         if let overrides = state.tabPromptHistoryEnabledOverrides { base.tabPromptHistoryEnabledOverrides[engine.service.id] = overrides }
+                        if let popups = state.popups {
+                            var merged = base.popups ?? []
+                            merged.append(contentsOf: popups.filter { candidate in
+                                !merged.contains(where: { $0.hasSameOwnerAndURL(as: candidate) })
+                            })
+                            base.popups = merged.isEmpty ? nil : merged
+                        }
                     }
                 }
                 // Preserve tabHistory entries for decrypted engines that were previously filtered
@@ -719,6 +726,14 @@ class Settings: ObservableObject {
                         mergedHistory.append(entry)
                     }
                 }
+                // Same for popups: reattach decrypted engines' popups in stored order.
+                var mergedPopups = base.popups ?? []
+                for popup in persistedTabState?.popups ?? [] where decryptedIDs.contains(popup.serviceID) {
+                    if !mergedPopups.contains(where: { $0.hasSameOwnerAndURL(as: popup) }) {
+                        mergedPopups.append(popup)
+                    }
+                }
+                base.popups = mergedPopups.isEmpty ? nil : mergedPopups
                 // Also merge activeServiceID if it was a decrypted engine and was stripped
                 if base.activeServiceID == nil, let current = persistedTabState?.activeServiceID, decryptedIDs.contains(current) {
                     base.activeServiceID = current
@@ -799,6 +814,10 @@ class Settings: ObservableObject {
             state.tabPromptHistoryEnabledOverrides.removeValue(forKey: id)
         }
         state.tabHistory = state.tabHistory?.filter { !secureIDs.contains($0.serviceID) }
+        state.popups?.removeAll { secureIDs.contains($0.serviceID) }
+        if state.popups?.isEmpty == true {
+            state.popups = nil
+        }
         if let active = state.activeServiceID, secureIDs.contains(active) {
             state.activeServiceID = nil
         }
@@ -1034,7 +1053,8 @@ class Settings: ObservableObject {
                         tabTitles: state.tabTitles[serviceID],
                         tabInputs: state.tabInputs[serviceID],
                         tabPromptHistories: state.tabPromptHistories[serviceID],
-                        tabPromptHistoryEnabledOverrides: state.tabPromptHistoryEnabledOverrides[serviceID]
+                        tabPromptHistoryEnabledOverrides: state.tabPromptHistoryEnabledOverrides[serviceID],
+                        popups: state.popups?.filter { $0.serviceID == serviceID }
                     )
                     let url = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
                     if let data = try? JSONEncoder().encode(secureState) {
@@ -1047,6 +1067,7 @@ class Settings: ObservableObject {
                     state.tabPromptHistoryEnabledOverrides.removeValue(forKey: serviceID)
                     state.activeIndicesByID.removeValue(forKey: serviceID)
                     state.tabHistory = state.tabHistory?.filter { $0.serviceID != serviceID }
+                    state.popups?.removeAll { $0.serviceID == serviceID }
                     if state.activeServiceID == serviceID {
                         state.activeServiceID = services.first?.id
                     }

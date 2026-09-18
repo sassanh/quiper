@@ -80,6 +80,27 @@ class BaseUITest: XCTestCase {
             XCTFail("Main window content (SessionSelector) must be visible for tests")
         }
     }
+
+    /// Drags the overlay window from the free space between the selectors.
+    /// `relX`/`relY` locate the grab point relative to the window's top-left;
+    /// they stay valid across retries because they move with the window.
+    /// One synthesized drag is occasionally dropped on loaded CI runners, so
+    /// this performs a single gesture and waits for the frame to settle;
+    /// callers retry until the frame reflects the drag instead of asserting
+    /// on one open-loop gesture.
+    func dragOverlayWindow(
+        _ window: XCUIElement,
+        relX: CGFloat,
+        relY: CGFloat,
+        by vector: CGVector,
+        settle: TimeInterval = 0.5
+    ) {
+        let anchor = window.coordinate(withNormalizedOffset: .zero)
+        let start = anchor.withOffset(CGVector(dx: relX, dy: relY))
+        let end = anchor.withOffset(CGVector(dx: relX + vector.dx, dy: relY + vector.dy))
+        start.press(forDuration: 0.5, thenDragTo: end)
+        Thread.sleep(forTimeInterval: settle)
+    }
     
     /// Switch to a specific Settings tab
     func switchToSettingsTab(_ tabName: String) {

@@ -315,4 +315,106 @@ struct TabSurvivalTests {
         _ = settings.loadSettings()
         #expect(settings.persistedTabState == nil)
     }
+
+    @Test func persistedTabState_Codable_WithPopups() throws {
+        let serviceID = UUID()
+        let first = PersistedPopupState(
+            serviceID: serviceID, sessionIndex: 1,
+            url: "https://example.com/a",
+            frameX: 100, frameY: 200, frameWidth: 600, frameHeight: 700
+        )
+        let second = PersistedPopupState(
+            serviceID: serviceID, sessionIndex: 1,
+            url: "https://example.com/b",
+            frameX: 120, frameY: 220, frameWidth: 600, frameHeight: 700
+        )
+        var state = PersistedTabState()
+        state.openTabs = [serviceID: [1: "https://gemini.google.com/chat"]]
+        state.popups = [first, second]
+
+        let data = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(PersistedTabState.self, from: data)
+
+        // Order survives the round trip: restores reproduce stacking.
+        #expect(decoded.popups == [first, second])
+        #expect(decoded.popups?.first?.owner == TabIdentifier(serviceID: serviceID, sessionIndex: 1))
+    }
+
+    @Test func persistedTabState_LegacyDataDecodesWithoutPopups() throws {
+        // UUID-keyed dictionaries encode as arrays (see settings.json),
+        // never objects: legacy data predates popups but keeps that shape.
+        let json = """
+        {"openTabs": [], "tabTitles": []}
+        """.data(using: .utf8) ?? Data()
+        let decoded = try JSONDecoder().decode(PersistedTabState.self, from: json)
+
+        #expect(decoded.popups == nil)
+        #expect(decoded.openTabs.isEmpty)
+    }
+
+    @Test func persistedTabState_CorruptPopupsFallsBackToNil() throws {
+        struct Wrapper: Decodable {
+            let state: PersistedTabState
+            init(from decoder: Decoder) throws {
+                // The app decodes tab state on the main actor (see
+                // PersistedSettings decoding), so assume it here too.
+                state = try MainActor.assumeIsolated {
+                    try PersistedTabState.decode(from: decoder, services: []).state
+                }
+            }
+        }
+        let json = """
+        {"openTabs": [], "popups": "oops"}
+        """.data(using: .utf8) ?? Data()
+        let decoded = try JSONDecoder().decode(Wrapper.self, from: json)
+
+        #expect(decoded.state.popups == nil)
+        #expect(decoded.state.openTabs.isEmpty)
+
+        // The direct Decodable entry point is equally lenient.
+        let direct = try JSONDecoder().decode(PersistedTabState.self, from: json)
+        #expect(direct.popups == nil)
+        #expect(direct.openTabs.isEmpty)
+    }
+
+    @Test func secureTabState_Codable_WithPopups() throws {
+        let serviceID = UUID()
+        let popup = PersistedPopupState(
+            serviceID: serviceID, sessionIndex: 0,
+            url: "https://example.com/secure",
+            frameX: 50, frameY: 60, frameWidth: 500, frameHeight: 600
+        )
+        let state = MainWindowController.SecureTabState(
+            activeIndex: 0,
+            openTabs: [0: "https://gemini.google.com/chat"],
+            tabTitles: nil, tabInputs: nil,
+            tabPromptHistories: nil, tabPromptHistoryEnabledOverrides: nil,
+            popups: [popup]
+        )
+
+        let data = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data)
+
+        #expect(decoded.popups == [popup])
+    }
+
+    @Test func secureTabState_LegacyDataDecodesWithoutPopups() throws {
+        let json = """
+        {"activeIndex": 0, "openTabs": {"0": "https://gemini.google.com/chat"}}
+        """.data(using: .utf8) ?? Data()
+        let decoded = try JSONDecoder().decode(MainWindowController.SecureTabState.self, from: json)
+
+        #expect(decoded.popups == nil)
+        #expect(decoded.openTabs[0] == "https://gemini.google.com/chat")
+    }
+
+    @Test func secureTabState_CorruptPopupsFallsBackToNil() throws {
+        let json = """
+        {"activeIndex": 0, "openTabs": {"0": "https://gemini.google.com/chat"}, "popups": "oops"}
+        """.data(using: .utf8) ?? Data()
+        let decoded = try JSONDecoder().decode(MainWindowController.SecureTabState.self, from: json)
+
+        #expect(decoded.popups == nil)
+        #expect(decoded.openTabs[0] == "https://gemini.google.com/chat")
+    }
 }

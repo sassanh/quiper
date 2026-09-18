@@ -733,6 +733,7 @@ struct PersistedTabState: Codable {
     var tabPromptHistories: [UUID: [Int: [PromptHistoryEntry]]] = [:] // serviceID -> [sessionIndex: [PromptHistoryEntry]]
     var tabPromptHistoryEnabledOverrides: [UUID: [Int: Bool]] = [:] // serviceID -> [sessionIndex: Bool]
     var tabHistory: [TabIdentifier]?
+    var popups: [PersistedPopupState]? // session-owned popup windows in creation order (oldest first)
 
     enum CodingKeys: String, CodingKey {
         case activeServiceID
@@ -743,9 +744,10 @@ struct PersistedTabState: Codable {
         case tabPromptHistories
         case tabPromptHistoryEnabledOverrides
         case tabHistory
+        case popups
     }
 
-    init(activeServiceID: UUID? = nil, activeIndicesByID: [UUID: Int] = [:], openTabs: [UUID: [Int: String]] = [:], tabTitles: [UUID: [Int: String]] = [:], tabInputs: [UUID: [Int: TabInputState]] = [:], tabPromptHistories: [UUID: [Int: [PromptHistoryEntry]]] = [:], tabPromptHistoryEnabledOverrides: [UUID: [Int: Bool]] = [:], tabHistory: [TabIdentifier]? = nil) {
+    init(activeServiceID: UUID? = nil, activeIndicesByID: [UUID: Int] = [:], openTabs: [UUID: [Int: String]] = [:], tabTitles: [UUID: [Int: String]] = [:], tabInputs: [UUID: [Int: TabInputState]] = [:], tabPromptHistories: [UUID: [Int: [PromptHistoryEntry]]] = [:], tabPromptHistoryEnabledOverrides: [UUID: [Int: Bool]] = [:], tabHistory: [TabIdentifier]? = nil, popups: [PersistedPopupState]? = nil) {
         self.activeServiceID = activeServiceID
         self.activeIndicesByID = activeIndicesByID
         self.openTabs = openTabs
@@ -754,6 +756,7 @@ struct PersistedTabState: Codable {
         self.tabPromptHistories = tabPromptHistories
         self.tabPromptHistoryEnabledOverrides = tabPromptHistoryEnabledOverrides
         self.tabHistory = tabHistory
+        self.popups = popups
     }
 
     init(from decoder: Decoder) throws {
@@ -766,6 +769,9 @@ struct PersistedTabState: Codable {
         tabPromptHistories = try container.decodeIfPresent([UUID: [Int: [PromptHistoryEntry]]].self, forKey: .tabPromptHistories) ?? [:]
         tabPromptHistoryEnabledOverrides = try container.decodeIfPresent([UUID: [Int: Bool]].self, forKey: .tabPromptHistoryEnabledOverrides) ?? [:]
         tabHistory = try container.decodeIfPresent([TabIdentifier].self, forKey: .tabHistory)
+        // Lenient like SecureTabState: a corrupt popups array drops popups,
+        // never the whole tab state.
+        popups = (try? container.decodeIfPresent([PersistedPopupState].self, forKey: .popups)) ?? nil
     }
 
     private enum LegacyCodingKeys: String, CodingKey {
@@ -908,6 +914,12 @@ struct PersistedTabState: Codable {
             tabHistory = nil
         }
 
+        // Popups never existed in the legacy URL-keyed format: absent stays
+        // absent, present decodes as-is. A corrupt popups array must not
+        // sink the whole tab state, so fall back to nil like other fields.
+        let popups: [PersistedPopupState]? =
+            (try? currentContainer.decodeIfPresent([PersistedPopupState].self, forKey: .popups)) ?? nil
+
         return (
             PersistedTabState(
                 activeServiceID: activeServiceID,
@@ -917,7 +929,8 @@ struct PersistedTabState: Codable {
                 tabInputs: tabInputs.value,
                 tabPromptHistories: tabPromptHistories.value,
                 tabPromptHistoryEnabledOverrides: tabPromptHistoryEnabledOverrides.value,
-                tabHistory: tabHistory
+                tabHistory: tabHistory,
+                popups: popups
             ),
             didMigrateLegacyIdentifiers
         )
