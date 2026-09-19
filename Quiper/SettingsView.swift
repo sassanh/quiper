@@ -1244,6 +1244,11 @@ struct ServiceDetailView: View {
     @State private var lastUnlockError: Error? = nil
     @State private var showPinnedToSingleConfirmation = false
     @State private var pinnedToSingleHasUnsavedChanges = false
+    /// Stable row identities for the Tab URLs list. The model is a plain
+    /// `[String]` keyed by slot position, so swapping two URLs would only
+    /// cross-fade their contents in place. These IDs travel with their URL
+    /// when reordered, letting rows physically slide like routing-rule rows.
+    @State private var pinnedTabSlotIDs: [UUID] = []
 
     private var detailSelectionBinding: Binding<DetailSelection?> {
         Binding(
@@ -2254,13 +2259,22 @@ struct ServiceDetailView: View {
     
     private func movePinnedURL(from: Int, to: Int) {
         guard from >= 0, from < service.pinnedTabURLs.count,
-              to >= 0, to < service.pinnedTabURLs.count else { return }
+              to >= 0, to < service.pinnedTabURLs.count,
+              pinnedTabSlotIDs.count == service.pinnedTabURLs.count else { return }
 
         withAnimation(.easeInOut(duration: 0.25)) {
             service.pinnedTabURLs.swapAt(from, to)
+            pinnedTabSlotIDs.swapAt(from, to)
         }
         settings.saveSettings()
         appController?.reloadServices()
+    }
+
+    private func syncPinnedTabSlotIDs() {
+        guard service.isPinnedTabs else { return }
+        if pinnedTabSlotIDs.count != service.pinnedTabURLs.count {
+            pinnedTabSlotIDs = service.pinnedTabURLs.map { _ in UUID() }
+        }
     }
 
     private func pinnedURLBinding(at index: Int) -> Binding<String> {
@@ -2279,6 +2293,13 @@ struct ServiceDetailView: View {
 
     @ViewBuilder
     private func pinnedTabRow(at index: Int) -> some View {
+        // Same gate the session selector uses: a slot counts as defined
+        // exactly when it yields a pinned URL.
+        let hasURL = service.pinnedURL(for: index) != nil
+        // Fixed semantic colors like the routing rows (never .accentColor,
+        // which resolves through the tint environment and washes out).
+        let tint: Color = hasURL ? .green : .secondary
+
         HStack(spacing: 12) {
             Text(SessionSlots.label(for: index))
                 .font(.callout.monospacedDigit())
@@ -2287,9 +2308,26 @@ struct ServiceDetailView: View {
                 .frame(width: 20, alignment: .center)
                 .accessibilityLabel("Tab \(SessionSlots.label(for: index))")
 
-            TextField("https://example.com", text: pinnedURLBinding(at: index))
+            TextField("", text: pinnedURLBinding(at: index))
                 .textFieldStyle(.roundedBorder)
+                .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity)
+                .overlay(alignment: .leading) {
+                    // Explicit prompt in placeholder gray. There is no API to
+                    // disable automatic link styling, and a bare URL string
+                    // gets link-colored no matter the foreground style — but
+                    // auto-link color follows tint, so scope a gray tint here.
+                    // Field chrome (cursor, selection, focus ring) is untouched.
+                    if (service.pinnedTabURLs.indices.contains(index) ? service.pinnedTabURLs[index] : "").isEmpty {
+                        Text("https://example.com")
+                            .foregroundStyle(.tertiary)
+                            .tint(.secondary)
+                            .padding(.leading, 6)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .accessibilityLabel("Tab \(SessionSlots.label(for: index)) URL")
                 .onSubmit {
                     // Commit-only refresh: per-keystroke reloads would steal
                     // focus from this field by refocusing the main webview.
@@ -2337,11 +2375,11 @@ struct ServiceDetailView: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.accentColor.opacity(0.06))
+                .fill(tint.opacity(0.08))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(Color.accentColor.opacity(0.2), lineWidth: 1)
+                .strokeBorder(tint.opacity(0.25), lineWidth: 1)
         )
     }
 
@@ -2407,11 +2445,16 @@ struct ServiceDetailView: View {
                                 .fixedSize(horizontal: false, vertical: true)
 
                             VStack(alignment: .leading, spacing: 8) {
-                                ForEach(Array(service.pinnedTabURLs.indices), id: \.self) { index in
-                                    pinnedTabRow(at: index)
+                                ForEach(pinnedTabSlotIDs, id: \.self) { slotID in
+                                    if let position = pinnedTabSlotIDs.firstIndex(of: slotID),
+                                       service.pinnedTabURLs.indices.contains(position) {
+                                        pinnedTabRow(at: position)
+                                    }
                                 }
                             }
                             .padding(.leading, 8)
+                            .onAppear { syncPinnedTabSlotIDs() }
+                            .onChange(of: service.pinnedTabURLs.count) { _, _ in syncPinnedTabSlotIDs() }
                         }
                         .padding()
                         .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
