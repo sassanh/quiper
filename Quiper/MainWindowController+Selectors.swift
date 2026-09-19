@@ -340,6 +340,7 @@ extension MainWindowController {
     }
 
     func refreshServiceSegments() {
+        engineIconCache.removeAll()
         let items = services.map { $0.name }
         
         if let segControl = serviceSelector {
@@ -374,6 +375,7 @@ extension MainWindowController {
             currentServiceName = services.first?.name
         }
         layoutSelectors()
+        refreshModifierHUDContents()
     }
 
     func syncCurrentServiceSelection() {

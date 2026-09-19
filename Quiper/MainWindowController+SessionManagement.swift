@@ -60,6 +60,7 @@ extension MainWindowController {
             GhostOnboardingManager.shared.serviceDidSwitch()
         }
         saveTabsState()
+        refreshModifierHUDHighlight()
     }
 
     func switchSession(to index: Int) {
@@ -105,6 +106,7 @@ extension MainWindowController {
             GhostOnboardingManager.shared.sessionDidSwitch()
         }
         saveTabsState()
+        refreshModifierHUDHighlight()
     }
 
     func reloadServices() {
@@ -173,6 +175,7 @@ extension MainWindowController {
         sessionSelector?.needsDisplay = true
         
         updateEmptyStateShortcuts()
+        refreshModifierHUDContents()
     }
 
     // MARK: - Temporary sessions
@@ -280,6 +283,14 @@ extension MainWindowController {
         return services.first
     }
 
+    /// Single gate for the currently visible tab. Every HUD highlight and
+    /// modifier-ring data source goes through here.
+    func currentTabIdentifier() -> TabIdentifier? {
+        guard let service = currentService() else { return nil }
+        let activeIndex = activeIndicesByID[service.id] ?? 0
+        return TabIdentifier(serviceID: service.id, sessionIndex: activeIndex)
+    }
+
     func updateActiveWebview(focusWebView: Bool = true, forceCreate: Bool = false) {
         guard let service = currentService(), webViewManager != nil else { return }
         var activeIndex = activeIndicesByID[service.id] ?? 0
@@ -309,6 +320,7 @@ extension MainWindowController {
                 guard let img = image, error == nil else { return }
                 DispatchQueue.main.async {
                     self?.tabPreviews[oldTab] = img
+                    self?.refreshModifierHUDContents()
                 }
             }
         }
@@ -660,6 +672,7 @@ extension MainWindowController {
         sessionTitleObservations[key] = webView.observe(\.title, options: [.new]) { [weak self] _, _ in
             DispatchQueue.main.async {
                 self?.updateEmptyStateShortcuts()
+                self?.refreshModifierHUDContents()
             }
         }
     }

@@ -184,6 +184,8 @@ class Settings: ObservableObject {
         }
     }
     @Published var showHiddenBarOnModifiers: Bool = true
+    @Published var sessionModifierHoldBehavior: ModifierHoldBehavior = .expand
+    @Published var engineModifierHoldBehavior: ModifierHoldBehavior = .expand
     @Published var windowAppearance: WindowAppearanceSettings = .default
     @Published var colorScheme: AppColorScheme = .system {
         didSet {
@@ -342,6 +344,8 @@ class Settings: ObservableObject {
         topBarVisibility = .visible
         dragAreaPosition = .top
         showHiddenBarOnModifiers = true
+        sessionModifierHoldBehavior = .expand
+        engineModifierHoldBehavior = .expand
         windowAppearance = .default
         colorScheme = .system
         automaticallySwitchEngineOnLastSessionClose = true
@@ -540,6 +544,12 @@ class Settings: ObservableObject {
         if showHiddenBarOnModifiers != (persisted.showHiddenBarOnModifiers ?? true) {
             showHiddenBarOnModifiers = persisted.showHiddenBarOnModifiers ?? true
         }
+        if sessionModifierHoldBehavior != (persisted.sessionModifierHoldBehavior ?? .expand) {
+            sessionModifierHoldBehavior = persisted.sessionModifierHoldBehavior ?? .expand
+        }
+        if engineModifierHoldBehavior != (persisted.engineModifierHoldBehavior ?? .expand) {
+            engineModifierHoldBehavior = persisted.engineModifierHoldBehavior ?? .expand
+        }
         if windowAppearance != (persisted.windowAppearance ?? .default) {
             windowAppearance = persisted.windowAppearance ?? .default
         }
@@ -633,6 +643,8 @@ class Settings: ObservableObject {
                                             topBarVisibility: topBarVisibility,
                                             dragAreaPosition: dragAreaPosition,
                                             showHiddenBarOnModifiers: showHiddenBarOnModifiers,
+                                            sessionModifierHoldBehavior: sessionModifierHoldBehavior,
+                                            engineModifierHoldBehavior: engineModifierHoldBehavior,
                                             windowAppearance: windowAppearance,
                                             colorScheme: colorScheme,
                                             automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
@@ -767,6 +779,8 @@ class Settings: ObservableObject {
             sessionSelectorDisplayMode: sessionSelectorDisplayMode,
             topBarVisibility: topBarVisibility,
             showHiddenBarOnModifiers: showHiddenBarOnModifiers,
+            sessionModifierHoldBehavior: sessionModifierHoldBehavior,
+            engineModifierHoldBehavior: engineModifierHoldBehavior,
             windowAppearance: windowAppearance,
             colorScheme: colorScheme,
             automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
@@ -1009,6 +1023,8 @@ class Settings: ObservableObject {
         topBarVisibility = persisted.topBarVisibility ?? .visible
         dragAreaPosition = persisted.dragAreaPosition ?? .top
         showHiddenBarOnModifiers = persisted.showHiddenBarOnModifiers ?? true
+        sessionModifierHoldBehavior = persisted.sessionModifierHoldBehavior ?? .expand
+        engineModifierHoldBehavior = persisted.engineModifierHoldBehavior ?? .expand
         windowAppearance = persisted.windowAppearance ?? .default
         colorScheme = persisted.colorScheme ?? .system
         automaticallySwitchEngineOnLastSessionClose = persisted.automaticallySwitchEngineOnLastSessionClose ?? true

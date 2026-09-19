@@ -115,6 +115,34 @@ struct AppearanceSettingsView: View {
                     .onChange(of: settings.sessionSelectorDisplayMode) { _, _ in
                         settings.saveSettings()
                     }
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Session Modifier Hold",
+                        message: "What holding the Go to session modifier shows. HUD lists open sessions.",
+                        icon: "square.grid.3x2.fill",
+                        iconColor: .purple
+                    ) {
+                        ModifierHoldBehaviorPicker(selection: $settings.sessionModifierHoldBehavior)
+                    }
+                    .onChange(of: settings.sessionModifierHoldBehavior) { _, _ in
+                        settings.saveSettings()
+                    }
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Engine Modifier Hold",
+                        message: "What holding the Go to engine modifier shows. HUD lists all engines.",
+                        icon: "rectangle.grid.1x2.fill",
+                        iconColor: .purple
+                    ) {
+                        ModifierHoldBehaviorPicker(selection: $settings.engineModifierHoldBehavior)
+                    }
+                    .onChange(of: settings.engineModifierHoldBehavior) { _, _ in
+                        settings.saveSettings()
+                    }
                 }
                 
                 SettingsSection(title: "Color Scheme", icon: "paintpalette.fill", iconColor: .orange) {

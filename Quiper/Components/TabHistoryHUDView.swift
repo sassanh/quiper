@@ -10,6 +10,83 @@ final class TabHistoryHUDView: NSView {
     
     private(set) var currentItemsCount = 0
     private(set) var currentMaxItemsPerRow = 3
+
+    /// Explicit item list for modifier-hold HUDs. When non-nil, the history
+    /// ring items are bypassed and these cards are shown instead.
+    private var overrideItems: [TabIdentifier]?
+    private var overrideHighlight: TabIdentifier?
+    private var overrideDigit: ((TabIdentifier) -> Int)?
+    private var overrideTitle: ((TabIdentifier) -> String)?
+    /// When non-nil, cards show engine icons instead of tab previews.
+    private var overrideIcon: ((TabIdentifier) -> NSImage?)?
+
+    func showOverride(
+        items: [TabIdentifier],
+        highlight: TabIdentifier?,
+        digit: ((TabIdentifier) -> Int)?,
+        title: ((TabIdentifier) -> String)?,
+        icon: ((TabIdentifier) -> NSImage?)? = nil
+    ) {
+        overrideItems = items
+        overrideHighlight = highlight
+        overrideDigit = digit
+        overrideTitle = title
+        overrideIcon = icon
+        lastHoveredTab = nil
+        updateSelection()
+    }
+
+    func updateOverrideHighlight(_ highlight: TabIdentifier?) {
+        guard overrideItems != nil else { return }
+        overrideHighlight = highlight
+        updateSelection()
+    }
+
+    func clearOverride() {
+        overrideItems = nil
+        overrideHighlight = nil
+        overrideDigit = nil
+        overrideTitle = nil
+        overrideIcon = nil
+        lastHoveredTab = nil
+        onHoverTab = nil
+        onSelectTab = nil
+    }
+
+    /// Hover entry from a card. Ignores re-entry for the card already under
+    /// the cursor (rebuilds recreate views without cursor movement), so
+    /// arrow-key highlight never snaps back while the mouse rests.
+    func cardMouseEntered(_ tab: TabIdentifier) {
+        guard tab != lastHoveredTab else { return }
+        lastHoveredTab = tab
+        onHoverTab?(tab)
+    }
+
+    /// Hover exit from a card. Only falls back to the current tab when the
+    /// exiting card owns the highlight, so leaving a non-highlighted card
+    /// never wipes an arrow-key selection.
+    func cardMouseExited(_ tab: TabIdentifier) {
+        guard lastHoveredTab == tab else { return }
+        lastHoveredTab = nil
+        if overrideHighlight == tab {
+            onHoverTab?(nil)
+        }
+    }
+
+    var isShowingOverride: Bool { overrideItems != nil }
+    var currentOverrideItems: [TabIdentifier]? { overrideItems }
+    var currentOverrideHighlight: TabIdentifier? { overrideHighlight }
+
+    /// Card the cursor is physically inside, regardless of highlight. Guards
+    /// against re-firing hover when card rebuilds (highlight/title/refresh)
+    /// recreate the view under a stationary cursor.
+    private var lastHoveredTab: TabIdentifier?
+
+    /// Hover highlight for the card under the cursor. Set by the modifier
+    /// ring; nil leaves the history ring mouse-inert as before.
+    var onHoverTab: ((TabIdentifier?) -> Void)?
+    /// Click selection for the card under the cursor. Nil keeps cards inert.
+    var onSelectTab: ((TabIdentifier) -> Void)?
     
     init(frame frameRect: NSRect, windowController: MainWindowController) {
         self.wc = windowController
@@ -77,13 +154,36 @@ final class TabHistoryHUDView: NSView {
         // Rebuild rowsStackView to display all items in the ring
         rowsStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
         
+        let override = overrideItems
         var items: [TabIdentifier] = []
-        if let start = wc.cyclingStartTab {
-            items.append(start)
-        }
-        for tab in wc.tabHistory {
-            if !items.contains(tab) {
-                items.append(tab)
+        // The really selected tab. Drives the card border.
+        var activeTab: TabIdentifier?
+        // The prospective tab (hover/arrows). Drives the accent highlight.
+        // Release commits it; digits move it together with the selection.
+        var highlightedTab: TabIdentifier?
+        var digitForTab: ((TabIdentifier) -> Int)?
+        var titleForTab: ((TabIdentifier) -> String)?
+        var iconForTab: ((TabIdentifier) -> NSImage?)?
+        if let override {
+            items = override
+            activeTab = wc.currentTabIdentifier()
+            highlightedTab = overrideHighlight ?? activeTab
+            digitForTab = overrideDigit
+            titleForTab = overrideTitle
+            iconForTab = overrideIcon
+        } else {
+            if let start = wc.cyclingStartTab {
+                items.append(start)
+            }
+            for tab in wc.tabHistory {
+                if !items.contains(tab) {
+                    items.append(tab)
+                }
+            }
+            if wc.isCyclingHistory {
+                activeTab = wc.highlightedTab
+            } else {
+                activeTab = wc.currentTabIdentifier()
             }
         }
         
@@ -109,16 +209,6 @@ final class TabHistoryHUDView: NSView {
         
         let itemWidth: CGFloat = 148
         
-        let activeTab: TabIdentifier?
-        if wc.isCyclingHistory {
-            activeTab = wc.highlightedTab
-        } else if let svc = wc.currentService() {
-            let activeIndex = wc.activeIndicesByID[svc.id] ?? 0
-            activeTab = TabIdentifier(serviceID: svc.id, sessionIndex: activeIndex)
-        } else {
-            activeTab = nil
-        }
-        
         // Split items into chunks of maxItemsPerRow
         var chunks: [[TabIdentifier]] = []
         var currentChunk: [TabIdentifier] = []
@@ -142,7 +232,19 @@ final class TabHistoryHUDView: NSView {
             
             for tab in chunk {
                 let isActive = (tab == activeTab)
-                let card = createTabCard(for: tab, isActive: isActive, width: itemWidth)
+                let isHighlighted = highlightedTab.map { $0 == tab } ?? false
+                let iconMode = iconForTab != nil
+                let card = createTabCard(
+                    for: tab,
+                    isActive: isActive,
+                    isHighlighted: isHighlighted,
+                    width: itemWidth,
+                    digitOverride: digitForTab?(tab),
+                    titleOverride: titleForTab?(tab),
+                    iconMode: iconMode,
+                    icon: iconMode ? iconForTab?(tab) : nil,
+                    fallbackName: iconMode ? wc.services.first(where: { $0.id == tab.serviceID })?.name : nil
+                )
                 rowStack.addArrangedSubview(card)
             }
             
@@ -152,11 +254,15 @@ final class TabHistoryHUDView: NSView {
         self.needsLayout = true
     }
     
-    private func createTabCard(for tab: TabIdentifier, isActive: Bool, width: CGFloat) -> NSView {
-        let card = NSView()
+    private func createTabCard(for tab: TabIdentifier, isActive: Bool, isHighlighted: Bool = false, width: CGFloat, digitOverride: Int? = nil, titleOverride: String? = nil, iconMode: Bool = false, icon: NSImage? = nil, fallbackName: String? = nil) -> NSView {
+        let card = HUDCardView()
         card.wantsLayer = true
         card.layer?.cornerRadius = 10
         card.layer?.masksToBounds = true
+        card.tab = tab
+        card.host = self
+        card.onSelect = onSelectTab
+        card.setAccessibilityRole(.button)
         
         card.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -164,10 +270,15 @@ final class TabHistoryHUDView: NSView {
             card.heightAnchor.constraint(equalToConstant: 130)
         ])
         
-        // Highlight active border
+        // Border marks the really selected tab; the accent border marks the
+        // prospective (hover/arrow) highlight. Selection wins when both land
+        // on one card.
         if isActive {
             card.layer?.borderColor = NSColor.black.cgColor
             card.layer?.borderWidth = 3.0
+        } else if isHighlighted {
+            card.layer?.borderColor = NSColor.controlAccentColor.cgColor
+            card.layer?.borderWidth = 2.5
         } else {
             card.layer?.borderColor = NSColor.white.withAlphaComponent(0.08).cgColor
             card.layer?.borderWidth = 1.0
@@ -175,16 +286,61 @@ final class TabHistoryHUDView: NSView {
         
         // Find corresponding service
         let service = wc?.services.first { $0.id == tab.serviceID }
-        let tabNum = tab.sessionIndex == 9 ? 10 : tab.sessionIndex + 1
+        let tabNum = digitOverride ?? (tab.sessionIndex == 9 ? 10 : tab.sessionIndex + 1)
         
         let pageTitle: String
-        if let svc = service, let wv = wc?.webViewManager.getWebView(for: svc, sessionIndex: tab.sessionIndex), let title = wv.title, !title.isEmpty {
+        if let titleOverride {
+            pageTitle = titleOverride
+        } else if let svc = service, let wv = wc?.webViewManager.getWebView(for: svc, sessionIndex: tab.sessionIndex), let title = wv.title, !title.isEmpty {
             pageTitle = title
         } else {
             pageTitle = "Empty Session"
         }
+        card.setAccessibilityLabel("\(tabNum): \(pageTitle)")
         
-        if let previewImage = wc?.tabPreviews[tab],
+        if iconMode {
+            let topArea = NSView()
+            topArea.translatesAutoresizingMaskIntoConstraints = false
+            card.addSubview(topArea)
+
+            NSLayoutConstraint.activate([
+                topArea.topAnchor.constraint(equalTo: card.topAnchor),
+                topArea.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+                topArea.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+                topArea.heightAnchor.constraint(equalToConstant: 90)
+            ])
+
+            if let icon {
+                let imageView = NSImageView()
+                imageView.image = icon
+                imageView.imageScaling = .scaleProportionallyUpOrDown
+                imageView.wantsLayer = true
+                imageView.layer?.cornerRadius = 10
+                imageView.layer?.masksToBounds = true
+                imageView.translatesAutoresizingMaskIntoConstraints = false
+                topArea.addSubview(imageView)
+
+                NSLayoutConstraint.activate([
+                    imageView.centerXAnchor.constraint(equalTo: topArea.centerXAnchor),
+                    imageView.centerYAnchor.constraint(equalTo: topArea.centerYAnchor),
+                    imageView.widthAnchor.constraint(equalToConstant: 46),
+                    imageView.heightAnchor.constraint(equalToConstant: 46)
+                ])
+            } else {
+                let letter = fallbackName?.first.map { String($0) } ?? "?"
+                let letterField = NSTextField(labelWithString: letter)
+                letterField.font = .systemFont(ofSize: 30, weight: .light)
+                letterField.textColor = NSColor.white.withAlphaComponent(0.45)
+                letterField.alignment = .center
+                letterField.translatesAutoresizingMaskIntoConstraints = false
+                topArea.addSubview(letterField)
+
+                NSLayoutConstraint.activate([
+                    letterField.centerXAnchor.constraint(equalTo: topArea.centerXAnchor),
+                    letterField.centerYAnchor.constraint(equalTo: topArea.centerYAnchor)
+                ])
+            }
+        } else if let previewImage = wc?.tabPreviews[tab],
            let cgImage = previewImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             
             // Preview Image view at the top 90pt
@@ -268,5 +424,56 @@ final class TabHistoryHUDView: NSView {
         ])
         
         return card
+    }
+}
+
+// MARK: - Interactive card
+
+/// A history-ring card that reports hover and click when the owning HUD
+/// wires `onHover`/`onSelect`. With nil callbacks the card stays inert.
+@MainActor
+final class HUDCardView: NSView {
+    var tab: TabIdentifier?
+    weak var host: TabHistoryHUDView?
+    var onSelect: ((TabIdentifier) -> Void)?
+
+    private var trackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea!)
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if onSelect != nil {
+            addCursorRect(bounds, cursor: .pointingHand)
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        if let tab {
+            host?.cardMouseEntered(tab)
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if let tab {
+            host?.cardMouseExited(tab)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 0, let tab else { return }
+        onSelect?(tab)
     }
 }

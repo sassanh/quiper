@@ -40,6 +40,10 @@ extension MainWindowController {
                     self.cancelHistoryCycling()
                     return nil
                 }
+                if self.modifierHUDKind != nil {
+                    self.hideModifierHUDRing()
+                    return nil
+                }
                 if self.isSelectorSuggestActive {
                     self.cancelSelectorSuggest()
                     return nil
@@ -156,9 +160,13 @@ extension MainWindowController {
             }
         }
 
-        if !(skipModalCheck || !hasModalWindow) { return }
+        if !(skipModalCheck || !hasModalWindow) {
+            hideModifierHUDRing()
+            return
+        }
 
         if GhostOnboardingManager.shared.isActive {
+            hideModifierHUDRing()
             return
         }
 
@@ -219,24 +227,51 @@ extension MainWindowController {
         }
 
         let appShortcuts = Settings.shared.appShortcutBindings
-        
-        var shouldExpandSession = false
-        let sessionMask = NSEvent.ModifierFlags(rawValue: appShortcuts.sessionDigitsModifiers)
-        if appShortcuts.sessionDigitsModifiers > 0 && modifiers == sessionMask {
-             shouldExpandSession = true
-        } else if let alt = appShortcuts.sessionDigitsAlternateModifiers, alt > 0,
-                  modifiers == NSEvent.ModifierFlags(rawValue: alt) {
-             shouldExpandSession = true
+
+        let sessionHeld = isSessionDigitModifiers(modifiers, appShortcuts: appShortcuts)
+        let engineHeld = isEngineDigitModifiers(modifiers, appShortcuts: appShortcuts)
+        let sessionBehavior = Settings.shared.sessionModifierHoldBehavior
+        let engineBehavior = Settings.shared.engineModifierHoldBehavior
+
+        // A released ring confirms its highlight and dismisses without
+        // opening the other ring: releasing one key of a chord (e.g. Ctrl of
+        // Cmd+Ctrl) transiently matches the other modifier set, and answering
+        // a confirmation with a fresh popup is the surprise. The show
+        // branches below skip the confirming event.
+        let didConfirmRingSelection: Bool = {
+            guard let kind = modifierHUDKind, !isCyclingHistory else { return false }
+            let kindReleased: Bool = {
+                switch kind {
+                case .sessions: return !sessionHeld
+                case .engines: return !engineHeld
+                }
+            }()
+            guard kindReleased else { return false }
+            guard commitModifierHUDHighlight() else { return false }
+            hideModifierHUDRing()
+            return true
+        }()
+
+        // History ring wins over modifier rings sharing the same modifiers.
+        if isCyclingHistory {
+            hideModifierHUDRing()
+        } else if sessionHeld && sessionBehavior == .hud && modifierHUDKind != .sessions && !didConfirmRingSelection {
+            showModifierHUDRing(kind: .sessions)
+        } else if engineHeld && engineBehavior == .hud && modifierHUDKind != .engines && !didConfirmRingSelection {
+            // Sessions wins when both modifiers match at once.
+            if !(sessionHeld && sessionBehavior == .hud) {
+                showModifierHUDRing(kind: .engines)
+            }
+        } else if modifierHUDKind != nil && !sessionHeld && !engineHeld {
+            hideModifierHUDRing(committingHighlight: true)
+        } else if modifierHUDKind == .sessions && (!sessionHeld || sessionBehavior != .hud) {
+            hideModifierHUDRing(committingHighlight: true)
+        } else if modifierHUDKind == .engines && (!engineHeld || engineBehavior != .hud) {
+            hideModifierHUDRing(committingHighlight: true)
         }
-        
-        var shouldExpandService = false
-        let servicePrimaryMask = NSEvent.ModifierFlags(rawValue: appShortcuts.serviceDigitsPrimaryModifiers)
-        if appShortcuts.serviceDigitsPrimaryModifiers > 0 && modifiers == servicePrimaryMask {
-             shouldExpandService = true
-        } else if let sec = appShortcuts.serviceDigitsSecondaryModifiers, sec > 0,
-                  modifiers == NSEvent.ModifierFlags(rawValue: sec) {
-             shouldExpandService = true
-        }
+
+        let shouldExpandSession = sessionHeld && sessionBehavior == .expand
+        let shouldExpandService = engineHeld && engineBehavior == .expand
         
         if let sessionSel = collapsibleSessionSelector, !sessionSel.isHidden && Settings.shared.showHiddenBarOnModifiers {
             if shouldExpandSession {
@@ -262,11 +297,308 @@ extension MainWindowController {
             }
         }
         
-        let shouldShowHeader = (shouldExpandSession || shouldExpandService) && Settings.shared.showHiddenBarOnModifiers
+        let sessionRevealsHeader = sessionHeld && sessionBehavior != .off
+        let engineRevealsHeader = engineHeld && engineBehavior != .off
+        let shouldShowHeader = (sessionRevealsHeader || engineRevealsHeader) && Settings.shared.showHiddenBarOnModifiers
         if isModifiersForHeaderDown != shouldShowHeader {
             isModifiersForHeaderDown = shouldShowHeader
             updateHeaderVisibility()
         }
+    }
+
+    // MARK: - Modifier-hold HUD rings
+
+    private func isSessionDigitModifiers(_ modifiers: NSEvent.ModifierFlags, appShortcuts: AppShortcutBindings) -> Bool {
+        if appShortcuts.sessionDigitsModifiers > 0,
+           modifiers == NSEvent.ModifierFlags(rawValue: appShortcuts.sessionDigitsModifiers) {
+            return true
+        }
+        if let alt = appShortcuts.sessionDigitsAlternateModifiers, alt > 0,
+           modifiers == NSEvent.ModifierFlags(rawValue: alt) {
+            return true
+        }
+        return false
+    }
+
+    private func isEngineDigitModifiers(_ modifiers: NSEvent.ModifierFlags, appShortcuts: AppShortcutBindings) -> Bool {
+        if appShortcuts.serviceDigitsPrimaryModifiers > 0,
+           modifiers == NSEvent.ModifierFlags(rawValue: appShortcuts.serviceDigitsPrimaryModifiers) {
+            return true
+        }
+        if let sec = appShortcuts.serviceDigitsSecondaryModifiers, sec > 0,
+           modifiers == NSEvent.ModifierFlags(rawValue: sec) {
+            return true
+        }
+        return false
+    }
+
+    private func modifierHUDItems(kind: ModifierHUDKind) -> [TabIdentifier] {
+        switch kind {
+        case .sessions:
+            guard let service = currentService(), webViewManager != nil else { return [] }
+            return sessionIndicesForHUD(service: service).map {
+                TabIdentifier(serviceID: service.id, sessionIndex: $0)
+            }
+        case .engines:
+            return services.map { service in
+                let active = activeIndicesByID[service.id]
+                    ?? service.visibleSessionIndices.first
+                    ?? 0
+                return TabIdentifier(serviceID: service.id, sessionIndex: active)
+            }
+        }
+    }
+
+    /// Sessions with live content, tabs restored from a previous launch that
+    /// have no webview yet, and pinned slots, which are definitionally open
+    /// whether or not they were visited. The single gate for the sessions
+    /// ring so a held modifier never hides a reachable tab.
+    func sessionIndicesForHUD(service: Service) -> [Int] {
+        var indices = Set<Int>()
+        if webViewManager != nil {
+            for index in service.visibleSessionIndices
+                where webViewManager.getWebView(for: service, sessionIndex: index) != nil {
+                indices.insert(index)
+            }
+        }
+        if service.isPinnedTabs {
+            indices.formUnion(service.visibleSessionIndices)
+        } else if let saved = Settings.shared.persistedTabState?.openTabs[service.id] {
+            for index in saved.keys where service.visibleSessionIndices.contains(index) {
+                indices.insert(index)
+            }
+        }
+        return indices.sorted()
+    }
+
+    /// Applies the current items, highlight, and card content for `kind`.
+    /// Returns the items so callers can hide the ring when it empties.
+    /// A highlight set by hover/arrows survives the rebuild while its card
+    /// still exists, so live refreshes never snap it back to the selection.
+    /// Callbacks are wired before the override rebuilds the cards, so the
+    /// first build already sees them.
+    @discardableResult
+    private func applyModifierHUDOverride(kind: ModifierHUDKind) -> [TabIdentifier] {
+        let items = modifierHUDItems(kind: kind)
+        let previousHighlight = tabHistoryHUDView?.currentOverrideHighlight
+        let highlight: TabIdentifier? = {
+            if let previousHighlight, items.contains(previousHighlight) {
+                return previousHighlight
+            }
+            return currentTabIdentifier()
+        }()
+        tabHistoryHUDView?.onHoverTab = { [weak self] tab in
+            guard let self, self.modifierHUDKind != nil else { return }
+            self.tabHistoryHUDView?.updateOverrideHighlight(tab ?? self.currentTabIdentifier())
+        }
+        tabHistoryHUDView?.onSelectTab = { [weak self] tab in
+            self?.selectModifierHUDTab(tab)
+        }
+        switch kind {
+        case .sessions:
+            tabHistoryHUDView?.showOverride(
+                items: items,
+                highlight: highlight,
+                digit: { $0.sessionIndex == 9 ? 10 : $0.sessionIndex + 1 },
+                title: { [weak self] tab in
+                    guard let self,
+                          let service = self.services.first(where: { $0.id == tab.serviceID }) else {
+                        return "Empty Session"
+                    }
+                    if let title = self.webViewManager.getWebView(for: service, sessionIndex: tab.sessionIndex)?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !title.isEmpty {
+                        return title
+                    }
+                    if let saved = Settings.shared.persistedTabState?.tabTitles[tab.serviceID]?[tab.sessionIndex]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !saved.isEmpty {
+                        return saved
+                    }
+                    if let pinned = service.pinnedURL(for: tab.sessionIndex),
+                       let host = URL(string: pinned)?.host,
+                       !host.isEmpty {
+                        return host
+                    }
+                    return "Empty Session"
+                }
+            )
+        case .engines:
+            let order = Dictionary(uniqueKeysWithValues: services.enumerated().map { ($1.id, $0) })
+            tabHistoryHUDView?.showOverride(
+                items: items,
+                highlight: highlight,
+                digit: { order[$0.serviceID].map { $0 == 9 ? 10 : $0 + 1 } ?? ($0.sessionIndex == 9 ? 10 : $0.sessionIndex + 1) },
+                title: { [weak self] tab in
+                    guard let self,
+                          let service = self.services.first(where: { $0.id == tab.serviceID }) else {
+                        return "Empty Session"
+                    }
+                    let page = self.webViewManager.getWebView(for: service, sessionIndex: tab.sessionIndex)?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard let page, !page.isEmpty else { return service.name }
+                    return "\(service.name) — \(page)"
+                },
+                icon: { [weak self] tab in
+                    guard let self,
+                          let service = self.services.first(where: { $0.id == tab.serviceID }) else {
+                        return nil
+                    }
+                    if let cached = self.engineIconCache[service.id] {
+                        return cached
+                    }
+                    guard let base64 = service.iconBase64,
+                          let data = Data(base64Encoded: base64),
+                          let image = NSImage(data: data) else {
+                        return nil
+                    }
+                    self.engineIconCache[service.id] = image
+                    return image
+                }
+            )
+        }
+        return items
+    }
+
+    /// Click selection for a modifier-ring card. Selects immediately like a
+    /// digit press; the ring itself dismisses on modifier release as usual.
+    private func selectModifierHUDTab(_ tab: TabIdentifier) {
+        guard let kind = modifierHUDKind else { return }
+        switch kind {
+        case .sessions:
+            guard tab.serviceID == currentService()?.id else { return }
+            switchSession(to: tab.sessionIndex)
+        case .engines:
+            guard let index = services.firstIndex(where: { $0.id == tab.serviceID }) else { return }
+            selectService(at: index)
+        }
+        // The click may have moved key status to the ring panel; hand it
+        // back so typing keeps going to the newly selected tab.
+        window?.makeKeyAndOrderFront(nil)
+        if let webView = currentWebView() {
+            window?.makeFirstResponder(webView)
+        }
+        refreshModifierHUDContents()
+    }
+
+    /// Single gate for the preamble shared by both ring showers: the prompt,
+    /// modifier-search, and location-bar HUDs compete with the ring window.
+    private func hideHUDsCompetingWithRing() {
+        hidePromptHistoryHUD()
+        hideModifierHUD()
+        hideLocationBarHUD()
+    }
+
+    func showModifierHUDRing(kind: ModifierHUDKind) {
+        guard !isCyclingHistory, window != nil else { return }
+        collapsibleSessionSelector?.collapse()
+        collapsibleServiceSelector?.collapse()
+        modifierHUDKind = kind
+        hideHUDsCompetingWithRing()
+        // Ensure the window/view exist before applying the override:
+        // showOverride on a nil view would silently drop the items.
+        ensureTabHistoryHUDWindow()
+        let items = applyModifierHUDOverride(kind: kind)
+        guard !items.isEmpty else {
+            hideModifierHUDRing()
+            return
+        }
+        // applyModifierHUDOverride already rebuilt the cards once.
+        updateModifierHUDWindowFrame()
+        tabHistoryHUDWindow?.orderFront(nil)
+        raiseHUDWindow(tabHistoryHUDWindow)
+        tabHistoryHUDView?.isHidden = false
+        captureCurrentTabPreview()
+    }
+
+    func hideModifierHUDRing(committingHighlight: Bool = false) {
+        guard modifierHUDKind != nil else { return }
+        if committingHighlight {
+            commitModifierHUDHighlight()
+        }
+        modifierHUDKind = nil
+        tabHistoryHUDView?.clearOverride()
+        if isCyclingHistory {
+            tabHistoryHUDView?.updateSelection()
+            updateHUDWindowFrame()
+        } else {
+            hideTabHistoryHUD()
+        }
+    }
+
+    /// Selects the hovered/arrow-highlighted card when the modifier is
+    /// released. Returns whether a selection happened; no-op when the
+    /// highlight already matches the current tab.
+    @discardableResult
+    private func commitModifierHUDHighlight() -> Bool {
+        guard modifierHUDKind != nil,
+              let highlight = tabHistoryHUDView?.currentOverrideHighlight,
+              highlight != currentTabIdentifier() else { return false }
+        selectModifierHUDTab(highlight)
+        return true
+    }
+
+    /// Arrow-key navigation for an open ring. Left/Right step through ring
+    /// order without wrapping; Up/Down move a visual row, staying put when
+    /// no card exists above or below.
+    private func stepModifierHUDHighlight(by delta: Int) {
+        guard modifierHUDKind != nil,
+              let items = tabHistoryHUDView?.currentOverrideItems,
+              !items.isEmpty else { return }
+        let anchor = tabHistoryHUDView?.currentOverrideHighlight ?? currentTabIdentifier()
+        let startIndex = anchor.flatMap { items.firstIndex(of: $0) } ?? 0
+        let nextIndex = startIndex + delta
+        guard items.indices.contains(nextIndex) else { return }
+        tabHistoryHUDView?.updateOverrideHighlight(items[nextIndex])
+    }
+
+    private func moveModifierHUDHighlightVertically(by rows: Int) {
+        guard modifierHUDKind != nil,
+              let view = tabHistoryHUDView,
+              let items = view.currentOverrideItems,
+              !items.isEmpty,
+              view.currentMaxItemsPerRow > 0 else { return }
+        let anchor = view.currentOverrideHighlight ?? currentTabIdentifier()
+        let startIndex = anchor.flatMap { items.firstIndex(of: $0) } ?? 0
+        let targetIndex = startIndex + rows * view.currentMaxItemsPerRow
+        guard items.indices.contains(targetIndex) else { return }
+        view.updateOverrideHighlight(items[targetIndex])
+    }
+
+    func refreshModifierHUDHighlight() {
+        guard modifierHUDKind != nil else { return }
+        tabHistoryHUDView?.updateOverrideHighlight(currentTabIdentifier())
+        updateModifierHUDWindowFrame()
+        captureCurrentTabPreview()
+    }
+
+    /// Snapshots the visible tab so the sessions ring shows a fresh preview
+    /// for it. Departure snapshots (in `updateActiveWebview`) cover visited
+    /// tabs; this covers the current one, which is never departed while the
+    /// ring is open. No-op unless the sessions ring is visible.
+    private func captureCurrentTabPreview() {
+        guard modifierHUDKind == .sessions,
+              let current = currentTabIdentifier(),
+              let service = services.first(where: { $0.id == current.serviceID }),
+              webViewManager != nil,
+              let webView = webViewManager.getWebView(for: service, sessionIndex: current.sessionIndex) else { return }
+        webView.takeSnapshot(with: nil) { [weak self] image, error in
+            guard let img = image, error == nil else { return }
+            DispatchQueue.main.async {
+                self?.tabPreviews[current] = img
+                self?.refreshModifierHUDContents()
+            }
+        }
+    }
+
+    /// Rebuilds an open ring when its contents change (tab added/closed,
+    /// services changed, titles or icons arrived). Hides the ring when it
+    /// empties. No-op unless a ring is visible.
+    func refreshModifierHUDContents() {
+        guard let kind = modifierHUDKind, !isCyclingHistory else { return }
+        let items = applyModifierHUDOverride(kind: kind)
+        guard !items.isEmpty else {
+            hideModifierHUDRing()
+            return
+        }
+        updateModifierHUDWindowFrame()
     }
     
     private func showModifierHUD() {
@@ -337,6 +669,42 @@ extension MainWindowController {
         let isOption = modifiers.contains(.option)
         let isShift = modifiers.contains(.shift)
         let isCommand = modifiers.contains(.command)
+
+        // Arrow-key navigation and Enter commit for an open modifier ring.
+        // Only when the held modifiers are exactly the ring's own digit
+        // modifiers, so bindings like Cmd+Shift+Arrow keep working.
+        if let ringKind = modifierHUDKind {
+            let matchesRingModifiers: Bool = {
+                switch ringKind {
+                case .sessions:
+                    return isSessionDigitModifiers(modifiers, appShortcuts: appShortcuts)
+                case .engines:
+                    return isEngineDigitModifiers(modifiers, appShortcuts: appShortcuts)
+                }
+            }()
+            if matchesRingModifiers {
+                if keyCode == UInt16(kVK_Return) {
+                    commitModifierHUDHighlight()
+                    return true
+                }
+                switch Int(keyCode) {
+                case kVK_LeftArrow:
+                    stepModifierHUDHighlight(by: -1)
+                    return true
+                case kVK_RightArrow:
+                    stepModifierHUDHighlight(by: 1)
+                    return true
+                case kVK_UpArrow:
+                    moveModifierHUDHighlightVertically(by: -1)
+                    return true
+                case kVK_DownArrow:
+                    moveModifierHUDHighlightVertically(by: 1)
+                    return true
+                default:
+                    break
+                }
+            }
+        }
 
         if isControl && isShift && keyCode == UInt16(kVK_ANSI_Q) {
             NSApp.terminate(nil)
@@ -678,36 +1046,42 @@ extension MainWindowController {
     // MARK: - Tab History Cycling & HUD Methods
     
     func showTabHistoryHUD() {
-        guard let parentWindow = window else { return }
-        hidePromptHistoryHUD()
-        hideModifierHUD()
-        hideLocationBarHUD()
-        
-        if tabHistoryHUDWindow == nil {
-            let panel = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 500, height: 200),
-                styleMask: [.borderless, .nonactivatingPanel],
-                backing: .buffered,
-                defer: false
-            )
-            configureHUDPanel(panel, parentWindow: parentWindow)
-            
-            let hud = TabHistoryHUDView(frame: panel.contentView?.bounds ?? .zero, windowController: self)
-            hud.autoresizingMask = [.width, .height]
-            panel.contentView = hud
-            
-            tabHistoryHUDView = hud
-            tabHistoryHUDWindow = panel
-            
-            parentWindow.addChildWindow(panel, ordered: .above)
+        guard window != nil else { return }
+        if isCyclingHistory {
+            modifierHUDKind = nil
+            tabHistoryHUDView?.clearOverride()
         }
-        
+        hideHUDsCompetingWithRing()
+        ensureTabHistoryHUDWindow()
+
         tabHistoryHUDView?.updateSelection()
         updateHUDWindowFrame()
-        
+
         tabHistoryHUDWindow?.orderFront(nil)
         raiseHUDWindow(tabHistoryHUDWindow)
         tabHistoryHUDView?.isHidden = false
+    }
+
+    /// Single gate for creating the shared history/modifier ring window.
+    private func ensureTabHistoryHUDWindow() {
+        guard let parentWindow = window else { return }
+        if tabHistoryHUDWindow != nil { return }
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 200),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        configureHUDPanel(panel, parentWindow: parentWindow)
+
+        let hud = TabHistoryHUDView(frame: panel.contentView?.bounds ?? .zero, windowController: self)
+        hud.autoresizingMask = [.width, .height]
+        panel.contentView = hud
+
+        tabHistoryHUDView = hud
+        tabHistoryHUDWindow = panel
+
+        parentWindow.addChildWindow(panel, ordered: .above)
     }
     
     func hideTabHistoryHUD() {
@@ -715,16 +1089,45 @@ extension MainWindowController {
         tabHistoryHUDWindow?.orderOut(nil)
     }
     func updateHUDWindowFrame() {
-        guard let hudView = tabHistoryHUDView else { return }
-              
+        guard tabHistoryHUDView != nil else { return }
+        let (hudWidth, hudHeight) = tabHistoryHUDContentSize()
+        alignHUDWindow(tabHistoryHUDWindow, width: hudWidth, height: hudHeight)
+    }
+
+    /// Single gate for the shared ring window's content size.
+    private func tabHistoryHUDContentSize() -> (width: CGFloat, height: CGFloat) {
+        guard let hudView = tabHistoryHUDView else { return (500, 200) }
+
         let itemsCount = hudView.currentItemsCount
         let maxItemsPerRow = hudView.currentMaxItemsPerRow
         let rowCount = max(1, (itemsCount + maxItemsPerRow - 1) / max(1, maxItemsPerRow))
-        
+
         let hudWidth: CGFloat = 32 + CGFloat(maxItemsPerRow) * 148 + CGFloat(maxItemsPerRow - 1) * 12
         let hudHeight: CGFloat = 32 + CGFloat(rowCount) * 130 + CGFloat(max(0, rowCount - 1)) * 12
-        
-        alignHUDWindow(tabHistoryHUDWindow, width: hudWidth, height: hudHeight)
+        return (hudWidth, hudHeight)
+    }
+
+    /// Sizes the shared ring window like the history ring but anchors it just
+    /// inside the webview edge next to the toolbar (top/bottom per settings),
+    /// so the modifier rings never read as the centered history ring and
+    /// never cover the toolbar. Mirrors `alignLocationBarHUDWindow` insets.
+    func updateModifierHUDWindowFrame() {
+        guard tabHistoryHUDView != nil, let parentWindow = window else { return }
+        let (hudWidth, hudHeight) = tabHistoryHUDContentSize()
+        let headerInset = currentMargin + CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
+        let gap: CGFloat = 24
+        let targetY: CGFloat = {
+            if Settings.shared.dragAreaPosition == .bottom {
+                return parentWindow.frame.minY + headerInset + gap
+            } else {
+                return parentWindow.frame.maxY - headerInset - gap - hudHeight
+            }
+        }()
+        tabHistoryHUDWindow?.setFrame(
+            alignedHUDFrame(width: hudWidth, height: hudHeight, y: targetY),
+            display: true,
+            animate: false
+        )
     }
     
     func performPendingHistorySwitch() {
@@ -749,6 +1152,7 @@ extension MainWindowController {
     }
     
     func handleGraveKeyDown(currentModifiers: NSEvent.ModifierFlags? = nil) {
+        hideModifierHUDRing()
         guard !isActiveSpaceWebFullscreen else {
             showWebFullScreenBanner()
             return
@@ -826,6 +1230,7 @@ extension MainWindowController {
     }
 
     func handleGraveBackwardKeyDown(currentModifiers: NSEvent.ModifierFlags? = nil) {
+        hideModifierHUDRing()
         guard !isActiveSpaceWebFullscreen else {
             showWebFullScreenBanner()
             return

@@ -113,6 +113,12 @@ final class PassthroughBannerView: NSView {
 }
 
 @MainActor
+enum ModifierHUDKind {
+    case sessions
+    case engines
+}
+
+@MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     static let jsTools: [String: String] = [
         "waitFor": """
@@ -196,6 +202,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var isExecutingHistoryNavigation = false
     var tabHistoryHUDView: TabHistoryHUDView?
     var tabHistoryHUDWindow: NSWindow?
+    var modifierHUDKind: ModifierHUDKind?
+    /// Decoded engine icons for ring cards, keyed by service id. Cleared
+    /// whenever services refresh so icon edits and refetches apply.
+    var engineIconCache: [UUID: NSImage] = [:]
     var promptHistoryHUDWindow: NSWindow?
     var modifierHUDWindow: NSWindow?
     var locationBarHUDWindow: NSWindow?
@@ -749,6 +759,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         findBarViewController?.hide()
         setShortcutsEnabled(false)
         hideModifierHUD()
+        hideModifierHUDRing()
         hideLocationBarHUD()
         NotificationCenter.default.post(name: .windowDidHide, object: nil)
     }

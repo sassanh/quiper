@@ -23,6 +23,15 @@ enum SelectorDisplayMode: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// What holding a session/engine digit modifier does on its own (before any digit).
+enum ModifierHoldBehavior: String, Codable, CaseIterable, Identifiable {
+    case off = "Off"         // No visual response; digits still switch
+    case expand = "Expand"   // Expand the collapsed bar selector
+    case hud = "HUD"         // Show a history-ring style HUD
+
+    var id: String { rawValue }
+}
+
 enum TopBarVisibility: String, Codable, Equatable, CaseIterable, Identifiable {
     case visible = "Visible"
     case hidden = "Hidden"
@@ -359,6 +368,8 @@ struct PersistedSettings: Codable {
     var topBarVisibility: TopBarVisibility?
     var dragAreaPosition: DragAreaPosition?
     var showHiddenBarOnModifiers: Bool?
+    var sessionModifierHoldBehavior: ModifierHoldBehavior?
+    var engineModifierHoldBehavior: ModifierHoldBehavior?
     var windowAppearance: WindowAppearanceSettings?
     var colorScheme: AppColorScheme?
     var automaticallySwitchEngineOnLastSessionClose: Bool?
@@ -398,6 +409,7 @@ struct PersistedSettings: Codable {
         case sessionDigitsAlternateModifiers, dockVisibility
         case engineSelectorDisplayMode, sessionSelectorDisplayMode, topBarVisibility
         case dragAreaPosition, showHiddenBarOnModifiers, windowAppearance, colorScheme, version
+        case sessionModifierHoldBehavior, engineModifierHoldBehavior
         case automaticallySwitchEngineOnLastSessionClose
         case autoCreateSessionOnEmptyEngineActivation
         case shouldPurgeDanglingWebData
@@ -446,6 +458,8 @@ struct PersistedSettings: Codable {
          topBarVisibility: TopBarVisibility? = nil,
          dragAreaPosition: DragAreaPosition? = nil,
          showHiddenBarOnModifiers: Bool? = nil,
+         sessionModifierHoldBehavior: ModifierHoldBehavior? = nil,
+         engineModifierHoldBehavior: ModifierHoldBehavior? = nil,
          windowAppearance: WindowAppearanceSettings? = nil,
          colorScheme: AppColorScheme? = nil,
          automaticallySwitchEngineOnLastSessionClose: Bool? = nil,
@@ -487,6 +501,8 @@ struct PersistedSettings: Codable {
         self.topBarVisibility = topBarVisibility
         self.dragAreaPosition = dragAreaPosition
         self.showHiddenBarOnModifiers = showHiddenBarOnModifiers
+        self.sessionModifierHoldBehavior = sessionModifierHoldBehavior
+        self.engineModifierHoldBehavior = engineModifierHoldBehavior
         self.windowAppearance = windowAppearance
         self.colorScheme = colorScheme
         self.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
@@ -528,6 +544,8 @@ struct PersistedSettings: Codable {
          topBarVisibility: TopBarVisibility? = nil,
          dragAreaPosition: DragAreaPosition? = nil,
          showHiddenBarOnModifiers: Bool? = nil,
+         sessionModifierHoldBehavior: ModifierHoldBehavior? = nil,
+         engineModifierHoldBehavior: ModifierHoldBehavior? = nil,
          windowAppearance: WindowAppearanceSettings? = nil,
          colorScheme: AppColorScheme? = nil,
          automaticallySwitchEngineOnLastSessionClose: Bool? = nil,
@@ -567,6 +585,8 @@ struct PersistedSettings: Codable {
         self.topBarVisibility = topBarVisibility
         self.dragAreaPosition = dragAreaPosition
         self.showHiddenBarOnModifiers = showHiddenBarOnModifiers
+        self.sessionModifierHoldBehavior = sessionModifierHoldBehavior
+        self.engineModifierHoldBehavior = engineModifierHoldBehavior
         self.windowAppearance = windowAppearance
         self.colorScheme = colorScheme
         self.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
@@ -655,6 +675,8 @@ struct PersistedSettings: Codable {
         topBarVisibility = try container.decodeIfPresent(TopBarVisibility.self, forKey: .topBarVisibility)
         dragAreaPosition = try container.decodeIfPresent(DragAreaPosition.self, forKey: .dragAreaPosition)
         showHiddenBarOnModifiers = try container.decodeBoolIfPresent(forKey: .showHiddenBarOnModifiers)
+        sessionModifierHoldBehavior = try container.decodeIfPresent(ModifierHoldBehavior.self, forKey: .sessionModifierHoldBehavior)
+        engineModifierHoldBehavior = try container.decodeIfPresent(ModifierHoldBehavior.self, forKey: .engineModifierHoldBehavior)
         windowAppearance = try container.decodeIfPresent(WindowAppearanceSettings.self, forKey: .windowAppearance)
         colorScheme = try container.decodeIfPresent(AppColorScheme.self, forKey: .colorScheme)
         automaticallySwitchEngineOnLastSessionClose = try container.decodeBoolIfPresent(forKey: .automaticallySwitchEngineOnLastSessionClose)

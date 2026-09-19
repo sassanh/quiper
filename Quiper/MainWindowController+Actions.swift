@@ -811,6 +811,23 @@ extension MainWindowController: WebViewManagerDelegate {
     func webViewDidFinishNavigation(_ webView: WKWebView) {
         saveTabsState()
         selectorSuggestDidReload(webView: webView)
+        // A tab finishing load is the only moment its rendered content is
+        // guaranteed fresh: snapshot it for the sessions ring. Departure
+        // snapshots cover visited tabs and arrival snapshots cover the
+        // current one; this covers everything else loading in the open ring.
+        if modifierHUDKind == .sessions,
+           let (service, sessionIndex) = webViewManager.findServiceAndSession(for: webView),
+           service.id == currentService()?.id,
+           sessionIndicesForHUD(service: service).contains(sessionIndex) {
+            let tab = TabIdentifier(serviceID: service.id, sessionIndex: sessionIndex)
+            webView.takeSnapshot(with: nil) { [weak self] image, error in
+                guard let img = image, error == nil else { return }
+                DispatchQueue.main.async {
+                    self?.tabPreviews[tab] = img
+                    self?.refreshModifierHUDContents()
+                }
+            }
+        }
         guard webView == currentWebView() else { return }
 
         // Ephemeral tabs run no tracker: leave their DOM untouched.

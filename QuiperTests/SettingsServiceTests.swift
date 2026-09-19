@@ -138,6 +138,46 @@ struct SettingsServiceTests {
         #expect((object as? [String: Any])?["selectorDisplayMode"] == nil)
     }
 
+    @Test func modifierHoldBehaviors_DefaultToExpandAndRoundTrip() throws {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        #expect(Settings.shared.sessionModifierHoldBehavior == .expand)
+        #expect(Settings.shared.engineModifierHoldBehavior == .expand)
+
+        Settings.shared.sessionModifierHoldBehavior = .hud
+        Settings.shared.engineModifierHoldBehavior = .off
+        let data = try JSONEncoder().encode(Settings.shared.makePersistedSettings())
+        let decoded = try JSONDecoder().decode(PersistedSettings.self, from: data)
+        #expect(decoded.sessionModifierHoldBehavior == .hud)
+        #expect(decoded.engineModifierHoldBehavior == .off)
+
+        Settings.shared.applyPersistedSettings(decoded)
+        #expect(Settings.shared.sessionModifierHoldBehavior == .hud)
+        #expect(Settings.shared.engineModifierHoldBehavior == .off)
+
+        let reread = try JSONDecoder().decode(PersistedSettings.self, from: data)
+        Settings.shared.applyPersistedSettings(reread)
+        #expect(Settings.shared.sessionModifierHoldBehavior == .hud)
+        #expect(Settings.shared.engineModifierHoldBehavior == .off)
+
+        let legacyData = Data(
+            """
+            {
+              "services": [],
+              "version": 1
+            }
+            """.utf8
+        )
+        let legacy = try JSONDecoder().decode(PersistedSettings.self, from: legacyData)
+        #expect(legacy.sessionModifierHoldBehavior == nil)
+        #expect(legacy.engineModifierHoldBehavior == nil)
+        Settings.shared.applyPersistedSettings(legacy)
+        #expect(Settings.shared.sessionModifierHoldBehavior == .expand)
+        #expect(Settings.shared.engineModifierHoldBehavior == .expand)
+    }
+
     @Test func templateActionScriptSync_UsesBundledDefaultAndCustomEditsOptOut() throws {
         Settings.shared.wipeAllData()
         _ = Settings.shared.loadSettings()

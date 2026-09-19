@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Modifier-Hold Selector Rings**: Holding the Go to session or Go to engine modifier can now open a preview-card ring instead of expanding the bar — sessions list the engine's open tabs, engines list all engines with icons. Each modifier gets its own Off, Expand, or HUD choice in Appearance settings. Hover, click, arrow keys, Enter, and digits all work in the ring, and releasing the modifier confirms the highlighted card.
 - **Unsaved-Changes Confirmation Before Closing Sessions**: Pages that report unsaved work now ask before the session closes — whether closing a tab, locking an engine, deleting it, resetting its data, or quitting. Staying keeps the session exactly as it was.
 - **Ephemeral Tabs for Private Browsing**: `Cmd+P` opens an isolated tab that never saves anything — no history, input, or titles reach disk. Engine shortcuts stay disabled inside it to protect your privacy, and a dashed window outline plus a title badge mark the mode. Ephemeral loads also drop Quiper's referral marker from engine URLs.
 - **On Focus Loss Choice**: The new Focus settings offer Hide, Dim, or Unchanged when Quiper loses focus. Hide stays off unless chosen and only hides the overlay when no other Quiper window is open. Dim (the default) fades the window and its content so an inactive overlay is unmistakable, and the first click only refocuses instead of reaching the page. Loading and recording animations stop while unfocused regardless of the choice.

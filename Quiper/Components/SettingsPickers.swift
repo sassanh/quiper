@@ -368,6 +368,100 @@ struct SelectorDisplayPicker: View {
     }
 }
 
+// 3b. Modifier Hold Behavior
+struct ModifierHoldBehaviorPicker: View {
+    @Binding var selection: ModifierHoldBehavior
+    @ObservedObject private var settings = Settings.shared
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Off
+            Button(action: { selection = .off }) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                            .frame(width: 40, height: 24)
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.65))
+                            .frame(width: 30, height: 1)
+                            .rotationEffect(.degrees(-24))
+                    }
+                    .frame(width: 44, height: 36)
+                    .padding(8)
+                    .pickerCardStyle(isSelected: selection == .off, accentColor: .purple)
+
+                    Text(ModifierHoldBehavior.off.rawValue)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(selection == .off ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Expand
+            Button(action: { selection = .expand }) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                            .frame(width: 40, height: 14)
+                        HStack(spacing: 2) {
+                            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                                .fill(Color.purple.settingsResolved.opacity(0.6))
+                                .frame(width: 10, height: 10)
+                            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                                .frame(width: 10, height: 10)
+                            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                                .frame(width: 10, height: 10)
+                        }
+                    }
+                    .frame(width: 44, height: 36)
+                    .padding(8)
+                    .pickerCardStyle(isSelected: selection == .expand, accentColor: .purple)
+
+                    Text(ModifierHoldBehavior.expand.rawValue)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(selection == .expand ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // HUD
+            Button(action: { selection = .hud }) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.black.opacity(0.75))
+                            .frame(width: 40, height: 26)
+                        HStack(spacing: 3) {
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                .fill(Color.purple.settingsResolved.opacity(0.85))
+                                .frame(width: 10, height: 14)
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                .fill(Color.white.opacity(0.35))
+                                .frame(width: 10, height: 14)
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                .fill(Color.white.opacity(0.35))
+                                .frame(width: 10, height: 14)
+                        }
+                    }
+                    .frame(width: 44, height: 36)
+                    .padding(8)
+                    .pickerCardStyle(isSelected: selection == .hud, accentColor: .purple)
+
+                    Text(ModifierHoldBehavior.hud.rawValue)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(selection == .hud ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 260, alignment: .trailing)
+    }
+}
+
 // 4. Color Scheme
 struct ColorSchemePicker: View {
     @Binding var selection: AppColorScheme
