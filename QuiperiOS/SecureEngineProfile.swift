@@ -3,6 +3,8 @@ import Foundation
 
 struct IOSSecuredEngineMetadata: Codable, Equatable {
     var url: String
+    var engineType: EngineType = .singleURL
+    var pinnedTabURLs: [String] = []
     var focusSelector: String
     var actionScripts: [UUID: String]
     var customCSS: String?
@@ -17,8 +19,41 @@ struct IOSSecuredEngineMetadata: Codable, Equatable {
     var lockAfterInactivity: Bool?
     var autoLockInactivityTimeout: Int?
 
+    enum CodingKeys: String, CodingKey {
+        case url, engineType, pinnedTabURLs, focusSelector, actionScripts
+        case customCSS, routingRules, iconBase64, iconManuallyUnset
+        case preservePrompt, templateActionScriptSync
+        case templatePromptInputSelectorSync, templateCustomCSSSync
+        case lockOnSwitchAway, lockAfterInactivity, autoLockInactivityTimeout
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
+        engineType = try container.decodeIfPresent(EngineType.self, forKey: .engineType) ?? .singleURL
+        let decodedPinned = try container.decodeIfPresent([String].self, forKey: .pinnedTabURLs) ?? []
+        pinnedTabURLs = engineType == .pinnedTabs
+            ? Service.normalizedPinnedTabURLs(decodedPinned)
+            : []
+        focusSelector = try container.decodeIfPresent(String.self, forKey: .focusSelector) ?? ""
+        actionScripts = try container.decodeIfPresent([UUID: String].self, forKey: .actionScripts) ?? [:]
+        customCSS = try container.decodeIfPresent(String.self, forKey: .customCSS)
+        routingRules = try container.decodeIfPresent([RoutingRule].self, forKey: .routingRules) ?? []
+        iconBase64 = try container.decodeIfPresent(String.self, forKey: .iconBase64)
+        iconManuallyUnset = try container.decodeIfPresent(Bool.self, forKey: .iconManuallyUnset)
+        preservePrompt = try container.decodeIfPresent(Bool.self, forKey: .preservePrompt) ?? true
+        templateActionScriptSync = try container.decodeIfPresent([UUID: Bool].self, forKey: .templateActionScriptSync) ?? [:]
+        templatePromptInputSelectorSync = try container.decodeIfPresent(Bool.self, forKey: .templatePromptInputSelectorSync) ?? false
+        templateCustomCSSSync = try container.decodeIfPresent(Bool.self, forKey: .templateCustomCSSSync) ?? false
+        lockOnSwitchAway = try container.decodeIfPresent(Bool.self, forKey: .lockOnSwitchAway)
+        lockAfterInactivity = try container.decodeIfPresent(Bool.self, forKey: .lockAfterInactivity)
+        autoLockInactivityTimeout = try container.decodeIfPresent(Int.self, forKey: .autoLockInactivityTimeout)
+    }
+
     init(service: Service) {
         url = service.url
+        engineType = service.engineType
+        pinnedTabURLs = service.pinnedTabURLs
         focusSelector = service.focus_selector
         actionScripts = service.actionScripts
         customCSS = service.customCSS
@@ -37,6 +72,10 @@ struct IOSSecuredEngineMetadata: Codable, Equatable {
     func applying(to service: Service) -> Service {
         var service = service
         service.url = url
+        service.engineType = engineType
+        service.pinnedTabURLs = engineType == .pinnedTabs
+            ? Service.normalizedPinnedTabURLs(pinnedTabURLs)
+            : []
         service.focus_selector = focusSelector
         service.actionScripts = actionScripts
         service.customCSS = customCSS
@@ -68,9 +107,10 @@ struct IOSSecuredTabState: Codable, Equatable {
     var tabPromptHistories: [Int: [PromptHistoryEntry]]
     var tabPromptHistoryEnabledOverrides: [Int: Bool]
 
-    init(serviceID: UUID, state: PersistedTabState) {
+    init(serviceID: UUID, state: PersistedTabState, excludingPinnedURLs: Bool = false) {
         activeIndex = state.activeIndicesByID[serviceID]
-        openTabs = state.openTabs[serviceID] ?? [:]
+        // Pinned-tab URLs live in the engine definition and never persist.
+        openTabs = excludingPinnedURLs ? [:] : (state.openTabs[serviceID] ?? [:])
         tabTitles = state.tabTitles[serviceID] ?? [:]
         tabInputs = state.tabInputs[serviceID] ?? [:]
         tabPromptHistories = state.tabPromptHistories[serviceID] ?? [:]
@@ -99,7 +139,9 @@ struct IOSSecuredEngineProfile: Codable, Equatable {
         schemaVersion = Self.currentSchemaVersion
         serviceID = service.id
         metadata = IOSSecuredEngineMetadata(service: service)
-        tabState = includeTabState ? IOSSecuredTabState(serviceID: service.id, state: state) : nil
+        tabState = includeTabState
+            ? IOSSecuredTabState(serviceID: service.id, state: state, excludingPinnedURLs: service.isPinnedTabs)
+            : nil
     }
 }
 

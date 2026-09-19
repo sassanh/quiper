@@ -7,6 +7,8 @@ import LocalAuthentication
 /// in plaintext settings.json.
 struct SecuredEngineMetadata: Codable, Equatable {
     var url: String
+    var engineType: EngineType = .singleURL
+    var pinnedTabURLs: [String] = []
     var focusSelector: String
     var iconBase64: String?
     var iconManuallyUnset: Bool?
@@ -23,7 +25,7 @@ struct SecuredEngineMetadata: Codable, Equatable {
     var autoLockInactivityTimeout: Int?
 
     enum CodingKeys: String, CodingKey {
-        case url, focusSelector, iconBase64, iconManuallyUnset
+        case url, engineType, pinnedTabURLs, focusSelector, iconBase64, iconManuallyUnset
         case legacyActivationShortcut = "activationShortcut"
         case customCSS, routingRules, actionScripts
         case preservePrompt, templateActionScriptSync
@@ -33,6 +35,8 @@ struct SecuredEngineMetadata: Codable, Equatable {
 
     init(from service: Service) {
         self.url = service.url
+        self.engineType = service.engineType
+        self.pinnedTabURLs = service.pinnedTabURLs
         self.focusSelector = service.focus_selector
         self.iconBase64 = service.iconBase64
         self.iconManuallyUnset = service.iconManuallyUnset
@@ -49,8 +53,49 @@ struct SecuredEngineMetadata: Codable, Equatable {
         self.autoLockInactivityTimeout = service.autoLockInactivityTimeout
     }
 
+    /// Whether the bundle carries no metadata worth keeping. Guards the
+    /// persistence gate against overwriting secure storage with empty values.
+    var isEmpty: Bool {
+        let hasPinnedURLs = pinnedTabURLs.contains(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        })
+        return url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !hasPinnedURLs
+            && focusSelector.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && actionScripts.isEmpty
+            && routingRules.isEmpty
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
+        engineType = try container.decodeIfPresent(EngineType.self, forKey: .engineType) ?? .singleURL
+        let decodedPinned = try container.decodeIfPresent([String].self, forKey: .pinnedTabURLs) ?? []
+        pinnedTabURLs = engineType == .pinnedTabs
+            ? Service.normalizedPinnedTabURLs(decodedPinned)
+            : []
+        focusSelector = try container.decodeIfPresent(String.self, forKey: .focusSelector) ?? ""
+        iconBase64 = try container.decodeIfPresent(String.self, forKey: .iconBase64)
+        iconManuallyUnset = try container.decodeIfPresent(Bool.self, forKey: .iconManuallyUnset)
+        legacyActivationShortcut = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .legacyActivationShortcut)
+        customCSS = try container.decodeIfPresent(String.self, forKey: .customCSS)
+        routingRules = try container.decodeIfPresent([RoutingRule].self, forKey: .routingRules) ?? []
+        actionScripts = try container.decodeIfPresent([UUID: String].self, forKey: .actionScripts) ?? [:]
+        preservePrompt = try container.decodeIfPresent(Bool.self, forKey: .preservePrompt) ?? true
+        templateActionScriptSync = try container.decodeIfPresent([UUID: Bool].self, forKey: .templateActionScriptSync) ?? [:]
+        templatePromptInputSelectorSync = try container.decodeIfPresent(Bool.self, forKey: .templatePromptInputSelectorSync) ?? false
+        templateCustomCSSSync = try container.decodeIfPresent(Bool.self, forKey: .templateCustomCSSSync) ?? false
+        lockOnSwitchAway = try container.decodeIfPresent(Bool.self, forKey: .lockOnSwitchAway)
+        lockAfterInactivity = try container.decodeIfPresent(Bool.self, forKey: .lockAfterInactivity)
+        autoLockInactivityTimeout = try container.decodeIfPresent(Int.self, forKey: .autoLockInactivityTimeout)
+    }
+
     func apply(to service: inout Service) {
         service.url = url
+        service.engineType = engineType
+        service.pinnedTabURLs = engineType == .pinnedTabs
+            ? Service.normalizedPinnedTabURLs(pinnedTabURLs)
+            : []
         service.focus_selector = focusSelector
         service.iconBase64 = iconBase64
         service.iconManuallyUnset = iconManuallyUnset
@@ -139,7 +184,14 @@ final class EngineMetadataMigrationManager {
 
     /// Whether a service has legacy metadata still in settings.json.
     func hasLegacyMetadata(for service: Service) -> Bool {
-        service.isEncrypted && !service.hasMigratedMetadata && !service.url.isEmpty
+        guard service.isEncrypted, !service.hasMigratedMetadata else { return false }
+        if service.isPinnedTabs {
+            return !service.url.isEmpty
+                || service.pinnedTabURLs.contains(where: {
+                    !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                })
+        }
+        return !service.url.isEmpty
     }
 
     /// Returns all services with legacy metadata that need migration.

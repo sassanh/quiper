@@ -28,10 +28,26 @@ struct RoutingRule: Codable, Identifiable, Equatable {
 
 // MARK: - Service
 
+enum EngineType: String, Codable, CaseIterable, Identifiable {
+    case singleURL = "singleURL"
+    case pinnedTabs = "pinnedTabs"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .singleURL: return "Single URL"
+        case .pinnedTabs: return "Pinned Tabs"
+        }
+    }
+}
+
 struct Service: Codable, Identifiable {
     var id = UUID()
     var name: String
     var url: String
+    var engineType: EngineType = .singleURL
+    var pinnedTabURLs: [String] = []
     var focus_selector: String
     var actionScripts: [UUID: String] = [:]
     #if os(macOS)
@@ -62,6 +78,8 @@ struct Service: Codable, Identifiable {
         case id
         case name
         case url
+        case engineType
+        case pinnedTabURLs
         case focus_selector
         case actionScripts
         case activationShortcut
@@ -88,6 +106,8 @@ struct Service: Codable, Identifiable {
     init(id: UUID = UUID(),
          name: String,
          url: String,
+         engineType: EngineType = .singleURL,
+         pinnedTabURLs: [String] = [],
          focus_selector: String,
          actionScripts: [UUID: String] = [:],
          activationShortcut: HotkeyManager.Configuration? = nil,
@@ -108,6 +128,8 @@ struct Service: Codable, Identifiable {
         self.id = id
         self.name = name
         self.url = url
+        self.engineType = engineType
+        self.pinnedTabURLs = pinnedTabURLs
         self.focus_selector = focus_selector
         self.actionScripts = actionScripts
         self.activationShortcut = activationShortcut
@@ -130,6 +152,8 @@ struct Service: Codable, Identifiable {
     init(id: UUID = UUID(),
          name: String,
          url: String,
+         engineType: EngineType = .singleURL,
+         pinnedTabURLs: [String] = [],
          focus_selector: String,
          actionScripts: [UUID: String] = [:],
          routingRules: [RoutingRule] = [],
@@ -149,6 +173,8 @@ struct Service: Codable, Identifiable {
         self.id = id
         self.name = name
         self.url = url
+        self.engineType = engineType
+        self.pinnedTabURLs = pinnedTabURLs
         self.focus_selector = focus_selector
         self.actionScripts = actionScripts
         self.routingRules = routingRules
@@ -173,6 +199,13 @@ struct Service: Codable, Identifiable {
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Untitled Service"
         url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
+        engineType = try container.decodeIfPresent(EngineType.self, forKey: .engineType) ?? .singleURL
+        pinnedTabURLs = try container.decodeIfPresent([String].self, forKey: .pinnedTabURLs) ?? []
+        if engineType == .pinnedTabs {
+            pinnedTabURLs = Service.normalizedPinnedTabURLs(pinnedTabURLs)
+        } else {
+            pinnedTabURLs = []
+        }
         focus_selector = try container.decodeIfPresent(String.self, forKey: .focus_selector) ?? ""
         actionScripts = try container.decodeIfPresent([UUID: String].self, forKey: .actionScripts) ?? [:]
         #if os(macOS)
@@ -252,8 +285,14 @@ struct Service: Codable, Identifiable {
         #endif
 
         let isMigrated = isEncrypted && hasMigratedMetadata
+        if engineType == .pinnedTabs {
+            try container.encode(engineType, forKey: .engineType)
+        }
         if !isMigrated {
             try container.encode(url, forKey: .url)
+            if engineType == .pinnedTabs {
+                try container.encode(pinnedTabURLs, forKey: .pinnedTabURLs)
+            }
             try container.encode(focus_selector, forKey: .focus_selector)
             if !actionScripts.isEmpty {
                 try container.encode(actionScripts, forKey: .actionScripts)
@@ -296,6 +335,62 @@ struct Service: Codable, Identifiable {
 }
 
 extension Service: Equatable {}
+
+// MARK: - Engine type
+
+extension Service {
+    var isPinnedTabs: Bool { engineType == .pinnedTabs }
+
+    static let pinnedTabSlotCount = 10
+
+    static func normalizedPinnedTabURLs(_ urls: [String]) -> [String] {
+        var result = Array(urls.prefix(pinnedTabSlotCount))
+        while result.count < pinnedTabSlotCount {
+            result.append("")
+        }
+        return result
+    }
+
+    static func makePinnedTabURLs(seedURL: String) -> [String] {
+        var result = Array(repeating: "", count: pinnedTabSlotCount)
+        result[0] = seedURL
+        return result
+    }
+
+    func pinnedURL(for sessionIndex: Int) -> String? {
+        guard isPinnedTabs,
+              pinnedTabURLs.indices.contains(sessionIndex) else { return nil }
+        let trimmed = pinnedTabURLs[sessionIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Whether the engine carries no metadata that would be lost by
+    /// overwriting its secure bundle with this value.
+    var hasEmptyMetadata: Bool {
+        let hasPinnedURLs = pinnedTabURLs.contains(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        })
+        return url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !hasPinnedURLs
+            && focus_selector.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && actionScripts.isEmpty
+            && routingRules.isEmpty
+    }
+
+    mutating func convertToPinnedTabs() {
+        engineType = .pinnedTabs
+        pinnedTabURLs = Service.makePinnedTabURLs(seedURL: url)
+    }
+
+    mutating func convertToSingleURL() {
+        let first = pinnedTabURLs.first(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) ?? ""
+        url = first
+        engineType = .singleURL
+        pinnedTabURLs = []
+    }
+}
 
 // MARK: - Custom action
 

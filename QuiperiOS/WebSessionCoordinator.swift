@@ -190,14 +190,19 @@ final class WebSessionCoordinator: NSObject {
             preferredStyle: .alert
         )
         let host = url.host ?? ""
-        let openHere = UIAlertAction(title: "Open Here", style: .default) { [weak self] _ in
-            self?.userApprovedURLs.insert(url)
-            webView.load(URLRequest(url: url))
-        }
-        let openHereAlways = UIAlertAction(title: "Always Open Here", style: .default) { [weak self] _ in
-            self?.onRememberRoutingDecision?(host, .internalStay)
-            self?.userApprovedURLs.insert(url)
-            webView.load(URLRequest(url: url))
+        // Pinned tabs never navigate in place: offer only external choices.
+        if !service.isPinnedTabs {
+            let openHere = UIAlertAction(title: "Open Here", style: .default) { [weak self] _ in
+                self?.userApprovedURLs.insert(url)
+                webView.load(URLRequest(url: url))
+            }
+            let openHereAlways = UIAlertAction(title: "Always Open Here", style: .default) { [weak self] _ in
+                self?.onRememberRoutingDecision?(host, .internalStay)
+                self?.userApprovedURLs.insert(url)
+                webView.load(URLRequest(url: url))
+            }
+            alert.addAction(openHere)
+            alert.addAction(openHereAlways)
         }
         let openExternally = UIAlertAction(title: "Open Externally", style: .default) { [weak self] _ in
             self?.openExternally(url)
@@ -206,8 +211,6 @@ final class WebSessionCoordinator: NSObject {
             self?.onRememberRoutingDecision?(host, .external)
             self?.openExternally(url)
         }
-        alert.addAction(openHere)
-        alert.addAction(openHereAlways)
         alert.addAction(openExternally)
         alert.addAction(openExternallyAlways)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in })
@@ -227,8 +230,14 @@ extension WebSessionCoordinator: WKNavigationDelegate {
 
         guard let url = navigationAction.request.url,
               let scheme = url.scheme?.lowercased(),
-              ["http", "https"].contains(scheme),
-              let serviceURL = URL(string: service.url) else {
+              ["http", "https"].contains(scheme) else {
+            decisionHandler(.allow)
+            return
+        }
+        // Pinned-tab engines resolve the session's pinned URL from the
+        // engine definition; the tab address never changes.
+        let pinnedURL = RoutingResolver.pinnedURL(for: service, sessionIndex: sessionIndex)
+        guard let serviceURL = pinnedURL ?? URL(string: service.url) else {
             decisionHandler(.allow)
             return
         }
@@ -250,13 +259,21 @@ extension WebSessionCoordinator: WKNavigationDelegate {
             return
         }
 
-        switch RoutingResolver.route(for: url, service: service, serviceURL: serviceURL) {
+        switch RoutingResolver.route(for: url, service: service, serviceURL: serviceURL, pinnedURL: pinnedURL) {
         case .openHere:
             decisionHandler(allowWithoutAppLink)
         case .openNewWindow:
             decisionHandler(.cancel)
             openExternally(url)
         case .openExternal:
+            // Pinned tabs never navigate in place, even for form submits and
+            // redirects. iOS has no popup windows, so non-link navigations
+            // leave for the system browser.
+            if service.isPinnedTabs, navigationAction.navigationType != .linkActivated {
+                decisionHandler(.cancel)
+                openExternally(url)
+                return
+            }
             if navigationAction.navigationType == .linkActivated {
                 decisionHandler(.cancel)
                 openExternally(url)

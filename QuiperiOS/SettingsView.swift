@@ -697,9 +697,39 @@ struct EngineEditView: View {
     @State private var originalService: Service
     @State private var showingDiscardConfirmation = false
     @State private var showingDeleteConfirmation = false
+    @State private var showingPinnedToSingleConfirmation = false
     @State private var isFetchingIcon = false
     @State private var protectionDisclosure: ProtectionDisclosure?
     @Environment(\.dismiss) private var dismiss
+
+    private var engineTypeBinding: Binding<EngineType> {
+        Binding(
+            get: { service.engineType },
+            set: { newType in
+                if newType == .pinnedTabs {
+                    service.convertToPinnedTabs()
+                } else if newType != service.engineType {
+                    showingPinnedToSingleConfirmation = true
+                }
+            }
+        )
+    }
+
+    private var pinnedURLCount: Int {
+        service.pinnedTabURLs.filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }.count
+    }
+
+    private var pinnedToSingleConfirmationMessage: String {
+        let firstURL = service.pinnedTabURLs.first(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) ?? ""
+        var message = "The first pinned URL"
+        message += firstURL.isEmpty ? " (empty)" : " (\(firstURL))"
+        message += " becomes the engine URL and the other pinned URLs are removed. This can't be undone."
+        return message
+    }
 
     init(service: Service) {
         _service = State(initialValue: service)
@@ -734,7 +764,7 @@ struct EngineEditView: View {
                 Section {
                     TextField("Name", text: $service.name)
                         .accessibilityIdentifier("engine-edit-name-\(service.id.uuidString)")
-                    Label("Unlock this engine to edit its URL, prompt selector, icon, routing rules, or custom CSS.", systemImage: "lock.fill")
+                    Label("Unlock this engine to edit its type, URLs, prompt selector, icon, routing rules, or custom CSS.", systemImage: "lock.fill")
                         .foregroundStyle(.secondary)
                 } header: {
                     Text("Protected Details")
@@ -743,10 +773,30 @@ struct EngineEditView: View {
                 Section("Details") {
                 TextField("Name", text: $service.name)
                     .accessibilityIdentifier("engine-edit-name-\(service.id.uuidString)")
-                TextField("URL", text: $service.url)
-                    .keyboardType(.URL)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
+                Picker("Type", selection: engineTypeBinding) {
+                    ForEach(EngineType.allCases) { type in
+                        Text(type.displayName).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+                if service.isPinnedTabs {
+                    NavigationLink {
+                        PinnedTabsEditView(service: $service)
+                    } label: {
+                        HStack {
+                            Image(systemName: "pin.fill")
+                            Text("Pinned Tabs")
+                            Spacer()
+                            Text("\(pinnedURLCount)/\(Service.pinnedTabSlotCount)")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    TextField("URL", text: $service.url)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                }
             }
             Section {
                 HStack(spacing: 16) {
@@ -757,7 +807,7 @@ struct EngineEditView: View {
                         } label: {
                             Label("Fetch from Website", systemImage: "arrow.down.circle")
                         }
-                        .disabled(isFetchingIcon || service.url.isEmpty)
+                        .disabled(isFetchingIcon || iconSourceURL.isEmpty)
                         if service.iconBase64 != nil {
                             Button("Remove Icon", role: .destructive) {
                                 service.iconBase64 = nil
@@ -898,6 +948,17 @@ struct EngineEditView: View {
         } message: {
             Text("You have unsaved changes to this engine.")
         }
+        .alert(
+            "Switch to Single URL?",
+            isPresented: $showingPinnedToSingleConfirmation
+        ) {
+            Button("Switch", role: .destructive) {
+                service.convertToSingleURL()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(pinnedToSingleConfirmationMessage)
+        }
         .sheet(item: $protectionDisclosure) { disclosure in
             EngineProtectionDisclosureView(
                 enabling: disclosure.enabling,
@@ -998,11 +1059,20 @@ struct EngineEditView: View {
         originalService = updated
     }
 
+    private var iconSourceURL: String {
+        if service.isPinnedTabs {
+            return service.pinnedTabURLs.first(where: {
+                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }) ?? ""
+        }
+        return service.url
+    }
+
     private func fetchIconFromWebsite() async {
         guard !isFetchingIcon else { return }
         isFetchingIcon = true
         defer { isFetchingIcon = false }
-        if let base64 = await FaviconFetcher.fetchFavicon(for: service.url) {
+        if let base64 = await FaviconFetcher.fetchFavicon(for: iconSourceURL) {
             service.iconBase64 = base64
             service.iconManuallyUnset = false
         }
@@ -1338,7 +1408,8 @@ struct RoutingRulesEditView: View {
                         RoutingRuleField(
                             rule: $service.routingRules[index],
                             ruleID: service.routingRules[index].id,
-                            focusedRuleID: $focusedRuleID
+                            focusedRuleID: $focusedRuleID,
+                            allowedActions: service.isPinnedTabs ? [.popup, .external] : nil
                         )
                     }
                     .onDelete { offsets in
@@ -1349,14 +1420,18 @@ struct RoutingRulesEditView: View {
                     }
                 }
                 Button {
-                    service.routingRules.append(RoutingRule(pattern: "", action: .internalStay))
+                    service.routingRules.append(RoutingRule(pattern: "", action: service.isPinnedTabs ? .popup : .internalStay))
                 } label: {
                     Label("Add Routing Rule", systemImage: "plus")
                 }
             } header: {
                 Text("Rules")
             } footer: {
-                Text("Rules are evaluated from top to bottom. The first matching pattern determines the action. Reorder rules to adjust their priority.")
+                if service.isPinnedTabs {
+                    Text("Rules are evaluated from top to bottom. The first matching pattern determines the action. Pinned tabs never navigate in place: stays open in a popup.")
+                } else {
+                    Text("Rules are evaluated from top to bottom. The first matching pattern determines the action. Reorder rules to adjust their priority.")
+                }
             }
         }
         .navigationTitle("Routing Rules")
@@ -1364,6 +1439,50 @@ struct RoutingRulesEditView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 EditButton()
+            }
+        }
+    }
+}
+
+struct PinnedTabsEditView: View {
+    @Binding var service: Service
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(Array(service.pinnedTabURLs.indices), id: \.self) { index in
+                    HStack {
+                        Text(SessionSlots.label(for: index))
+                            .font(.body.monospacedDigit())
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, alignment: .center)
+                            .accessibilityLabel("Tab \(SessionSlots.label(for: index))")
+                        TextField("https://example.com", text: $service.pinnedTabURLs[index])
+                            .keyboardType(.URL)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    }
+                }
+                .onMove { source, destination in
+                    service.pinnedTabURLs.move(fromOffsets: source, toOffset: destination)
+                }
+            } header: {
+                Text("Tab URLs")
+            } footer: {
+                Text("Each tab always opens its pinned URL. Closing a tab never loses it: selecting the tab again reopens the pinned address. Links never navigate a pinned tab in place; they open externally.")
+            }
+        }
+        .navigationTitle("Pinned Tabs")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                EditButton()
+            }
+        }
+        .onAppear {
+            if service.pinnedTabURLs.count != Service.pinnedTabSlotCount {
+                service.pinnedTabURLs = Service.normalizedPinnedTabURLs(service.pinnedTabURLs)
             }
         }
     }

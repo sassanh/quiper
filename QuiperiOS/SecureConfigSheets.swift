@@ -299,7 +299,7 @@ struct SecureExportProgressSheet: View {
                             let engine = try await self.environment.decryptedServiceForExport(serviceID: serviceID)
                             return .success(engine)
                         } else if let service = self.environment.services.first(where: { $0.id == serviceID }) {
-                            let tabState = IOSSecuredTabState(serviceID: serviceID, state: self.environment.persistedTabState)
+                            let tabState = IOSSecuredTabState(serviceID: serviceID, state: self.environment.persistedTabState, excludingPinnedURLs: service.isPinnedTabs)
                             let hasTabs = !(self.environment.persistedTabState.openTabs[serviceID]?.isEmpty ?? true)
                             return .success(AppEnvironment.DecryptedEngineForExport(service: service.decryptedForExport, tabState: hasTabs ? tabState : nil))
                         } else {

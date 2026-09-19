@@ -190,14 +190,9 @@ enum SettingsPersistence {
         }
         // 1. Validate: never persist an empty secure metadata for a migrated+unlocked service.
         for service in snapshot.services where service.isEncrypted && service.hasMigratedMetadata {
-            if EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
-                let isEmpty = service.url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    && service.focus_selector.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    && service.actionScripts.isEmpty
-                    && service.routingRules.isEmpty
-                if isEmpty {
-                    throw PersistenceError.wouldWriteEmptySecureMetadata(serviceID: service.id, serviceName: service.name)
-                }
+            if EncryptedVolumeManager.shared.isUnlocked(for: service.id),
+               service.hasEmptyMetadata {
+                throw PersistenceError.wouldWriteEmptySecureMetadata(serviceID: service.id, serviceName: service.name)
             }
         }
 
@@ -205,11 +200,7 @@ enum SettingsPersistence {
         for service in snapshot.services where service.isEncrypted && service.hasMigratedMetadata {
             guard EncryptedVolumeManager.shared.isUnlocked(for: service.id) else { continue }
             let metadata = SecuredEngineMetadata(from: service)
-            let isEmptyMetadata = metadata.url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && metadata.focusSelector.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && metadata.actionScripts.isEmpty
-                && metadata.routingRules.isEmpty
-            if isEmptyMetadata {
+            if metadata.isEmpty {
                 throw PersistenceError.wouldWriteEmptySecureMetadata(serviceID: service.id, serviceName: service.name)
             }
             try writeSecureMetadata(metadata, for: service.id)

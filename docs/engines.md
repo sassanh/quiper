@@ -11,11 +11,38 @@ To add or configure an engine:
 2.  Select an existing engine to edit, or click **Add Engine** at the bottom of the list.
 3.  Each engine exposes the following properties:
     *   **Name:** The label displayed in the switcher tab (e.g., "ChatGPT").
-    *   **URL:** The target web address (e.g., `https://chatgpt.com`).
+    *   **Engine Type:** `Single URL` or `Pinned Tabs` (see below).
+    *   **URL:** For `Single URL` engines, the target web address every new tab opens (e.g., `https://chatgpt.com`). For `Pinned Tabs` engines, replaced by a fixed per-tab URL list.
     *   **Prompt Input:** The CSS selector identifying the editable prompt field.
     *   **Custom CSS:** Overrides to style the web elements (see the Custom CSS Injection section below).
     *   **Domain Routing Rules:** An ordered list of regex patterns that decide how outbound links from this engine are handled (see below).
     *   **Activation Shortcut:** A dedicated hotkey that summons the window and immediately opens this engine.
+
+---
+
+## Pinned-Tab Engines
+
+A `Single URL` engine opens the same address in every tab. A `Pinned Tabs` engine pins a fixed URL to each of its ten tab slots instead: every tab always opens its pinned address.
+
+To switch types, open **Settings (`⌘ ⇧ ,`) ➔ Engines ➔ [Select Engine] ➔ URL** and use the **Engine Type** picker:
+
+*   **Single URL → Pinned Tabs:** The current engine URL seeds the first tab slot; the remaining slots start empty. Live tabs reload.
+*   **Pinned Tabs → Single URL:** The first non-empty pinned URL becomes the engine URL and the other pinned URLs are removed. This can't be undone. Live tabs reload.
+
+### Tab URLs
+
+*   Edit the ten slots under **Settings ➔ Engines ➔ [Select Engine] ➔ URL**. Empty slots have no session; only slots with a URL open.
+*   Reorder URLs with the up/down chevrons to move them between tabs.
+*   Closing a tab never loses it: selecting that tab again reopens its pinned address. Saved sessions and backups never carry pinned addresses separately — the definition is the source of truth, including after relaunch.
+*   The engine icon is fetched from the first non-empty pinned URL.
+
+### Link Behavior
+
+Pinned tabs never navigate in place, so the tab address stays fixed:
+
+*   Reloading the pinned address itself (ignoring `#fragment` and a trailing `/`) stays in the tab.
+*   Every other navigation leaves the tab: link clicks open in a popup or the system browser, and form submits/redirects open in a popup sharing the engine's storage (so auth bounces keep their sessions).
+*   Routing rules offer only **Popup** and **Safari** for new rules. Existing **Internal** rules open in a popup instead, **Prompt** rules still prompt (with only popup/browser choices), and remembered "Always Open Here" choices are stored as popups.
 
 ---
 
@@ -176,7 +203,7 @@ Every engine has its own **Domain Routing** editor (**Settings ➔ Engines ➔ [
 
 ### How a Link Is Routed
 
-1.  **Same-Origin Priority:** Links to the engine's own domain (or its subdomains) always open inline, regardless of any rule — this guarantees normal in-app navigation is never intercepted.
+1.  **Same-Origin Priority:** Links to the engine's own domain (or its subdomains) always open inline, regardless of any rule — this guarantees normal in-app navigation is never intercepted. Exception: `Pinned Tabs` engines have no same-origin fast path — only the pinned address itself stays; everything else leaves the tab (see Pinned-Tab Engines).
 2.  **Ordered Rule Matching:** For every other link, Quiper walks the **Routing Rules** list from top to bottom and applies the action of the **first rule whose regex pattern matches** the URL. Reorder rules with the chevrons next to each row to control priority.
 3.  **Default Fallback:** If no rule matches, the link opens externally in your default system browser.
 

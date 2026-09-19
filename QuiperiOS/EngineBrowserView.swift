@@ -1278,6 +1278,22 @@ struct EnginePickerView: View {
     @Environment(IOSSceneCommandContext.self) private var commandContext
     @Environment(\.dismiss) private var dismiss
 
+    /// Subtitle host for the engine row. Pinned-tab engines show their first
+    /// defined tab; single-URL engines show the engine address.
+    static func subtitleHost(for service: Service) -> String? {
+        if service.isPinnedTabs {
+            for pinned in service.pinnedTabURLs {
+                let trimmed = pinned.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty, let host = URL(string: trimmed)?.host {
+                    return host
+                }
+            }
+            return nil
+        }
+        guard let host = URL(string: service.url)?.host else { return nil }
+        return host
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -1300,7 +1316,7 @@ struct EnginePickerView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(service.name)
                                     .foregroundStyle(Color.primary)
-                                if let url = URL(string: service.url), let host = url.host {
+                                if let host = Self.subtitleHost(for: service) {
                                     Text(host)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)

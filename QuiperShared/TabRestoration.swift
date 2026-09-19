@@ -25,7 +25,8 @@ extension PersistedTabState {
     ) -> [RestoredTab] {
         var result: [RestoredTab] = []
         for (svcID, sessions) in openTabs {
-            guard services.contains(where: { $0.id == svcID }) else { continue }
+            guard let service = services.first(where: { $0.id == svcID }),
+                  !service.isPinnedTabs else { continue }
             let activeIndex = activeIndexProvider(svcID)
             let titles = tabTitles[svcID] ?? [:]
             for (sessionIndex, urlString) in sessions {

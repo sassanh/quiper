@@ -9,6 +9,20 @@ struct RoutingRuleField: View {
     @Binding var rule: RoutingRule
     let ruleID: UUID
     let focusedRuleID: FocusState<UUID?>.Binding
+    /// Pinned-tab engines never navigate in place, so their editor offers
+    /// only popup and external actions.
+    var allowedActions: [RoutingAction]? = nil
+
+    private var visibleActions: [RoutingAction] {
+        guard let allowedActions else { return RoutingAction.allCases }
+        // Existing rules keep their stored action visible instead of being
+        // silently rewritten; the routing gate maps in-place stays to popups
+        // for pinned-tab engines at runtime.
+        if allowedActions.contains(rule.action) {
+            return allowedActions
+        }
+        return allowedActions + [rule.action]
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -24,7 +38,7 @@ struct RoutingRuleField: View {
                 .fontDesign(.monospaced)
                 #endif
             Picker("Action", selection: $rule.action) {
-                ForEach(RoutingAction.allCases) { action in
+                ForEach(visibleActions) { action in
                     Text(action.rawValue).tag(action)
                 }
             }

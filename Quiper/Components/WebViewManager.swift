@@ -188,12 +188,16 @@ final class WebViewManager: NSObject {
             wrappersByID.removeValue(forKey: id)
         }
 
-        // Also check if any existing service has changed its encryption status!
+        // Also check if any existing service has changed its encryption status
+        // or engine type. Both change what a session loads: encryption swaps
+        // the backing store, and the engine type swaps the session URLs, so
+        // live webviews would otherwise keep serving stale addresses.
         for newService in newServices {
             if let existingWebviews = webviewsByID[newService.id] {
                 if let oldService = self.services.first(where: { $0.id == newService.id }),
-                   oldService.isEncrypted != newService.isEncrypted {
-                    NSLog("[WebViewManager] Encryption status changed for service %@. Tearing down existing webviews.", newService.name)
+                   oldService.isEncrypted != newService.isEncrypted
+                    || oldService.engineType != newService.engineType {
+                    NSLog("[WebViewManager] Engine configuration changed for service %@. Tearing down existing webviews.", newService.name)
                     closePopups(forServiceID: newService.id)
                     existingWebviews.values.forEach { tearDownWebView($0) }
                     webviewsByID[newService.id] = [:]
@@ -363,6 +367,8 @@ final class WebViewManager: NSObject {
         let currentSavedState = Settings.shared.persistedTabState?.openTabs
 
         for service in services {
+            // Pinned-tab URLs live in the engine definition and never persist.
+            guard !service.isPinnedTabs else { continue }
             guard let sessionMap = webviewsByID[service.id] else { continue }
             var sessionURLs: [Int: String] = [:]
             for (idx, webView) in sessionMap {
@@ -886,9 +892,20 @@ final class WebViewManager: NSObject {
         }
         
         // Ephemeral tabs must not identify Quiper: our referral never loads.
-        let requestedURLString = isQuiperPrivate
-            ? DefaultEngineDefinitions.urlStringWithoutQuiperReferral(targetURL ?? service.url)
-            : (targetURL ?? service.url)
+        // Pinned-tab engines always resolve the session's pinned URL from the
+        // engine definition; saved or passed-in addresses are never trusted.
+        let pinnedURLString = service.pinnedURL(for: sessionIndex)
+        let requestedURLString: String
+        if service.isPinnedTabs {
+            let pinned = pinnedURLString ?? ""
+            requestedURLString = isQuiperPrivate
+                ? DefaultEngineDefinitions.urlStringWithoutQuiperReferral(pinned)
+                : pinned
+        } else {
+            requestedURLString = isQuiperPrivate
+                ? DefaultEngineDefinitions.urlStringWithoutQuiperReferral(targetURL ?? service.url)
+                : (targetURL ?? service.url)
+        }
 
         // Load initial URL with encryption check
         if service.isEncrypted {
@@ -950,8 +967,7 @@ final class WebViewManager: NSObject {
                             
                             // Metadata migration: move engine metadata from settings into secure bundle
                             if let currentService = Settings.shared.services.first(where: { $0.id == serviceId }),
-                               !currentService.hasMigratedMetadata,
-                               !currentService.url.isEmpty {
+                               EngineMetadataMigrationManager.shared.hasLegacyMetadata(for: currentService) {
                                 overlay.updateStatus("Migrating engine metadata...")
                                 do {
                                     try await EngineMetadataMigrationManager.shared.migrateMetadata(for: serviceId, context: context)
@@ -999,12 +1015,19 @@ final class WebViewManager: NSObject {
                             self.seedTemporaryState(isQuiperPrivate: false, for: unlockedService.id, sessionIndex: sessionIndex)
                             
                             // Load real URL
-                            var targetURLString = requestedURL ?? unlockedService.url
+                            var targetURLString: String
+                            if unlockedService.isPinnedTabs {
+                                targetURLString = unlockedService.pinnedURL(for: sessionIndex) ?? ""
+                            } else {
+                                targetURLString = requestedURL ?? unlockedService.url
+                            }
                             if Settings.shared.tabSurvivalPolicy != .never {
                                 let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceId).appendingPathComponent("quiper_tabs.json")
                                 if let data = try? Data(contentsOf: stateURL),
                                    let state = try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data) {
-                                    if let saved = state.openTabs[sessionIndex] {
+                                    // Pinned-tab URLs come from the engine
+                                    // definition; saved addresses never win.
+                                    if !unlockedService.isPinnedTabs, let saved = state.openTabs[sessionIndex] {
                                         targetURLString = saved
                                     }
                                     if let secureInputs = state.tabInputs {
@@ -1898,6 +1921,16 @@ final class WebViewManager: NSObject {
     }
 
     @MainActor
+    private func routingContext(for webView: WKWebView, service: Service) -> (serviceURL: URL?, pinnedURL: URL?) {
+        if service.isPinnedTabs,
+           let (_, sessionIndex) = findServiceAndSession(for: webView),
+           let pinned = RoutingResolver.pinnedURL(for: service, sessionIndex: sessionIndex) {
+            return (pinned, pinned)
+        }
+        return (URL(string: service.url), nil)
+    }
+
+    @MainActor
     private func presentRoutingPrompt(for url: URL, service: Service, webView: WKWebView, completion: @escaping @MainActor @Sendable (RoutingResolver.Decision, Bool) -> Void) {
         guard let window = webView.window else {
             completion(.openExternal, false)
@@ -1907,28 +1940,44 @@ final class WebViewManager: NSObject {
         let alert = NSAlert()
         alert.messageText = "Security & Routing"
         alert.informativeText = "How would you like to open this link?\n\(url.absoluteString)"
-        
-        alert.addButton(withTitle: "Open Here")
+
+        // Pinned tabs never navigate in place, so the prompt offers only
+        // new-window or external choices.
+        let offersOpenHere = !service.isPinnedTabs
+        if offersOpenHere {
+            alert.addButton(withTitle: "Open Here")
+        }
         alert.addButton(withTitle: "Open in New Window")
         alert.addButton(withTitle: "Open Externally")
         let cancelBtn = alert.addButton(withTitle: "Cancel")
         cancelBtn.keyEquivalent = "\u{1b}" // Escape key
-        
+
         let checkbox = NSButton(checkboxWithTitle: "Remember my choice for this domain", target: nil, action: nil)
         checkbox.font = .systemFont(ofSize: 11)
         alert.accessoryView = checkbox
-        
+
         alert.beginSheetModal(for: window) { response in
             let action: RoutingResolver.Decision
-            switch response {
-            case .alertFirstButtonReturn:
-                action = .openHere
-            case .alertSecondButtonReturn:
-                action = .openNewWindow
-            case .alertThirdButtonReturn:
-                action = .openExternal
-            default:
-                action = .cancel
+            if offersOpenHere {
+                switch response {
+                case .alertFirstButtonReturn:
+                    action = .openHere
+                case .alertSecondButtonReturn:
+                    action = .openNewWindow
+                case .alertThirdButtonReturn:
+                    action = .openExternal
+                default:
+                    action = .cancel
+                }
+            } else {
+                switch response {
+                case .alertFirstButtonReturn:
+                    action = .openNewWindow
+                case .alertSecondButtonReturn:
+                    action = .openExternal
+                default:
+                    action = .cancel
+                }
             }
             let remember = checkbox.state == .on
             completion(action, remember)
@@ -1940,11 +1989,12 @@ final class WebViewManager: NSObject {
         guard !host.isEmpty else { return }
         
         guard let index = Settings.shared.services.firstIndex(where: { $0.id == service.id }) else { return }
-        
+
         let routingAction: RoutingAction
         switch action {
         case .openHere:
-            routingAction = .internalStay
+            // Pinned tabs never navigate in place; remember the popup form.
+            routingAction = Settings.shared.services[index].isPinnedTabs ? .popup : .internalStay
         case .openNewWindow:
             routingAction = .popup
         case .openExternal:
@@ -2214,16 +2264,20 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         guard let url = navigationAction.request.url,
               let scheme = url.scheme?.lowercased(),
               allowedSchemes.contains(scheme),
-              let service = service(for: webView),
-              let serviceURL = URL(string: service.url) else {
+              let service = service(for: webView) else {
             if let url = navigationAction.request.url {
                  NSWorkspace.shared.open(url)
             }
             return nil
         }
-        
+        let (serviceURL, pinnedURL) = routingContext(for: webView, service: service)
+        guard let serviceURL else {
+            NSWorkspace.shared.open(url)
+            return nil
+        }
+
         let optionPressed = navigationAction.modifierFlags.contains(.option)
-        var action = RoutingResolver.route(for: url, service: service, serviceURL: serviceURL)
+        var action = RoutingResolver.route(for: url, service: service, serviceURL: serviceURL, pinnedURL: pinnedURL)
         if action == .openExternal && optionPressed {
             action = .showPrompt
         }
@@ -2315,8 +2369,12 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         guard let url = navigationAction.request.url,
               let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme),
-              let service = service(for: webView),
-              let serviceURL = URL(string: service.url) else {
+              let service = service(for: webView) else {
+            decisionHandler(.allow)
+            return
+        }
+        let (serviceURL, pinnedURL) = routingContext(for: webView, service: service)
+        guard let serviceURL else {
             decisionHandler(.allow)
             return
         }
@@ -2336,7 +2394,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         }
 
         let optionPressed = navigationAction.modifierFlags.contains(.option)
-        var action = RoutingResolver.route(for: url, service: service, serviceURL: serviceURL)
+        var action = RoutingResolver.route(for: url, service: service, serviceURL: serviceURL, pinnedURL: pinnedURL)
         if action == .openExternal && optionPressed {
             action = .showPrompt
         }
@@ -2353,6 +2411,19 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             decisionHandler(.cancel)
             
         case .openExternal:
+            if service.isPinnedTabs, navigationAction.navigationType != .linkActivated {
+                // Pinned tabs never navigate in place, even for form submits
+                // and redirects. The popup shares the engine's store, so
+                // sessions set during auth bounces survive; Safari would
+                // strand them outside Quiper.
+                if let parentWindow = webView.window {
+                    openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow, opener: webView)
+                } else {
+                    NSWorkspace.shared.open(url)
+                }
+                decisionHandler(.cancel)
+                return
+            }
             if navigationAction.navigationType == .linkActivated {
                 let targetFrameIsMain = navigationAction.targetFrame?.isMainFrame ?? true
                 if targetFrameIsMain {

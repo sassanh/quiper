@@ -848,12 +848,16 @@ extension MainWindowController: WebViewManagerDelegate {
                let state = try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data) {
                 
                 activeIndicesByID[service.id] = state.activeIndex
-                
-                for (sessionIndex, urlString) in state.openTabs {
-                    _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString, restoredTitle: state.tabTitles?[sessionIndex], loadImmediately: (sessionIndex == state.activeIndex))
-                    
-                    if let webView = webViewManager.getWebView(for: service, sessionIndex: sessionIndex) {
-                        setupSessionTitleObserver(for: service, sessionIndex: sessionIndex, webView: webView)
+
+                // Pinned-tab sessions instantiate lazily from the engine
+                // definition; saved addresses are never replayed.
+                if !service.isPinnedTabs {
+                    for (sessionIndex, urlString) in state.openTabs {
+                        _ = webViewManager.getOrCreateWebView(for: service, sessionIndex: sessionIndex, dragArea: dragArea, targetURL: urlString, restoredTitle: state.tabTitles?[sessionIndex], loadImmediately: (sessionIndex == state.activeIndex))
+
+                        if let webView = webViewManager.getWebView(for: service, sessionIndex: sessionIndex) {
+                            setupSessionTitleObserver(for: service, sessionIndex: sessionIndex, webView: webView)
+                        }
                     }
                 }
 

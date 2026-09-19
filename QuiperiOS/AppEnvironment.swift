@@ -279,6 +279,10 @@ final class AppEnvironment: ObservableObject {
     }
 
     func sessionURL(for serviceID: UUID, slot: Int) -> URL? {
+        // Pinned-tab URLs come from the engine definition, never saved state.
+        if let service = services.first(where: { $0.id == serviceID }), service.isPinnedTabs {
+            return RoutingResolver.pinnedURL(for: service, sessionIndex: slot)
+        }
         if let urlString = persistedTabState.openTabs[serviceID]?[slot], !urlString.isEmpty,
            let url = URL(string: urlString) {
             return url
@@ -293,6 +297,9 @@ final class AppEnvironment: ObservableObject {
 
     func isSessionLoaded(for serviceID: UUID, slot: Int) -> Bool {
         if webSessions[serviceID]?[slot] != nil { return true }
+        if let service = services.first(where: { $0.id == serviceID }), service.isPinnedTabs {
+            return service.pinnedURL(for: slot) != nil
+        }
         guard let urlString = persistedTabState.openTabs[serviceID]?[slot] else { return false }
         return !urlString.isEmpty
     }
@@ -310,7 +317,9 @@ final class AppEnvironment: ObservableObject {
             return session
         }
         guard createIfNeeded,
-              persistedTabState.openTabs[service.id]?[index] != nil else { return nil }
+              service.isPinnedTabs
+                ? service.pinnedURL(for: index) != nil
+                : persistedTabState.openTabs[service.id]?[index] != nil else { return nil }
         return webViewSession(
             for: service.id,
             sessionIndex: index,
@@ -633,6 +642,7 @@ final class AppEnvironment: ObservableObject {
     private func securedStub(from service: Service) -> Service {
         var stub = service
         stub.url = ""
+        stub.pinnedTabURLs = []
         stub.focus_selector = ""
         stub.actionScripts = [:]
         stub.customCSS = nil
@@ -730,8 +740,15 @@ final class AppEnvironment: ObservableObject {
     /// Mirrors macOS `updateActiveWebview`: when the activated engine has no
     /// sessions and auto-create is disabled, the engine is shown empty unless a
     /// session is explicitly requested (e.g. tapping a session slot).
+    /// Pinned-tab engines own their sessions by definition, so they are never
+    /// empty while at least one slot has a URL.
     func hasNoSessions(for serviceID: UUID) -> Bool {
-        (persistedTabState.openTabs[serviceID] ?? [:]).isEmpty
+        if let service = services.first(where: { $0.id == serviceID }), service.isPinnedTabs {
+            return !service.pinnedTabURLs.contains(where: {
+                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            })
+        }
+        return (persistedTabState.openTabs[serviceID] ?? [:]).isEmpty
     }
 
     func updateService(_ service: Service) {
@@ -743,6 +760,11 @@ final class AppEnvironment: ObservableObject {
             services[index].autoLockInactivityTimeout = max(1, service.autoLockInactivityTimeout)
             save(flushSecureProfiles: false)
             return
+        }
+        // Switching engine types swaps every session's URL, so live sessions
+        // would otherwise keep serving stale addresses.
+        if services[index].engineType != service.engineType {
+            invalidateSessions(for: service.id)
         }
         services[index] = service
         syncCustomCSSFile(for: service)
@@ -763,12 +785,15 @@ final class AppEnvironment: ObservableObject {
     }
 
     /// Persists a remembered routing choice for a host at the top of the engine's
-    /// routing rules, mirroring macOS `rememberDecision`.
+    /// routing rules, mirroring macOS `rememberDecision`. Pinned tabs never
+    /// navigate in place, so remembered stays become popups.
     func rememberRoutingDecision(host: String, action: RoutingAction, serviceID: UUID) {
         guard !host.isEmpty,
               !isServiceLocked(serviceID),
               let index = services.firstIndex(where: { $0.id == serviceID }) else { return }
-        services[index] = RoutingResolver.applyingRememberedRule(host: host, action: action, to: services[index])
+        let resolvedAction: RoutingAction =
+            (action == .internalStay && services[index].isPinnedTabs) ? .popup : action
+        services[index] = RoutingResolver.applyingRememberedRule(host: host, action: resolvedAction, to: services[index])
         updateCachedSessions(for: services[index])
         save()
     }
@@ -927,6 +952,13 @@ final class AppEnvironment: ObservableObject {
 
     func ensureSessions(for serviceID: UUID) {
         guard !isServiceLocked(serviceID) else { return }
+        // Pinned-tab sessions exist by definition; nothing is recorded.
+        if let service = services.first(where: { $0.id == serviceID }), service.isPinnedTabs {
+            if persistedTabState.activeIndicesByID[serviceID] == nil {
+                persistedTabState.activeIndicesByID[serviceID] = 0
+            }
+            return
+        }
         guard (persistedTabState.openTabs[serviceID] ?? [:]).isEmpty else { return }
         if persistedTabState.openTabs[serviceID] == nil {
             persistedTabState.openTabs[serviceID] = [:]
@@ -936,8 +968,14 @@ final class AppEnvironment: ObservableObject {
     }
 
     func closeSession(for serviceID: UUID, at index: Int) {
-        guard persistedTabState.openTabs[serviceID]?[index] != nil ||
-              persistedTabState.tabTitles[serviceID]?[index] != nil else { return }
+        let isPinned = services.first(where: { $0.id == serviceID })?.isPinnedTabs ?? false
+        guard isPinned
+            ? (webSessions[serviceID]?[index] != nil
+                || persistedTabState.tabTitles[serviceID]?[index] != nil
+                || persistedTabState.tabInputs[serviceID]?[index] != nil
+                || persistedTabState.tabPromptHistories[serviceID]?[index] != nil)
+            : (persistedTabState.openTabs[serviceID]?[index] != nil ||
+                persistedTabState.tabTitles[serviceID]?[index] != nil) else { return }
         persistedTabState.openTabs[serviceID]?.removeValue(forKey: index)
         persistedTabState.tabTitles[serviceID]?.removeValue(forKey: index)
         persistedTabState.tabPromptHistories[serviceID]?.removeValue(forKey: index)
@@ -950,8 +988,15 @@ final class AppEnvironment: ObservableObject {
         }
         webSessions[serviceID]?.removeValue(forKey: index)?.invalidate()
         if persistedTabState.activeIndicesByID[serviceID] == index {
-            let remaining = (persistedTabState.openTabs[serviceID] ?? [:]).keys.sorted()
-            persistedTabState.activeIndicesByID[serviceID] = remaining.min(by: { abs($0 - index) < abs($1 - index) }) ?? 0
+            // Pinned tabs reopen from the definition, so the closed slot stays
+            // valid; otherwise fall back to the nearest recorded session.
+            if isPinned {
+                let remaining = (webSessions[serviceID] ?? [:]).keys.sorted()
+                persistedTabState.activeIndicesByID[serviceID] = remaining.min(by: { abs($0 - index) < abs($1 - index) }) ?? index
+            } else {
+                let remaining = (persistedTabState.openTabs[serviceID] ?? [:]).keys.sorted()
+                persistedTabState.activeIndicesByID[serviceID] = remaining.min(by: { abs($0 - index) < abs($1 - index) }) ?? 0
+            }
         }
         if hasNoSessions(for: serviceID),
            persistedTabState.activeServiceID == serviceID,
@@ -977,11 +1022,18 @@ final class AppEnvironment: ObservableObject {
     }
 
     /// Prefers the engine's remembered active session when it is still loaded,
-    /// otherwise the lowest live session, mirroring macOS.
+    /// otherwise the lowest live session, mirroring macOS. Pinned-tab engines
+    /// prefer defined slots over recorded state.
     private func preferredSessionIndex(for serviceID: UUID) -> Int {
         let remembered = activeSessionIndex(for: serviceID)
         if webSessions[serviceID]?[remembered] != nil {
             return remembered
+        }
+        if let service = services.first(where: { $0.id == serviceID }), service.isPinnedTabs {
+            if service.pinnedURL(for: remembered) != nil {
+                return remembered
+            }
+            return service.pinnedTabURLs.indices.first(where: { service.pinnedURL(for: $0) != nil }) ?? 0
         }
         return (persistedTabState.openTabs[serviceID] ?? [:]).keys.min() ?? 0
     }
@@ -1014,7 +1066,10 @@ final class AppEnvironment: ObservableObject {
         if persistedTabState.openTabs[serviceID] == nil {
             persistedTabState.openTabs[serviceID] = [:]
         }
-        if persistedTabState.openTabs[serviceID]?[slot] == nil {
+        // Pinned-tab URLs live in the engine definition; selecting a slot
+        // never records an address.
+        if let service = services.first(where: { $0.id == serviceID }), !service.isPinnedTabs,
+           persistedTabState.openTabs[serviceID]?[slot] == nil {
             persistedTabState.openTabs[serviceID]?[slot] = serviceURL(for: serviceID)
         }
         persistedTabState.activeIndicesByID[serviceID] = slot
@@ -1042,7 +1097,9 @@ final class AppEnvironment: ObservableObject {
     }
 
     func updateSessionURL(for serviceID: UUID, sessionIndex: Int, url: URL) {
-        guard services.contains(where: { $0.id == serviceID }), !isServiceLocked(serviceID) else { return }
+        guard let service = services.first(where: { $0.id == serviceID }),
+              !isServiceLocked(serviceID),
+              !service.isPinnedTabs else { return }
         let urlString = url.absoluteString
         guard !urlString.isEmpty, urlString != "about:blank" else { return }
         if persistedTabState.openTabs[serviceID] == nil {
@@ -1211,6 +1268,9 @@ final class AppEnvironment: ObservableObject {
                 // Start from plaintext and add back decrypted engines' tab states
                 for engine in decryptedEngines {
                     let id = engine.service.id
+                    // Pinned-tab URLs live in the engine definition; saved
+                    // addresses are never merged back.
+                    guard !engine.service.isPinnedTabs else { continue }
                     if let tabState = engine.tabState {
                         var dict = full
                         tabState.applying(to: &dict, serviceID: id)
@@ -1296,7 +1356,7 @@ final class AppEnvironment: ObservableObject {
                 guard tabSurvivalPolicy != .never else { return nil }
                 var state = persistedTabState
                 // Already unlocked, its tabs are already in persistedTabState, but we capture them for export
-                return IOSSecuredTabState(serviceID: serviceID, state: state)
+                return IOSSecuredTabState(serviceID: serviceID, state: state, excludingPinnedURLs: service.isPinnedTabs)
             }()
             return DecryptedEngineForExport(service: service.decryptedForExport, tabState: tabState)
         }
@@ -1440,6 +1500,10 @@ final class AppEnvironment: ObservableObject {
         // Strip any plaintext for secured engines that may have been in the file as stubs already.
         for service in services where service.isEncrypted {
             stripSensitiveState(for: service.id)
+        }
+        // Pinned-tab URLs come from the engine definition, never the file.
+        for service in services where service.isPinnedTabs {
+            persistedTabState.openTabs[service.id] = nil
         }
         if let activeID = persistedTabState.activeServiceID {
             lastActiveTab = TabIdentifier(serviceID: activeID, sessionIndex: activeSessionIndex(for: activeID))
@@ -2000,10 +2064,22 @@ final class AppEnvironment: ObservableObject {
 
     /// Restores only the active persisted session. Other tabs remain represented
     /// by `PersistedTabState` and are instantiated when the user selects them.
+    /// Pinned-tab sessions restore from the engine definition instead.
     private func restoreTabsState() {
         guard let serviceID = persistedTabState.activeServiceID,
-              !isServiceLocked(serviceID),
-              let sessions = persistedTabState.openTabs[serviceID],
+              !isServiceLocked(serviceID) else { return }
+        if let service = services.first(where: { $0.id == serviceID }), service.isPinnedTabs {
+            let sessionIndex = activeSessionIndex(for: serviceID)
+            guard let url = sessionURL(for: serviceID, slot: sessionIndex) else { return }
+            _ = webViewSession(
+                for: serviceID,
+                sessionIndex: sessionIndex,
+                initialURL: url,
+                loadImmediately: true
+            )
+            return
+        }
+        guard let sessions = persistedTabState.openTabs[serviceID],
               !sessions.isEmpty else { return }
         let preferredIndex = activeSessionIndex(for: serviceID)
         let sessionIndex = sessions[preferredIndex] != nil
@@ -2132,6 +2208,10 @@ final class AppEnvironment: ObservableObject {
             state.tabInputs[serviceID] = nil
             state.tabPromptHistories[serviceID] = nil
             state.tabPromptHistoryEnabledOverrides[serviceID] = nil
+        }
+        // Pinned-tab URLs come from the engine definition, never saved state.
+        for service in services where service.isPinnedTabs {
+            state.openTabs[service.id] = nil
         }
         state.tabHistory = state.tabHistory?.filter { !secureIDs.contains($0.serviceID) }
         return state

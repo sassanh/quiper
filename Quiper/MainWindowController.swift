@@ -1231,6 +1231,9 @@ struct SecureTabState: Codable {
         var restoredPopups = savedState.popups ?? []
         for (svcID, sessions) in savedState.openTabs {
             guard let service = services.first(where: { $0.id == svcID }) else { continue }
+            // Pinned-tab sessions always instantiate from the engine
+            // definition when selected; saved addresses are ignored.
+            guard !service.isPinnedTabs else { continue }
             
             var secureSessions = sessions
             var restoredTitles = savedState.tabTitles[svcID] ?? [:]

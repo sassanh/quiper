@@ -1209,6 +1209,7 @@ struct ServiceDetailView: View {
     enum DetailSelection: Hashable {
         case focus
         case friendDomains
+        case url
         case css
         case security
         case webData
@@ -1241,6 +1242,8 @@ struct ServiceDetailView: View {
     @State private var unlockErrorMessage: String? = nil
     @State private var showDeleteLockedEngineConfirmation = false
     @State private var lastUnlockError: Error? = nil
+    @State private var showPinnedToSingleConfirmation = false
+    @State private var pinnedToSingleHasUnsavedChanges = false
 
     private var detailSelectionBinding: Binding<DetailSelection?> {
         Binding(
@@ -1337,53 +1340,80 @@ struct ServiceDetailView: View {
                     }
                 }
                 
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Text("Name:")
-                                .font(.callout)
-                                .foregroundColor(.secondary)
-                                .frame(width: 50, alignment: .trailing)
-                            TextField("Name", text: $service.name)
-                                .textFieldStyle(.roundedBorder)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text("Name:")
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                            .frame(width: 50, alignment: .trailing)
+                        TextField("Name", text: $service.name)
+                            .textFieldStyle(.roundedBorder)
+                        ShortcutButton(
+                            text: service.activationShortcut.map { ShortcutFormatter.string(for: $0) } ?? "Record Shortcut",
+                            isPlaceholder: service.activationShortcut == nil,
+                            onTap: { startActivationShortcutCapture() },
+                            onClear: service.activationShortcut != nil ? { clearActivationShortcut() } : nil,
+                            onReset: nil,
+                            width: 160,
+                            axIdentifier: "recorder_launch_engine_\(service.id.uuidString)"
+                        )
+                        if let globalDigitShortcut = visibleGlobalEngineDigitShortcut {
                             ShortcutButton(
-                                text: service.activationShortcut.map { ShortcutFormatter.string(for: $0) } ?? "Record Shortcut",
-                                isPlaceholder: service.activationShortcut == nil,
-                                onTap: { startActivationShortcutCapture() },
-                                onClear: service.activationShortcut != nil ? { clearActivationShortcut() } : nil,
+                                text: ShortcutFormatter.string(for: globalDigitShortcut),
+                                onTap: {},
+                                onClear: nil,
                                 onReset: nil,
                                 width: 160,
-                                axIdentifier: "recorder_launch_engine_\(service.id.uuidString)"
+                                axIdentifier: "global_engine_digit_\(service.id.uuidString)"
                             )
-                            if let globalDigitShortcut = visibleGlobalEngineDigitShortcut {
-                                ShortcutButton(
-                                    text: ShortcutFormatter.string(for: globalDigitShortcut),
-                                    onTap: {},
-                                    onClear: nil,
-                                    onReset: nil,
-                                    width: 160,
-                                    axIdentifier: "global_engine_digit_\(service.id.uuidString)"
-                                )
-                                .disabled(true)
-                                .help("Global Go to engine shortcut")
-                            }
-                        }
-                        if !activationShortcutStatus.isEmpty {
-                            Text(activationShortcutStatus)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
+                            .disabled(true)
+                            .help("Global Go to engine shortcut")
                         }
                     }
+                    if !activationShortcutStatus.isEmpty {
+                        Text(activationShortcutStatus)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
                     if !(service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id)) {
-                        HStack(spacing: 8) {
-                            Text("URL:")
-                                .font(.callout)
-                                .foregroundColor(.secondary)
-                                .frame(width: 50, alignment: .trailing)
-                            TextField("URL", text: $service.url)
-                                .focused($isUrlFieldFocused)
-                                .textFieldStyle(.roundedBorder)
+                        if service.isPinnedTabs {
+                            HStack(spacing: 8) {
+                                Text("URL:")
+                                    .font(.callout)
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 50, alignment: .trailing)
+                                HStack {
+                                    Text("Each tab opens its pinned URL.")
+                                        .font(.callout)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Button("Manage Tabs") {
+                                        detailSelection = .url
+                                    }
+                                    .buttonStyle(.link)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color(NSColor.controlBackgroundColor))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color(NSColor.separatorColor).opacity(0.6), lineWidth: 1)
+                                )
+                            }
+                        } else {
+                            HStack(spacing: 8) {
+                                Text("URL:")
+                                    .font(.callout)
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 50, alignment: .trailing)
+                                TextField("URL", text: $service.url)
+                                    .focused($isUrlFieldFocused)
+                                    .textFieldStyle(.roundedBorder)
+                            }
                         }
                     }
                 }
@@ -1627,6 +1657,14 @@ struct ServiceDetailView: View {
         } message: {
             Text("This will permanently delete \(service.name) and its encrypted storage, including all sessions and local data. This can't be undone. If you have a backup, you can restore it later.")
         }
+        .alert("Switch to Single URL?", isPresented: $showPinnedToSingleConfirmation) {
+            Button("Switch", role: .destructive) {
+                confirmPinnedToSingle()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(pinnedToSingleConfirmationMessage)
+        }
     }
 
     private func startActivationShortcutCapture() {
@@ -1764,6 +1802,47 @@ struct ServiceDetailView: View {
         engineDigitShortcut.map { ShortcutFormatter.string(for: $0) } ?? "This shortcut"
     }
 
+    private var engineTypeSelection: Binding<EngineType> {
+        Binding(
+            get: { service.engineType },
+            set: { requestEngineTypeChange($0) }
+        )
+    }
+
+    private func requestEngineTypeChange(_ newType: EngineType) {
+        guard newType != service.engineType else { return }
+        if newType == .pinnedTabs {
+            service.convertToPinnedTabs()
+            settings.saveSettings()
+            appController?.reloadServices()
+        } else {
+            Task {
+                let blocking = await appController?.unloadInfosNeedingConfirmation(for: [service.id]) ?? []
+                pinnedToSingleHasUnsavedChanges = !blocking.isEmpty
+                showPinnedToSingleConfirmation = true
+            }
+        }
+    }
+
+    private func confirmPinnedToSingle() {
+        service.convertToSingleURL()
+        settings.saveSettings()
+        appController?.reloadServices()
+    }
+
+    private var pinnedToSingleConfirmationMessage: String {
+        let firstURL = service.pinnedTabURLs.first(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) ?? ""
+        var message = "The first pinned URL"
+        message += firstURL.isEmpty ? " (empty)" : " (\(firstURL))"
+        message += " becomes the engine URL and the other pinned URLs are removed. This can't be undone."
+        if pinnedToSingleHasUnsavedChanges {
+            message += TabCloseGate.settingsWarningSuffix
+        }
+        return message
+    }
+
     private func clearActivationShortcut() {
         let serviceID = service.id
         guard let index = settings.services.firstIndex(where: { $0.id == serviceID }) else { return }
@@ -1800,7 +1879,11 @@ struct ServiceDetailView: View {
 
     @MainActor
     private func autoFetchIcon() async {
-        let url = service.url
+        let url = service.isPinnedTabs
+            ? (service.pinnedTabURLs.first(where: {
+                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }) ?? "")
+            : service.url
         let serviceID = service.id
         guard !url.isEmpty else { return }
         if let base64 = await FaviconFetcher.fetchFavicon(for: url) {
@@ -1824,11 +1907,13 @@ struct ServiceDetailView: View {
                         .tag(DetailSelection.webData)
                 }
 
-                Section("Routing") {
+                Section("Content") {
+                    Label("URL", systemImage: "globe")
+                        .tag(DetailSelection.url)
                     Label("Domain Routing", systemImage: "link")
                         .tag(DetailSelection.friendDomains)
                 }
-                
+
                 Section("Customization") {
                     Label("Prompt Input", systemImage: "character.cursor.ibeam")
                         .tag(DetailSelection.focus)
@@ -1855,6 +1940,8 @@ struct ServiceDetailView: View {
                 focusSelectorForm
             case .friendDomains:
                 friendDomainsForm
+            case .url:
+                urlForm
             case .css:
                 customCSSForm
             case .security:
@@ -2135,7 +2222,8 @@ struct ServiceDetailView: View {
             RoutingRuleField(
                 rule: rule,
                 ruleID: rule.wrappedValue.id,
-                focusedRuleID: $focusedRoutingRuleID
+                focusedRuleID: $focusedRoutingRuleID,
+                allowedActions: service.isPinnedTabs ? [.popup, .external] : nil
             )
             .onChange(of: rule.wrappedValue.action) {
                 focusedRoutingRuleID = rule.wrappedValue.id
@@ -2164,6 +2252,179 @@ struct ServiceDetailView: View {
         }
     }
     
+    private func movePinnedURL(from: Int, to: Int) {
+        guard from >= 0, from < service.pinnedTabURLs.count,
+              to >= 0, to < service.pinnedTabURLs.count else { return }
+
+        withAnimation(.easeInOut(duration: 0.25)) {
+            service.pinnedTabURLs.swapAt(from, to)
+        }
+        settings.saveSettings()
+    }
+
+    private func pinnedURLBinding(at index: Int) -> Binding<String> {
+        Binding(
+            get: {
+                guard service.pinnedTabURLs.indices.contains(index) else { return "" }
+                return service.pinnedTabURLs[index]
+            },
+            set: { newValue in
+                guard service.pinnedTabURLs.indices.contains(index) else { return }
+                service.pinnedTabURLs[index] = newValue
+                settings.saveSettings()
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func pinnedTabRow(at index: Int) -> some View {
+        HStack(spacing: 12) {
+            Text(SessionSlots.label(for: index))
+                .font(.callout.monospacedDigit())
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .frame(width: 20, alignment: .center)
+                .accessibilityLabel("Tab \(SessionSlots.label(for: index))")
+
+            TextField("https://example.com", text: pinnedURLBinding(at: index))
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: .infinity)
+
+            HStack(spacing: 0) {
+                Button {
+                    movePinnedURL(from: index, to: index - 1)
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .frame(width: 20, height: 16)
+                        .foregroundStyle(index == 0 ? Color.secondary.opacity(0.4) : Color.secondary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(index == 0)
+                .accessibilityLabel("Move tab \(SessionSlots.label(for: index)) up")
+                .help("Move tab up")
+
+                Divider()
+                    .frame(height: 12)
+
+                Button {
+                    movePinnedURL(from: index, to: index + 1)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .frame(width: 20, height: 16)
+                        .foregroundStyle(index == service.pinnedTabURLs.count - 1 ? Color.secondary.opacity(0.4) : Color.secondary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(index == service.pinnedTabURLs.count - 1)
+                .accessibilityLabel("Move tab \(SessionSlots.label(for: index)) down")
+                .help("Move tab down")
+            }
+            .background(Color(NSColor.controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(Color(NSColor.separatorColor).opacity(0.6), lineWidth: 1)
+            )
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.accentColor.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.accentColor.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    private var urlForm: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "globe")
+                    .font(.title2)
+                    .foregroundColor(.accentColor.settingsResolved)
+                Text("URL")
+                    .font(.title3)
+                    .fontWeight(.bold)
+            }
+
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .foregroundColor(.accentColor.settingsResolved)
+                            Text("Engine Type")
+                                .font(.headline)
+                            Spacer()
+                        }
+
+                        Picker("Engine Type", selection: engineTypeSelection) {
+                            ForEach(EngineType.allCases) { type in
+                                Text(type.displayName).tag(type)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+
+                        if service.isPinnedTabs {
+                            Text("Each tab always opens its pinned URL below. Links never navigate a tab in place.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text("Every new tab opens the engine URL.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding()
+                    .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                    .cornerRadius(8)
+
+                    if service.isPinnedTabs {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "list.bullet.indent")
+                                    .foregroundColor(.accentColor.settingsResolved)
+                                Text("Tab URLs")
+                                    .font(.headline)
+                                Spacer()
+                            }
+
+                            Text("Closing a tab never loses it: selecting the tab again reopens the pinned address. Reorder URLs to move them between tabs.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(Array(service.pinnedTabURLs.indices), id: \.self) { index in
+                                    pinnedTabRow(at: index)
+                                }
+                            }
+                            .padding(.leading, 8)
+                        }
+                        .padding()
+                        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                        .cornerRadius(8)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear {
+            if service.isPinnedTabs, service.pinnedTabURLs.count != Service.pinnedTabSlotCount {
+                service.pinnedTabURLs = Service.normalizedPinnedTabURLs(service.pinnedTabURLs)
+                settings.saveSettings()
+            }
+        }
+    }
+
     private var friendDomainsForm: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
@@ -2190,6 +2451,13 @@ struct ServiceDetailView: View {
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+
+                        if service.isPinnedTabs {
+                            Text("Pinned tabs never navigate in place: Internal rules open in a popup, and the prompt offers only popup or system browser choices.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         
                         VStack(alignment: .leading, spacing: 8) {
                             if service.routingRules.isEmpty {
@@ -2210,7 +2478,7 @@ struct ServiceDetailView: View {
 
                             Button {
                                 withAnimation(.easeInOut(duration: 0.25)) {
-                                    service.routingRules.append(RoutingRule(pattern: "", action: .internalStay))
+                                    service.routingRules.append(RoutingRule(pattern: "", action: service.isPinnedTabs ? .popup : .internalStay))
                                 }
                                 settings.saveSettings()
                             } label: {

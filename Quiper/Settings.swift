@@ -566,7 +566,14 @@ class Settings: ObservableObject {
         promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace ?? true
         promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear ?? false
         promptHistoryLimit = Self.clampedPromptHistoryLimit(persisted.promptHistoryLimit ?? Self.defaultPromptHistoryLimit)
-        persistedTabState = persisted.persistedTabState
+        if var importedTabState = persisted.persistedTabState {
+            for service in persisted.services where service.isPinnedTabs {
+                importedTabState.openTabs.removeValue(forKey: service.id)
+            }
+            persistedTabState = importedTabState
+        } else {
+            persistedTabState = nil
+        }
         tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2
         configureTemplateActionSyncMigration()
         var shouldSaveAfterLoad = false
@@ -704,7 +711,11 @@ class Settings: ObservableObject {
                 for engine in decryptedEngines {
                     if let state = engine.tabState {
                         base.activeIndicesByID[engine.service.id] = state.activeIndex
-                        base.openTabs[engine.service.id] = state.openTabs
+                        // Pinned-tab URLs live in the engine definition; never
+                        // merge saved addresses for them.
+                        if !engine.service.isPinnedTabs {
+                            base.openTabs[engine.service.id] = state.openTabs
+                        }
                         if let titles = state.tabTitles { base.tabTitles[engine.service.id] = titles }
                         if let inputs = state.tabInputs { base.tabInputs[engine.service.id] = inputs }
                         if let histories = state.tabPromptHistories { base.tabPromptHistories[engine.service.id] = histories }
@@ -787,6 +798,7 @@ class Settings: ObservableObject {
     private func securedStub(from service: Service) -> Service {
         var stub = service
         stub.url = ""
+        stub.pinnedTabURLs = []
         stub.focus_selector = ""
         stub.actionScripts = [:]
         stub.customCSS = nil
@@ -812,6 +824,12 @@ class Settings: ObservableObject {
             state.tabInputs.removeValue(forKey: id)
             state.tabPromptHistories.removeValue(forKey: id)
             state.tabPromptHistoryEnabledOverrides.removeValue(forKey: id)
+        }
+        // Pinned-tab URLs come from the engine definition, never from saved
+        // state or backups. Strip them so restores and exports cannot carry
+        // stale addresses separately.
+        for service in services where service.isPinnedTabs {
+            state.openTabs.removeValue(forKey: service.id)
         }
         state.tabHistory = state.tabHistory?.filter { !secureIDs.contains($0.serviceID) }
         state.popups?.removeAll { secureIDs.contains($0.serviceID) }
@@ -1012,7 +1030,14 @@ class Settings: ObservableObject {
         promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace ?? true
         promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear ?? false
         promptHistoryLimit = Self.clampedPromptHistoryLimit(persisted.promptHistoryLimit ?? Self.defaultPromptHistoryLimit)
-        persistedTabState = persisted.persistedTabState
+        if var importedTabState = persisted.persistedTabState {
+            for service in persisted.services where service.isPinnedTabs {
+                importedTabState.openTabs.removeValue(forKey: service.id)
+            }
+            persistedTabState = importedTabState
+        } else {
+            persistedTabState = nil
+        }
         if let storedHotkey = persisted.hotkey {
             hotkeyConfiguration = storedHotkey
         }
@@ -1045,7 +1070,10 @@ class Settings: ObservableObject {
                 // Preserve lock preferences from the original engine; default to true if unknown.
                 try await EngineMetadataMigrationManager.shared.migrateMetadata(for: serviceID, context: LAContext())
                 // Move any imported tab state for this engine into the encrypted bundle.
-                if tabSurvivalPolicy != .never, var state = persistedTabState, state.openTabs[serviceID] != nil {
+                // Pinned-tab URLs live in the engine definition, so imported
+                // addresses are dropped rather than moved.
+                if tabSurvivalPolicy != .never, var state = persistedTabState, state.openTabs[serviceID] != nil,
+                   !services[index].isPinnedTabs {
                     let activeIndex = state.activeIndicesByID[serviceID] ?? 0
                     let secureState = MainWindowController.SecureTabState(
                         activeIndex: activeIndex,
