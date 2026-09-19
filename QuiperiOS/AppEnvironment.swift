@@ -275,7 +275,15 @@ final class AppEnvironment: ObservableObject {
 
     func activeSessionIndex(for serviceID: UUID) -> Int {
         let index = persistedTabState.activeIndicesByID[serviceID] ?? 0
-        return SessionSlots.range.contains(index) ? index : 0
+        guard SessionSlots.range.contains(index) else { return 0 }
+        // Pinned-tab slots without a URL have no button; never report one
+        // as active. Fall back to the first defined slot.
+        if let service = services.first(where: { $0.id == serviceID }),
+           service.isPinnedTabs,
+           !service.visibleSessionIndices.contains(index) {
+            return service.visibleSessionIndices.first ?? 0
+        }
+        return index
     }
 
     func sessionURL(for serviceID: UUID, slot: Int) -> URL? {
@@ -955,7 +963,7 @@ final class AppEnvironment: ObservableObject {
         // Pinned-tab sessions exist by definition; nothing is recorded.
         if let service = services.first(where: { $0.id == serviceID }), service.isPinnedTabs {
             if persistedTabState.activeIndicesByID[serviceID] == nil {
-                persistedTabState.activeIndicesByID[serviceID] = 0
+                persistedTabState.activeIndicesByID[serviceID] = service.visibleSessionIndices.first ?? 0
             }
             return
         }
@@ -1042,6 +1050,13 @@ final class AppEnvironment: ObservableObject {
         guard services.contains(where: { $0.id == serviceID }) else { return }
         registerUserActivity()
         let slot = SessionSlots.range.contains(index) ? index : 0
+        // Hidden pinned-tab slots have no button and no page; ignore
+        // programmatic switches there instead of opening an empty address.
+        if let service = services.first(where: { $0.id == serviceID }),
+           service.isPinnedTabs,
+           !service.visibleSessionIndices.contains(slot) {
+            return
+        }
         let newTab = TabIdentifier(serviceID: serviceID, sessionIndex: slot)
         if let oldService = activeService {
             let oldTab = TabIdentifier(serviceID: oldService.id, sessionIndex: activeSessionIndex(for: oldService.id))

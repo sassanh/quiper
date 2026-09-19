@@ -662,11 +662,14 @@ extension MainWindowController {
 @MainActor
 extension MainWindowController: CollapsibleSelectorDelegate {
     func isLoading(index: Int) -> Bool {
-        guard let service = currentService(),
-              let webView = webViewManager.getWebView(for: service, sessionIndex: index) else { return false }
+        guard let service = currentService() else { return false }
+        let sessionIndex = service.visibleSessionIndices.indices.contains(index)
+            ? service.visibleSessionIndices[index]
+            : index
+        guard let webView = webViewManager.getWebView(for: service, sessionIndex: sessionIndex) else { return false }
         return webView.isLoading
     }
-    
+
     func selector(_ selector: CollapsibleSelector, isInstantiated index: Int) -> Bool {
         if selector === collapsibleServiceSelector {
             guard services.indices.contains(index) else { return false }
@@ -679,11 +682,14 @@ extension MainWindowController: CollapsibleSelectorDelegate {
             return false
         } else if selector === collapsibleSessionSelector {
             guard let service = currentService() else { return false }
-            return webViewManager.getWebView(for: service, sessionIndex: index) != nil
+            let sessionIndex = service.visibleSessionIndices.indices.contains(index)
+                ? service.visibleSessionIndices[index]
+                : index
+            return webViewManager.getWebView(for: service, sessionIndex: sessionIndex) != nil
         }
         return true
     }
-    
+
     func segmentedControl(_ control: SegmentedControl, isInstantiated index: Int) -> Bool {
         if control === serviceSelector {
             guard services.indices.contains(index) else { return false }
@@ -696,7 +702,10 @@ extension MainWindowController: CollapsibleSelectorDelegate {
             return false
         } else if control === sessionSelector {
             guard let service = currentService() else { return false }
-            return webViewManager.getWebView(for: service, sessionIndex: index) != nil
+            let sessionIndex = service.visibleSessionIndices.indices.contains(index)
+                ? service.visibleSessionIndices[index]
+                : index
+            return webViewManager.getWebView(for: service, sessionIndex: sessionIndex) != nil
         }
         return true
     }

@@ -2260,6 +2260,7 @@ struct ServiceDetailView: View {
             service.pinnedTabURLs.swapAt(from, to)
         }
         settings.saveSettings()
+        appController?.reloadServices()
     }
 
     private func pinnedURLBinding(at index: Int) -> Binding<String> {
@@ -2289,6 +2290,11 @@ struct ServiceDetailView: View {
             TextField("https://example.com", text: pinnedURLBinding(at: index))
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: .infinity)
+                .onSubmit {
+                    // Commit-only refresh: per-keystroke reloads would steal
+                    // focus from this field by refocusing the main webview.
+                    appController?.reloadServices()
+                }
 
             HStack(spacing: 0) {
                 Button {

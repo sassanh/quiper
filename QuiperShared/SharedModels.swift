@@ -364,6 +364,14 @@ extension Service {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// Session slots shown in the session selector. Single-URL engines show
+    /// every slot; pinned-tab engines show only slots with a URL defined.
+    /// The single gate for selector filtering on every platform.
+    var visibleSessionIndices: [Int] {
+        guard isPinnedTabs else { return Array(SessionSlots.range) }
+        return SessionSlots.range.filter { pinnedURL(for: $0) != nil }
+    }
+
     /// Whether the engine carries no metadata that would be lost by
     /// overwriting its secure bundle with this value.
     var hasEmptyMetadata: Bool {

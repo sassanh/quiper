@@ -163,6 +163,18 @@ final class IOSCommandExecutor {
                 resolvedID,
                 createSessionIfNeeded: false
             )
+            if engine.isPinnedTabs {
+                // Pinned tabs reopen from the definition; a "new" session
+                // selects the first defined slot.
+                guard let slot = engine.visibleSessionIndices.first else {
+                    throw IOSCommandError.noActiveSession
+                }
+                environment.setActiveSession(for: resolvedID, index: slot)
+                _ = environment.activeWebSession()
+                return IOSCommandOutcome(
+                    message: "Opened session \(SessionSlots.label(for: slot)) in \(engine.name)."
+                )
+            }
             let occupied = Set(
                 environment.persistedTabState.openTabs[resolvedID]?.keys.map { $0 } ?? []
             )
@@ -213,6 +225,11 @@ final class IOSCommandExecutor {
             return IOSCommandOutcome(message: "Opened the previous session.")
         case .selectSession(let index):
             guard SessionSlots.range.contains(index), let serviceID = environment.activeService?.id else {
+                throw IOSCommandError.noActiveSession
+            }
+            if let service = environment.services.first(where: { $0.id == serviceID }),
+               service.isPinnedTabs,
+               !service.visibleSessionIndices.contains(index) {
                 throw IOSCommandError.noActiveSession
             }
             _ = try await activateEngine(serviceID, createSessionIfNeeded: false)
@@ -380,9 +397,15 @@ final class IOSCommandExecutor {
             throw IOSCommandError.noActiveSession
         }
         _ = try await activateEngine(serviceID, createSessionIfNeeded: false)
+        guard let service = environment.services.first(where: { $0.id == serviceID }) else {
+            throw IOSCommandError.noActiveSession
+        }
+        let visible = service.visibleSessionIndices
+        guard !visible.isEmpty else { throw IOSCommandError.noActiveSession }
         let current = environment.activeSessionIndex(for: serviceID)
-        let next = (current + delta + SessionSlots.count) % SessionSlots.count
-        environment.setActiveSession(for: serviceID, index: next)
+        let position = visible.firstIndex(of: current) ?? 0
+        let nextPosition = (position + delta % visible.count + visible.count) % visible.count
+        environment.setActiveSession(for: serviceID, index: visible[nextPosition])
     }
 
     private func closeSession(serviceID: UUID, index: Int) async throws -> IOSCommandOutcome {

@@ -175,4 +175,19 @@ final class EngineTypeTests: XCTestCase {
         service.url = ""
         XCTAssertFalse(service.hasEmptyMetadata)
     }
+
+    func testVisibleSessionIndicesShowAllSlotsForSingleURL() {
+        let service = Service(name: "Test", url: "https://example.com", focus_selector: "")
+        XCTAssertEqual(service.visibleSessionIndices, Array(0..<10))
+    }
+
+    func testVisibleSessionIndicesHidePinnedSlotsWithoutURL() {
+        let service = pinnedService(urls: ["https://one.example.com", "", "https://three.example.com"])
+        XCTAssertEqual(service.visibleSessionIndices, [0, 2])
+    }
+
+    func testVisibleSessionIndicesEmptyWhenNoPinnedURLsDefined() {
+        let service = pinnedService(urls: [])
+        XCTAssertTrue(service.visibleSessionIndices.isEmpty)
+    }
 }

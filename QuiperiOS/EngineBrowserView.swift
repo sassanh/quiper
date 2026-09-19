@@ -1081,8 +1081,10 @@ struct EngineBrowserView: View {
     private func sessionSelector(flexible: Bool) -> some View {
         let serviceID = chromeActiveTab?.serviceID ?? activeServiceID
         let activeSlot = chromeActiveTab?.sessionIndex ?? activeSessionIndex
+        let service = environment.services.first(where: { $0.id == serviceID })
+        let visibleSlots = service?.visibleSessionIndices ?? Array(SessionSlots.range)
         return HStack(spacing: 6) {
-            ForEach(SessionSlots.range, id: \.self) { slot in
+            ForEach(visibleSlots, id: \.self) { slot in
                 let isActive = hasActiveSession && slot == activeSlot
                 let isLoaded = environment.isSessionLoaded(for: serviceID, slot: slot)
                 Button {

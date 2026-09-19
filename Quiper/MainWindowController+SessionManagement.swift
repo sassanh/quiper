@@ -30,6 +30,15 @@ extension MainWindowController {
         
         currentServiceName = selectedService.name
         currentServiceID = selectedService.id
+
+        // Switching engines never lands on a hidden pinned-tab slot.
+        if let current = activeIndicesByID[selectedService.id],
+           !selectedService.visibleSessionIndices.contains(current),
+           let first = selectedService.visibleSessionIndices.first {
+            activeIndicesByID[selectedService.id] = first
+        } else if activeIndicesByID[selectedService.id] == nil {
+            activeIndicesByID[selectedService.id] = selectedService.visibleSessionIndices.first ?? 0
+        }
         
         serviceSelector?.selectedSegment = index
         collapsibleServiceSelector?.selectedSegment = index
@@ -62,13 +71,16 @@ extension MainWindowController {
             endHistoryCycling()
         }
         guard let service = currentService() else { return }
-        
+
         if service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
             NSLog("[MainWindowController] Session switching disabled for locked engine: %@", service.name)
             return
         }
-        
+
         let bounded = max(0, min(index, 9))
+        // Pinned-tab engines only expose slots with a URL defined.
+        // Programmatic switches to a hidden slot never create an empty page.
+        guard service.visibleSessionIndices.contains(bounded) else { return }
         activeIndicesByID[service.id] = bounded
         
         let segmentIdx = segmentIndex(forSession: bounded)
@@ -115,16 +127,25 @@ extension MainWindowController {
         for id in removedIDs {
             activeIndicesByID.removeValue(forKey: id)
         }
-        
-        for service in newServices where activeIndicesByID[service.id] == nil {
-             activeIndicesByID[service.id] = 0
+
+        for service in newServices {
+            let visible = service.visibleSessionIndices
+            if let current = activeIndicesByID[service.id] {
+                if !visible.contains(current), let first = visible.first {
+                    activeIndicesByID[service.id] = first
+                }
+            } else {
+                activeIndicesByID[service.id] = visible.first ?? 0
+            }
         }
 
         webViewManager.updateServices(newServices)
         services = newServices
         syncCurrentServiceSelection()
         refreshServiceSegments()
+        updateSessionSelector()
         updateActiveWebview()
+        layoutSelectors()
     }
 
     func getOrCreateWebview(for service: Service, sessionIndex: Int) -> WKWebView {
@@ -165,7 +186,10 @@ extension MainWindowController {
     /// No-ops with an error sound when no free slot remains.
     func createQuiperPrivateTemporarySession() {
         guard let service = currentService() else { return }
-        guard let freeIndex = (0..<10).first(where: {
+        // Temporary tabs must land on a visible button, otherwise the user
+        // could not see or switch back to them.
+        let candidates = service.isPinnedTabs ? service.visibleSessionIndices : Array(SessionSlots.range)
+        guard let freeIndex = candidates.first(where: {
             webViewManager.getWebView(for: service, sessionIndex: $0) == nil
         }) else {
             playErrorSound()
@@ -221,7 +245,8 @@ extension MainWindowController {
     /// "New Session" from inside a Quiper-private tab.
     func createNormalSessionAfterPrivate() {
         guard let service = currentService() else { return }
-        guard let freeIndex = (0..<10).first(where: {
+        let candidates = service.isPinnedTabs ? service.visibleSessionIndices : Array(SessionSlots.range)
+        guard let freeIndex = candidates.first(where: {
             webViewManager.getWebView(for: service, sessionIndex: $0) == nil
         }) else {
             playErrorSound()
@@ -257,7 +282,20 @@ extension MainWindowController {
 
     func updateActiveWebview(focusWebView: Bool = true, forceCreate: Bool = false) {
         guard let service = currentService(), webViewManager != nil else { return }
-        let activeIndex = activeIndicesByID[service.id] ?? 0
+        var activeIndex = activeIndicesByID[service.id] ?? 0
+        // A pinned-tab slot without a URL has no button and no page.
+        // Never auto-create there; an engine with no URLs shows empty state.
+        if service.isPinnedTabs, !service.visibleSessionIndices.contains(activeIndex) {
+            if let first = service.visibleSessionIndices.first {
+                activeIndex = first
+                activeIndicesByID[service.id] = first
+            } else {
+                webViewManager.hideAll()
+                webViewManager.hideAllSessionPopups()
+                showEmptyState()
+                return
+            }
+        }
         let currentTab = TabIdentifier(serviceID: service.id, sessionIndex: activeIndex)
         let existingTargetWebView = webViewManager.getWebView(for: service, sessionIndex: activeIndex)
         if findBarViewController?.webView !== existingTargetWebView {
@@ -339,9 +377,12 @@ extension MainWindowController {
     
     func stepSession(by delta: Int) {
         guard let service = currentService() else { return }
-        let current = activeIndicesByID[service.id] ?? 0
-        let next = (current + delta + 10) % 10
-        switchSession(to: next)
+        let visible = service.visibleSessionIndices
+        guard !visible.isEmpty else { return }
+        let current = activeIndicesByID[service.id] ?? visible[0]
+        let position = visible.firstIndex(of: current) ?? 0
+        let nextPosition = (position + delta % visible.count + visible.count) % visible.count
+        switchSession(to: visible[nextPosition])
     }
 
     func stepService(by delta: Int) {

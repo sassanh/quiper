@@ -423,6 +423,7 @@ extension MainWindowController {
                 : base
         }
         let segment = segmentIndex(forSession: sessionIndex)
+        guard segment >= 0 else { return }
 
         sessionSelector?.setToolTip(toolTip, forSegment: segment)
         collapsibleSessionSelector?.setToolTip(toolTip, forSegment: segment)
@@ -439,13 +440,26 @@ extension MainWindowController {
 
     func updateSessionSelector() {
         guard let service = currentService() else { return }
-        let index = activeIndicesByID[service.id] ?? 0
-        let segmentIdx = segmentIndex(forSession: index)
+        let visible = service.visibleSessionIndices
+        let labels = visible.map(SessionSlots.label(for:))
 
-        for sessionIndex in 0..<10 {
+        if let selector = sessionSelector, selector.segmentCount != visible.count {
+            selector.segmentCount = visible.count
+        }
+        sessionSelector?.customLabels = labels
+        for (segment, sessionIndex) in visible.enumerated() {
+            sessionSelector?.setLabel(SessionSlots.label(for: sessionIndex), forSegment: segment)
+        }
+
+        collapsibleSessionSelector?.setItems(labels)
+        collapsibleSessionSelector?.tooltips = collapsibleSessionSelector?.tooltips.filter { $0.key < visible.count } ?? [:]
+
+        for sessionIndex in SessionSlots.range {
             updateSessionTooltip(for: service, sessionIndex: sessionIndex)
         }
 
+        let index = activeIndicesByID[service.id] ?? 0
+        let segmentIdx = segmentIndex(forSession: index)
         if isEmptyStateActive {
             sessionSelector?.selectedSegment = -1
             collapsibleSessionSelector?.selectedSegment = -1
@@ -480,10 +494,14 @@ extension MainWindowController {
     }
 
     func sessionIndex(forSegment segment: Int) -> Int {
-        segment == 9 ? 9 : segment
+        guard let service = currentService() else { return segment }
+        let visible = service.visibleSessionIndices
+        guard visible.indices.contains(segment) else { return segment }
+        return visible[segment]
     }
 
     func segmentIndex(forSession session: Int) -> Int {
-        session == 9 ? 9 : session
+        guard let service = currentService() else { return session }
+        return service.visibleSessionIndices.firstIndex(of: session) ?? -1
     }
 }
