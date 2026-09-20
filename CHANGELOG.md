@@ -17,6 +17,7 @@
 
 ### Fixed
 
+- **Summoned Overlay Always Opens Ready**: Showing Quiper with its shortcut now always lands focused and interactive instead of occasionally appearing faded and swallowing the first click.
 - **Hidden Overlays No Longer Swallow Clicks**: An invisible interaction shield (for example from a restored popup window) no longer blocks clicks on the main window behind it.
 - **No Flash When Entering Element Fullscreen**: Fullscreening page content now switches cleanly to the fullscreen Space without flashing the Quiper window at its original size, and the overlay returns to its origin Space on exit.
 - **Routing Rules Apply Inside Popup Windows**: Links clicked inside a popup window now follow the engine's routing rules — Internal stays in the popup, Popup opens a new window, Safari opens externally, and Prompt asks — instead of always loading in the same popup.

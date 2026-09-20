@@ -739,6 +739,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             updateCollectionBehaviorForVisibilityState()
         }
         NotificationCenter.default.post(name: .windowDidShow, object: nil)
+        // Re-read focus after activation settles. show() itself never applied
+        // focus appearance, and the key/active notifications can arrive before
+        // the window is actually key (or not at all when already key/active),
+        // which left the dim and its click-eating shield stuck on the focused
+        // window until the next click. This is idempotent with those handlers.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window?.isVisible == true else { return }
+            self.updateFocusAppearance()
+        }
     }
 
     func hide() {

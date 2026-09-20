@@ -218,8 +218,25 @@ final class AppController: NSObject, NSWindowDelegate {
         captureFrontmostNonQuiperApplication()
         if !windowController.isWebContentFullscreen && isActiveSpaceFullscreen() {
             NSApp.setActivationPolicy(.accessory)
+        } else {
+            ensureActivationPolicyForShowingOverlay()
         }
         windowController.show()
+    }
+
+    /// Single gate for the activation-policy flip when showing the overlay.
+    /// Runs BEFORE the window orders front and the app activates: flipping
+    /// accessory -> regular after activation resigns the app and leaves the
+    /// focus-loss dim (and its click-eating shield) stuck on the focused
+    /// window until the next click. handleWindowDidShow re-asserts the same
+    /// value after the show, which is a no-op once set here.
+    private func ensureActivationPolicyForShowingOverlay() {
+        let visibility = Settings.shared.dockVisibility
+        if !windowController.isWebContentFullscreen, visibility == .always || visibility == .whenVisible {
+            if !isActiveSpaceFullscreen() {
+                NSApp.setActivationPolicy(.regular)
+            }
+        }
     }
 
     @objc func hideWindow(_ sender: Any?) {
@@ -282,12 +299,7 @@ final class AppController: NSObject, NSWindowDelegate {
 
 
     @objc private func handleWindowDidShow(_ notification: Notification) {
-        let visibility = Settings.shared.dockVisibility
-        if !windowController.isWebContentFullscreen, visibility == .always || visibility == .whenVisible {
-            if !isActiveSpaceFullscreen() {
-                NSApp.setActivationPolicy(.regular)
-            }
-        }
+        ensureActivationPolicyForShowingOverlay()
         if UpdatePromptWindowController.shared.window?.isVisible == true {
             UpdatePromptWindowController.shared.window?.makeKeyAndOrderFront(nil)
         } else if AppDelegate.sharedSettingsWindow.isVisible {
