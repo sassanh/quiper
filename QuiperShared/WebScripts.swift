@@ -25,7 +25,7 @@ enum WebScripts {
 
     // MARK: - Value-setter interceptor (document start)
 
-    /// Injects a `<style>` element with the engine's custom CSS at document end,
+    /// Injects a `<style>` element with the engine's custom CSS at document start,
     /// mirroring the macOS `WebViewManager` CSS injection. The element carries
     /// a stable id so later updates replace its text instead of piling up
     /// nodes; the same script serves both the creation-time user script and

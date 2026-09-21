@@ -156,6 +156,7 @@ final class WebViewManager: NSObject {
         NotificationCenter.default.addObserver(self, selector: #selector(webDataClearedNotification(_:)), name: .webDataCleared, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(promptHistoryLimitChangedNotification(_:)), name: .promptHistoryLimitChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(engineCustomCSSChangedNotification(_:)), name: .engineCustomCSSChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(enginePromptSelectorChangedNotification(_:)), name: .enginePromptSelectorChanged, object: nil)
         Settings.shared.$enablePromptHistory
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -255,14 +256,59 @@ final class WebViewManager: NSObject {
         }
     }
 
-    /// Single gate for engine stylesheet changes: pushes the engine's current
-    /// resolved CSS into every live session by updating the tagged style
+    /// Single gate for engine stylesheet changes: rebuilds the creation-time
+    /// user scripts so later navigations start with the current CSS, and
+    /// pushes it into every live session by updating the tagged style
     /// element. Callers never care why it changed (user edit, Hide, template
     /// sync toggle): persisting posts `.engineCustomCSSChanged`, which lands
     /// here. Ephemeral tabs are skipped: their pages stay marker-free.
     func refreshCustomCSS(for serviceID: UUID) {
         guard let sessionMap = webviewsByID[serviceID] else { return }
-        sessionMap.values.forEach(applyCurrentCustomCSS(to:))
+        sessionMap.values.forEach { webView in
+            syncEngineUserScripts(to: webView)
+            applyCurrentCustomCSS(to: webView)
+        }
+    }
+
+    /// Rebuilds the webview's creation-time user scripts with the current
+    /// stylesheet and prompt selector. User scripts are captured at creation,
+    /// so without this the next navigation replays stale CSS until `didFinish`
+    /// patches the live page — the visible flash of unhidden elements.
+    private func syncEngineUserScripts(to webView: WKWebView) {
+        guard let (snapshotService, sessionIndex) = findServiceAndSession(for: webView),
+              !isQuiperPrivateTab(serviceID: snapshotService.id, sessionIndex: sessionIndex),
+              let service = Self.authoritativeService(for: snapshotService.id, snapshot: services)
+        else { return }
+        let controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        Self.addEngineUserScripts(to: controller, service: service)
+        notificationBridges[ObjectIdentifier(webView)]?.reinstall()
+    }
+
+    /// Single source for engine page scripts: the custom stylesheet plus the
+    /// input tracking and context-menu scripts. Creation and CSS/selector
+    /// refreshes both go through here so later navigations never replay stale
+    /// content.
+    private static func addEngineUserScripts(to controller: WKUserContentController, service: Service) {
+        let cssToInject = Settings.shared.customCSS(for: service)
+        if !cssToInject.isEmpty {
+            let userScript = WKUserScript(source: WebScripts.makeCustomCSSInjectionScript(css: cssToInject), injectionTime: .atDocumentStart, forMainFrameOnly: false)
+            controller.addUserScript(userScript)
+        }
+
+        // Inject input setter interceptor script at document start
+        let startScript = WebScripts.makeValueSetterInterceptorScript()
+        controller.addUserScript(startScript)
+
+        // Inject input state tracking user script
+        let inputScript = WebScripts.makeInputStateTrackerScript(
+            selector: Settings.shared.promptInputSelector(for: service),
+            initiallyActive: false
+        )
+        controller.addUserScript(inputScript)
+
+        // Record right-click points for context-menu direct picking
+        controller.addUserScript(WebScripts.makeContextMenuRecorderScript())
     }
 
     /// Pushes the webview's engine stylesheet into its live page. Idempotent:
@@ -800,6 +846,17 @@ final class WebViewManager: NSObject {
         refreshCustomCSS(for: serviceID)
     }
 
+    /// Prompt selector edits take effect on the next navigation, never the
+    /// live page: unlike CSS there is no live patch, and unlike iOS there is
+    /// no reload, since reloading would drop form and scroll state. Focus
+    /// paths already resolve the fresh selector, so only the background input
+    /// tracker lags until navigation.
+    @objc private func enginePromptSelectorChangedNotification(_ notification: Notification) {
+        guard let serviceID = notification.object as? UUID,
+              let sessionMap = webviewsByID[serviceID] else { return }
+        sessionMap.values.forEach(syncEngineUserScripts(to:))
+    }
+
     
     private func resolvedService(for service: Service) -> Service {
         Settings.shared.services.first(where: { $0.id == service.id }) ?? service
@@ -1129,26 +1186,8 @@ final class WebViewManager: NSObject {
             config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
         }
 
-        let cssToInject = isQuiperPrivate ? "" : Settings.shared.customCSS(for: service)
-        if !cssToInject.isEmpty {
-            let userScript = WKUserScript(source: WebScripts.makeCustomCSSInjectionScript(css: cssToInject), injectionTime: .atDocumentEnd, forMainFrameOnly: false)
-            userContentController.addUserScript(userScript)
-        }
-
         if !isQuiperPrivate {
-            // Inject input setter interceptor script at document start
-            let startScript = WebScripts.makeValueSetterInterceptorScript()
-            userContentController.addUserScript(startScript)
-
-            // Inject input state tracking user script
-            let inputScript = WebScripts.makeInputStateTrackerScript(
-                selector: Settings.shared.promptInputSelector(for: service),
-                initiallyActive: false
-            )
-            userContentController.addUserScript(inputScript)
-
-            // Record right-click points for context-menu direct picking
-            userContentController.addUserScript(WebScripts.makeContextMenuRecorderScript())
+            Self.addEngineUserScripts(to: userContentController, service: service)
 
             let inputHandler = InputStateScriptMessageHandler(manager: self)
             userContentController.add(inputHandler, name: "quiperInputState")

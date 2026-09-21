@@ -53,7 +53,7 @@ final class WebSessionCoordinator: NSObject {
         let cssToInject = Self.resolvedCustomCSS(for: service)
         if !cssToInject.isEmpty {
             userContentController.addUserScript(
-                WKUserScript(source: WebScripts.makeCustomCSSInjectionScript(css: cssToInject), injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+                WKUserScript(source: WebScripts.makeCustomCSSInjectionScript(css: cssToInject), injectionTime: .atDocumentStart, forMainFrameOnly: false)
             )
         }
     }
@@ -138,7 +138,7 @@ final class WebSessionCoordinator: NSObject {
             userContentController.addUserScript(
                 WKUserScript(
                     source: WebScripts.makeCustomCSSInjectionScript(css: cssToInject),
-                    injectionTime: .atDocumentEnd,
+                    injectionTime: .atDocumentStart,
                     forMainFrameOnly: false
                 )
             )

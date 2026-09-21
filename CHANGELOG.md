@@ -24,6 +24,7 @@
 - **Find Bar Responds to Mouse Clicks**: The find bar's search field, Previous/Next buttons, and Done button now receive clicks again instead of passing them to the page underneath.
 - **Find in Popup Windows**: Pressing Find in a popup window now searches that popup instead of opening the main window's find bar.
 - **Open in New Window Always Stays in Quiper**: Right-clicking a link and choosing Open in New Window now always opens a Quiper popup instead of sometimes sending the link to the system browser.
+- **Custom Styles Apply Without Flashing**: Engine stylesheets now take effect before the page first paints, and editing a stylesheet or prompt selector no longer flashes the old look on the next reload.
 
 ## [6.1.1] - 2026-09-11
 

@@ -1193,6 +1193,7 @@ class Settings: ObservableObject {
             FocusSelectorStorage.saveSelector(defaultSelector, serviceID: serviceID)
         }
         saveSettings()
+        NotificationCenter.default.post(name: .enginePromptSelectorChanged, object: serviceID)
     }
 
     func setTemplateCustomCSSSync(_ isInSync: Bool, serviceID: UUID) {
@@ -1219,6 +1220,7 @@ class Settings: ObservableObject {
         services[serviceIndex].focus_selector = selector
         FocusSelectorStorage.saveSelector(selector, serviceID: serviceID)
         saveSettings()
+        NotificationCenter.default.post(name: .enginePromptSelectorChanged, object: serviceID)
     }
 
     func saveCustomCSS(_ css: String, serviceID: UUID) {
