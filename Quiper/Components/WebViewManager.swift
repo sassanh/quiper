@@ -111,6 +111,7 @@ final class WebViewManager: NSObject {
     private var popupWindowsByToken: [ObjectIdentifier: ModalPopupWindow] = [:]
     private var popupCreationOrder: [ObjectIdentifier: Int] = [:]
     private var popupCreationCounter = 0
+    private var popupFindBars: [ObjectIdentifier: FindBarViewController] = [:]
     // Intended URL (normalized) for restored popups whose load has not
     // committed yet: consulted by snapshot and dedup until the live URL
     // takes over. Cleared on commit, failure, or close.
@@ -1675,6 +1676,38 @@ final class WebViewManager: NSObject {
         popupWindowsByToken.values.contains { $0 === window }
     }
 
+    /// The popup webview hosted by `window`, or nil when `window` is not a
+    /// session popup. Single gate for popup content: callers never reach
+    /// into popup windows directly.
+    @MainActor
+    func popupWebView(for window: NSWindow) -> WKWebView? {
+        for popupWindow in popupWindowsByToken.values where popupWindow === window {
+            return popupWindow.hostedWebView
+        }
+        return nil
+    }
+
+    /// Single gate for a popup's find bar. Each popup webview owns one
+    /// `FindBarViewController` (same class as main-window tabs, so find
+    /// semantics never drift), attached to the popup's content view.
+    @MainActor
+    func findBarController(forPopupWebView webView: WKWebView) -> FindBarViewController? {
+        let token = ObjectIdentifier(webView)
+        guard popupWindowsByToken[token] != nil else { return nil }
+        popupFindBars = popupFindBars.filter { $0.value.webView != nil }
+        if let existing = popupFindBars[token], existing.webView === webView {
+            return existing
+        }
+        guard let hostView = webView.superview else { return nil }
+        let controller = FindBarViewController()
+        if let findDelegate = delegate as? FindBarDelegate {
+            controller.delegate = findDelegate
+        }
+        controller.attach(to: webView, in: hostView)
+        popupFindBars[token] = controller
+        return controller
+    }
+
     /// Hides every popup whose owner is not `active` and re-shows (at its
     /// preserved frame) every popup owned by `active`. Popups without a known
     /// owner stay visible for every session, preserving the pre-scoping
@@ -1917,6 +1950,7 @@ final class WebViewManager: NSObject {
         popupWindowsByToken.removeValue(forKey: token)
         popupCreationOrder.removeValue(forKey: token)
         popupPendingURLByToken.removeValue(forKey: token)
+        popupFindBars.removeValue(forKey: token)
         removeLoadState(for: token)
     }
 

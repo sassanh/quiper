@@ -533,6 +533,14 @@ extension MainWindowController {
     }
 
     @objc func presentFindPanelFromMenu(_ sender: Any?) {
+        if let keyWindow = NSApp.keyWindow,
+           let manager = webViewManager,
+           manager.isPopupWindow(keyWindow),
+           let popupWebView = manager.popupWebView(for: keyWindow),
+           let popupFindBar = manager.findBarController(forPopupWebView: popupWebView) {
+            popupFindBar.show()
+            return
+        }
         findBarViewController.show()
     }
 

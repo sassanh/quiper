@@ -936,12 +936,20 @@ extension MainWindowController {
             }
             return true
         case UInt16(kVK_ANSI_F):
+            if let popupFindBar = focusedPopupFindBar() {
+                popupFindBar.show()
+                return true
+            }
             guard !isInspectorFocused() else {
                 return false
             }
             findBarViewController.show()
             return true
         case UInt16(kVK_ANSI_G):
+            if let popupFindBar = focusedPopupFindBar() {
+                popupFindBar.handleFindRepeat(shortcutShifted: isShift)
+                return true
+            }
             guard !isInspectorFocused() else {
                 return false
             }
@@ -1018,6 +1026,20 @@ extension MainWindowController {
         }
         
         return false
+    }
+
+    /// The find bar for the focused session popup, if the key window is one
+    /// of `WebViewManager`'s popup windows. Cmd+F / Cmd+G route here instead
+    /// of the main window's find bar while a popup holds key status.
+    private func focusedPopupFindBar() -> FindBarViewController? {
+        guard let keyWindow = NSApp.keyWindow,
+              let manager = webViewManager,
+              manager.isPopupWindow(keyWindow),
+              let popupWebView = manager.popupWebView(for: keyWindow),
+              let popupFindBar = manager.findBarController(forPopupWebView: popupWebView) else {
+            return nil
+        }
+        return popupFindBar
     }
     
     private func handleActivationShortcut(for service: Service) {
