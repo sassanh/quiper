@@ -2304,51 +2304,15 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             }
             return nil
         }
-        let (serviceURL, pinnedURL) = routingContext(for: webView, service: service)
-        guard let serviceURL else {
-            NSWorkspace.shared.open(url)
-            return nil
-        }
-
-        let optionPressed = navigationAction.modifierFlags.contains(.option)
-        var action = RoutingResolver.route(for: url, service: service, serviceURL: serviceURL, pinnedURL: pinnedURL)
-        if action == .openExternal && optionPressed {
-            action = .showPrompt
-        }
-        
-        switch action {
-        case .openHere, .openNewWindow:
-            guard let parentWindow = webView.window else { return nil }
-            return makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow, opener: webView)
-        case .openExternal:
-            NSWorkspace.shared.open(url)
-            return nil
-        case .showPrompt:
-            presentRoutingPrompt(for: url, service: service, webView: webView) { [weak self] chosenAction, remember in
-                guard let self = self else { return }
-                if remember {
-                    let host = url.host ?? ""
-                    self.rememberDecision(for: host, action: chosenAction, service: service)
-                }
-                
-                switch chosenAction {
-                case .openHere:
-                    self.approvedURLs.insert(url)
-                    webView.load(URLRequest(url: url))
-                case .openNewWindow:
-                    if let parentWindow = webView.window {
-                        self.openInPopup(url: url, service: service, configuration: configuration, parentWindow: parentWindow, opener: webView)
-                    }
-                case .openExternal:
-                    NSWorkspace.shared.open(url)
-                case .showPrompt, .cancel:
-                    break
-                }
-            }
-            return nil
-        case .cancel:
-            return nil
-        }
+        // Explicit new-window requests (context-menu "Open Link in New
+        // Window", target=_blank, window.open) always open a Quiper popup.
+        // Link routing decides plain left-clicks in decidePolicyFor; applying
+        // it here sent the same menu item to Safari or a prompt depending on
+        // hidden rules. The approval carries the initial load through the
+        // popup's own decidePolicyFor pass.
+        guard let parentWindow = webView.window else { return nil }
+        approvedURLs.insert(url)
+        return makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow, opener: webView)
     }
 
     @MainActor
@@ -2396,6 +2360,15 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         }
 
         let targetFrameIsMain = navigationAction.targetFrame?.isMainFrame ?? true
+        // New-window requests (targetFrame == nil) are owned by
+        // createWebViewWith, which always opens a Quiper popup for explicit
+        // gestures. Let them through so routing cannot divert the same
+        // gesture to Safari here before the popup is created.
+        if navigationAction.targetFrame == nil {
+            let allowWithoutAppLink = WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow
+            decisionHandler(allowWithoutAppLink)
+            return
+        }
         if targetFrameIsMain, let requestURL = navigationAction.request.url {
             beginMainFrameNavigation(webView, to: requestURL)
         }
@@ -2413,7 +2386,8 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             return
         }
 
-        // Only route main frame navigations (including new windows where targetFrame is nil)
+        // Only route in-place main-frame navigations. New windows
+        // (targetFrame == nil) are handled above by the popup path.
         if !targetFrameIsMain {
             decisionHandler(.allow)
             return

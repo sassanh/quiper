@@ -23,6 +23,7 @@
 - **Routing Rules Apply Inside Popup Windows**: Links clicked inside a popup window now follow the engine's routing rules — Internal stays in the popup, Popup opens a new window, Safari opens externally, and Prompt asks — instead of always loading in the same popup.
 - **Find Bar Responds to Mouse Clicks**: The find bar's search field, Previous/Next buttons, and Done button now receive clicks again instead of passing them to the page underneath.
 - **Find in Popup Windows**: Pressing Find in a popup window now searches that popup instead of opening the main window's find bar.
+- **Open in New Window Always Stays in Quiper**: Right-clicking a link and choosing Open in New Window now always opens a Quiper popup instead of sometimes sending the link to the system browser.
 
 ## [6.1.1] - 2026-09-11
 
