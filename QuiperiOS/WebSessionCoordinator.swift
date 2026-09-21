@@ -228,6 +228,16 @@ extension WebSessionCoordinator: WKNavigationDelegate {
             return
         }
 
+        // Explicit new-window requests (target=_blank, window.open) always
+        // stay in Quiper: createWebViewWith loads them in place with an
+        // approval. Let them through so routing cannot divert the same
+        // gesture to the system browser here first. Mirrors macOS
+        // WebViewManager.
+        if navigationAction.targetFrame == nil {
+            decisionHandler(allowWithoutAppLink)
+            return
+        }
+
         guard let url = navigationAction.request.url,
               let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme) else {
@@ -242,7 +252,8 @@ extension WebSessionCoordinator: WKNavigationDelegate {
             return
         }
 
-        // Only route main frame navigations (including new windows where targetFrame is nil)
+        // Only route in-place main-frame navigations. New windows
+        // (targetFrame == nil) are handled above by the in-place path.
         let targetFrameIsMain = navigationAction.targetFrame?.isMainFrame ?? true
         if !targetFrameIsMain {
             decisionHandler(.allow)
@@ -529,7 +540,12 @@ extension WebSessionCoordinator: WKUIDelegate {
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if navigationAction.targetFrame == nil {
+        // Explicit new-window requests always stay in Quiper: iOS has no
+        // popup windows, so they load in place. The approval carries this
+        // load through the routing pass in decidePolicyFor, mirroring macOS
+        // approvedURLs.
+        if navigationAction.targetFrame == nil, let url = navigationAction.request.url {
+            userApprovedURLs.insert(url)
             webView.load(navigationAction.request)
         }
         return nil
