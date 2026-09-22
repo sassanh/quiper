@@ -74,7 +74,9 @@ extension MainWindowController {
     }
     
     func syncSelectorSelections() {
-        let serviceIdx = services.firstIndex(where: { $0.id == currentServiceID }) ?? 0
+        // No match (empty engine list, unknown id) means no selection:
+        // falling back to 0 would highlight an engine that isn't current.
+        let serviceIdx = services.firstIndex(where: { $0.id == currentServiceID }) ?? -1
         serviceSelector?.selectedSegment = serviceIdx
         collapsibleServiceSelector?.selectedSegment = serviceIdx
         

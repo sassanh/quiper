@@ -26,6 +26,7 @@
 - **Open in New Window Always Stays in Quiper**: Right-clicking a link and choosing Open in New Window now always opens a Quiper popup instead of sometimes sending the link to the system browser.
 - **New-Window Links Stay in Quiper on iOS**: Links that request a new window now always load in Quiper on iOS instead of sometimes opening the system browser, matching the Mac behavior.
 - **Custom Styles Apply Without Flashing**: Engine stylesheets now take effect before the page first paints, and editing a stylesheet or prompt selector no longer flashes the old look on the next reload.
+- **Pinned-Tab URL Edits No Longer Crash the App**: Pasting a URL into a pinned-tab engine's tab list in Settings no longer crashes Quiper when the tab layout changes underneath the open window.
 
 ## [6.1.1] - 2026-09-11
 

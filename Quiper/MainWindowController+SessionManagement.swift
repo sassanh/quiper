@@ -144,8 +144,11 @@ extension MainWindowController {
         webViewManager.updateServices(newServices)
         services = newServices
         syncCurrentServiceSelection()
-        refreshServiceSegments()
+        // Session segment counts must reflect the new model before anything
+        // syncs a selection into them: pinned-tab edits change which slots
+        // are visible, so a model-fresh index can exceed a stale count.
         updateSessionSelector()
+        refreshServiceSegments()
         updateActiveWebview()
         layoutSelectors()
     }

@@ -62,6 +62,22 @@ class SegmentedControl: NSSegmentedControl {
             updateAllSegmentWidths()
         }
     }
+
+    /// Single gate for programmatic selection. AppKit raises NSRangeException
+    /// for out-of-bounds indices, so every write funnels through this check:
+    /// -1 always means "deselect"; anything else outside the current segments
+    /// is ignored so a stale model index can never crash layout.
+    override var selectedSegment: Int {
+        get { super.selectedSegment }
+        set {
+            guard newValue != -1 else {
+                super.selectedSegment = -1
+                return
+            }
+            guard newValue >= 0, newValue < segmentCount else { return }
+            super.selectedSegment = newValue
+        }
+    }
     
     private var segmentToolTips: [Int: String] = [:]
     private(set) var lastHoveredSegment: Int?
