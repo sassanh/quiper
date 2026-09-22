@@ -99,16 +99,19 @@ struct WebLoadError: Equatable {
         return nsError.domain == NSURLErrorDomain && nsError.code == URLError.cancelled.rawValue
     }
 
-    /// Fires when a navigation was superseded or cancelled by a policy
-    /// decision (redirects, downloads, custom routing) rather than by a real
-    /// failure — must never surface as a load error.
+    /// True when WebKit hands a navigation off instead of failing it.
+    /// Policy interruptions and download/plug-in takeovers must never
+    /// surface as load errors.
     ///
-    /// Code 102 is `WKErrorFrameLoadInterruptedByPolicyChange`
-    /// ("Frame load interrupted"); the constant isn't exposed to Swift on all
-    /// SDKs, so its stable numeric identity is used directly.
-    static func isFrameLoadInterrupted(_ error: Error) -> Bool {
+    /// Code 102 is `FrameLoadInterruptedByPolicyChange` ("Frame load
+    /// interrupted"); code 204 is `PlugInWillHandleLoad` ("Plug-in handled
+    /// load"), reported when a navigation becomes a download (e.g. a direct
+    /// media file, whose MIME type the page cannot show) or is otherwise
+    /// taken over. Neither constant is exposed to Swift on all SDKs, so their
+    /// stable numeric identities are used directly.
+    static func isNavigationHandoff(_ error: Error) -> Bool {
         let nsError = error as NSError
-        return nsError.domain == "WebKitErrorDomain" && nsError.code == 102
+        return nsError.domain == "WebKitErrorDomain" && (nsError.code == 102 || nsError.code == 204)
     }
 
     private static func kind(for error: NSError) -> Kind {

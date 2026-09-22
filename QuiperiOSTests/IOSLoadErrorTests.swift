@@ -18,6 +18,16 @@ struct IOSLoadErrorTests {
         #expect(session.loadError == nil)
     }
 
+    @Test func navigationHandoffsNeverSurface() {
+        let session = makeSession()
+
+        session.reportLoadFailure(NSError(domain: "WebKitErrorDomain", code: 102))
+        #expect(session.loadError == nil)
+
+        session.reportLoadFailure(NSError(domain: "WebKitErrorDomain", code: 204))
+        #expect(session.loadError == nil)
+    }
+
     @Test func navigationFailureSurfacesWithRetryURL() throws {
         let session = makeSession()
         let failedURL = try #require(URL(string: "https://engine.example.com/chat"))

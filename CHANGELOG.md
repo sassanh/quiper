@@ -28,6 +28,8 @@
 - **Custom Styles Apply Without Flashing**: Engine stylesheets now take effect before the page first paints, and editing a stylesheet or prompt selector no longer flashes the old look on the next reload.
 - **Pinned-Tab URL Edits No Longer Crash the App**: Pasting a URL into a pinned-tab engine's tab list in Settings no longer crashes Quiper when the tab layout changes underneath the open window.
 - **Expanded Tab Bar Shows Every Tab After Switching Engines**: Holding the session shortcut with the tab bar expanded now shows the new engine's full tab list right away instead of sticking to the previous engine's tab count.
+- **Video Picture-in-Picture Works**: The native picture-in-picture control in videos is now enabled, so a playing video can float in a system PiP window while Quiper hides.
+- **Downloads No Longer Show a Load Error**: Opening a direct file link that Quiper hands to the download manager no longer shows a "Page failed to load" panel for a download that started normally.
 
 ## [6.1.1] - 2026-09-11
 

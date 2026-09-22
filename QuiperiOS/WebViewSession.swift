@@ -316,11 +316,12 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         webContentTerminationRetry.reset()
     }
 
-    /// Mirrors macOS `handleNavigationFailure`: cancellations never surface;
-    /// every other main-frame failure becomes a themed error that keeps the
-    /// failed URL for retry.
+    /// Mirrors macOS `handleNavigationFailure`: cancellations and benign
+    /// navigation handoffs (policy interruptions, download/plug-in takeovers)
+    /// never surface; every other main-frame failure becomes a themed error
+    /// that keeps the failed URL for retry.
     func reportLoadFailure(_ error: Error) {
-        guard !WebLoadError.isCancellation(error) else { return }
+        guard !WebLoadError.isCancellation(error), !WebLoadError.isNavigationHandoff(error) else { return }
         let failure = WebLoadError(error: error, fallbackURL: activeRequestURL)
         failedRequestURL = failure.url ?? activeRequestURL
         loadError = failure

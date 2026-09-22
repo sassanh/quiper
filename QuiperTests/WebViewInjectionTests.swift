@@ -5,6 +5,33 @@ import WebKit
 
 @MainActor
 final class WebViewInjectionTests: XCTestCase {
+    func testSessionWebViewsAllowPictureInPicturePlayback() {
+        let service = Service(name: "Service", url: "https://example.com", focus_selector: "")
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let manager = WebViewManager(containerView: container)
+        manager.updateServices([service])
+        let webView = manager.getOrCreateWebView(
+            for: service,
+            sessionIndex: 0,
+            dragArea: nil,
+            loadImmediately: false
+        )
+        defer { manager.removeWebView(for: service, sessionIndex: 0) }
+
+        XCTAssertTrue(webView.configuration.preferences.isElementFullscreenEnabled)
+
+        let preferences = webView.configuration.preferences
+        let pictureInPictureSetter = NSSelectorFromString("_setAllowsPictureInPictureMediaPlayback:")
+        XCTAssertTrue(
+            preferences.responds(to: pictureInPictureSetter),
+            "The private PiP setter is required for native picture-in-picture on macOS"
+        )
+        guard preferences.responds(to: pictureInPictureSetter) else { return }
+
+        let allowsPictureInPicture = preferences.value(forKey: "allowsPictureInPictureMediaPlayback") as? Bool
+        XCTAssertEqual(allowsPictureInPicture, true, "WebKit defaults PiP off for macOS WKWebView; sessions must opt in or the native PiP control stays disabled")
+    }
+
     func testWebViewUsesCurrentCustomCSSAndPromptSelectorWhenPassedStaleService() throws {
         let serviceID = UUID()
         let originalServices = Settings.shared.services

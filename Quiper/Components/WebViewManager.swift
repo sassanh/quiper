@@ -1171,12 +1171,32 @@ final class WebViewManager: NSObject {
         return webview
     }
     
+    /// Single gate for the media playback preferences WebKit defaults off
+    /// for macOS WKWebView: element fullscreen (public API) and
+    /// picture-in-picture. The PiP default is false for the WebKit frontend
+    /// on macOS (true only on iOS/Safari, per `AllowsPictureInPictureMediaPlayback`
+    /// in WebKit's `UnifiedWebPreferences.yaml`); without it,
+    /// `webkitSupportsPresentationMode('picture-in-picture')` is false and
+    /// the native PiP control stays disabled even for a playing video. The
+    /// setter exists as `_setAllowsPictureInPictureMediaPlayback:` since
+    /// macOS 10.13 (`WKPreferencesPrivate.h`), applied here with the same KVC
+    /// approach as `developerExtrasEnabled`. The setter is private, so verify
+    /// it with `responds(to:)` before KVC: a missing key would otherwise
+    /// raise. Session and popup webviews both go through here so neither path
+    /// can lose PiP.
+    private static func applyMediaPlaybackPreferences(to preferences: WKPreferences) {
+        preferences.isElementFullscreenEnabled = true
+        let pictureInPictureSetter = NSSelectorFromString("_setAllowsPictureInPictureMediaPlayback:")
+        guard preferences.responds(to: pictureInPictureSetter) else { return }
+        preferences.setValue(true, forKey: "allowsPictureInPictureMediaPlayback")
+    }
+
     private func createWebViewInstance(for service: Service, sessionIndex: Int, bounds: NSRect, isPersistent: Bool, isQuiperPrivate: Bool = false) -> WKWebView {
         let userContentController = WKUserContentController()
         let config = WKWebViewConfiguration()
         config.userContentController = userContentController
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
-        config.preferences.isElementFullscreenEnabled = true
+        Self.applyMediaPlaybackPreferences(to: config.preferences)
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         
         let isRunningTests = NSClassFromString("XCTestCase") != nil || ProcessInfo.processInfo.environment["XCInjectBundleInto"] != nil
@@ -1267,7 +1287,7 @@ final class WebViewManager: NSObject {
 
     private func handleNavigationFailure(_ error: Error, for webView: WKWebView) {
         guard !WebLoadError.isCancellation(error),
-              !WebLoadError.isFrameLoadInterrupted(error) else { return }
+              !WebLoadError.isNavigationHandoff(error) else { return }
 
         let nsError = error as NSError
         NSLog("[Quiper] Page load failed: domain=%@ code=%d url=%@",
@@ -1636,7 +1656,7 @@ final class WebViewManager: NSObject {
     /// windows directly.
     @MainActor
     private func makePopupWebView(for service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow, opener: WKWebView? = nil, restoredOwner: TabIdentifier? = nil, restoredFrame: NSRect? = nil, startHidden: Bool = false) -> WKWebView {
-        configuration.preferences.isElementFullscreenEnabled = true
+        Self.applyMediaPlaybackPreferences(to: configuration.preferences)
         // Nest under the opener's window: AppKit pins a child above its
         // parent, so a popup opened from another popup stays above its
         // opener even when the opener is clicked.

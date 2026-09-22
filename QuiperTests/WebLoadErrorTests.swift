@@ -70,14 +70,23 @@ final class WebLoadErrorTests: XCTestCase {
         XCTAssertTrue(retryState.shouldRetry())
     }
 
-    func testFrameLoadInterruptedByPolicyChangeIsDetected() {
+    func testPolicyChangeHandoffIsDetected() {
         let interrupted = NSError(domain: "WebKitErrorDomain", code: 102)
-        XCTAssertTrue(WebLoadError.isFrameLoadInterrupted(interrupted))
-        XCTAssertFalse(WebLoadError.isFrameLoadInterrupted(URLError(.timedOut)))
-        XCTAssertFalse(WebLoadError.isFrameLoadInterrupted(NSError(domain: "WebKitErrorDomain", code: 404)))
+        XCTAssertTrue(WebLoadError.isNavigationHandoff(interrupted))
+        XCTAssertFalse(WebLoadError.isNavigationHandoff(URLError(.timedOut)))
+        XCTAssertFalse(WebLoadError.isNavigationHandoff(NSError(domain: "WebKitErrorDomain", code: 404)))
 
         let loadError = WebLoadError(error: interrupted)
         XCTAssertEqual(loadError.kind, .unknown, "The error itself still classifies as unknown — it must simply be filtered out")
+    }
+
+    func testPluginHandledLoadIsFiltered() {
+        let pluginHandled = NSError(domain: "WebKitErrorDomain", code: 204)
+        XCTAssertTrue(WebLoadError.isNavigationHandoff(pluginHandled))
+        XCTAssertFalse(WebLoadError.isNavigationHandoff(NSError(domain: "WebKitErrorDomain", code: 203)))
+
+        let loadError = WebLoadError(error: pluginHandled)
+        XCTAssertEqual(loadError.kind, .unknown, "The handoff itself still classifies as unknown — it must simply be filtered out")
     }
 
     func testErrorViewPersistsWhenSessionWrapperIsHidden() throws {
