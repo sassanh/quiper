@@ -77,7 +77,38 @@ final class SelectorSuggestTests: XCTestCase {
         }
         XCTAssertTrue(try suggestItem().isEnabled)
         controller.createQuiperPrivateTemporarySession()
+        // In-place conversion gates through `requestCloseTabs`, so it lands
+        // asynchronously: wait until session 0 itself turns private.
+        let converted = XCTestExpectation(description: "current tab converts to private in place")
+        Task { @MainActor in
+            for _ in 0..<200 {
+                if let tab = controller.currentTabIdentifier(),
+                   tab.sessionIndex == 0,
+                   controller.webViewManager.isQuiperPrivateTab(serviceID: tab.serviceID, sessionIndex: tab.sessionIndex) {
+                    converted.fulfill()
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 25_000_000)
+            }
+        }
+        wait(for: [converted], timeout: 10.0)
         XCTAssertFalse(try suggestItem().isEnabled)
+        // Toggling again restores the same slot to a normal tab.
+        controller.createQuiperPrivateTemporarySession()
+        let restored = XCTestExpectation(description: "current tab toggles back to normal in place")
+        Task { @MainActor in
+            for _ in 0..<200 {
+                if let tab = controller.currentTabIdentifier(),
+                   tab.sessionIndex == 0,
+                   !controller.webViewManager.isQuiperPrivateTab(serviceID: tab.serviceID, sessionIndex: tab.sessionIndex) {
+                    restored.fulfill()
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 25_000_000)
+            }
+        }
+        wait(for: [restored], timeout: 10.0)
+        XCTAssertTrue(try suggestItem().isEnabled)
     }
 
     func testDialogHugsContent() throws {

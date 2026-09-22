@@ -28,6 +28,33 @@ struct IOSLoadErrorTests {
         #expect(session.loadError == nil)
     }
 
+    @Test func navigationHandoffRestoresReadinessAndResumesWaiters() async throws {
+        let session = makeSession()
+        #expect(!session.isNavigationReady)
+
+        let waiter = Task { try await session.waitUntilNavigationReady(timeout: .seconds(5)) }
+        try? await Task.sleep(for: .milliseconds(50))
+        session.reportNavigationDidFail(NSError(domain: "WebKitErrorDomain", code: 102))
+
+        try await waiter.value
+        #expect(session.isNavigationReady)
+        // A later command finds the session ready instead of timing out.
+        try await session.waitUntilNavigationReady(timeout: .seconds(1))
+    }
+
+    @Test func navigationFailureStillThrowsToWaiters() async throws {
+        let session = makeSession()
+
+        let waiter = Task { try await session.waitUntilNavigationReady(timeout: .seconds(5)) }
+        try? await Task.sleep(for: .milliseconds(50))
+        session.reportNavigationDidFail(URLError(.timedOut))
+
+        await #expect(throws: URLError(.timedOut)) {
+            try await waiter.value
+        }
+        #expect(!session.isNavigationReady)
+    }
+
     @Test func navigationFailureSurfacesWithRetryURL() throws {
         let session = makeSession()
         let failedURL = try #require(URL(string: "https://engine.example.com/chat"))

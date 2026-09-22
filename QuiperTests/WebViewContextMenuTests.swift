@@ -86,9 +86,10 @@ final class WebViewContextMenuTests: XCTestCase {
         view.willOpenMenu(menu, with: event)
 
         let titles = menu.items.map { $0.isSeparatorItem ? "<separator>" : $0.title }
-        XCTAssertEqual(titles, ["Suggest Selector...", "<separator>", "Reload Page"])
+        XCTAssertEqual(titles, ["Reload Page", "<separator>", "Suggest Selector..."])
 
-        let item = try XCTUnwrap(menu.items.first)
+        let item = try XCTUnwrap(menu.items.last)
+        XCTAssertEqual(item.identifier, ContextMenuWebView.suggestSelectorItemIdentifier)
         XCTAssertEqual(item.identifier, ContextMenuWebView.suggestSelectorItemIdentifier)
         XCTAssertTrue(NSApplication.shared.sendAction(item.action!, to: item.target, from: item))
         XCTAssertTrue(spy.receivedView === view)
@@ -184,5 +185,222 @@ final class WebViewContextMenuTests: XCTestCase {
         XCTAssertTrue(manager.webViewAllowsPageSelectorSuggest(normal))
         XCTAssertFalse(manager.webViewAllowsPageSelectorSuggest(ephemeral))
         XCTAssertFalse(manager.webViewAllowsPageSelectorSuggest(WKWebView()))
+    }
+
+    // MARK: - Link menu
+
+    func testLinkHrefScriptResolvesAnchor() {
+        let script = WebScripts.makeLinkHrefScript(x: 10, y: 20)
+        XCTAssertTrue(script.contains("elementFromPoint"))
+        XCTAssertTrue(script.contains("closest"))
+        XCTAssertTrue(script.contains("a[href]"))
+        XCTAssertTrue(script.contains("__quiperLastContextMenu"))
+    }
+
+    func testLinkMenuReplacesDefaultOpenItems() throws {
+        @MainActor
+        final class LinkSpy: NSObject, WebViewContextMenuDelegate {
+            var actions: [ContextMenuLinkAction] = []
+            func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {}
+            func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool { true }
+            func webView(_ webView: WKWebView, didRequestLinkAction action: ContextMenuLinkAction, at point: NSPoint) {
+                actions.append(action)
+            }
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        let view = ContextMenuWebView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: WKWebViewConfiguration()
+        )
+        window.contentView?.addSubview(view)
+        let linkSpy = LinkSpy()
+        view.contextMenuDelegate = linkSpy
+
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Open Link in New Window", action: Selector(("openLink:")), keyEquivalent: "")
+        menu.addItem(withTitle: "Copy Link", action: nil, keyEquivalent: "")
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: NSPoint(x: 100, y: 450),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
+        view.willOpenMenu(menu, with: event)
+
+        let identifiers = Set(menu.items.compactMap(\.identifier))
+        XCTAssertTrue(identifiers.contains(ContextMenuWebView.openLinkHereIdentifier))
+        XCTAssertTrue(identifiers.contains(ContextMenuWebView.openLinkNewWindowIdentifier))
+        XCTAssertTrue(identifiers.contains(ContextMenuWebView.openLinkSystemBrowserIdentifier))
+        XCTAssertTrue(identifiers.contains(ContextMenuWebView.openLinkPrivateIdentifier))
+        // The default untagged Open-Link item is gone; ours carries the same
+        // title but with a Quiper identifier.
+        let untaggedOpenLinks = menu.items.filter {
+            $0.identifier == nil && $0.title.lowercased().hasPrefix("open") && $0.title.lowercased().contains("link")
+        }
+        XCTAssertTrue(untaggedOpenLinks.isEmpty)
+        XCTAssertTrue(menu.items.contains(where: { $0.title == "Copy Link" }))
+    }
+
+    func testLinkActionsReachDelegate() throws {
+        @MainActor
+        final class ActionSpy: NSObject, WebViewContextMenuDelegate {
+            var actions: [ContextMenuLinkAction] = []
+            func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {}
+            func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool { true }
+            func webView(_ webView: WKWebView, didRequestLinkAction action: ContextMenuLinkAction, at point: NSPoint) {
+                actions.append(action)
+            }
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        let view = ContextMenuWebView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: WKWebViewConfiguration()
+        )
+        window.contentView?.addSubview(view)
+        let spy = ActionSpy()
+        view.contextMenuDelegate = spy
+
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Open Link in New Window", action: nil, keyEquivalent: "")
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: NSPoint(x: 100, y: 450),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
+        view.willOpenMenu(menu, with: event)
+
+        for identifier in [
+            ContextMenuWebView.openLinkHereIdentifier,
+            ContextMenuWebView.openLinkNewWindowIdentifier,
+            ContextMenuWebView.openLinkSystemBrowserIdentifier,
+            ContextMenuWebView.openLinkPrivateIdentifier
+        ] {
+            let item = try XCTUnwrap(menu.items.first(where: { $0.identifier == identifier }))
+            XCTAssertTrue(NSApplication.shared.sendAction(item.action!, to: item.target, from: item))
+        }
+        XCTAssertEqual(spy.actions, [.openHere, .openNewWindow, .openSystemBrowser, .openPrivate])
+    }
+
+    func testFreshMenusEachGainOneLinkSet() throws {
+        @MainActor
+        final class ReuseSpy: NSObject, WebViewContextMenuDelegate {
+            func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {}
+            func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool { true }
+        }
+        let view = ContextMenuWebView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: WKWebViewConfiguration()
+        )
+        let reuseSpy = ReuseSpy()
+        view.contextMenuDelegate = reuseSpy
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
+        // WebKit builds a fresh menu per open; each must gain exactly one set.
+        for _ in 0..<2 {
+            let menu = NSMenu()
+            menu.addItem(withTitle: "Open Link in New Window", action: nil, keyEquivalent: "")
+            view.willOpenMenu(menu, with: event)
+            XCTAssertEqual(menu.items.filter { $0.identifier == ContextMenuWebView.openLinkHereIdentifier }.count, 1)
+            XCTAssertEqual(menu.items.filter { $0.identifier == ContextMenuWebView.openLinkPrivateIdentifier }.count, 1)
+        }
+    }
+
+    func testLinkGroupEndsWithSeparator() throws {
+        @MainActor
+        final class SeparatorSpy: NSObject, WebViewContextMenuDelegate {
+            func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {}
+            func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool { false }
+        }
+        let view = ContextMenuWebView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: WKWebViewConfiguration()
+        )
+        let separatorSpy = SeparatorSpy()
+        view.contextMenuDelegate = separatorSpy
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Open Link in New Window", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: "Copy Link", action: nil, keyEquivalent: "")
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
+        view.willOpenMenu(menu, with: event)
+        let titles = menu.items.map { $0.isSeparatorItem ? "<separator>" : $0.title }
+        XCTAssertEqual(titles, [
+            "Open Link Here",
+            "Open Link in New Window",
+            "Open Link in System Browser",
+            "Open Private",
+            "<separator>",
+            "Copy Link"
+        ])
+    }
+
+    func testSuggestSitsAfterInspect() throws {
+        @MainActor
+        final class InspectSpy: NSObject, WebViewContextMenuDelegate {
+            func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {}
+            func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool { true }
+        }
+        let view = ContextMenuWebView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: WKWebViewConfiguration()
+        )
+        let inspectSpy = InspectSpy()
+        view.contextMenuDelegate = inspectSpy
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Reload Page", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: "Inspect Element", action: nil, keyEquivalent: "")
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
+        view.willOpenMenu(menu, with: event)
+        let titles = menu.items.map { $0.isSeparatorItem ? "<separator>" : $0.title }
+        XCTAssertEqual(titles, ["Reload Page", "Inspect Element", "Suggest Selector..."])
     }
 }

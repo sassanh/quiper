@@ -106,7 +106,7 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
             self?.captureSnapshot()
         }
         coordinator.onDidFail = { [weak self] error in
-            self?.completeReadinessWaiters(throwing: error)
+            self?.reportNavigationDidFail(error)
         }
         coordinator.onMainFrameNavigationBegan = { [weak self] url in
             self?.beginMainFrameNavigation(to: url)
@@ -321,10 +321,26 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
     /// never surface; every other main-frame failure becomes a themed error
     /// that keeps the failed URL for retry.
     func reportLoadFailure(_ error: Error) {
-        guard !WebLoadError.isCancellation(error), !WebLoadError.isNavigationHandoff(error) else { return }
+        guard WebLoadError.shouldSurface(error) else { return }
         let failure = WebLoadError(error: error, fallbackURL: activeRequestURL)
         failedRequestURL = failure.url ?? activeRequestURL
         loadError = failure
+    }
+
+    /// Single gate for failed navigations reaching readiness waiters. A
+    /// handoff leaves the page in place and interactive — there is no
+    /// follow-up navigation coming — so the session returns to ready and
+    /// waiters resume successfully instead of failing with the benign
+    /// NSError. Anything else keeps the existing throwing behavior. Uses
+    /// `isNavigationHandoff` directly (not `shouldSurface`): this decides
+    /// resume-vs-throw, and cancellations correctly keep throwing.
+    func reportNavigationDidFail(_ error: Error) {
+        if WebLoadError.isNavigationHandoff(error) {
+            isNavigationReady = true
+            completeReadinessWaiters()
+        } else {
+            completeReadinessWaiters(throwing: error)
+        }
     }
 
     /// Mirrors macOS: the first web-content process crash auto-reloads once;

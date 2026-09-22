@@ -169,7 +169,7 @@ final class LocationBarHUDView: NSView {
             wc.playErrorSound()
             return
         }
-        wc.webViewManager.load(url, in: webView)
+        wc.webViewManager.loadExplicitUserURL(url, in: webView)
         hide()
     }
 

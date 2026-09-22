@@ -833,9 +833,10 @@ extension MainWindowController {
             return true
         }
         
-        // Hard temporary tab: Quiper-level shortcut, not an action. Opens an
-        // isolated ephemeral tab in the current engine. Checked before custom
-        // actions so it wins over any persisted soft-action shortcut.
+        // Hard temporary tab: Quiper-level shortcut, not an action. Toggles
+        // the current tab's ephemeral state in place. Checked
+        // before custom actions so it wins over any persisted soft-action
+        // shortcut.
         if matches(config, ephemeralTemporaryShortcut) {
             createQuiperPrivateTemporarySession()
             return true
@@ -1057,7 +1058,7 @@ extension MainWindowController {
     }
 
     /// Quiper-level hard-temporary shortcut: Cmd+P. Not a custom action;
-    /// it opens an isolated ephemeral tab directly.
+    /// it toggles the current tab's ephemeral state in place.
     private var ephemeralTemporaryShortcut: HotkeyManager.Configuration {
         HotkeyManager.Configuration(
             keyCode: UInt32(kVK_ANSI_P),

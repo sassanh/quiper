@@ -89,6 +89,14 @@ final class WebLoadErrorTests: XCTestCase {
         XCTAssertEqual(loadError.kind, .unknown, "The handoff itself still classifies as unknown — it must simply be filtered out")
     }
 
+    func testShouldSurfaceFiltersBenignEndings() {
+        XCTAssertFalse(WebLoadError.shouldSurface(URLError(.cancelled)))
+        XCTAssertFalse(WebLoadError.shouldSurface(NSError(domain: "WebKitErrorDomain", code: 102)))
+        XCTAssertFalse(WebLoadError.shouldSurface(NSError(domain: "WebKitErrorDomain", code: 204)))
+        XCTAssertTrue(WebLoadError.shouldSurface(URLError(.timedOut)))
+        XCTAssertTrue(WebLoadError.shouldSurface(NSError(domain: "WebKitErrorDomain", code: 404)))
+    }
+
     func testErrorViewPersistsWhenSessionWrapperIsHidden() throws {
         let service = Service(name: "Service", url: "https://example.com", focus_selector: "")
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))

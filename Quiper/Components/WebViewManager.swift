@@ -13,6 +13,9 @@ protocol WebViewManagerDelegate: AnyObject {
     /// The user chose Suggest Selector in the webview context menu.
     /// `viewPoint` is in the webview's own coordinates at click time.
     func webViewDidRequestSelectorSuggest(_ webView: WKWebView, at viewPoint: NSPoint)
+    /// A link context menu item chose private open. The controller switches
+    /// the source tab into private mode and loads `url` in it.
+    func webView(_ webView: WKWebView, didRequestPrivateLinkOpen url: URL)
 }
 
 @MainActor
@@ -1286,8 +1289,7 @@ final class WebViewManager: NSObject {
     }
 
     private func handleNavigationFailure(_ error: Error, for webView: WKWebView) {
-        guard !WebLoadError.isCancellation(error),
-              !WebLoadError.isNavigationHandoff(error) else { return }
+        guard WebLoadError.shouldSurface(error) else { return }
 
         let nsError = error as NSError
         NSLog("[Quiper] Page load failed: domain=%@ code=%d url=%@",
@@ -1317,6 +1319,15 @@ final class WebViewManager: NSObject {
         } else {
             webView.load(URLRequest(url: url))
         }
+    }
+
+    /// Explicit address-bar navigation. Typed addresses always load in place,
+    /// bypassing link routing (popup/external/prompt) including pinned-tab
+    /// pinning: typing is an explicit instruction to show the address here.
+    /// One-shot: only the typed URL is approved; redirects re-route normally.
+    func loadExplicitUserURL(_ url: URL, in webView: WKWebView) {
+        approvedURLs.insert(url)
+        load(url, in: webView)
     }
 
     func stopLoading(_ webView: WKWebView) {
@@ -2512,8 +2523,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
                 
                 switch chosenAction {
                 case .openHere:
-                    self.approvedURLs.insert(url)
-                    webView.load(URLRequest(url: url))
+                    self.loadExplicitUserURL(url, in: webView)
                 case .openNewWindow:
                     if let parentWindow = webView.window {
                         self.openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow, opener: webView)
@@ -2818,8 +2828,10 @@ private final class InputStateScriptMessageHandler: NSObject, WKScriptMessageHan
 //
 // WebKit exposes no delegate API for its context menu on macOS, but the
 // native menu passes through `NSView.willOpenMenu`, where
-// `ContextMenuWebView` inserts Suggest Selector on top of what WebKit built.
-// The manager only forwards the resulting action.
+// `ContextMenuWebView` replaces the default Open-Link items with ours and
+// inserts Suggest Selector on top. The manager resolves the href at the
+// click point and performs the navigation, so explicit link choices always
+// load exactly where chosen, bypassing link routing.
 
 @MainActor
 extension WebViewManager: WebViewContextMenuDelegate {
@@ -2830,5 +2842,52 @@ extension WebViewManager: WebViewContextMenuDelegate {
     func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool {
         guard let (service, sessionIndex) = findServiceAndSession(for: webView) else { return false }
         return !isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex)
+    }
+
+    func webView(_ webView: WKWebView, didRequestLinkAction action: ContextMenuLinkAction, at point: NSPoint) {
+        resolveLinkURL(in: webView, at: point) { [weak self] url in
+            guard let self, let url else { return }
+            switch action {
+            case .openHere:
+                self.loadExplicitUserURL(url, in: webView)
+            case .openNewWindow:
+                self.openLinkInNewWindow(url, from: webView)
+            case .openSystemBrowser:
+                NSWorkspace.shared.open(url)
+            case .openPrivate:
+                if let (service, sessionIndex) = self.findServiceAndSession(for: webView),
+                   self.isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) {
+                    self.loadExplicitUserURL(url, in: webView)
+                } else {
+                    self.delegate?.webView(webView, didRequestPrivateLinkOpen: url)
+                }
+            }
+        }
+    }
+
+    /// Single gate for explicit "Open Link in New Window": a Quiper popup
+    /// owned by the source tab. Explicit menu choices bypass link routing.
+    func openLinkInNewWindow(_ url: URL, from opener: WKWebView) {
+        guard let service = service(for: opener),
+              let parentWindow = opener.window else { return }
+        openInPopup(url: url, service: service, configuration: opener.configuration, parentWindow: parentWindow, opener: opener)
+    }
+
+    /// Resolves the anchor href under a view point (origin bottom-left) via
+    /// the page, preferring the recorder's fresh contextmenu point. Nil when
+    /// the point hits no http(s) link.
+    private func resolveLinkURL(in webView: WKWebView, at viewPoint: NSPoint, completion: @escaping @MainActor @Sendable (URL?) -> Void) {
+        let zoom = webView.pageZoom > 0 ? webView.pageZoom : 1
+        let client = NSPoint(x: viewPoint.x / zoom, y: (webView.bounds.height - viewPoint.y) / zoom)
+        webView.evaluateJavaScript(WebScripts.makeLinkHrefScript(x: client.x, y: client.y)) { result, _ in
+            guard let href = result as? String, !href.isEmpty,
+                  let url = URL(string: href),
+                  let scheme = url.scheme?.lowercased(),
+                  ["http", "https"].contains(scheme) else {
+                completion(nil)
+                return
+            }
+            completion(url)
+        }
     }
 }

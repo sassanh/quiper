@@ -114,6 +114,14 @@ struct WebLoadError: Equatable {
         return nsError.domain == "WebKitErrorDomain" && (nsError.code == 102 || nsError.code == 204)
     }
 
+    /// Single gate for "should this failure surface as a load error?" Benign
+    /// endings — user/process cancellations and navigation handoffs — never
+    /// do. Every failure entry point delegates here instead of composing the
+    /// predicates itself, so a future predicate is added once.
+    static func shouldSurface(_ error: Error) -> Bool {
+        !isCancellation(error) && !isNavigationHandoff(error)
+    }
+
     private static func kind(for error: NSError) -> Kind {
         guard error.domain == NSURLErrorDomain else { return .unknown }
 

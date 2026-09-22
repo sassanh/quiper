@@ -1689,4 +1689,30 @@ enum WebScripts {
         """
         return WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false)
     }
+
+    /// Resolves the anchor href at a viewport (client) point, preferring the
+    /// point recorded by the contextmenu recorder when fresh. Returns the
+    /// absolute href or an empty string when the point hits no link.
+    static func makeLinkHrefScript(x: Double, y: Double) -> String {
+        """
+        (function() {
+          var x = \(x), y = \(y);
+          try {
+            var last = window.__quiperLastContextMenu;
+            if (last && typeof last.x === "number" && typeof last.y === "number"
+                && typeof last.t === "number" && (Date.now() - last.t) < 10000) {
+              x = last.x;
+              y = last.y;
+            }
+          } catch (e) {}
+          var target = null;
+          try { target = document.elementFromPoint(x, y); } catch (e) {}
+          if (!target || target.nodeType !== 1) return "";
+          var anchor = null;
+          try { anchor = target.closest ? target.closest("a[href], area[href]") : null; } catch (e) {}
+          if (!anchor) return "";
+          try { return anchor.href || ""; } catch (e) { return ""; }
+        })();
+        """
+    }
 }

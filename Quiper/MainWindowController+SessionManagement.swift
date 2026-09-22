@@ -184,33 +184,25 @@ extension MainWindowController {
     // MARK: - Temporary sessions
     //
     // Ephemeral hard-temporary tabs run on an isolated non-persistent store and
-    // are temporary by construction. They never flip in place: leaving one
-    // means opening a normal tab or closing the private one. No page script
-    // runs in them, so websites cannot detect Quiper through injection.
+    // are temporary by construction. Cmd+P toggles the current tab in place
+    // (teardown plus fresh recreation, never morphing a webview); leaving a
+    // private tab by any other path means opening a normal tab or closing the
+    // private one. No page script runs in them, so websites cannot detect
+    // Quiper through injection.
 
-    /// Opens a new ephemeral hard-temporary tab.
-    /// No-ops with an error sound when no free slot remains.
+    /// Toggles the current tab's ephemeral state in place. Going private gates
+    /// the current page through `requestCloseTabs`, then recreates the slot
+    /// ephemeral with the session's URL (the engine home or pinned address),
+    /// never the current page address. Going back recreates it normal the
+    /// same way; the private page is discarded, never carried over.
     func createQuiperPrivateTemporarySession() {
         guard let service = currentService() else { return }
-        // Temporary tabs must land on a visible button, otherwise the user
-        // could not see or switch back to them.
-        let candidates = service.isPinnedTabs ? service.visibleSessionIndices : Array(SessionSlots.range)
-        guard let freeIndex = candidates.first(where: {
-            webViewManager.getWebView(for: service, sessionIndex: $0) == nil
-        }) else {
-            playErrorSound()
-            NSLog("[Quiper] No free session slot for temporary tab")
-            return
+        let sessionIndex = activeIndicesByID[service.id] ?? 0
+        if webViewManager.isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) {
+            replaceEphemeralWithNormal(serviceID: service.id, sessionIndex: sessionIndex)
+        } else {
+            replaceSessionWithEphemeral(serviceID: service.id, sessionIndex: sessionIndex)
         }
-        let webView = webViewManager.getOrCreateWebView(
-            for: service,
-            sessionIndex: freeIndex,
-            dragArea: dragArea,
-            isQuiperPrivate: true
-        )
-        setupSessionTitleObserver(for: service, sessionIndex: freeIndex, webView: webView)
-        refreshInstantiationState()
-        switchSession(to: freeIndex)
     }
 
     /// Replaces a session with an ephemeral tab in the same slot. Used by
@@ -233,6 +225,40 @@ extension MainWindowController {
         }
     }
 
+    /// Replaces a private tab with a normal persistent tab in the same slot.
+    /// Mirror of `replaceSessionWithEphemeral`: gates through
+    /// `requestCloseTabs`, then recreates the slot normal with the session's
+    /// URL. The private page is discarded, never carried over. Never morphs
+    /// a webview: the old page is torn down and a fresh one is created at
+    /// the same index.
+    func replaceEphemeralWithNormal(serviceID: UUID, sessionIndex: Int) {
+        guard let service = services.first(where: { $0.id == serviceID }) else { return }
+        let replacedTab = TabIdentifier(serviceID: serviceID, sessionIndex: sessionIndex)
+        guard webViewManager.webView(for: replacedTab) != nil else {
+            createNormalReplacement(service: service, sessionIndex: sessionIndex)
+            return
+        }
+        Task {
+            guard await self.requestCloseTabs([replacedTab], reason: .replaceWithNormal) else { return }
+            guard let service = self.services.first(where: { $0.id == serviceID }) else { return }
+            self.createNormalReplacement(service: service, sessionIndex: sessionIndex)
+        }
+    }
+
+    private func createNormalReplacement(service: Service, sessionIndex: Int) {
+        let webView = webViewManager.getOrCreateWebView(
+            for: service,
+            sessionIndex: sessionIndex,
+            dragArea: dragArea,
+            isQuiperPrivate: false
+        )
+        setupSessionTitleObserver(for: service, sessionIndex: sessionIndex, webView: webView)
+        refreshInstantiationState()
+        if currentService()?.id == service.id {
+            switchSession(to: sessionIndex)
+        }
+    }
+
     private func createEphemeralReplacement(service: Service, sessionIndex: Int) {
         let webView = webViewManager.getOrCreateWebView(
             for: service,
@@ -244,6 +270,35 @@ extension MainWindowController {
         refreshInstantiationState()
         if currentService()?.id == service.id {
             switchSession(to: sessionIndex)
+        }
+    }
+
+    /// Opens a link in a private tab replacing the source tab: the current
+    /// page is gated through `requestCloseTabs`, then the slot is recreated
+    /// ephemeral and the link loads explicitly in place, bypassing routing.
+    /// Already-private tabs just load in place.
+    func webView(_ webView: WKWebView, didRequestPrivateLinkOpen url: URL) {
+        guard let (service, sessionIndex) = webViewManager.findServiceAndSession(for: webView) else { return }
+        if webViewManager.isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) {
+            webViewManager.loadExplicitUserURL(url, in: webView)
+            return
+        }
+        let replacedTab = TabIdentifier(serviceID: service.id, sessionIndex: sessionIndex)
+        Task {
+            guard await self.requestCloseTabs([replacedTab], reason: .replaceWithEphemeral) else { return }
+            guard let freshService = self.services.first(where: { $0.id == service.id }) else { return }
+            let replacement = self.webViewManager.getOrCreateWebView(
+                for: freshService,
+                sessionIndex: sessionIndex,
+                dragArea: self.dragArea,
+                isQuiperPrivate: true
+            )
+            self.setupSessionTitleObserver(for: freshService, sessionIndex: sessionIndex, webView: replacement)
+            self.refreshInstantiationState()
+            if self.currentService()?.id == freshService.id {
+                self.switchSession(to: sessionIndex)
+            }
+            self.webViewManager.loadExplicitUserURL(url, in: replacement)
         }
     }
 
