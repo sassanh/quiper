@@ -357,25 +357,27 @@ extension MainWindowController {
             serviceSelector?.setImage(nil, forSegment: index)
         }
 
-        collapsibleServiceSelector?.setItems(items)
-        
+        // The selection commits atomically with the items so an open panel
+        // anchors to the final engine, not the previous one.
+        let targetServiceSelection: Int
         if let idx = services.firstIndex(where: { $0.id == currentServiceID }) {
-            collapsibleServiceSelector?.selectedSegment = idx
+            targetServiceSelection = idx
             serviceSelector?.selectedSegment = idx
         } else {
             if services.isEmpty {
                 currentServiceID = nil
                 currentServiceName = nil
                 titleLabel?.stringValue = ""
-                collapsibleServiceSelector?.selectedSegment = -1
                 serviceSelector?.selectedSegment = -1
                 loadingBorderView?.stopAnimating()
+                targetServiceSelection = -1
             } else {
-                collapsibleServiceSelector?.selectedSegment = 0
                 serviceSelector?.selectedSegment = 0
+                targetServiceSelection = 0
             }
             currentServiceName = services.first?.name
         }
+        collapsibleServiceSelector?.setItems(items, selectedSegment: targetServiceSelection)
         layoutSelectors()
         refreshModifierHUDContents()
     }
@@ -455,21 +457,21 @@ extension MainWindowController {
             sessionSelector?.setLabel(SessionSlots.label(for: sessionIndex), forSegment: segment)
         }
 
-        collapsibleSessionSelector?.setItems(labels)
+        let index = activeIndicesByID[service.id] ?? 0
+        let segmentIdx = segmentIndex(forSession: index)
+        // The selection commits atomically with the items so an open panel
+        // anchors to the final tab, not the previous engine's one.
+        collapsibleSessionSelector?.setItems(labels, selectedSegment: isEmptyStateActive ? -1 : segmentIdx)
         collapsibleSessionSelector?.tooltips = collapsibleSessionSelector?.tooltips.filter { $0.key < visible.count } ?? [:]
 
         for sessionIndex in SessionSlots.range {
             updateSessionTooltip(for: service, sessionIndex: sessionIndex)
         }
 
-        let index = activeIndicesByID[service.id] ?? 0
-        let segmentIdx = segmentIndex(forSession: index)
         if isEmptyStateActive {
             sessionSelector?.selectedSegment = -1
-            collapsibleSessionSelector?.selectedSegment = -1
         } else {
             sessionSelector?.selectedSegment = segmentIdx
-            collapsibleSessionSelector?.selectedSegment = segmentIdx
         }
         sessionSelector?.needsDisplay = true
         collapsibleSessionSelector?.needsDisplay = true

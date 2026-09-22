@@ -239,43 +239,73 @@ class CollapsibleSelector: NSView {
         }
     }
     
-    func setItems(_ newItems: [String]) {
+    /// Replaces the selector's items, committing `selectedSegment` atomically
+    /// with them so an open panel anchors to the final selection instead of
+    /// the caller's previous one. Both engine-switch call sites sync the
+    /// selection through here for that reason; pass nil to keep it.
+    func setItems(_ newItems: [String], selectedSegment: Int? = nil) {
         self.items = newItems
+        if let selectedSegment {
+            _selectedSegment = selectedSegment
+        }
         updateCollapsedControlTitle()
         invalidateIntrinsicContentSize()
-        
+
+        // An engine with no tabs has nothing to expand to: expanding is
+        // refused for empty items, so a panel left open by an engine
+        // switch must close rather than linger blank at the old width.
+        if newItems.isEmpty {
+            collapse()
+            return
+        }
+
         // Update active expanded control if visible
-        if let control = expandedControl {
+        if let control = expandedControl, let panel = expandedPanel {
             if control.segmentCount != newItems.count {
                 control.segmentCount = newItems.count
             }
-            
-            control.customLockedStates = newItems.indices.map { delegate?.selector(self, isLocked: $0) == true }
+
+            applySegmentStates(to: control)
             control.customLabels = newItems
-            
+
             for (i, item) in newItems.enumerated() {
                 control.setLabel(item, forSegment: i)
                 control.setImage(nil, forSegment: i)
                 control.setToolTip(tooltips[i], forSegment: i)
             }
-            // Update panel frame if needed? 
-            // For pure reorder total width is same, but for change it might differ.
-            // Let's at least ensure control frame is valid in the container.
-            if let container = control.superview as? NSVisualEffectView {
-                 container.frame = control.bounds
-                 // We'd ideally re-center the panel here using the same logic as expand()
-                 // But simply updating the control content handles the visual reorder requirement.
-                 // If total width changes, centering might drift, but usually reorder is same items.
+            control.selectedSegment = _selectedSegment
+            // Engine switches change how many segments exist, so an open
+            // panel must fit the new content like a fresh expansion does:
+            // re-fit the control, grow/shrink the panel, and re-anchor it
+            // to the collapsed pill. Without this a 3-tab panel clips a
+            // 5-tab engine to its old width until a later collapse heals it.
+            control.sizeToFit()
+            let controlHeight = max(bounds.height, control.frame.height)
+            control.frame = NSRect(x: 0, y: 0, width: control.frame.width, height: controlHeight)
+            if let container = control.superview {
+                container.frame = control.bounds
+            }
+            panel.setContentSize(control.bounds.size)
+            positionExpandedPanel(panel, control: control)
+            if let window {
+                lastAnchoredWindowFrame = window.frame
             }
         }
     }
-    
+
+    /// Single gate for per-segment lock/instantiation snapshots. Every path
+    /// that (re)builds an expanded control goes through here so an engine
+    /// switch never leaves the new tabs wearing the old engine's states.
+    private func applySegmentStates(to control: SegmentedControl) {
+        control.customLockedStates = items.indices.map { delegate?.selector(self, isLocked: $0) == true }
+        control.customInstantiatedStates = items.indices.map { delegate?.selector(self, isInstantiated: $0) == true }
+    }
+
     /// Refresh the display to update instantiation state styling
     func refreshInstantiationState() {
         collapsedControl.needsDisplay = true
         if let expandedControl = expandedControl {
-            expandedControl.customInstantiatedStates = items.indices.map { delegate?.selector(self, isInstantiated: $0) == true }
-            expandedControl.customLockedStates = items.indices.map { delegate?.selector(self, isLocked: $0) == true }
+            applySegmentStates(to: expandedControl)
             expandedControl.needsDisplay = true
         }
     }
@@ -447,9 +477,8 @@ class CollapsibleSelector: NSView {
         control.parentSelector = self
         
         // 2. Configure Items & Events
-        
-        control.customLockedStates = items.indices.map { delegate?.selector(self, isLocked: $0) == true }
-        control.customInstantiatedStates = items.indices.map { delegate?.selector(self, isInstantiated: $0) == true }
+
+        applySegmentStates(to: control)
         control.customLabels = items
         control.showInstantiationState = showInstantiationState
         
