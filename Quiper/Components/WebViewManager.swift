@@ -1078,9 +1078,8 @@ final class WebViewManager: NSObject {
                             // Shared teardown of the placeholder: stops loading,
                             // detaches the notification bridge, clears delegates,
                             // scripts, handlers, observation, and token
-                            // bookkeeping, then leaves the view hierarchy.
-                            self.tearDownWebContent(webview)
-                            wrapperView.detachSessionSurface()
+                            // bookkeeping, then removes it and its wrapper.
+                            self.tearDownWebContent(webview, hostingWrapper: wrapperView)
                             
                             // Remove lock overlay
                             for subview in wrapperView.subviews {
@@ -1661,9 +1660,7 @@ final class WebViewManager: NSObject {
             currentWindow.close()
         }
 
-        tearDownWebContent(webView)
-        wrapper?.detachSessionSurface()
-        wrapper?.removeFromSuperview()
+        tearDownWebContent(webView, hostingWrapper: wrapper)
     }
 
     /// Single teardown for every managed webview — session tabs and popups
@@ -1673,10 +1670,12 @@ final class WebViewManager: NSObject {
     /// cleared before deallocation, the notification bridge and message
     /// handlers are removed, token-scoped bookkeeping is dropped, injected
     /// scripts are stripped, and observation is cancelled exactly once.
-    /// Session chrome (wrapper, fullscreen window) stays with
-    /// `tearDownWebView`; popup-window duties stay with the popup's close
-    /// path.
-    private func tearDownWebContent(_ webView: WKWebView) {
+    /// `hostingWrapper` is the wrapper the caller resolved from its hosting
+    /// context (sessions: the wrapper, including the fullscreen-reparented
+    /// lookup; popups: the popup's own wrapper); it is detached and removed
+    /// here so no teardown path can leave a ghost surface behind. Popup
+    /// window duties stay with the popup's close path.
+    private func tearDownWebContent(_ webView: WKWebView, hostingWrapper: WebViewWrapperView?) {
         let token = ObjectIdentifier(webView)
         webView.stopLoading()
 
@@ -1704,11 +1703,10 @@ final class WebViewManager: NSObject {
         // configuration's references without touching any other webview.
         controller.removeAllUserScripts()
 
+        hostingWrapper?.detachSessionSurface()
         stopObservingWebContent(webView)
-
-        // Remove the webview from the view hierarchy (sessions: its wrapper
-        // detaches separately above; popups: the window is closing).
         webView.removeFromSuperview()
+        hostingWrapper?.removeFromSuperview()
     }
 
     private static func normalizedTitle(_ title: String?) -> String? {
@@ -1817,7 +1815,15 @@ final class WebViewManager: NSObject {
         }
         popupWindow.title = service.name
 
-        popupWindow.contentView?.addSubview(popupWebView)
+        // Host the popup webview in the same wrapper sessions use, so the
+        // load-error surface, first-responder plumbing, and find bar behave
+        // identically inside popups. Square corners: popup windows are not
+        // rounded like the overlay.
+        let wrapper = WebViewWrapperView(frame: popupWindow.contentView!.bounds)
+        wrapper.autoresizingMask = [.width, .height]
+        wrapper.addSubview(popupWebView)
+        installErrorView(for: popupWebView, in: wrapper)
+        popupWindow.contentView?.addSubview(wrapper)
         if startHidden {
             // Relaunch restore: stay ordered out until the session switch /
             // overlay show path syncs visibility for the active tab.
@@ -2128,7 +2134,17 @@ final class WebViewManager: NSObject {
             // notification bridge, observation, and token bookkeeping — all
             // on the popup's own content controller, never the opener's.
             if let hostedWebView = window.hostedWebView {
-                tearDownWebContent(hostedWebView)
+                // Element-fullscreen reparents the webview into a WebKit
+                // window; close it so no ghost fullscreen surface outlives
+                // the popup.
+                if let currentWindow = hostedWebView.window, currentWindow !== window {
+                    currentWindow.close()
+                }
+                // The wrapper is the webview's superview normally, or the
+                // popup content view's subview while fullscreen-reparented.
+                let hostingWrapper = (hostedWebView.superview as? WebViewWrapperView)
+                    ?? (window.contentView?.subviews.first(where: { $0 is WebViewWrapperView }) as? WebViewWrapperView)
+                tearDownWebContent(hostedWebView, hostingWrapper: hostingWrapper)
             }
         }
         popupOwnerByToken.removeValue(forKey: token)

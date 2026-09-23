@@ -198,4 +198,39 @@ final class WebViewCreationGateTests: XCTestCase {
             "Recreation runs through the same gate as first creation"
         )
     }
+
+    func testPopupWebContentIsHostedByTheSameWrapperSessionsUse() {
+        let service = makeService()
+        let window = makeHostWindow()
+        let (manager, sessionWebView) = makeSession(with: service, in: window)
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            window.close()
+        }
+
+        guard let (popupWindow, popupWebView) = openPopup(from: manager) else {
+            XCTFail("A popup must exist to inspect its hosting")
+            return
+        }
+
+        let wrapper = popupWebView.superview as? WebViewWrapperView
+        XCTAssertNotNil(wrapper, "Popup web content sits in the wrapper that hosts the load-error surface")
+        XCTAssertTrue(
+            wrapper?.subviews.contains { $0 is WebLoadErrorView } == true,
+            "Popups install the same load-error surface as session tabs"
+        )
+        XCTAssertFalse(
+            manager.hasVisibleLoadError(for: popupWebView),
+            "A freshly opened popup starts without a load error"
+        )
+        XCTAssertFalse(
+            manager.hasVisibleLoadError(for: sessionWebView),
+            "The opener session also starts without a load error"
+        )
+
+        popupWindow.close()
+
+        XCTAssertNil(wrapper?.superview, "Popup teardown removes the wrapper, leaving no ghost surface")
+        XCTAssertNil(popupWebView.superview, "The webview leaves its wrapper with the popup")
+    }
 }
