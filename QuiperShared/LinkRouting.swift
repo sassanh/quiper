@@ -19,19 +19,27 @@ enum RoutingResolver {
         return regex.firstMatch(in: targetString, options: [], range: range) != nil
     }
 
-    static func route(for url: URL, service: Service, serviceURL: URL) -> Decision {
-        route(for: url, service: service, serviceURL: serviceURL, pinnedURL: nil)
+    static func route(for url: URL, service: Service, serviceURL: URL, currentURL: URL?) -> Decision {
+        route(for: url, service: service, serviceURL: serviceURL, pinnedURL: nil, currentURL: currentURL)
     }
 
     /// Single gate for link routing. Pinned-tab engines pass their session's
     /// pinned URL so the tab address stays fixed: same-URL reloads stay in
     /// place, every other navigation diverts to a popup or the system browser.
+    /// `currentURL` is the committed page address. Same-document fragment
+    /// navigations (target matches the page ignoring `#fragment`) always stay
+    /// in place, even when the page host has drifted from the service root
+    /// through redirects or routing rules.
     static func route(
         for url: URL,
         service: Service,
         serviceURL: URL,
-        pinnedURL: URL?
+        pinnedURL: URL?,
+        currentURL: URL?
     ) -> Decision {
+        if let currentURL, urlsMatchIgnoringFragment(url, currentURL) {
+            return .openHere
+        }
         if let pinnedURL, service.isPinnedTabs {
             if urlsMatchIgnoringFragment(url, pinnedURL) {
                 return .openHere

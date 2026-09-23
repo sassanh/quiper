@@ -96,7 +96,7 @@ final class EngineTypeTests: XCTestCase {
         let pinned = URL(string: "https://one.example.com")!
         let target = URL(string: "https://one.example.com#section")!
         XCTAssertEqual(
-            RoutingResolver.route(for: target, service: service, serviceURL: pinned, pinnedURL: pinned),
+            RoutingResolver.route(for: target, service: service, serviceURL: pinned, pinnedURL: pinned, currentURL: nil),
             .openHere
         )
     }
@@ -106,7 +106,7 @@ final class EngineTypeTests: XCTestCase {
         let pinned = URL(string: "https://one.example.com")!
         let target = URL(string: "https://one.example.com/")!
         XCTAssertEqual(
-            RoutingResolver.route(for: target, service: service, serviceURL: pinned, pinnedURL: pinned),
+            RoutingResolver.route(for: target, service: service, serviceURL: pinned, pinnedURL: pinned, currentURL: nil),
             .openHere
         )
     }
@@ -119,7 +119,7 @@ final class EngineTypeTests: XCTestCase {
         let pinned = URL(string: "https://one.example.com")!
         let target = URL(string: "https://one.example.com/other")!
         XCTAssertEqual(
-            RoutingResolver.route(for: target, service: service, serviceURL: pinned, pinnedURL: pinned),
+            RoutingResolver.route(for: target, service: service, serviceURL: pinned, pinnedURL: pinned, currentURL: nil),
             .openExternal
         )
     }
@@ -130,7 +130,7 @@ final class EngineTypeTests: XCTestCase {
         let pinned = URL(string: "https://one.example.com")!
         let target = URL(string: "https://example.org/page")!
         XCTAssertEqual(
-            RoutingResolver.route(for: target, service: service, serviceURL: pinned, pinnedURL: pinned),
+            RoutingResolver.route(for: target, service: service, serviceURL: pinned, pinnedURL: pinned, currentURL: nil),
             .openNewWindow
         )
     }
@@ -141,7 +141,7 @@ final class EngineTypeTests: XCTestCase {
         let pinned = URL(string: "https://one.example.com")!
         let target = URL(string: "https://example.org/page")!
         XCTAssertEqual(
-            RoutingResolver.route(for: target, service: service, serviceURL: pinned, pinnedURL: pinned),
+            RoutingResolver.route(for: target, service: service, serviceURL: pinned, pinnedURL: pinned, currentURL: nil),
             .showPrompt
         )
     }
@@ -151,7 +151,64 @@ final class EngineTypeTests: XCTestCase {
         let serviceURL = URL(string: "https://one.example.com")!
         let target = URL(string: "https://one.example.com/other")!
         XCTAssertEqual(
-            RoutingResolver.route(for: target, service: service, serviceURL: serviceURL),
+            RoutingResolver.route(for: target, service: service, serviceURL: serviceURL, currentURL: nil),
+            .openHere
+        )
+    }
+
+    func testSameDocumentFragmentStaysInPlaceOnDriftedHost() {
+        // Page reached via redirect no longer matches the service root, but a
+        // fragment-only change is a scroll, not a navigation.
+        let service = Service(name: "Test", url: "https://one.example.com", focus_selector: "")
+        let serviceURL = URL(string: "https://one.example.com")!
+        let current = URL(string: "https://drifted.example.org/page")!
+        let target = URL(string: "https://drifted.example.org/page#section")!
+        XCTAssertEqual(
+            RoutingResolver.route(for: target, service: service, serviceURL: serviceURL, currentURL: current),
+            .openHere
+        )
+    }
+
+    func testSameDocumentCheckFallsThroughOnDifferentPathOrQuery() {
+        let service = Service(name: "Test", url: "https://one.example.com", focus_selector: "")
+        let serviceURL = URL(string: "https://one.example.com")!
+        let current = URL(string: "https://example.org/page?x=1")!
+        let differentPath = URL(string: "https://example.org/other#section")!
+        XCTAssertEqual(
+            RoutingResolver.route(for: differentPath, service: service, serviceURL: serviceURL, currentURL: current),
+            .openExternal
+        )
+        let differentQuery = URL(string: "https://example.org/page?x=2#section")!
+        XCTAssertEqual(
+            RoutingResolver.route(for: differentQuery, service: service, serviceURL: serviceURL, currentURL: current),
+            .openExternal
+        )
+    }
+
+    func testSameDocumentOverridesExplicitExternalRule() {
+        // Fragment-only changes stay in place even when a routing rule would
+        // send the host elsewhere: there is no new document to route.
+        var service = Service(name: "Test", url: "https://one.example.com", focus_selector: "")
+        service.routingRules = [RoutingRule(pattern: "example\\.org", action: .external)]
+        let serviceURL = URL(string: "https://one.example.com")!
+        let current = URL(string: "https://example.org/page")!
+        let target = URL(string: "https://example.org/page#section")!
+        XCTAssertEqual(
+            RoutingResolver.route(for: target, service: service, serviceURL: serviceURL, currentURL: current),
+            .openHere
+        )
+    }
+
+    func testSameDocumentFragmentStaysInPlaceForPinnedTabsDespitePinnedMismatch() {
+        // Same-document check runs before the pinned-tab branch: a fragment
+        // scroll on a drifted page stays in place even though the target no
+        // longer matches the pinned URL.
+        let service = pinnedService(urls: ["https://one.example.com"])
+        let pinned = URL(string: "https://one.example.com")!
+        let current = URL(string: "https://drifted.example.org/page")!
+        let target = URL(string: "https://drifted.example.org/page#section")!
+        XCTAssertEqual(
+            RoutingResolver.route(for: target, service: service, serviceURL: pinned, pinnedURL: pinned, currentURL: current),
             .openHere
         )
     }

@@ -32,6 +32,7 @@
 - **Video Picture-in-Picture Works**: The native picture-in-picture control in videos is now enabled, so a playing video can float in a system PiP window while Quiper hides.
 - **Downloads No Longer Show a Load Error**: Opening a direct file link that Quiper hands to the download manager no longer shows a "Page failed to load" panel for a download that started normally.
 - **Typed Addresses Always Load in Place**: Typing an address into the location bar now always loads it in the current tab instead of opening a popup, asking where to open it, or sending it elsewhere.
+- **In-Page Anchor Links Stay in Place**: Clicking a link that jumps to a section of the same page now scrolls there instead of opening the system browser.
 - **Actions Survive Download Starts on iOS**: Starting a download no longer makes the current or next automation command fail.
 
 ## [6.1.1] - 2026-09-11

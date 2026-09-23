@@ -2472,7 +2472,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         }
 
         let optionPressed = navigationAction.modifierFlags.contains(.option)
-        var action = RoutingResolver.route(for: url, service: service, serviceURL: serviceURL, pinnedURL: pinnedURL)
+        var action = RoutingResolver.route(for: url, service: service, serviceURL: serviceURL, pinnedURL: pinnedURL, currentURL: webView.url)
         if action == .openExternal && optionPressed {
             action = .showPrompt
         }

@@ -270,7 +270,7 @@ extension WebSessionCoordinator: WKNavigationDelegate {
             return
         }
 
-        switch RoutingResolver.route(for: url, service: service, serviceURL: serviceURL, pinnedURL: pinnedURL) {
+        switch RoutingResolver.route(for: url, service: service, serviceURL: serviceURL, pinnedURL: pinnedURL, currentURL: webView.url) {
         case .openHere:
             decisionHandler(allowWithoutAppLink)
         case .openNewWindow:
