@@ -788,6 +788,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         _ state: WKWebView.FullscreenState,
         for webView: WKWebView
     ) {
+        // Only a main-window session webview may drive the overlay's
+        // fullscreen session. Popups also report fullscreenState (one
+        // creation gate observes both populations), but their fullscreen
+        // runs entirely inside their own window.
+        guard webView === elementFullscreenWebView || webView === currentWebView() else { return }
         switch state {
         case .enteringFullscreen:
             elementFullscreenWebView = webView

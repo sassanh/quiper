@@ -136,7 +136,11 @@ final class WebViewContextMenuTests: XCTestCase {
             frame: NSRect(x: 0, y: 0, width: 800, height: 600),
             configuration: WKWebViewConfiguration()
         )
-        view.contextMenuDelegate = DenySpy()
+        // Held for the whole test: the delegate is weak, so a temporary would
+        // die at the assignment and the menu would be skipped for the wrong
+        // reason (no delegate, not a disallowing one).
+        let denySpy = DenySpy()
+        view.contextMenuDelegate = denySpy
         let menu = NSMenu()
         menu.addItem(withTitle: "Reload Page", action: nil, keyEquivalent: "")
         let event = try XCTUnwrap(NSEvent.mouseEvent(

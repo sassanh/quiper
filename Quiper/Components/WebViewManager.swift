@@ -264,10 +264,10 @@ final class WebViewManager: NSObject {
     /// pushes it into every live session by updating the tagged style
     /// element. Callers never care why it changed (user edit, Hide, template
     /// sync toggle): persisting posts `.engineCustomCSSChanged`, which lands
-    /// here. Ephemeral tabs are skipped: their pages stay marker-free.
+    /// here. Covers tabs and popups alike. Ephemeral tabs are skipped: their
+    /// pages stay marker-free.
     func refreshCustomCSS(for serviceID: UUID) {
-        guard let sessionMap = webviewsByID[serviceID] else { return }
-        sessionMap.values.forEach { webView in
+        for (_, webView) in webViews(for: serviceID) {
             syncEngineUserScripts(to: webView)
             applyCurrentCustomCSS(to: webView)
         }
@@ -340,6 +340,22 @@ final class WebViewManager: NSObject {
     
     func getWebView(for service: Service, sessionIndex: Int) -> WKWebView? {
         webviewsByID[service.id]?[sessionIndex]
+    }
+
+    /// Every live webview belonging to `serviceID`: session tabs plus their
+    /// popups, each paired with the session it belongs to. Service-scoped
+    /// state (stylesheets, prompt selectors, zoom, indicators) must reach all
+    /// of them through here or tabs and popups drift apart.
+    func webViews(for serviceID: UUID) -> [(sessionIndex: Int, webView: WKWebView)] {
+        var result: [(sessionIndex: Int, webView: WKWebView)] = []
+        if let sessionMap = webviewsByID[serviceID] {
+            result += sessionMap.map { (sessionIndex: $0.key, webView: $0.value) }
+        }
+        for (token, owner) in popupOwnerByToken where owner.serviceID == serviceID {
+            guard let webView = popupWindowsByToken[token]?.hostedWebView else { continue }
+            result.append((sessionIndex: owner.sessionIndex, webView: webView))
+        }
+        return result
     }
 
     // Authoritative element-fullscreen signal: WebKit reports the fullscreen state
@@ -795,15 +811,27 @@ final class WebViewManager: NSObject {
         )
     }
 
+    /// Session membership for a managed webview: a session tab resolves to
+    /// itself; a popup resolves to the tab that owns it. Single lookup behind
+    /// every per-message decision (input tracking, prompt history, selector
+    /// suggest, live stylesheet patches, pinned routing), so both populations
+    /// behave identically and neither can be looked up through a diverging
+    /// path. Nil for unknown webviews and for popups whose owner session is
+    /// gone.
     func findServiceAndSession(for webView: WKWebView) -> (Service, Int)? {
-        for service in services {
-            if let map = webviewsByID[service.id] {
-                for (idx, wv) in map {
-                    if wv == webView {
-                        return (service, idx)
-                    }
-                }
-            }
+        let token = ObjectIdentifier(webView)
+        guard let serviceID = serviceIDsByWebView[token],
+              let service = services.first(where: { $0.id == serviceID }) else {
+            return nil
+        }
+        if let sessionMap = webviewsByID[serviceID],
+           let match = sessionMap.first(where: { $0.value === webView }) {
+            return (service, match.key)
+        }
+        if let owner = popupOwnerByToken[token],
+           owner.serviceID == serviceID,
+           webviewsByID[serviceID]?[owner.sessionIndex] != nil {
+            return (service, owner.sessionIndex)
         }
         return nil
     }
@@ -855,9 +883,10 @@ final class WebViewManager: NSObject {
     /// paths already resolve the fresh selector, so only the background input
     /// tracker lags until navigation.
     @objc private func enginePromptSelectorChangedNotification(_ notification: Notification) {
-        guard let serviceID = notification.object as? UUID,
-              let sessionMap = webviewsByID[serviceID] else { return }
-        sessionMap.values.forEach(syncEngineUserScripts(to:))
+        guard let serviceID = notification.object as? UUID else { return }
+        for (_, webView) in webViews(for: serviceID) {
+            syncEngineUserScripts(to: webView)
+        }
     }
 
     
@@ -1046,17 +1075,12 @@ final class WebViewManager: NSObject {
                             overlay.updateStatus("Loading secure session...")
                             try? await Task.sleep(nanoseconds: 1_000_000_000)
                             
-                            // Remove non-persistent webview and clean observers
-                            webview.removeObserver(self, forKeyPath: "title")
-                            webview.removeObserver(self, forKeyPath: "loading")
-                            webview.removeObserver(self, forKeyPath: "fullscreenState")
-                            let oldToken = ObjectIdentifier(webview)
-                            self.initialLoadAwaitingFocus.remove(oldToken)
-                            self.serviceIDsByWebView.removeValue(forKey: oldToken)
+                            // Shared teardown of the placeholder: stops loading,
+                            // detaches the notification bridge, clears delegates,
+                            // scripts, handlers, observation, and token
+                            // bookkeeping, then leaves the view hierarchy.
+                            self.tearDownWebContent(webview)
                             wrapperView.detachSessionSurface()
-                            self.removeLoadState(for: oldToken)
-                            webview.configuration.userContentController.removeAllUserScripts()
-                            webview.removeFromSuperview()
                             
                             // Remove lock overlay
                             for subview in wrapperView.subviews {
@@ -1194,14 +1218,14 @@ final class WebViewManager: NSObject {
         preferences.setValue(true, forKey: "allowsPictureInPictureMediaPlayback")
     }
 
+    /// Builds a session webview's configuration. Storage policy is the only
+    /// session-specific input: persistent tabs get the engine's own data
+    /// store, locked and ephemeral ones an isolated store. Everything else —
+    /// injected content, handlers, dressing, observation — comes from
+    /// `makeManagedWebView`, the single creation gate shared with popups.
     private func createWebViewInstance(for service: Service, sessionIndex: Int, bounds: NSRect, isPersistent: Bool, isQuiperPrivate: Bool = false) -> WKWebView {
-        let userContentController = WKUserContentController()
         let config = WKWebViewConfiguration()
-        config.userContentController = userContentController
-        config.preferences.javaScriptCanOpenWindowsAutomatically = true
-        Self.applyMediaPlaybackPreferences(to: config.preferences)
-        config.preferences.setValue(true, forKey: "developerExtrasEnabled")
-        
+        config.userContentController = WKUserContentController()
         let isRunningTests = NSClassFromString("XCTestCase") != nil || ProcessInfo.processInfo.environment["XCInjectBundleInto"] != nil
         if isPersistent && !isRunningTests {
             config.websiteDataStore = WKWebsiteDataStore(forIdentifier: service.id)
@@ -1209,6 +1233,32 @@ final class WebViewManager: NSObject {
             config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
         }
 
+        return makeManagedWebView(
+            configuration: config,
+            frame: bounds,
+            service: service,
+            sessionIndex: sessionIndex,
+            isQuiperPrivate: isQuiperPrivate
+        )
+    }
+
+    /// Single creation gate for every managed webview — session tabs and
+    /// popups alike. The caller supplies the configuration (its data store is
+    /// hosting policy the gate must not touch); this gate owns everything
+    /// that must be identical across both populations: engine scripts and
+    /// message handlers on the webview's own content controller, page
+    /// preferences, the `ContextMenuWebView` class, user agent, background
+    /// drawing, zoom, delegates, the notification bridge, and key-value
+    /// observation. Marker-free (ephemeral) webviews get none of the injected
+    /// content, so websites cannot detect Quiper through them.
+    private func makeManagedWebView(
+        configuration: WKWebViewConfiguration,
+        frame: NSRect,
+        service: Service,
+        sessionIndex: Int,
+        isQuiperPrivate: Bool
+    ) -> WKWebView {
+        let userContentController = configuration.userContentController
         if !isQuiperPrivate {
             Self.addEngineUserScripts(to: userContentController, service: service)
 
@@ -1216,15 +1266,12 @@ final class WebViewManager: NSObject {
             userContentController.add(inputHandler, name: "quiperInputState")
             userContentController.add(inputHandler, name: "quiperInputTrackerReady")
         }
-        NSLog(
-            "[Quiper][Temporary] webview created for %@ session %d with %d scripts (private=%d)",
-            service.name,
-            sessionIndex,
-            userContentController.userScripts.count,
-            isQuiperPrivate ? 1 : 0
-        )
 
-        let webview = ContextMenuWebView(frame: bounds, configuration: config)
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        Self.applyMediaPlaybackPreferences(to: configuration.preferences)
+        configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+
+        let webview = ContextMenuWebView(frame: frame, configuration: configuration)
         webview.setValue(false, forKey: "drawsBackground")
         webview.autoresizingMask = [.width, .height]
         webview.uiDelegate = self
@@ -1232,18 +1279,21 @@ final class WebViewManager: NSObject {
         webview.contextMenuDelegate = self
         webview.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         webview.pageZoom = zoomLevels[service.id] ?? 1.0
-        
-        // Ephemeral tabs get no notification bridge either: any page-visible
-        // handler name lets websites detect Quiper.
+
+        // Ephemeral webviews get no notification bridge either: any
+        // page-visible handler name lets websites detect Quiper.
         if !isQuiperPrivate {
             attachNotificationBridge(to: webview, service: service, sessionIndex: sessionIndex)
         }
-        
-        // Add observers
-        webview.addObserver(self, forKeyPath: "title", options: .new, context: nil)
-        webview.addObserver(self, forKeyPath: "loading", options: .new, context: nil)
-        webview.addObserver(self, forKeyPath: "fullscreenState", options: .new, context: nil)
-        
+
+        startObservingWebContent(webview)
+        NSLog(
+            "[Quiper][Temporary] webview created for %@ session %d with %d scripts (private=%d)",
+            service.name,
+            sessionIndex,
+            userContentController.userScripts.count,
+            isQuiperPrivate ? 1 : 0
+        )
         return webview
     }
 
@@ -1533,6 +1583,25 @@ final class WebViewManager: NSObject {
     
     // MARK: - KVO
     
+    /// Webviews this manager observes. Teardown removes exactly what creation
+    /// registered, so no path can double-remove an observer or leak one past
+    /// the webview's deallocation.
+    private var observedWebViewTokens: Set<ObjectIdentifier> = []
+
+    private func startObservingWebContent(_ webView: WKWebView) {
+        guard observedWebViewTokens.insert(ObjectIdentifier(webView)).inserted else { return }
+        webView.addObserver(self, forKeyPath: "title", options: .new, context: nil)
+        webView.addObserver(self, forKeyPath: "loading", options: .new, context: nil)
+        webView.addObserver(self, forKeyPath: "fullscreenState", options: .new, context: nil)
+    }
+
+    private func stopObservingWebContent(_ webView: WKWebView) {
+        guard observedWebViewTokens.remove(ObjectIdentifier(webView)) != nil else { return }
+        webView.removeObserver(self, forKeyPath: "title")
+        webView.removeObserver(self, forKeyPath: "loading")
+        webView.removeObserver(self, forKeyPath: "fullscreenState")
+    }
+
     nonisolated override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
         guard let webView = object as? WKWebView else { return }
         
@@ -1540,6 +1609,7 @@ final class WebViewManager: NSObject {
             if keyPath == "title" {
                 retainTitle(webView.title, for: webView)
                 delegate?.webViewDidUpdateTitle(webView.title ?? "", for: webView)
+                updatePopupWindowTitle(for: webView)
             } else if keyPath == "loading" {
                 delegate?.webViewDidUpdateLoading(webView.isLoading, for: webView)
             } else if keyPath == "fullscreenState" {
@@ -1547,19 +1617,29 @@ final class WebViewManager: NSObject {
             }
         }
     }
+
+    /// Popup windows render the page title through the same manager
+    /// observation as session tabs: "page title - engine name", falling back
+    /// to the engine name while the page has none.
+    private func updatePopupWindowTitle(for webView: WKWebView) {
+        guard let window = popupWindowsByToken[ObjectIdentifier(webView)],
+              let serviceName = service(for: webView)?.name else { return }
+        if let pageTitle = Self.normalizedTitle(webView.title) {
+            window.title = "\(pageTitle) - \(serviceName)"
+        } else {
+            window.title = serviceName
+        }
+    }
     
     // MARK: - Private Helpers
     
     private func tearDownWebView(_ webView: WKWebView) {
-        // Stop any in-progress loading to signal WebKit to release the content process
-        let token = ObjectIdentifier(webView)
+        // Session chrome: locate the wrapper even while the webView sits in
+        // the WebKit element-fullscreen window (its superview is not the
+        // wrapper there) so no ghost wrapper shows the fullscreen webView as
+        // a background behind the overlay's transparent areas.
         var wrapper = webView.superview as? WebViewWrapperView
-        // When the webView is fullscreen its superview is the WebKit fullscreen
-        // window's contentView, not its wrapper. Look up the wrapper via the
-        // service/session maps so we can remove it correctly and avoid leaving
-        // a ghost wrapper that shows the fullscreen webView as a background
-        // behind the overlay's transparent areas.
-        if wrapper == nil, let serviceID = serviceIDsByWebView[token],
+        if wrapper == nil, let serviceID = serviceIDsByWebView[ObjectIdentifier(webView)],
            let sessionMap = webviewsByID[serviceID] {
             for (sessionIndex, candidate) in sessionMap where candidate === webView {
                 if let found = wrappersByID[serviceID]?[sessionIndex] as? WebViewWrapperView {
@@ -1580,16 +1660,36 @@ final class WebViewManager: NSObject {
            currentWindow !== wrapperWindow {
             currentWindow.close()
         }
+
+        tearDownWebContent(webView)
+        wrapper?.detachSessionSurface()
+        wrapper?.removeFromSuperview()
+    }
+
+    /// Single teardown for every managed webview — session tabs and popups
+    /// alike. Each managed webview exclusively owns its user content
+    /// controller (popups swap in a fresh one at creation), so the full
+    /// uninstall is safe for both populations: loading stops, delegates are
+    /// cleared before deallocation, the notification bridge and message
+    /// handlers are removed, token-scoped bookkeeping is dropped, injected
+    /// scripts are stripped, and observation is cancelled exactly once.
+    /// Session chrome (wrapper, fullscreen window) stays with
+    /// `tearDownWebView`; popup-window duties stay with the popup's close
+    /// path.
+    private func tearDownWebContent(_ webView: WKWebView) {
+        let token = ObjectIdentifier(webView)
         webView.stopLoading()
- 
+
         // Nil delegates to prevent callbacks during/after deallocation
         webView.uiDelegate = nil
         webView.navigationDelegate = nil
- 
+        (webView as? ContextMenuWebView)?.contextMenuDelegate = nil
+
         detachNotificationBridge(from: webView)
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "quiperInputState")
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "quiperInputTrackerReady")
- 
+        let controller = webView.configuration.userContentController
+        controller.removeScriptMessageHandler(forName: "quiperInputState")
+        controller.removeScriptMessageHandler(forName: "quiperInputTrackerReady")
+
         // Resume and clear any pending navigation continuation to prevent CheckedContinuation leaks
         if let continuation = navigationContinuations.removeValue(forKey: token) {
             continuation.resume()
@@ -1598,19 +1698,17 @@ final class WebViewManager: NSObject {
         serviceIDsByWebView.removeValue(forKey: token)
         pendingLazyLoadURLs.removeValue(forKey: token)
         lastKnownTitlesByWebView.removeValue(forKey: token)
-        wrapper?.detachSessionSurface()
         removeLoadState(for: token)
- 
-        // Clean user content controller to break configuration references
-        webView.configuration.userContentController.removeAllUserScripts()
- 
-        webView.removeObserver(self, forKeyPath: "title")
-        webView.removeObserver(self, forKeyPath: "loading")
-        webView.removeObserver(self, forKeyPath: "fullscreenState")
 
-        // Remove the wrapper view (parent) from the view hierarchy, then the webview
+        // The controller is this webview's own, so stripping it breaks the
+        // configuration's references without touching any other webview.
+        controller.removeAllUserScripts()
+
+        stopObservingWebContent(webView)
+
+        // Remove the webview from the view hierarchy (sessions: its wrapper
+        // detaches separately above; popups: the window is closing).
         webView.removeFromSuperview()
-        wrapper?.removeFromSuperview()
     }
 
     private static func normalizedTitle(_ title: String?) -> String? {
@@ -1651,23 +1749,29 @@ final class WebViewManager: NSObject {
     
     @MainActor
     private func openInPopup(url: URL, service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow, opener: WKWebView) {
-        let popupWebView = makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow, opener: opener)
+        guard let popupWebView = makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow, opener: opener) else { return }
         popupWebView.load(URLRequest(url: url))
     }
 
-    /// Single gate for every popup webview: assigns the routing delegates and
-    /// registers the service association so links inside popups go through the
-    /// same `RoutingResolver` path as main-window webviews.
+    /// Single gate for every popup webview: resolves the owning tab, hands
+    /// the creation gate a WebKit-derived configuration, and registers the
+    /// service association so links inside popups go through the same
+    /// `RoutingResolver` path as main-window webviews.
     ///
     /// The popup is owned by the tab that opened it (`opener`): popups opened
     /// from inside another popup inherit that popup's owner, so the whole
     /// chain hides and shows with the originating session. Ownership is the
     /// single source for session-scoped visibility in
     /// `syncPopupVisibility(forActiveTab:)`; callers never manage popup
-    /// windows directly.
+    /// windows directly. Returns nil when no owner can be resolved: an
+    /// unattributable popup would be half-managed, and WebKit only asks for
+    /// popups from live webviews, so this indicates a teardown race.
     @MainActor
-    private func makePopupWebView(for service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow, opener: WKWebView? = nil, restoredOwner: TabIdentifier? = nil, restoredFrame: NSRect? = nil, startHidden: Bool = false) -> WKWebView {
-        Self.applyMediaPlaybackPreferences(to: configuration.preferences)
+    private func makePopupWebView(for service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow, opener: WKWebView? = nil, restoredOwner: TabIdentifier? = nil, restoredFrame: NSRect? = nil, startHidden: Bool = false) -> WKWebView? {
+        guard let owner = restoredOwner ?? opener.flatMap({ ownerTab(for: $0) }) else {
+            NSLog("[Quiper] Dropped popup for %@: could not resolve the owning tab", service.name)
+            return nil
+        }
         // Nest under the opener's window: AppKit pins a child above its
         // parent, so a popup opened from another popup stays above its
         // opener even when the opener is clicked.
@@ -1686,18 +1790,24 @@ final class WebViewManager: NSObject {
             )
         }
 
-        let popupWebView = WKWebView(frame: popupWindow.contentView!.bounds, configuration: configuration)
-        popupWebView.autoresizingMask = [.width, .height]
-        popupWebView.uiDelegate = self
-        popupWebView.navigationDelegate = self
+        // WebKit hands us a copy of the opener's configuration and requires
+        // the popup be created with it: data store, process pool, and opener
+        // relationship must stay opener-derived. Only the app-owned content
+        // controller is replaced, so each managed webview exclusively owns
+        // its scripts and handlers — one install path, one teardown, and
+        // popup close can never reach back into the opener's controller.
+        configuration.userContentController = WKUserContentController()
+        let popupWebView = makeManagedWebView(
+            configuration: configuration,
+            frame: popupWindow.contentView!.bounds,
+            service: service,
+            sessionIndex: owner.sessionIndex,
+            isQuiperPrivate: isQuiperPrivateTab(serviceID: owner.serviceID, sessionIndex: owner.sessionIndex)
+        )
 
         let token = ObjectIdentifier(popupWebView)
         serviceIDsByWebView[token] = service.id
-        if let restoredOwner {
-            popupOwnerByToken[token] = restoredOwner
-        } else if let opener, let owner = ownerTab(for: opener) {
-            popupOwnerByToken[token] = owner
-        }
+        popupOwnerByToken[token] = owner
         popupWindowsByToken[token] = popupWindow
         popupCreationCounter += 1
         popupCreationOrder[token] = popupCreationCounter
@@ -1705,8 +1815,7 @@ final class WebViewManager: NSObject {
         popupWindow.onClose = { [weak self] in
             self?.unregisterPopupWebView(token: token)
         }
-
-        popupWindow.observeWebViewTitle(popupWebView, fallbackTitle: service.name)
+        popupWindow.title = service.name
 
         popupWindow.contentView?.addSubview(popupWebView)
         if startHidden {
@@ -1890,14 +1999,14 @@ final class WebViewManager: NSObject {
             width: popup.frameWidth, height: popup.frameHeight
         )
         let shouldShow = sessionWebView.superview?.isHidden == false && overlayWindow.isVisible
-        let popupWebView = makePopupWebView(
+        guard let popupWebView = makePopupWebView(
             for: service,
             configuration: sessionWebView.configuration,
             parentWindow: newestLivePopupWindow(for: popup.owner) ?? overlayWindow,
             restoredOwner: popup.owner,
             restoredFrame: validatedRestoredFrame(frame),
             startHidden: !shouldShow
-        )
+        ) else { return }
         popupPendingURLByToken[ObjectIdentifier(popupWebView)] = key.url
         popupWebView.load(URLRequest(url: url))
     }
@@ -2014,14 +2123,19 @@ final class WebViewManager: NSObject {
     private func unregisterPopupWebView(token: ObjectIdentifier) {
         if let window = popupWindowsByToken[token] {
             NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: window)
+            // The close path guarantees the hosted webview is still alive
+            // here; the shared teardown strips scripts, handlers, the
+            // notification bridge, observation, and token bookkeeping — all
+            // on the popup's own content controller, never the opener's.
+            if let hostedWebView = window.hostedWebView {
+                tearDownWebContent(hostedWebView)
+            }
         }
-        serviceIDsByWebView.removeValue(forKey: token)
         popupOwnerByToken.removeValue(forKey: token)
         popupWindowsByToken.removeValue(forKey: token)
         popupCreationOrder.removeValue(forKey: token)
         popupPendingURLByToken.removeValue(forKey: token)
         popupFindBars.removeValue(forKey: token)
-        removeLoadState(for: token)
     }
 
     @MainActor
@@ -2129,7 +2243,6 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
     private var shield: InteractionShieldView?
     private weak var parentWin: NSWindow?
     private var isCleaningUp = false
-    private var titleObservation: NSKeyValueObservation?
 
     /// Whether the window is inside its close path. Children check their
     /// parent's flag before handing focus back, so closing an opener does
@@ -2163,21 +2276,6 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
         }
     }
     
-    func observeWebViewTitle(_ webView: WKWebView, fallbackTitle: String) {
-        self.title = fallbackTitle
-        let fallback = fallbackTitle
-        titleObservation = webView.observe(\.title, options: [.new]) { [weak self] _, change in
-            MainActor.assumeIsolated {
-                guard let self = self else { return }
-                if let newTitle = change.newValue as? String, !newTitle.isEmpty {
-                    self.title = "\(newTitle) - \(fallback)"
-                } else {
-                    self.title = fallback
-                }
-            }
-        }
-    }
-
     /// Session-scoped hide/show. Hiding orders the window out (preserving its
     /// frame for an exact restore) and hides its modal shield so the newly
     /// active session stays interactive. Showing restores the shield and, when
@@ -2216,24 +2314,19 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
             child.close()
         }
         
-        titleObservation?.invalidate()
-        titleObservation = nil
-        
         // 1. Remove only this popup's shield: other sessions' popups keep
         // their own shields so the newly active session's modality survives.
         shield?.removeFromSuperview()
         shield = nil
         
-        // 2. Nil out webview delegates to avoid crashes from WebKit callbacks during deallocation
-        contentView?.subviews.forEach {
-            if let webView = $0 as? WKWebView {
-                webView.uiDelegate = nil
-                webView.navigationDelegate = nil
-                webView.stopLoading()
-                webView.configuration.userContentController.removeAllUserScripts()
-                webView.removeFromSuperview()
-            }
-        }
+        // 2. Hand the hosted webview to the manager's shared teardown while
+        // this window still hosts it: it stops loading, clears delegates,
+        // uninstalls scripts, handlers, the notification bridge, and
+        // observation, then removes the webview. The shared path strips only
+        // this popup's own content controller, never the opener's.
+        let onClose = onClose
+        self.onClose = nil
+        onClose?()
         
         // 3. Detach from parent
         if let parent = parentWin {
@@ -2251,10 +2344,6 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
         
         // 5. Break self-delegate cycle to allow deallocation
         self.delegate = nil
-
-        let onClose = onClose
-        self.onClose = nil
-        onClose?()
     }
     
     func windowWillClose(_ notification: Notification) {
