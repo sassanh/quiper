@@ -838,12 +838,9 @@ extension MainWindowController: WebViewManagerDelegate {
         }
         guard webView == currentWebView() else { return }
 
-        // Ephemeral tabs run no tracker: leave their DOM untouched.
-        if let (service, sessionIndex) = webViewManager.findServiceAndSession(for: webView),
-           !webViewManager.isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) {
-            webView.evaluateJavaScript("window.__quiperInputTrackerActive = true", completionHandler: nil)
-            webViewManager.pushRecordingIndicatorState(to: webView)
-        }
+        // pushInputTrackerState refuses marker-free pages itself.
+        webViewManager.pushInputTrackerState(true, to: webView)
+        webViewManager.pushRecordingIndicatorState(to: webView)
         
         if webView.title?.isEmpty ?? true {
              updateTitleLabel(withFallback: "-")

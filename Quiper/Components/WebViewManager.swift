@@ -244,18 +244,18 @@ final class WebViewManager: NSObject {
     func updateZoomLevels(_ levels: [UUID: CGFloat]) {
         self.zoomLevels = levels
         for service in services {
-            if let level = levels[service.id], let sessionMap = webviewsByID[service.id] {
-                sessionMap.values.forEach { $0.pageZoom = level }
+            guard let level = levels[service.id] else { continue }
+            for entry in webViews(for: service.id) {
+                entry.webView.pageZoom = level
             }
         }
     }
     
     func applyZoom(_ level: CGFloat, for serviceID: UUID) {
         zoomLevels[serviceID] = level
-        for service in services where service.id == serviceID {
-            if let sessionMap = webviewsByID[service.id] {
-                sessionMap.values.forEach { $0.pageZoom = level }
-            }
+        guard services.contains(where: { $0.id == serviceID }) else { return }
+        for entry in webViews(for: serviceID) {
+            entry.webView.pageZoom = level
         }
     }
 
@@ -622,9 +622,11 @@ final class WebViewManager: NSObject {
             tabPromptHistoryEnabledOverrides[serviceID] = [:]
         }
         tabPromptHistoryEnabledOverrides[serviceID]?[sessionIndex] = enabled
-        if let service = services.first(where: { $0.id == serviceID }),
-           let webView = webviewsByID[service.id]?[sessionIndex] {
-            pushRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
+        guard let service = services.first(where: { $0.id == serviceID }) else { return }
+        // The tab plus its popups: the indicator follows the setting on every
+        // page of that session, not just the main-window one.
+        for entry in webViews(for: serviceID) where entry.sessionIndex == sessionIndex {
+            pushRecordingIndicatorState(to: entry.webView, service: service, sessionIndex: sessionIndex)
         }
     }
 
@@ -652,7 +654,7 @@ final class WebViewManager: NSObject {
     }
 
     private func applyRecordingIndicatorState(to webView: WKWebView, service: Service, sessionIndex: Int) {
-        let isVisible = webView.superview?.isHidden == false
+        let isVisible = isWebContentVisible(webView)
         let enabled = isVisible && shouldShowRecordingIndicator(for: service, sessionIndex: sessionIndex)
         let style: String
         switch Settings.shared.promptRecordingIndicatorStyle {
@@ -683,17 +685,36 @@ final class WebViewManager: NSObject {
     }
 
     /// Makes web content see-through when the focus-loss effect is active,
-    /// so focus loss reads through the page itself. Clicks are still caught
-    /// by the focus shield above the wrappers, never by the page.
+    /// so focus loss reads through the page itself — in tabs and popups
+    /// alike. Clicks on the overlay are still caught by the focus shield
+    /// above the wrappers, never by the page.
     private var lastContentTransparent = false
+
+    /// Wrapper alpha for the focus-loss dim, single-sourced so surfaces
+    /// created mid-dim start consistent with live ones.
+    private func contentAlpha(for transparent: Bool) -> CGFloat {
+        transparent ? 0.5 : 1.0
+    }
+
+    /// Every wrapper that hosts managed web content: session wrappers from
+    /// their registry plus popup wrappers hosted by their windows. Focus-loss
+    /// effects reach both populations through here.
+    private var allHostingWrappers: [WebViewWrapperView] {
+        var wrappers = wrappersByID.values
+            .flatMap { $0.values }
+            .compactMap { $0 as? WebViewWrapperView }
+        wrappers += popupWindowsByToken.values.compactMap {
+            $0.hostedWebView?.superview as? WebViewWrapperView
+        }
+        return wrappers
+    }
+
     func setContentTransparent(_ transparent: Bool) {
         guard lastContentTransparent != transparent else { return }
         lastContentTransparent = transparent
-        let alpha: CGFloat = transparent ? 0.5 : 1.0
-        for wrapperMap in wrappersByID.values {
-            for wrapper in wrapperMap.values {
-                wrapper.alphaValue = alpha
-            }
+        let alpha = contentAlpha(for: transparent)
+        for wrapper in allHostingWrappers {
+            wrapper.alphaValue = alpha
         }
     }
 
@@ -711,11 +732,34 @@ final class WebViewManager: NSObject {
 
     func refreshAllRecordingIndicators() {
         for service in services {
-            guard let sessions = webviewsByID[service.id] else { continue }
-            for (sessionIndex, webView) in sessions {
-                pushRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
+            for entry in webViews(for: service.id) {
+                pushRecordingIndicatorState(to: entry.webView, service: service, sessionIndex: entry.sessionIndex)
             }
         }
+    }
+
+    /// Whether a managed webview is actually on screen. Ordered-out windows
+    /// (hidden-session popups, hidden overlay) hide their content regardless
+    /// of wrapper state; session tabs additionally hide behind their
+    /// wrapper's flag while the overlay stays up. Every consumer of "is this
+    /// page visible" goes through here so tabs and popups answer identically.
+    func isWebContentVisible(_ webView: WKWebView) -> Bool {
+        guard let window = webView.window, window.isVisible else { return false }
+        return (webView.superview as? WebViewWrapperView)?.isHidden != true
+    }
+
+    /// Syncs the page's input-tracker activation. Every
+    /// `__quiperInputTrackerActive` write goes through here so marker-free
+    /// (ephemeral) pages are never touched, no matter the caller's context.
+    func pushInputTrackerState(_ active: Bool, to webView: WKWebView) {
+        guard let (service, sessionIndex) = findServiceAndSession(for: webView),
+              !isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) else {
+            return
+        }
+        webView.evaluateJavaScript(
+            "window.__quiperInputTrackerActive = \(active ? "true" : "false");",
+            completionHandler: nil
+        )
     }
 
     func didReceiveInputTrackerReadyMessage(_ message: WKScriptMessage) {
@@ -726,11 +770,7 @@ final class WebViewManager: NSObject {
             return
         }
 
-        let isActive = webView.superview?.isHidden == false
-        webView.evaluateJavaScript(
-            "window.__quiperInputTrackerActive = \(isActive ? "true" : "false");",
-            completionHandler: nil
-        )
+        pushInputTrackerState(isWebContentVisible(webView), to: webView)
         pushRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
     }
 
@@ -933,6 +973,7 @@ final class WebViewManager: NSObject {
         wrapperView.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
         updateMaskedCorners(for: wrapperView)
         wrapperView.layer?.masksToBounds = true
+        wrapperView.alphaValue = contentAlpha(for: lastContentTransparent)
         wrapperView.isHidden = true
         
         let isUnlocked = !service.isEncrypted || EncryptedVolumeManager.shared.isUnlocked(for: service.id)
@@ -1396,16 +1437,8 @@ final class WebViewManager: NSObject {
             sessionMap.values.forEach { webView in
                 if let wrapper = webView.superview {
                     wrapper.isHidden = true
-                    webView.evaluateJavaScript(
-                        """
-                        window.__quiperInputTrackerActive = false;
-                        window.__quiperRecordingEnabled = false;
-                        if (typeof window.__quiperUpdateRecordingIndicator === 'function') {
-                            window.__quiperUpdateRecordingIndicator();
-                        }
-                        """,
-                        completionHandler: nil
-                    )
+                    pushInputTrackerState(false, to: webView)
+                    pushRecordingIndicatorState(to: webView)
                 }
             }
         }
@@ -1528,7 +1561,7 @@ final class WebViewManager: NSObject {
         }
         
         wrapper.isHidden = false
-        webView.evaluateJavaScript("window.__quiperInputTrackerActive = true", completionHandler: nil)
+        pushInputTrackerState(true, to: webView)
         pushRecordingIndicatorState(to: webView)
         
         if let container = containerView, wrapper.superview != container {
@@ -1821,13 +1854,16 @@ final class WebViewManager: NSObject {
         // rounded like the overlay.
         let wrapper = WebViewWrapperView(frame: popupWindow.contentView!.bounds)
         wrapper.autoresizingMask = [.width, .height]
+        // Matches the live focus-loss dim so a popup created while the
+        // overlay is unfocused starts consistent with its siblings.
+        wrapper.alphaValue = contentAlpha(for: lastContentTransparent)
         wrapper.addSubview(popupWebView)
         installErrorView(for: popupWebView, in: wrapper)
         popupWindow.contentView?.addSubview(wrapper)
         if startHidden {
             // Relaunch restore: stay ordered out until the session switch /
             // overlay show path syncs visibility for the active tab.
-            popupWindow.setSessionHidden(true)
+            setPopupVisibility(token: token, hidden: true)
         } else {
             popupWindow.makeKeyAndOrderFront(nil)
             // Composite immediately so opener chains attach to displayed
@@ -1893,6 +1929,17 @@ final class WebViewManager: NSObject {
         return controller
     }
 
+    /// Applies session-scoped popup visibility and syncs the popup page's
+    /// input tracker to the new state in the same step, so a popup that
+    /// loaded while hidden still tracks input the moment it is shown.
+    private func setPopupVisibility(token: ObjectIdentifier, hidden: Bool) {
+        guard let popupWindow = popupWindowsByToken[token] else { return }
+        popupWindow.setSessionHidden(hidden)
+        if let hostedWebView = popupWindow.hostedWebView {
+            pushInputTrackerState(!hidden, to: hostedWebView)
+        }
+    }
+
     /// Hides every popup whose owner is not `active` and re-shows (at its
     /// preserved frame) every popup owned by `active`. Popups without a known
     /// owner stay visible for every session, preserving the pre-scoping
@@ -1909,14 +1956,14 @@ final class WebViewManager: NSObject {
         }
         for token in orderedTokens {
             if let owner = popupOwnerByToken[token], owner != active {
-                popupWindowsByToken[token]?.setSessionHidden(true)
+                setPopupVisibility(token: token, hidden: true)
             }
         }
         for token in orderedTokens {
             if popupOwnerByToken[token] == nil {
-                popupWindowsByToken[token]?.setSessionHidden(false)
+                setPopupVisibility(token: token, hidden: false)
             } else if popupOwnerByToken[token] == active {
-                popupWindowsByToken[token]?.setSessionHidden(false)
+                setPopupVisibility(token: token, hidden: false)
             }
         }
     }
@@ -1925,8 +1972,8 @@ final class WebViewManager: NSObject {
     /// overlay has no active session (empty state).
     @MainActor
     func hideAllSessionPopups() {
-        for popupWindow in popupWindowsByToken.values {
-            popupWindow.setSessionHidden(true)
+        for token in popupWindowsByToken.keys {
+            setPopupVisibility(token: token, hidden: true)
         }
     }
 

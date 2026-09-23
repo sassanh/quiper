@@ -233,4 +233,80 @@ final class WebViewCreationGateTests: XCTestCase {
         XCTAssertNil(wrapper?.superview, "Popup teardown removes the wrapper, leaving no ghost surface")
         XCTAssertNil(popupWebView.superview, "The webview leaves its wrapper with the popup")
     }
+
+    func testZoomChangesPropagateToOpenPopups() {
+        let service = makeService()
+        let window = makeHostWindow()
+        let (manager, sessionWebView) = makeSession(with: service, in: window)
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            window.close()
+        }
+
+        guard let (popupWindow, popupWebView) = openPopup(from: manager) else {
+            XCTFail("A popup must exist to receive propagation")
+            return
+        }
+        defer { popupWindow.close() }
+
+        manager.applyZoom(1.5, for: service.id)
+
+        XCTAssertEqual(sessionWebView.pageZoom, 1.5, "Zoom reaches the session tab")
+        XCTAssertEqual(popupWebView.pageZoom, 1.5, "Zoom reaches open popups, not just tabs")
+    }
+
+    func testFocusDimPropagatesToPopupWrappers() {
+        let service = makeService()
+        let window = makeHostWindow()
+        let (manager, _) = makeSession(with: service, in: window)
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            window.close()
+        }
+
+        guard let (popupWindow, popupWebView) = openPopup(from: manager),
+              let wrapper = popupWebView.superview as? WebViewWrapperView else {
+            XCTFail("A hosted popup wrapper must exist")
+            return
+        }
+        defer { popupWindow.close() }
+
+        manager.setContentTransparent(true)
+        XCTAssertEqual(wrapper.alphaValue, 0.5, accuracy: 0.01, "Focus-loss dim reaches the popup wrapper")
+
+        manager.setContentTransparent(false)
+        XCTAssertEqual(wrapper.alphaValue, 1.0, accuracy: 0.01, "Restoring focus restores the popup wrapper")
+    }
+
+    func testVisibilityFollowsHostingForTabsAndPopups() {
+        let service = makeService()
+        let window = makeHostWindow()
+        let (manager, sessionWebView) = makeSession(with: service, in: window)
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            window.close()
+        }
+        // Host visible so its child popup can order in and out predictably.
+        window.makeKeyAndOrderFront(nil)
+
+        guard let (popupWindow, popupWebView) = openPopup(from: manager) else {
+            XCTFail("A popup must exist to inspect visibility")
+            return
+        }
+        defer { popupWindow.close() }
+
+        XCTAssertTrue(manager.isWebContentVisible(popupWebView), "A shown popup reports visible")
+        popupWindow.orderOut(nil)
+        XCTAssertFalse(
+            manager.isWebContentVisible(popupWebView),
+            "An ordered-out popup reports hidden even though its wrapper stays visible"
+        )
+        popupWindow.makeKeyAndOrderFront(nil)
+        XCTAssertTrue(manager.isWebContentVisible(popupWebView), "Re-showing the popup restores visibility")
+
+        sessionWebView.superview?.isHidden = false
+        XCTAssertTrue(manager.isWebContentVisible(sessionWebView), "A session tab follows its wrapper's flag")
+        sessionWebView.superview?.isHidden = true
+        XCTAssertFalse(manager.isWebContentVisible(sessionWebView), "A session tab behind a hidden wrapper reports hidden")
+    }
 }

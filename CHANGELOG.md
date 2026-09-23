@@ -8,6 +8,7 @@
 - **Popups Record Prompt Input to Their Tab**: Prompt input typed inside a popup now records to the owning tab's prompt history, just as if it had been typed in the tab itself.
 - **Right-Click Menus Reach Popup Windows**: Popup pages now offer the same link actions and Suggest Selector in the right-click menu as the main window, instead of WebKit's plain defaults.
 - **Load Errors Show in Popup Windows**: A failed page load in a popup now shows the same error panel with a retry action as the main window, instead of leaving a blank window with no way forward.
+- **Popup Windows Stay in Sync With Their Tab**: Zoom changes, prompt-recording indicator updates, and focus-loss dimming now reach popup windows, so popups match their owning tab at all times.
 
 ## [6.2.0] - 2026-09-23
 
