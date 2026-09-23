@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [6.2.0] - 2026-09-23
+
+This release adds ephemeral private tabs with `Cmd+P`, pinned-tab engines with a fixed URL per tab, and modifier-hold selector rings for sessions and engines.
+
 ### Added
 
 - **Modifier-Hold Selector Rings**: Holding the Go to session or Go to engine modifier can now open a preview-card ring instead of expanding the bar — sessions list the engine's open tabs, engines list all engines with icons. Each modifier gets its own Off, Expand, or HUD choice in Appearance settings. Hover, click, arrow keys, Enter, and digits all work in the ring, and releasing the modifier confirms the highlighted card.
