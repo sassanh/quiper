@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Popups Get the Main Window's Chrome**: Popup windows drop the macOS window shape for the overlay's borderless look — rounded corners, themed outline, shadow — and gain their own toolbar: back/forward with long-press history, refresh/stop, the page title, the animated loading border, drag-to-move, and a close button (`⌘W` still works). Session selectors, prompt history, and session actions stay out of popups, where they mean nothing.
+- **Close and Stop Loading Look Different**: The popup's close button now draws a circled X instead of the plain X that stop loading uses, so the two controls no longer read as one button while a page loads.
+
 ### Fixed
 
 - **Closing a Popup No Longer Silently Breaks the Opening Tab**: The tab that opened a popup keeps its custom styles, input tracking, prompt history, and notification support after the popup closes, instead of losing them on the tab's next reload.

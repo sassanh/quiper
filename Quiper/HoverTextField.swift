@@ -13,8 +13,8 @@ final class HoverTextField: NSTextField {
     var shouldShowTooltip: ((NSEvent) -> Bool)?
 
     /// Invoked on mouse-up when the gesture was a click (no significant
-    /// movement) anywhere on the title. Drags move the window instead, so
-    /// click and drag never conflict.
+    /// movement) anywhere on the title. Titles drag the window whether or
+    /// not a click action is set, so click and drag never conflict.
     var onClick: (() -> Void)?
 
     /// Builds the right-click menu for the title. Return nil for no menu.
@@ -80,31 +80,20 @@ final class HoverTextField: NSTextField {
 
     override func mouseDown(with event: NSEvent) {
         suppressNextClick = false
-        guard onClick != nil else {
-            super.mouseDown(with: event)
-            return
-        }
         dragTracker = WindowDragTracker(window: window)
         dragTracker?.begin()
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard onClick != nil else {
-            super.mouseDragged(with: event)
-            return
-        }
         dragTracker?.update()
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard onClick != nil else {
-            super.mouseUp(with: event)
-            return
-        }
         let didDrag = dragTracker?.end() ?? false
         dragTracker = nil
         defer { suppressNextClick = false }
         guard !suppressNextClick else { return }
+        guard onClick != nil else { return }
         let point = convert(event.locationInWindow, from: nil)
         if !didDrag && bounds.contains(point) {
             QuickTooltip.shared.hide(for: self)

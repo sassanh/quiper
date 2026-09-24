@@ -89,8 +89,9 @@ class ModalPopupTests: BaseUITest {
         
         XCTAssertNotNil(popupWindow, "Popup window should have opened in Quiper (not Safari)")
         
-        // 4. Close Popup Window manually
-        let closeButton = popupWindow!.buttons[XCUIIdentifierCloseWindow]
+        // 4. Close Popup Window manually — the toolbar's own close button,
+        // since the borderless window has no traffic lights.
+        let closeButton = popupWindow!.buttons["PopupCloseButton"]
         XCTAssertTrue(closeButton.waitForExistence(timeout: 2.0))
         closeButton.click()
         

@@ -435,11 +435,7 @@ extension MainWindowController {
 
     @objc func refreshStopTapped(_ sender: NSButton) {
         guard let webView = currentWebView() else { return }
-        if webView.isLoading {
-            webViewManager.stopLoading(webView)
-        } else {
-            webView.reload()
-        }
+        webViewManager.refreshOrStop(webView)
     }
 
     @objc func closeSessionTapped(_ sender: NSButton) {

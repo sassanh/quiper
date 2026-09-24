@@ -309,4 +309,97 @@ final class WebViewCreationGateTests: XCTestCase {
         sessionWebView.superview?.isHidden = true
         XCTAssertFalse(manager.isWebContentVisible(sessionWebView), "A session tab behind a hidden wrapper reports hidden")
     }
+
+    func testPopupWindowHasBorderlessMainWindowChrome() {
+        let service = makeService()
+        let window = makeHostWindow()
+        let (manager, _) = makeSession(with: service, in: window)
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            window.close()
+        }
+
+        guard let (popupWindow, popupWebView) = openPopup(from: manager) else {
+            XCTFail("A popup must exist to inspect its chrome")
+            return
+        }
+        defer { popupWindow.close() }
+
+        XCTAssertTrue(
+            popupWindow.styleMask.contains(.borderless),
+            "Popups drop the macOS window shape for the overlay's borderless chrome"
+        )
+        XCTAssertFalse(
+            popupWindow.styleMask.contains(.titled),
+            "The native title bar is gone with the chrome"
+        )
+        XCTAssertTrue(
+            popupWindow.canBecomeKey,
+            "A borderless popup must still take key status for keyboard routing"
+        )
+
+        guard let toolbar = popupWindow.contentView?.subviews.compactMap({ $0 as? PopupToolbarView }).first else {
+            XCTFail("Every popup hosts the toolbar")
+            return
+        }
+        XCTAssertTrue(
+            toolbar.subviews.contains { $0 === toolbar.refreshStopButton },
+            "Refresh/stop belongs in the popup toolbar"
+        )
+        XCTAssertTrue(
+            toolbar.subviews.contains { $0 === toolbar.closeButton },
+            "A borderless window needs its own close affordance"
+        )
+        XCTAssertTrue(
+            toolbar.refreshStopButton.target === toolbar,
+            "The refresh control routes through the toolbar"
+        )
+        XCTAssertNotNil(
+            toolbar.refreshStopButton.action,
+            "The refresh control is wired to the shared reload/stop capability"
+        )
+        XCTAssertTrue(
+            toolbar.navigationButtonGroup.isHidden,
+            "A fresh popup has nowhere to go back or forward to"
+        )
+        XCTAssertEqual(
+            toolbar.titleLabel.stringValue,
+            service.name,
+            "The toolbar title seeds with the engine name until the page reports one"
+        )
+
+        let wrapper = popupWebView.superview as? WebViewWrapperView
+        XCTAssertNotNil(wrapper, "The web content still sits in the shared wrapper")
+        XCTAssertEqual(
+            wrapper?.frame.maxY ?? -1,
+            toolbar.frame.minY,
+            accuracy: 0.5,
+            "Web content sits below the toolbar, like the main window's header"
+        )
+    }
+
+    func testPopupToolbarCloseButtonRunsTheSharedTeardown() {
+        let service = makeService()
+        let window = makeHostWindow()
+        let (manager, _) = makeSession(with: service, in: window)
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            window.close()
+        }
+
+        guard let (popupWindow, popupWebView) = openPopup(from: manager),
+              let toolbar = popupWindow.contentView?.subviews.compactMap({ $0 as? PopupToolbarView }).first else {
+            XCTFail("A popup with a toolbar must exist")
+            return
+        }
+        defer { popupWindow.close() }
+
+        toolbar.closeButton.performClick(nil)
+
+        XCTAssertFalse(
+            manager.isPopupWindow(popupWindow),
+            "The toolbar close button closes through the window's teardown"
+        )
+        XCTAssertNil(popupWebView.superview, "Closing unhosts the webview with its window")
+    }
 }

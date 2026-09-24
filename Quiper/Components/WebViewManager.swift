@@ -1424,6 +1424,18 @@ final class WebViewManager: NSObject {
         webView.stopLoading()
     }
 
+    /// Stops a loading page or reloads a settled one. The single
+    /// implementation behind every refresh control — the main window's
+    /// toolbar and each popup toolbar delegate here, so reload semantics
+    /// cannot drift between the two.
+    func refreshOrStop(_ webView: WKWebView) {
+        if webView.isLoading {
+            stopLoading(webView)
+        } else {
+            webView.reload()
+        }
+    }
+
     func hasVisibleLoadError(for webView: WKWebView) -> Bool {
         (webView.superview as? WebViewWrapperView)?.isShowingError == true
     }
@@ -1652,15 +1664,15 @@ final class WebViewManager: NSObject {
 
     /// Popup windows render the page title through the same manager
     /// observation as session tabs: "page title - engine name", falling back
-    /// to the engine name while the page has none.
+    /// to the engine name while the page has none. One string feeds both
+    /// the window title (Window menu, accessibility) and the borderless
+    /// toolbar label, which has no native title bar to draw it.
     private func updatePopupWindowTitle(for webView: WKWebView) {
-        guard let window = popupWindowsByToken[ObjectIdentifier(webView)],
+        guard let popupWindow = popupWindowsByToken[ObjectIdentifier(webView)],
               let serviceName = service(for: webView)?.name else { return }
-        if let pageTitle = Self.normalizedTitle(webView.title) {
-            window.title = "\(pageTitle) - \(serviceName)"
-        } else {
-            window.title = serviceName
-        }
+        let displayTitle = Self.normalizedTitle(webView.title).map { "\($0) - \(serviceName)" } ?? serviceName
+        popupWindow.title = displayTitle
+        popupWindow.setToolbarTitle(displayTitle)
     }
     
     // MARK: - Private Helpers
@@ -1830,7 +1842,7 @@ final class WebViewManager: NSObject {
         configuration.userContentController = WKUserContentController()
         let popupWebView = makeManagedWebView(
             configuration: configuration,
-            frame: popupWindow.contentView!.bounds,
+            frame: popupWindow.webContentFrame,
             service: service,
             sessionIndex: owner.sessionIndex,
             isQuiperPrivate: isQuiperPrivateTab(serviceID: owner.serviceID, sessionIndex: owner.sessionIndex)
@@ -1846,20 +1858,23 @@ final class WebViewManager: NSObject {
         popupWindow.onClose = { [weak self] in
             self?.unregisterPopupWebView(token: token)
         }
-        popupWindow.title = service.name
+        popupWindow.onRefreshStop = { [weak self, weak popupWebView] in
+            guard let self, let popupWebView else { return }
+            self.refreshOrStop(popupWebView)
+        }
+        updatePopupWindowTitle(for: popupWebView)
 
         // Host the popup webview in the same wrapper sessions use, so the
         // load-error surface, first-responder plumbing, and find bar behave
-        // identically inside popups. Square corners: popup windows are not
-        // rounded like the overlay.
-        let wrapper = WebViewWrapperView(frame: popupWindow.contentView!.bounds)
-        wrapper.autoresizingMask = [.width, .height]
+        // identically inside popups. The wrapper rounds like the overlay's
+        // content: popups share its borderless chrome now.
+        let wrapper = WebViewWrapperView(frame: popupWindow.webContentFrame)
         // Matches the live focus-loss dim so a popup created while the
         // overlay is unfocused starts consistent with its siblings.
         wrapper.alphaValue = contentAlpha(for: lastContentTransparent)
+        popupWindow.hostWebContent(wrapper)
         wrapper.addSubview(popupWebView)
         installErrorView(for: popupWebView, in: wrapper)
-        popupWindow.contentView?.addSubview(wrapper)
         if startHidden {
             // Relaunch restore: stay ordered out until the session switch /
             // overlay show path syncs visibility for the active tab.
@@ -2302,7 +2317,18 @@ final class WebViewManager: NSObject {
 @MainActor
 private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
     var onClose: (@MainActor () -> Void)?
-    weak var hostedWebView: WKWebView?
+    /// Set by the manager: the shared refresh/stop toggle for this popup's
+    /// page, so reload semantics stay single-sourced with the main toolbar.
+    var onRefreshStop: (@MainActor () -> Void)?
+    weak var hostedWebView: WKWebView? {
+        didSet {
+            guard let hostedWebView else { return }
+            observeNavigationState(of: hostedWebView)
+        }
+    }
+    let toolbarView = PopupToolbarView(frame: .zero)
+    private let outlineView = WindowOutlineView(frame: .zero)
+    private var navigationObservations: [NSKeyValueObservation] = []
     private var shield: InteractionShieldView?
     private weak var parentWin: NSWindow?
     private var isCleaningUp = false
@@ -2311,10 +2337,19 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
     /// parent's flag before handing focus back, so closing an opener does
     /// not re-show it via a child's deferred activation.
     var isClosing: Bool { isCleaningUp }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    /// Borderless windows have no close button for AppKit's default path;
+    /// the toolbar button and ⌘W both land here.
+    override func performClose(_ sender: Any?) {
+        close()
+    }
     
     init(contentRect: NSRect, parentWindow: NSWindow) {
         self.parentWin = parentWindow
-        super.init(contentRect: contentRect, styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        super.init(contentRect: contentRect, styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
         
         self.level = .floating
         self.collectionBehavior = Settings.shared.showOnAllSpaces
@@ -2322,6 +2357,12 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
             : [.moveToActiveSpace, .fullScreenAuxiliary]
         self.isReleasedWhenClosed = false // Critical: Prevent double-release when used with addChildWindow
         self.delegate = self
+        // The overlay's window shape: clear, rounded by its container,
+        // shadowed, and resizable from the edges.
+        self.isOpaque = false
+        self.backgroundColor = .clear
+        self.hasShadow = true
+        self.minSize = NSSize(width: Constants.WINDOW_MIN_WIDTH, height: Constants.WINDOW_MIN_HEIGHT)
         
         parentWindow.addChildWindow(self, ordered: .above)
         
@@ -2330,6 +2371,8 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
         let x = parentFrame.midX - contentRect.width / 2
         let y = parentFrame.midY - contentRect.height / 2
         self.setFrameOrigin(NSPoint(x: x, y: y))
+
+        installChrome()
         
         if let contentView = parentWindow.contentView {
             let shieldView = InteractionShieldView(frame: contentView.bounds)
@@ -2339,6 +2382,134 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
         }
     }
     
+    /// Builds the borderless window's chrome: rounded container, blur
+    /// material, the toolbar strip at the top, and the outline that must
+    /// stay above web content. The web wrapper is inserted below the
+    /// toolbar later, in `hostWebContent`.
+    private func installChrome() {
+        guard let existingContent = contentView else { return }
+
+        let container = WindowContentView(frame: existingContent.bounds)
+        container.autoresizingMask = [.width, .height]
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor(white: 0, alpha: 0.01).cgColor
+        container.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
+        container.layer?.masksToBounds = true
+        contentView = container
+
+        let effect = NSVisualEffectView(frame: container.bounds)
+        effect.material = .underWindowBackground
+        effect.state = .active
+        effect.blendingMode = .behindWindow
+        effect.autoresizingMask = [.width, .height]
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
+        effect.layer?.masksToBounds = true
+        container.addSubview(effect, positioned: .below, relativeTo: nil)
+
+        let barHeight = CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
+        toolbarView.frame = NSRect(
+            x: 0,
+            y: container.bounds.height - barHeight,
+            width: container.bounds.width,
+            height: barHeight
+        )
+        // Rounded where it meets the window's top corners, like the
+        // overlay's bar.
+        toolbarView.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
+        toolbarView.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        container.addSubview(toolbarView)
+
+        outlineView.frame = container.bounds
+        outlineView.autoresizingMask = [.width, .height]
+        container.addSubview(outlineView)
+
+        toolbarView.onBack = { [weak self] in self?.hostedWebView?.goBack() }
+        toolbarView.onForward = { [weak self] in self?.hostedWebView?.goForward() }
+        toolbarView.onLongPressBack = { [weak self] in
+            guard let webView = self?.hostedWebView else { return [] }
+            return webView.backForwardList.backList.reversed().map { ($0.title ?? "", $0.url) }
+        }
+        toolbarView.onLongPressForward = { [weak self] in
+            guard let webView = self?.hostedWebView else { return [] }
+            return webView.backForwardList.forwardList.map { ($0.title ?? "", $0.url) }
+        }
+        toolbarView.onNavigateToBackItem = { [weak self] index in
+            guard let webView = self?.hostedWebView else { return }
+            let backList = Array(webView.backForwardList.backList.reversed())
+            guard index < backList.count else { return }
+            webView.go(to: backList[index])
+        }
+        toolbarView.onNavigateToForwardItem = { [weak self] index in
+            guard let webView = self?.hostedWebView else { return }
+            let forwardList = webView.backForwardList.forwardList
+            guard index < forwardList.count else { return }
+            webView.go(to: forwardList[index])
+        }
+        toolbarView.onRefreshStop = { [weak self] in self?.onRefreshStop?() }
+        toolbarView.onClose = { [weak self] in self?.performClose(nil) }
+    }
+
+    /// The frame for this popup's web content: the window below the
+    /// toolbar strip.
+    var webContentFrame: NSRect {
+        guard let contentView else { return .zero }
+        return NSRect(
+            x: 0,
+            y: 0,
+            width: contentView.bounds.width,
+            height: max(0, contentView.bounds.height - CGFloat(Constants.DRAGGABLE_AREA_HEIGHT))
+        )
+    }
+
+    /// Hosts the web content wrapper below the toolbar and beneath the
+    /// outline, which must stay above web content. The wrapper rounds its
+    /// bottom corners like the overlay's content; the toolbar owns the
+    /// top.
+    func hostWebContent(_ wrapper: NSView) {
+        wrapper.frame = webContentFrame
+        wrapper.autoresizingMask = [.width, .height]
+        wrapper.wantsLayer = true
+        wrapper.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
+        wrapper.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        wrapper.layer?.masksToBounds = true
+        contentView?.addSubview(wrapper, positioned: .below, relativeTo: toolbarView)
+    }
+
+    /// Mirrors the window title into the toolbar label; a borderless
+    /// window has no native title bar to render it.
+    func setToolbarTitle(_ title: String) {
+        toolbarView.setTitleText(title)
+    }
+
+    /// Back/forward availability and loading state for this popup's page —
+    /// the same observation the main window keeps on its current tab.
+    private func observeNavigationState(of webView: WKWebView) {
+        navigationObservations = [
+            webView.observe(\.canGoBack, options: [.new]) { [weak self] webView, _ in
+                DispatchQueue.main.async { self?.syncNavigationState(for: webView) }
+            },
+            webView.observe(\.canGoForward, options: [.new]) { [weak self] webView, _ in
+                DispatchQueue.main.async { self?.syncNavigationState(for: webView) }
+            },
+            webView.observe(\.isLoading, options: [.new]) { [weak self] webView, _ in
+                DispatchQueue.main.async { self?.syncLoadingState(for: webView) }
+            },
+        ]
+        syncNavigationState(for: webView)
+        syncLoadingState(for: webView)
+    }
+
+    private func syncNavigationState(for webView: WKWebView) {
+        guard webView === hostedWebView else { return }
+        toolbarView.updateNavigation(showBack: webView.canGoBack, showForward: webView.canGoForward)
+    }
+
+    private func syncLoadingState(for webView: WKWebView) {
+        guard webView === hostedWebView else { return }
+        toolbarView.setLoading(webView.isLoading)
+    }
+
     /// Session-scoped hide/show. Hiding orders the window out (preserving its
     /// frame for an exact restore) and hides its modal shield so the newly
     /// active session stays interactive. Showing restores the shield and, when
@@ -2376,6 +2547,9 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
     private func cleanup() {
         guard !isCleaningUp else { return }
         isCleaningUp = true
+
+        navigationObservations.forEach { $0.invalidate() }
+        navigationObservations = []
 
         // Close child popups first so none outlive their parent as detached
         // orphans. Copied: closing detaches each child from this window.
