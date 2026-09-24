@@ -2352,7 +2352,13 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
             orderOut(nil)
         } else {
             shield?.isHidden = false
-            guard parentWin?.isVisible == true else { return }
+            guard let parentWin, parentWin.isVisible == true else { return }
+            // Re-pin child above parent in creation order: orderOut cycles
+            // plus AppKit's automatic reshow do not reliably restore child
+            // stacking, so a click can otherwise bring the parent front.
+            // Re-adding moves this child front among its siblings; callers
+            // show oldest-first so the newest ends on top.
+            parentWin.addChildWindow(self, ordered: .above)
             if isVisible {
                 // Re-assert creation-order position: AppKit's own reshow of
                 // a hidden tree does not reliably restore child stacking.

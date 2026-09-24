@@ -9,6 +9,7 @@
 - **Right-Click Menus Reach Popup Windows**: Popup pages now offer the same link actions and Suggest Selector in the right-click menu as the main window, instead of WebKit's plain defaults.
 - **Load Errors Show in Popup Windows**: A failed page load in a popup now shows the same error panel with a retry action as the main window, instead of leaving a blank window with no way forward.
 - **Popup Windows Stay in Sync With Their Tab**: Zoom changes, prompt-recording indicator updates, and focus-loss dimming now reach popup windows, so popups match their owning tab at all times.
+- **Popup Windows Keep Their Order When Switching Tabs**: Switching sessions no longer lets the main window render in front of its popups — popups keep their stacking so the newest stays on top.
 
 ## [6.2.0] - 2026-09-23
 
