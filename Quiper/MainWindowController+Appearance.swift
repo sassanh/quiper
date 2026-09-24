@@ -4,35 +4,65 @@ extension MainWindowController {
     
     // MARK: - Appearance & Theming
 
-    /// True only when the user can actually interact with the overlay content.
-    /// Settings and update prompts take key in child windows; the overlay
-    /// behind them counts as unfocused so its animations freeze.
-    var hasWindowFocus: Bool {
-        guard let window else { return false }
-        guard window.isKeyWindow, NSApp.isActive else { return false }
+    /// True when Quiper's own UI can be interacted with at all: the app is
+    /// active and no settings window or update prompt sits above the
+    /// overlay. Settings and update prompts take key in child windows; the
+    /// overlay behind them counts as unfocused so its animations freeze.
+    var isOverlayInteractable: Bool {
+        guard NSApp.isActive else { return false }
         if AppDelegate.sharedSettingsWindow.isVisible { return false }
         if UpdatePromptWindowController.shared.window?.isVisible == true { return false }
         return true
     }
 
+    /// True while the user can interact with the overlay content as a
+    /// whole: Quiper is in use and one of its own windows — the main
+    /// window *or* a popup — holds key status. App-wide state (tooltip
+    /// spinner, composer recording indicator) follows this.
+    var hasWindowFocus: Bool {
+        guard let window else { return false }
+        guard isOverlayInteractable else { return false }
+        return window.isKeyWindow || webViewManager?.hasKeyPopupWindow == true
+    }
+
+    /// The focus-loss dim for one specific window of the overlay. Exactly
+    /// one window can be active — the key one, while Quiper is in use —
+    /// so only that window renders clear and every other window, main or
+    /// popup, stays dimmed. Single gate: windows never judge their own
+    /// dim.
+    func focusLossEffectApplies(to target: NSWindow?) -> Bool {
+        guard Settings.shared.focusLossEffectEnabled else { return false }
+        guard let target, isOverlayInteractable, target.isKeyWindow else { return true }
+        return false
+    }
+
     /// Single gate for focus-driven chrome state. Animation freezing
-    /// (outline, title border, tooltip) and the composer indicator hide
-    /// always follow focus. Visuals (vibrancy, outline/margin dim, header
-    /// dim, content transparency, focus shield) follow the focus-loss
-    /// effect setting. Web content is only faded, never recolored.
+    /// (outline, title border) follows the main window's own key status,
+    /// so a background window stays quiet; the tooltip spinner and the
+    /// composer indicator hide follow `hasWindowFocus` — they report
+    /// whether Quiper is in use at all. Visuals (vibrancy, outline/margin
+    /// dim, header dim, content transparency, focus shield) are judged
+    /// per window through `focusLossEffectApplies(to:)`: only the active
+    /// window renders clear. Web content is only faded, never recolored.
     func updateFocusAppearance() {
-        let focused = hasWindowFocus
-        let effectOn = !focused && Settings.shared.focusLossEffectEnabled
-        windowOutlineView?.setWindowFocused(focused)
-        windowMarginView?.setWindowFocused(focused)
-        loadingBorderView?.setWindowFocused(focused)
-        QuickTooltip.shared.setWindowFocused(focused)
-        webViewManager?.setWindowHasFocus(focused)
-        backgroundEffectView?.state = effectOn ? .inactive : .active
-        webViewManager?.setContentTransparent(effectOn)
-        emptyStateView?.alphaValue = effectOn ? 0.5 : 1.0
-        setHeaderDimmed(effectOn)
-        setFocusShieldHidden(!effectOn)
+        let overlayFocused = hasWindowFocus
+        let mainWindowFocused = isOverlayInteractable && window?.isKeyWindow == true
+        let mainEffectOn = focusLossEffectApplies(to: window)
+        windowOutlineView?.setWindowFocused(mainWindowFocused)
+        windowMarginView?.setWindowFocused(mainWindowFocused)
+        loadingBorderView?.setWindowFocused(mainWindowFocused)
+        QuickTooltip.shared.setWindowFocused(overlayFocused)
+        webViewManager?.setWindowHasFocus(overlayFocused)
+        backgroundEffectView?.state = mainEffectOn ? .inactive : .active
+        webViewManager?.setSessionContentTransparent(mainEffectOn)
+        emptyStateView?.alphaValue = mainEffectOn ? 0.5 : 1.0
+        setHeaderDimmed(mainEffectOn)
+        setFocusShieldHidden(!mainEffectOn)
+        if let manager = webViewManager {
+            for popupWindow in manager.popupWindows {
+                manager.setPopupContentTransparent(focusLossEffectApplies(to: popupWindow), for: popupWindow)
+            }
+        }
     }
 
     /// Shows the transparent focus shield when unfocused. Repositions it

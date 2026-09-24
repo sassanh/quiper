@@ -166,6 +166,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var isLoadingObservation: NSKeyValueObservation?
     var sessionActionsButton: NSButton!
     var manualLockButton: NSButton!
+    var hideWindowButton: HoverIconButton!
     var serviceListObservation: NSKeyValueObservation?
     
     var activeDownloads: [Any] = [] 
@@ -1564,6 +1565,16 @@ struct SecureTabState: Codable {
         manualLockButton = lockBtn
         updateLockButtonToolTip()
 
+        // Window Hide Button — the mouse path to hide(); the trash beside it
+        // closes the session, this one keeps every tab.
+        let hideImage = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: "Hide Window")!
+            .withSymbolConfiguration(iconConfig)!
+        let hideBtn = HoverIconButton(image: hideImage, target: self, action: #selector(hideWindowTapped(_:)))
+        hideBtn.tooltipText = "Hide Window"
+        hideBtn.setAccessibilityIdentifier("HideWindowButton")
+        drag.addSubview(hideBtn)
+        hideWindowButton = hideBtn
+
         layoutSelectors()
         NotificationCenter.default.addObserver(self, selector: #selector(handleDockVisibilityChanged), name: .dockVisibilityChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleSelectorDisplayModeChanged), name: .selectorDisplayModeChanged, object: nil)
@@ -1572,6 +1583,8 @@ struct SecureTabState: Codable {
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowAppearanceChanged), name: .windowAppearanceChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationStatusChanged), name: NSApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationStatusChanged), name: NSApplication.didResignActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handlePopupKeyStatusChanged), name: NSWindow.didBecomeKeyNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handlePopupKeyStatusChanged), name: NSWindow.didResignKeyNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleWorkspaceWake), name: NSWorkspace.didWakeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleColorSchemeChanged), name: .colorSchemeChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowOnAllSpacesChanged), name: .showOnAllSpacesChanged, object: nil)
@@ -1627,6 +1640,17 @@ struct SecureTabState: Codable {
             hideLocationBarHUD()
         }
         updateHeaderVisibility(animated: true)
+        updateFocusAppearance()
+    }
+
+    /// Popup windows take and drop key status without ever passing through
+    /// the main window's own delegate events, so the shared focus gate must
+    /// re-run whenever one of them changes key: the dim then follows the
+    /// user's actual focus instead of freezing after the main window left
+    /// key status behind.
+    @objc private func handlePopupKeyStatusChanged(_ notification: Notification) {
+        guard let popupWindow = notification.object as? NSWindow,
+              webViewManager?.isPopupWindow(popupWindow) == true else { return }
         updateFocusAppearance()
     }
 

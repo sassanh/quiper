@@ -684,11 +684,12 @@ final class WebViewManager: NSObject {
         webView.evaluateJavaScript(js, completionHandler: nil)
     }
 
-    /// Makes web content see-through when the focus-loss effect is active,
-    /// so focus loss reads through the page itself — in tabs and popups
-    /// alike. Clicks on the overlay are still caught by the focus shield
-    /// above the wrappers, never by the page.
-    private var lastContentTransparent = false
+    /// Focus-loss dim for the main window's session pages, so focus loss
+    /// reads through the page itself; popups are judged per window via
+    /// `setPopupContentTransparent(_:for:)`. Clicks on the overlay are
+    /// still caught by the focus shield above the session wrappers, never
+    /// by the page.
+    private var lastSessionContentTransparent = false
 
     /// Wrapper alpha for the focus-loss dim, single-sourced so surfaces
     /// created mid-dim start consistent with live ones.
@@ -696,31 +697,39 @@ final class WebViewManager: NSObject {
         transparent ? 0.5 : 1.0
     }
 
-    /// Every wrapper that hosts managed web content: session wrappers from
-    /// their registry plus popup wrappers hosted by their windows. Focus-loss
-    /// effects reach both populations through here.
-    private var allHostingWrappers: [WebViewWrapperView] {
-        var wrappers = wrappersByID.values
+    /// The main window's session wrappers — one population of the hosted
+    /// web content, kept apart from popups because each window dims by
+    /// its own focus.
+    private var sessionWrappers: [WebViewWrapperView] {
+        wrappersByID.values
             .flatMap { $0.values }
             .compactMap { $0 as? WebViewWrapperView }
-        wrappers += popupWindowsByToken.values.compactMap {
-            $0.hostedWebView?.superview as? WebViewWrapperView
-        }
-        return wrappers
     }
 
-    func setContentTransparent(_ transparent: Bool) {
-        guard lastContentTransparent != transparent else { return }
-        lastContentTransparent = transparent
+    func setSessionContentTransparent(_ transparent: Bool) {
+        guard lastSessionContentTransparent != transparent else { return }
+        lastSessionContentTransparent = transparent
         let alpha = contentAlpha(for: transparent)
-        for wrapper in allHostingWrappers {
+        for wrapper in sessionWrappers {
             wrapper.alphaValue = alpha
         }
     }
 
+    /// Focus-loss dim for one popup's page, judged from that popup
+    /// window's own focus: only the popup holding key status renders
+    /// clear while the main window and sibling popups stay dimmed.
+    func setPopupContentTransparent(_ transparent: Bool, for popupWindow: NSWindow) {
+        guard let popup = popupWindowsByToken.values.first(where: { $0 === popupWindow }),
+              let wrapper = popup.hostedWebView?.superview as? WebViewWrapperView else { return }
+        wrapper.alphaValue = contentAlpha(for: transparent)
+    }
+
     /// Pushes window focus to every managed webview so the composer recording
-    /// indicator can hide its animations while unfocused. Ephemeral tabs are
-    /// skipped: they carry no Quiper markers and must stay marker-free.
+    /// indicator can hide its animations while Quiper as a whole is
+    /// unfocused — any of the overlay's windows being key counts as focused,
+    /// so a recording keeps showing while the user works in a popup.
+    /// Ephemeral tabs are skipped: they carry no Quiper markers and must stay
+    /// marker-free.
     func setWindowHasFocus(_ focused: Bool) {
         guard windowHasFocus != focused else { return }
         windowHasFocus = focused
@@ -973,7 +982,7 @@ final class WebViewManager: NSObject {
         wrapperView.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
         updateMaskedCorners(for: wrapperView)
         wrapperView.layer?.masksToBounds = true
-        wrapperView.alphaValue = contentAlpha(for: lastContentTransparent)
+        wrapperView.alphaValue = contentAlpha(for: lastSessionContentTransparent)
         wrapperView.isHidden = true
         
         let isUnlocked = !service.isEncrypted || EncryptedVolumeManager.shared.isUnlocked(for: service.id)
@@ -1869,9 +1878,11 @@ final class WebViewManager: NSObject {
         // identically inside popups. The wrapper rounds like the overlay's
         // content: popups share its borderless chrome now.
         let wrapper = WebViewWrapperView(frame: popupWindow.webContentFrame)
-        // Matches the live focus-loss dim so a popup created while the
-        // overlay is unfocused starts consistent with its siblings.
-        wrapper.alphaValue = contentAlpha(for: lastContentTransparent)
+        // Seeds the focus-loss dim this popup will be judged by: dimmed
+        // only when the effect is on and the overlay is inactive — every
+        // other case starts clear. The popup's own key notification then
+        // re-evaluates the exact state for this window right away.
+        wrapper.alphaValue = contentAlpha(for: Settings.shared.focusLossEffectEnabled && !NSApp.isActive)
         popupWindow.hostWebContent(wrapper)
         wrapper.addSubview(popupWebView)
         installErrorView(for: popupWebView, in: wrapper)
@@ -1910,6 +1921,21 @@ final class WebViewManager: NSObject {
     @MainActor
     func isPopupWindow(_ window: NSWindow) -> Bool {
         popupWindowsByToken.values.contains { $0 === window }
+    }
+
+    /// Whether any popup window currently holds key status. The overlay's
+    /// focus gate counts popup focus exactly like main-window focus, so
+    /// clicking a popup can never strand every window in the focus-loss dim.
+    @MainActor
+    var hasKeyPopupWindow: Bool {
+        popupWindowsByToken.values.contains { $0.isKeyWindow }
+    }
+
+    /// The manager's live popup windows, so focus-driven appearance can be
+    /// judged and applied to each window individually.
+    @MainActor
+    var popupWindows: [NSWindow] {
+        Array(popupWindowsByToken.values)
     }
 
     /// The popup webview hosted by `window`, or nil when `window` is not a

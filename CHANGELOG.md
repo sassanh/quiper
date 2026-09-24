@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Hide the Overlay With the Mouse**: The main window's header gains a circled-X hide button at its trailing edge. It dismisses Quiper exactly like the hide shortcut and keeps every tab open, so the overlay can be put away without the keyboard.
+
 ### Changed
 
 - **Popups Get the Main Window's Chrome**: Popup windows drop the macOS window shape for the overlay's borderless look — rounded corners, themed outline, shadow — and gain their own toolbar: back/forward with long-press history, refresh/stop, the page title, the animated loading border, drag-to-move, and a close button (`⌘W` still works). Session selectors, prompt history, and session actions stay out of popups, where they mean nothing.
@@ -15,6 +19,7 @@
 - **Load Errors Show in Popup Windows**: A failed page load in a popup now shows the same error panel with a retry action as the main window, instead of leaving a blank window with no way forward.
 - **Popup Windows Stay in Sync With Their Tab**: Zoom changes, prompt-recording indicator updates, and focus-loss dimming now reach popup windows, so popups match their owning tab at all times.
 - **Popup Windows Keep Their Order When Switching Tabs**: Switching sessions no longer lets the main window render in front of its popups — popups keep their stacking so the newest stays on top.
+- **Only the Active Window Stays Clear**: The focus-loss dim judges each window on its own: whichever Quiper window holds focus — the main window or a popup — renders clear while every other window stays dimmed. Clicking a popup lifts the dim from that popup alone instead of dimming the whole overlay behind it, and leaving the app still dims everything.
 
 ## [6.2.0] - 2026-09-23
 

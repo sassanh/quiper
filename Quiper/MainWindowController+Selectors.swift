@@ -22,7 +22,9 @@ extension MainWindowController {
             let minTitleWidth: CGFloat = 120
 
             let showActionsButton = Settings.shared.dockVisibility == .never
-            let rightOffset = showActionsButton ? (inset + buttonSize + gap) : inset
+            // The trailing edge always holds the hide button; session actions
+            // adds a second slot to its left when the dock stays hidden.
+            let rightOffset = inset + buttonSize + gap + (showActionsButton ? (buttonSize + gap) : 0)
 
             let expandedEngineWidth = max(minimumServiceWidth, estimatedWidthForServiceSegments())
             let compactEngineWidth = collapsibleServiceSelector?.currentWidth ?? 0
@@ -97,6 +99,7 @@ extension MainWindowController {
         
         guard let drag = dragArea,
               let title = titleLabel,
+              let hideWindowButton = hideWindowButton,
               let actionsBtn = sessionActionsButton else { return }
 
         let isBottom = Settings.shared.dragAreaPosition == .bottom
@@ -138,9 +141,16 @@ extension MainWindowController {
         let showActionsButton = Settings.shared.dockVisibility == .never
         actionsBtn.isHidden = !showActionsButton
 
+        hideWindowButton.frame = NSRect(
+            x: drag.bounds.width - inset - buttonSize,
+            y: buttonY,
+            width: buttonSize,
+            height: buttonSize
+        )
+
         if showActionsButton {
             actionsBtn.frame = NSRect(
-                x: drag.bounds.width - inset - buttonSize,
+                x: hideWindowButton.frame.minX - gap - buttonSize,
                 y: buttonY,
                 width: buttonSize,
                 height: buttonSize
@@ -149,7 +159,7 @@ extension MainWindowController {
             actionsBtn.frame = .zero
         }
 
-        let rightReferenceX = showActionsButton ? (actionsBtn.frame.minX - gap) : (drag.bounds.width - inset)
+        let rightReferenceX = showActionsButton ? (actionsBtn.frame.minX - gap) : (hideWindowButton.frame.minX - gap)
 
         let sessionWidth: CGFloat
         if let sessionSel = activeSessionSel {
@@ -308,7 +318,7 @@ extension MainWindowController {
                 width: titleWidth,
                 height: selectorHeight
             )
-            borderView.isHidden = isEmptyStateActive || shouldHideTitleArea || !borderView.isAnimating || (!hasWindowFocus && Settings.shared.focusLossEffectEnabled)
+            borderView.isHidden = isEmptyStateActive || shouldHideTitleArea || !borderView.isAnimating || focusLossEffectApplies(to: window)
         }
         
         let titlePadding: CGFloat = 4

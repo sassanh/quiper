@@ -442,6 +442,12 @@ extension MainWindowController {
         closeCurrentTab()
     }
 
+    /// The header's mouse path to `hide()` — the same dismissal the hide
+    /// shortcut takes, with every tab left open.
+    @objc func hideWindowTapped(_ sender: NSButton) {
+        hide()
+    }
+
     func buildSessionActionsMenu() -> NSMenu {
         let menu = NSMenu(title: "Session Actions")
         menu.autoenablesItems = false

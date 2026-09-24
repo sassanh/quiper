@@ -441,7 +441,8 @@ final class QuickTooltip: NSPanel {
         }
     }
     
-    /// Freeze the tooltip spinner while the main window is unfocused.
+    /// Freeze the tooltip spinner while Quiper itself is unfocused — any
+    /// of the overlay's windows holding key status keeps it running.
     /// Intent is preserved; it resumes if still loading on refocus.
     func setWindowFocused(_ focused: Bool) {
         loadingBorderView.setWindowFocused(focused)

@@ -255,27 +255,44 @@ final class WebViewCreationGateTests: XCTestCase {
         XCTAssertEqual(popupWebView.pageZoom, 1.5, "Zoom reaches open popups, not just tabs")
     }
 
-    func testFocusDimPropagatesToPopupWrappers() {
+    func testFocusDimAppliesToEachWindowIndependently() {
         let service = makeService()
         let window = makeHostWindow()
-        let (manager, _) = makeSession(with: service, in: window)
+        let (manager, sessionWebView) = makeSession(with: service, in: window)
         defer {
             manager.removeWebView(for: service, sessionIndex: 0)
             window.close()
         }
 
         guard let (popupWindow, popupWebView) = openPopup(from: manager),
-              let wrapper = popupWebView.superview as? WebViewWrapperView else {
+              let popupWrapper = popupWebView.superview as? WebViewWrapperView else {
             XCTFail("A hosted popup wrapper must exist")
             return
         }
         defer { popupWindow.close() }
+        guard let sessionWrapper = sessionWebView.superview as? WebViewWrapperView else {
+            XCTFail("A hosted session wrapper must exist")
+            return
+        }
 
-        manager.setContentTransparent(true)
-        XCTAssertEqual(wrapper.alphaValue, 0.5, accuracy: 0.01, "Focus-loss dim reaches the popup wrapper")
+        // Each population dims through its own window's gate: dimming the
+        // main window's sessions leaves the popup untouched. A popup
+        // seeds its starting dim from ambient app activity the test host
+        // controls, so pin its baseline before comparing.
+        manager.setPopupContentTransparent(false, for: popupWindow)
+        manager.setSessionContentTransparent(true)
+        XCTAssertEqual(sessionWrapper.alphaValue, 0.5, accuracy: 0.01, "Focus-loss dim reaches the session wrapper")
+        XCTAssertEqual(popupWrapper.alphaValue, 1.0, accuracy: 0.01, "Session dimming never reaches the popup wrapper")
 
-        manager.setContentTransparent(false)
-        XCTAssertEqual(wrapper.alphaValue, 1.0, accuracy: 0.01, "Restoring focus restores the popup wrapper")
+        // ...and the popup dims independently of the session tabs.
+        manager.setPopupContentTransparent(true, for: popupWindow)
+        XCTAssertEqual(popupWrapper.alphaValue, 0.5, accuracy: 0.01, "Focus-loss dim reaches the popup wrapper")
+        XCTAssertEqual(sessionWrapper.alphaValue, 0.5, accuracy: 0.01, "Popup dimming never reaches the session wrappers")
+
+        manager.setSessionContentTransparent(false)
+        manager.setPopupContentTransparent(false, for: popupWindow)
+        XCTAssertEqual(sessionWrapper.alphaValue, 1.0, accuracy: 0.01, "Restoring focus restores the session wrapper")
+        XCTAssertEqual(popupWrapper.alphaValue, 1.0, accuracy: 0.01, "Restoring focus restores the popup wrapper")
     }
 
     func testVisibilityFollowsHostingForTabsAndPopups() {
