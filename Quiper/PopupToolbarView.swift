@@ -13,7 +13,7 @@ final class PopupToolbarView: DraggableView {
     let titleLabel = HoverTextField(labelWithString: "")
     let loadingBorderView = LoadingBorderView()
     let refreshStopButton = RefreshStopButton()
-    let closeButton: HoverIconButton
+    let closeButton: WindowCloseButton
 
     var onBack: (() -> Void)?
     var onForward: (() -> Void)?
@@ -25,12 +25,10 @@ final class PopupToolbarView: DraggableView {
     var onClose: (() -> Void)?
 
     override init(frame frameRect: NSRect) {
-        // Circled X: the stop-loading control uses the plain X, and the two
-        // sit side by side in this toolbar while a page loads.
-        let closeConfig = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
-        let closeImage = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: "Close Window")!
-            .withSymbolConfiguration(closeConfig)!
-        closeButton = HoverIconButton(image: closeImage, target: nil, action: nil)
+        // The shared close affordance beside refresh/stop at the trailing
+        // end: close draws ✕ and stop draws ■, so side by side the two
+        // controls stay unmistakable.
+        closeButton = WindowCloseButton(accessibilityDescription: "Close Window", target: nil, action: nil)
 
         super.init(frame: frameRect)
         setAccessibilityIdentifier("PopupToolbar")
@@ -115,6 +113,9 @@ final class PopupToolbarView: DraggableView {
         let buttonY = (headerHeight - buttonSize) / 2
         let groupY = (headerHeight - groupHeight) / 2
 
+        // Close and refresh/stop share the trailing end — their glyphs
+        // (✕ vs ■) keep them distinct — with navigation and the page
+        // title leading at the left.
         closeButton.frame = NSRect(
             x: bounds.width - inset - buttonSize,
             y: buttonY,

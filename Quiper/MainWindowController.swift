@@ -1492,13 +1492,14 @@ struct SecureTabState: Codable {
         drag.addSubview(navGroup)
         navigationButtonGroup = navGroup
         
-        // Trash Button Y & Size config
-        let buttonIconConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
         
         // Prompt History Button
-        let historyImage = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: "Prompt History")!
-            .withSymbolConfiguration(buttonIconConfig)!
-        let historyBtn = HoverIconButton(image: historyImage, target: self, action: #selector(promptHistoryButtonTapped(_:)))
+        let historyBtn = HoverIconButton(
+            symbolName: "clock.arrow.circlepath",
+            accessibilityDescription: "Prompt History",
+            target: self,
+            action: #selector(promptHistoryButtonTapped(_:))
+        )
         historyBtn.tooltipText = "Prompt History"
         historyBtn.tooltipShortcut = "⌘Y"
         drag.addSubview(historyBtn)
@@ -1512,8 +1513,12 @@ struct SecureTabState: Codable {
         refreshStopButton = rsButton
 
         // Trash Button
-        let trashImage = NSImage(systemSymbolName: "trash", accessibilityDescription: "Close Current Session")!.withSymbolConfiguration(buttonIconConfig)!
-        let trashBtn = HoverIconButton(image: trashImage, target: self, action: #selector(closeSessionTapped(_:)))
+        let trashBtn = HoverIconButton(
+            symbolName: "trash",
+            accessibilityDescription: "Close Current Session",
+            target: self,
+            action: #selector(closeSessionTapped(_:))
+        )
         trashBtn.tooltipText = "Close Current Session"
         trashBtn.tooltipShortcut = "⌘W"
         drag.addSubview(trashBtn)
@@ -1551,25 +1556,31 @@ struct SecureTabState: Codable {
         borderView.enablesWindowDrag = true
 
         // Session Actions Button
-        let iconConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-        let actionsImage = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Session Actions")!.withSymbolConfiguration(iconConfig)!
-        let actionsBtn = HoverIconButton(image: actionsImage, target: self, action: #selector(sessionActionsButtonTapped(_:)))
+        let actionsBtn = HoverIconButton(
+            symbolName: "ellipsis",
+            accessibilityDescription: "Session Actions",
+            target: self,
+            action: #selector(sessionActionsButtonTapped(_:))
+        )
         actionsBtn.tooltipText = "Session Actions"
         drag.addSubview(actionsBtn)
         sessionActionsButton = actionsBtn
 
         // Manual Lock Button
-        let lockImage = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Lock Engine")!.withSymbolConfiguration(iconConfig)!
-        let lockBtn = HoverIconButton(image: lockImage, target: self, action: #selector(manualLockTapped(_:)))
+        let lockBtn = HoverIconButton(
+            symbolName: "lock.fill",
+            accessibilityDescription: "Lock Engine",
+            target: self,
+            action: #selector(manualLockTapped(_:))
+        )
         drag.addSubview(lockBtn)
         manualLockButton = lockBtn
         updateLockButtonToolTip()
 
-        // Window Hide Button — the mouse path to hide(); the trash beside it
+        // Window Hide Button — the shared window close affordance at the
+        // header's trailing edge, the mouse path to hide(); the trash
         // closes the session, this one keeps every tab.
-        let hideImage = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: "Hide Window")!
-            .withSymbolConfiguration(iconConfig)!
-        let hideBtn = HoverIconButton(image: hideImage, target: self, action: #selector(hideWindowTapped(_:)))
+        let hideBtn = WindowCloseButton(accessibilityDescription: "Hide Window", target: self, action: #selector(hideWindowTapped(_:)))
         hideBtn.tooltipText = "Hide Window"
         hideBtn.setAccessibilityIdentifier("HideWindowButton")
         drag.addSubview(hideBtn)

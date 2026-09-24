@@ -51,6 +51,10 @@ final class MainWindowHideButtonTests: XCTestCase {
             accuracy: 0.5,
             "The hide button sits flush against the header's trailing edge"
         )
+        XCTAssertTrue(
+            hideButton is WindowCloseButton,
+            "The main window uses the same close-button implementation as popups"
+        )
     }
 
     // MARK: - Helpers

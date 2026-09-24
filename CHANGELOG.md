@@ -4,12 +4,14 @@
 
 ### Added
 
-- **Hide the Overlay With the Mouse**: The main window's header gains a circled-X hide button at its trailing edge. It dismisses Quiper exactly like the hide shortcut and keeps every tab open, so the overlay can be put away without the keyboard.
+- **Hide the Overlay With the Mouse**: The main window's header gains a ✕ hide button at its trailing edge. It dismisses Quiper exactly like the hide shortcut and keeps every tab open, so the overlay can be put away without the keyboard.
 
 ### Changed
 
 - **Popups Get the Main Window's Chrome**: Popup windows drop the macOS window shape for the overlay's borderless look — rounded corners, themed outline, shadow — and gain their own toolbar: back/forward with long-press history, refresh/stop, the page title, the animated loading border, drag-to-move, and a close button (`⌘W` still works). Session selectors, prompt history, and session actions stay out of popups, where they mean nothing.
-- **Close and Stop Loading Look Different**: The popup's close button now draws a circled X instead of the plain X that stop loading uses, so the two controls no longer read as one button while a page loads.
+- **Close and Stop Side by Side, Never Confused**: The popup's close button and refresh/stop share the toolbar's trailing end, drawn as different glyphs — close ✕, stop ■ — so the two can never read as one control while a page loads.
+- **Stop Loading Reads as Stop**: The stop-loading control now draws the standard filled square instead of another ✕ — in the popup toolbar, the main header, and the iOS control bar alike.
+- **One Icon Size Across the Overlay**: Every header and toolbar button — history, trash, actions, lock, close, refresh/stop, back/forward — now draws its glyph from a single shared size and weight, so no control looks off-grid beside its neighbors.
 
 ### Fixed
 

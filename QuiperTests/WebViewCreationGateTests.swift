@@ -4,7 +4,8 @@ import WebKit
 @testable import Quiper
 
 /// Guarantees of the single creation gate and shared teardown introduced to
-/// make popup webviews first-class managed webviews.
+/// make popup webviews first-class managed webviews, plus the popup
+/// toolbar's chrome contracts: control placement and glyphs.
 @MainActor
 final class WebViewCreationGateTests: XCTestCase {
     // WebViewManager holds its container weakly; the test must retain it.
@@ -418,5 +419,55 @@ final class WebViewCreationGateTests: XCTestCase {
             "The toolbar close button closes through the window's teardown"
         )
         XCTAssertNil(popupWebView.superview, "Closing unhosts the webview with its window")
+    }
+
+    func testPopupCloseButtonOccupiesTheToolbarTrailingEdge() {
+        let service = makeService()
+        let window = makeHostWindow()
+        let (manager, _) = makeSession(with: service, in: window)
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            window.close()
+        }
+
+        guard let (popupWindow, _) = openPopup(from: manager),
+              let toolbar = popupWindow.contentView?.subviews.compactMap({ $0 as? PopupToolbarView }).first else {
+            XCTFail("A popup with a toolbar must exist")
+            return
+        }
+        defer { popupWindow.close() }
+
+        toolbar.frame = NSRect(x: 0, y: 0, width: 480, height: 36)
+        toolbar.layout()
+
+        XCTAssertEqual(
+            toolbar.closeButton.frame.maxX,
+            toolbar.bounds.maxX - 4,
+            accuracy: 0.5,
+            "Close keeps the toolbar's trailing edge"
+        )
+        XCTAssertLessThan(
+            toolbar.refreshStopButton.frame.maxX,
+            toolbar.closeButton.frame.minX,
+            "Refresh/stop sits left of close; their ■ and ✕ glyphs tell the two apart"
+        )
+    }
+
+    func testCloseAndStopUseDistinctGlyphs() {
+        XCTAssertEqual(
+            WindowCloseButton.symbolName,
+            "xmark",
+            "Close keeps the standard plain ✕ every macOS window draws"
+        )
+        XCTAssertEqual(
+            RefreshStopButton.stopSymbolName,
+            "stop.fill",
+            "Stop-loading keeps the filled square wherever Quiper shows it"
+        )
+        XCTAssertNotEqual(
+            WindowCloseButton.symbolName,
+            RefreshStopButton.stopSymbolName,
+            "Two different controls can never share a glyph"
+        )
     }
 }

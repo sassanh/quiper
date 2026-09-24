@@ -72,7 +72,7 @@ enum MenuFactory {
         let menu = NSMenu(title: "Window")
         menu.autoenablesItems = true
         
-        let closeItem = createMenuItem(title: "Close Session", iconName: "xmark.circle", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let closeItem = createMenuItem(title: "Close Session", iconName: "xmark", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         menu.addItem(closeItem)
         
         menu.addItem(.separator())

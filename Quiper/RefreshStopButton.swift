@@ -2,17 +2,19 @@ import AppKit
 
 final class RefreshStopButton: HoverIconButton {
     
-    private static let refreshImage: NSImage = {
-        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
-        return NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "Reload")!
-            .withSymbolConfiguration(config)!
-    }()
+    private static let refreshImage: NSImage = HoverIconButton.symbolImage(
+        named: "arrow.clockwise",
+        accessibilityDescription: "Reload"
+    )
     
-    private static let stopImage: NSImage = {
-        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
-        return NSImage(systemSymbolName: "xmark", accessibilityDescription: "Stop Loading")!
-            .withSymbolConfiguration(config)!
-    }()
+    /// The one symbol stop-loading draws — a filled square, never an ✕,
+    /// so close and stop can never look like the same button.
+    static let stopSymbolName = "stop.fill"
+
+    private static let stopImage: NSImage = HoverIconButton.symbolImage(
+        named: RefreshStopButton.stopSymbolName,
+        accessibilityDescription: "Stop Loading"
+    )
     
     var isLoadingState = false {
         didSet {

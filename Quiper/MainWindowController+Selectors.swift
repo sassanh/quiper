@@ -5,6 +5,13 @@ extension MainWindowController {
     
     // MARK: - Selector Layout & Synchronization
     
+    /// The header's edge inset — one rule shared by the auto-compact
+    /// estimate and the real layout: hidden top-bar mode sits flush to
+    /// the window edge.
+    var headerInset: CGFloat {
+        Settings.shared.topBarVisibility == .hidden ? 0 : 4
+    }
+
     func updateSelectorsMode() {
         let engineMode = Settings.shared.engineSelectorDisplayMode
         let sessionMode = Settings.shared.sessionSelectorDisplayMode
@@ -13,7 +20,7 @@ extension MainWindowController {
         let automaticSelectorsUseCompact: Bool = {
             guard engineMode == .auto || sessionMode == .auto else { return false }
 
-            let inset: CGFloat = 4
+            let inset: CGFloat = headerInset
             let isHiddenMode = Settings.shared.topBarVisibility == .hidden
             let gap: CGFloat = isHiddenMode ? 8 : 4
             let buttonSize: CGFloat = 24
@@ -116,7 +123,7 @@ extension MainWindowController {
         let buttonSize: CGFloat = 24
         let minimumServiceWidth: CGFloat = 150
 
-        let inset: CGFloat = isHiddenMode ? 0 : 4
+        let inset: CGFloat = headerInset
 
         let selectorY: CGFloat = {
             if isHiddenMode {

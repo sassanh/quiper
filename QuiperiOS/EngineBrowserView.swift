@@ -1389,7 +1389,7 @@ private struct NavigationControls: View {
                     reload()
                 }
             } label: {
-                Image(systemName: session.isLoading ? "xmark" : "arrow.clockwise")
+                Image(systemName: session.isLoading ? "stop.fill" : "arrow.clockwise")
                     .font(.system(size: 18, weight: .medium))
                     .frame(width: 34, height: 34)
                     .glassIsland(in: Circle(), interactive: true)

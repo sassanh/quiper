@@ -2,6 +2,19 @@ import AppKit
 
 class HoverIconButton: NSButton {
     
+    /// The one icon configuration every overlay chrome glyph draws at, so
+    /// the header and its toolbars never disagree on size or weight.
+    static var iconConfiguration: NSImage.SymbolConfiguration {
+        NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+    }
+
+    /// The single path from a symbol name to a glyph image — size and
+    /// weight live here, never at the call site.
+    static func symbolImage(named name: String, accessibilityDescription: String) -> NSImage {
+        NSImage(systemSymbolName: name, accessibilityDescription: accessibilityDescription)!
+            .withSymbolConfiguration(iconConfiguration)!
+    }
+
     enum BorderMode {
         case single
         case leftSegment
@@ -47,6 +60,16 @@ class HoverIconButton: NSButton {
     
     override var acceptsFirstResponder: Bool { false }
     
+    /// Builds a chrome glyph button straight from a symbol name, so no
+    /// caller ever picks its own size or weight.
+    convenience init(symbolName: String, accessibilityDescription: String, target: AnyObject?, action: Selector?) {
+        self.init(
+            image: HoverIconButton.symbolImage(named: symbolName, accessibilityDescription: accessibilityDescription),
+            target: target,
+            action: action
+        )
+    }
+
     init(image: NSImage, target: AnyObject?, action: Selector?) {
         super.init(frame: .zero)
         self.image = image

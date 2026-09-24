@@ -21,16 +21,11 @@ final class NavigationButtonGroup: NSView {
     override var acceptsFirstResponder: Bool { false }
     
     init() {
-        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
-        let backImage = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: "Go Back")!
-            .withSymbolConfiguration(config)!
-        let forwardImage = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: "Go Forward")!
-            .withSymbolConfiguration(config)!
         
-        backButton = HoverIconButton(image: backImage, target: nil, action: nil)
+        backButton = HoverIconButton(symbolName: "chevron.left", accessibilityDescription: "Go Back", target: nil, action: nil)
         backButton.tooltipText = "Go Back"
         backButton.tooltipShortcut = "⌘["
-        forwardButton = HoverIconButton(image: forwardImage, target: nil, action: nil)
+        forwardButton = HoverIconButton(symbolName: "chevron.right", accessibilityDescription: "Go Forward", target: nil, action: nil)
         forwardButton.tooltipText = "Go Forward"
         forwardButton.tooltipShortcut = "⌘]"
         
