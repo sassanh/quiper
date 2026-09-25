@@ -155,7 +155,7 @@ final class HybridSelectorInteractionsUITests: BaseUITest {
         let collapsedSessionSel = sessionSelector
         print("Debug: Session Selector Frame: \(collapsedSessionSel.frame)")
         
-        collapsedSessionSel.hover()
+        collapsedSessionSel.hoverAtCenter()
         wait(0.5)
         
         // Click Session 3
@@ -170,7 +170,7 @@ final class HybridSelectorInteractionsUITests: BaseUITest {
         let collapsedServiceSel = serviceSelector
         print("Debug: Service Selector Frame: \(collapsedServiceSel.frame)")
         
-        collapsedServiceSel.hover()
+        collapsedServiceSel.hoverAtCenter()
         wait(0.5)
         
         // Click first service

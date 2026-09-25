@@ -184,7 +184,7 @@ final class NavigationShortcutsUITests: BaseUITest {
         for assignment in assignments.reversed() {
             let cell = app.outlines.cells.containing(.staticText, identifier: assignment.rowTitle).firstMatch
             if cell.waitForExistence(timeout: 2.0) {
-                cell.hover()
+                cell.hoverAtCenter()
                 let recorder = cell.descendants(matching: .any).matching(identifier: assignment.id).firstMatch
                 let clearButton = recorder.buttons.matching(identifier: "xmark.circle.fill").firstMatch
                 if clearButton.waitForExistence(timeout: 2.0) {
@@ -224,7 +224,7 @@ final class NavigationShortcutsUITests: BaseUITest {
         for assignment in assignments {
             let cell = app.outlines.cells.containing(.staticText, identifier: assignment.rowTitle).firstMatch
             if cell.waitForExistence(timeout: 2.0) {
-                cell.hover()
+                cell.hoverAtCenter()
                 let recorder = cell.descendants(matching: .any).matching(identifier: assignment.id).firstMatch
                 let resetButton = recorder.buttons.matching(identifier: "arrow.counterclockwise.circle.fill").firstMatch
                 if resetButton.waitForExistence(timeout: 2.0) {

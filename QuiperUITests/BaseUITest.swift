@@ -7,6 +7,7 @@ class BaseUITest: XCTestCase {
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
+        SystemDialogMonitor.register(on: self)
         app = XCUIApplication()
         app.launchArguments = launchArguments
         app.launch()

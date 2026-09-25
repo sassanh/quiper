@@ -140,7 +140,7 @@ final class ScreenshotGenerator: BaseUITest {
         print("🔥 Pre-warming engines...")
         var selector = overlayWindow.radioButtons[engines[0]]
         for engine in engines {
-            selector.hover()
+            selector.hoverAtCenter()
             let engineButton = selectorDialog.radioButtons[engine]
 
             if engineButton.waitForExistence(timeout: 10) {
@@ -159,7 +159,7 @@ final class ScreenshotGenerator: BaseUITest {
         var shuffledQuestions = questions.shuffled()
         
         for engine in engines {
-            selector.hover()
+            selector.hoverAtCenter()
             let engineButton = selectorDialog.radioButtons[engine]
 
             print("Processing engine: \(engine)")
@@ -184,20 +184,20 @@ final class ScreenshotGenerator: BaseUITest {
             }
         }
 
-        selector.hover()
+        selector.hoverAtCenter()
         var engineButton = selectorDialog.radioButtons[engines[2]]
         engineButton.click()
         
         print("Processing feature_selectors...")
         requestUserConfirmation(name: "feature_selectors")
         
-        selector.hover()
+        selector.hoverAtCenter()
         wait(0.2)
         // Capture the whole app to include the expanded panel (child window)
         saveScreenshot(name: "feature_selectors", element: app)
         
         print("Processing hero...")
-        selector.hover()
+        selector.hoverAtCenter()
         engineButton = selectorDialog.radioButtons[engines[0]]
 
         if engineButton.waitForExistence(timeout: 10) {
