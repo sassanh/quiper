@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- **Link Actions Work Inside Iframes**: Right-clicking a link inside an embedded frame and choosing Open Link Here, Open Link in New Window, Open Link in System Browser, or Open Private now opens that link, instead of the item silently doing nothing.
 - **Closing a Popup No Longer Silently Breaks the Opening Tab**: The tab that opened a popup keeps its custom styles, input tracking, prompt history, and notification support after the popup closes, instead of losing them on the tab's next reload.
 - **Popups Record Prompt Input to Their Tab**: Prompt input typed inside a popup now records to the owning tab's prompt history, just as if it had been typed in the tab itself.
 - **Right-Click Menus Reach Popup Windows**: Popup pages now offer the same link actions and Suggest Selector in the right-click menu as the main window, instead of WebKit's plain defaults.

@@ -123,6 +123,14 @@ final class WebViewManager: NSObject {
     private var lastKnownTitlesByWebView: [ObjectIdentifier: String] = [:]
     private var activeRequestURLsByWebView: [ObjectIdentifier: URL] = [:]
     private var failedRequestURLsByWebView: [ObjectIdentifier: URL] = [:]
+    // Context-menu link recording: the latest recorder posting, and when its
+    // menu opened. A posting answers a menu only from the same webview and
+    // only from within the delivery allowance before the menu opened or any
+    // time after it; postings outside that window are ignored. What the
+    // allowance does and does not guarantee is stated with
+    // `ContextLinkRecording.menuDeliveryAllowance`.
+    private var pendingContextLinkRecording: ContextLinkRecording?
+    private var contextMenuOpenedAt: Date?
     private var processTerminationRetryStates: [ObjectIdentifier: WebProcessTerminationRetryState] = [:]
     private var activeDownloads: [Any] = []
     
@@ -1314,6 +1322,10 @@ final class WebViewManager: NSObject {
             let inputHandler = InputStateScriptMessageHandler(manager: self)
             userContentController.add(inputHandler, name: "quiperInputState")
             userContentController.add(inputHandler, name: "quiperInputTrackerReady")
+            userContentController.add(
+                ContextLinkScriptMessageHandler(manager: self),
+                name: WebScripts.contextLinkHandlerName
+            )
         }
 
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
@@ -1742,6 +1754,7 @@ final class WebViewManager: NSObject {
         let controller = webView.configuration.userContentController
         controller.removeScriptMessageHandler(forName: "quiperInputState")
         controller.removeScriptMessageHandler(forName: "quiperInputTrackerReady")
+        controller.removeScriptMessageHandler(forName: WebScripts.contextLinkHandlerName)
 
         // Resume and clear any pending navigation continuation to prevent CheckedContinuation leaks
         if let continuation = navigationContinuations.removeValue(forKey: token) {
@@ -1751,6 +1764,11 @@ final class WebViewManager: NSObject {
         serviceIDsByWebView.removeValue(forKey: token)
         pendingLazyLoadURLs.removeValue(forKey: token)
         lastKnownTitlesByWebView.removeValue(forKey: token)
+        // A destroyed webview's recording can never answer a menu again;
+        // dropping it keeps the slot from holding dead state.
+        if pendingContextLinkRecording?.webViewIdentifier == token {
+            pendingContextLinkRecording = nil
+        }
         removeLoadState(for: token)
 
         // The controller is this webview's own, so stripping it breaks the
@@ -3182,19 +3200,93 @@ private final class InputStateScriptMessageHandler: NSObject, WKScriptMessageHan
     }
 }
 
+/// Delivers the context-menu recorder's link posting to the manager.
+/// Deliberately non-isolated like `InputStateScriptMessageHandler`: WebKit
+/// calls back from its own context, so the handler hops to the main actor.
+private final class ContextLinkScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    private weak var manager: WebViewManager?
+
+    init(manager: WebViewManager) {
+        self.manager = manager
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == WebScripts.contextLinkHandlerName else { return }
+        let mgr = manager
+        Task { @MainActor in
+            mgr?.didReceiveContextLinkMessage(message)
+        }
+    }
+}
+
 // MARK: - Webview context menu
 //
 // WebKit exposes no delegate API for its context menu on macOS, but the
 // native menu passes through `NSView.willOpenMenu`, where
 // `ContextMenuWebView` replaces the default Open-Link items with ours and
-// inserts Suggest Selector on top. The manager resolves the href at the
-// click point and performs the navigation, so explicit link choices always
-// load exactly where chosen, bypassing link routing.
+// inserts Suggest Selector on top. The manager resolves the href and
+// performs the navigation, so explicit link choices always load exactly
+// where chosen, bypassing link routing. Resolution prefers the posting the
+// context-menu recorder made inside the frame that received the right-click
+// — the only document that can see anchors inside a subframe — and falls
+// back to point math in the main frame.
+
+/// One context-menu link posting: the anchor href resolved inside the frame
+/// that received a right-click, identified by the webview it came from and
+/// the moment native received it.
+struct ContextLinkRecording {
+    /// Binds a posting to its menu. Posting and menu open are milliseconds
+    /// apart, so one second is orders of magnitude above normal delivery;
+    /// the bound exists so an earlier menu's posting can only answer a later
+    /// one when this menu's own posting never arrives and the earlier one
+    /// landed inside this window.
+    static let menuDeliveryAllowance: TimeInterval = 1
+
+    let href: String
+    let webViewIdentifier: ObjectIdentifier
+    let receivedAt: Date
+
+    /// Whether this posting answers the menu that opened at `openedAt` on
+    /// `webView`: same webview, and received within the delivery allowance
+    /// before the menu opened or any time after it (delivery can trail the
+    /// menu). A posting outside that window is from an earlier right-click
+    /// and must fall back to point resolution rather than open a stale link.
+    func answers(menuOpenedAt openedAt: Date, on webView: WKWebView) -> Bool {
+        webViewIdentifier == ObjectIdentifier(webView)
+            && receivedAt >= openedAt.addingTimeInterval(-Self.menuDeliveryAllowance)
+    }
+}
+
+@MainActor
+extension WebViewManager {
+    /// Accepts the href the context-menu recorder posted from whichever
+    /// frame received the right-click. Every right-click posts at most one
+    /// posting — empty href when it hit no link. A posting native cannot
+    /// attribute to a webview clears the slot instead of being dropped, so
+    /// resolution falls back rather than risk an earlier menu's link.
+    func didReceiveContextLinkMessage(_ message: WKScriptMessage) {
+        guard message.name == WebScripts.contextLinkHandlerName else { return }
+        guard let payload = message.body as? [String: Any],
+              let webView = message.webView else {
+            pendingContextLinkRecording = nil
+            return
+        }
+        pendingContextLinkRecording = ContextLinkRecording(
+            href: payload["href"] as? String ?? "",
+            webViewIdentifier: ObjectIdentifier(webView),
+            receivedAt: Date()
+        )
+    }
+}
 
 @MainActor
 extension WebViewManager: WebViewContextMenuDelegate {
     func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {
         delegate?.webViewDidRequestSelectorSuggest(webView, at: point)
+    }
+
+    func webViewWillOpenContextMenu(_ webView: WKWebView) {
+        contextMenuOpenedAt = Date()
     }
 
     func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool {
@@ -3231,21 +3323,53 @@ extension WebViewManager: WebViewContextMenuDelegate {
         openInPopup(url: url, service: service, configuration: opener.configuration, parentWindow: parentWindow, opener: opener)
     }
 
-    /// Resolves the anchor href under a view point (origin bottom-left) via
-    /// the page, preferring the recorder's fresh contextmenu point. Nil when
-    /// the point hits no http(s) link.
+    /// Resolves the link chosen from the context menu. Prefers the href the
+    /// recorder posted from the frame that received the right-click — the
+    /// only path that sees anchors inside a subframe — when that posting
+    /// belongs to this menu; otherwise falls back to resolving at the view
+    /// point in the main frame, preferring the recorder's fresh contextmenu
+    /// point. Nil when neither path yields an http(s) link. A posting is
+    /// consumed either way: one posting resolves at most one menu action.
     private func resolveLinkURL(in webView: WKWebView, at viewPoint: NSPoint, completion: @escaping @MainActor @Sendable (URL?) -> Void) {
+        let recording = pendingContextLinkRecording
+        pendingContextLinkRecording = nil
+        if let url = Self.recordedContextLinkURL(
+            recording: recording,
+            menuOpenedAt: contextMenuOpenedAt,
+            for: webView
+        ) {
+            completion(url)
+            return
+        }
         let zoom = webView.pageZoom > 0 ? webView.pageZoom : 1
         let client = NSPoint(x: viewPoint.x / zoom, y: (webView.bounds.height - viewPoint.y) / zoom)
         webView.evaluateJavaScript(WebScripts.makeLinkHrefScript(x: client.x, y: client.y)) { result, _ in
-            guard let href = result as? String, !href.isEmpty,
-                  let url = URL(string: href),
-                  let scheme = url.scheme?.lowercased(),
-                  ["http", "https"].contains(scheme) else {
-                completion(nil)
-                return
-            }
-            completion(url)
+            completion(Self.validatedLinkURL(from: result as? String ?? ""))
         }
+    }
+
+    /// The recorded half of `resolveLinkURL`: the URL when `recording`
+    /// answers the menu open since `openedAt` on `webView`. Nil — fall back
+    /// to point resolution — with no recording, no recorded menu, another
+    /// webview's posting, a posting from before the allowance window, or a
+    /// non-http(s) href.
+    static func recordedContextLinkURL(
+        recording: ContextLinkRecording?,
+        menuOpenedAt: Date?,
+        for webView: WKWebView
+    ) -> URL? {
+        guard let recording, let openedAt = menuOpenedAt,
+              recording.answers(menuOpenedAt: openedAt, on: webView)
+        else { return nil }
+        return validatedLinkURL(from: recording.href)
+    }
+
+    /// Single validation for link actions: only http(s) hrefs qualify.
+    private static func validatedLinkURL(from href: String) -> URL? {
+        guard !href.isEmpty,
+              let url = URL(string: href),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme) else { return nil }
+        return url
     }
 }

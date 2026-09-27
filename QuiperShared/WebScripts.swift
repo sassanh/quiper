@@ -1669,11 +1669,21 @@ enum WebScripts {
         """
     }
 
+    /// Script message handler name for context-menu link resolution: the
+    /// recorder posts the right-clicked anchor here, `WebViewManager`
+    /// registers the receiving side. Shared so the two cannot drift.
+    static let contextLinkHandlerName = "quiperContextLink"
+
     /// Records the last right-click point (viewport coordinates plus timestamp)
     /// so a context menu action can resolve the clicked element without native
-    /// point math. Installed at document start, before page scripts run, so the
-    /// capture listener always records even on pages that suppress their own
-    /// menu.
+    /// point math, and posts the anchor href resolved inside the frame that
+    /// received the event — the only document that can see its own anchors,
+    /// since the main frame cannot descend into a subframe. One right-click
+    /// lands in exactly one frame, so at most one posting follows it (empty
+    /// href when the click hit no link); pages can suppress the listener, so
+    /// native treats the posting as optional. Installed at document start,
+    /// before page scripts run, so the capture listener always records even
+    /// on pages that suppress their own menu.
     static func makeContextMenuRecorderScript() -> WKUserScript {
         let source = """
         (function() {
@@ -1683,6 +1693,22 @@ enum WebScripts {
           document.addEventListener("contextmenu", function(e) {
             try {
               window.__quiperLastContextMenu = { x: e.clientX, y: e.clientY, t: Date.now() };
+            } catch (err) {}
+            try {
+              var selector = "a[href], area[href]";
+              var path = e.composedPath ? e.composedPath() : [];
+              var node = path.length > 0 ? path[0] : e.target;
+              var anchor = null;
+              if (node && node.nodeType === 1 && node.closest) anchor = node.closest(selector);
+              // closest() stops at a shadow boundary, so a light-DOM anchor
+              // wrapping a component only resolves from the retargeted target.
+              if (!anchor && e.target && e.target.nodeType === 1 && e.target.closest) {
+                anchor = e.target.closest(selector);
+              }
+              var href = anchor ? (anchor.href || "") : "";
+              if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(contextLinkHandlerName)) {
+                window.webkit.messageHandlers.\(contextLinkHandlerName).postMessage({ href: href });
+              }
             } catch (err) {}
           }, true);
         })();

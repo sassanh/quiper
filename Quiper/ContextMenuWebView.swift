@@ -21,10 +21,14 @@ protocol WebViewContextMenuDelegate: AnyObject {
     /// A link menu item was chosen. The manager resolves the href at `point`
     /// and performs the navigation, so the view never touches page content.
     func webView(_ webView: WKWebView, didRequestLinkAction action: ContextMenuLinkAction, at point: NSPoint)
+    /// The native menu is about to open. The manager records the moment so a
+    /// context-link posting can be tied to the menu that follows it.
+    func webViewWillOpenContextMenu(_ webView: WKWebView)
 }
 
 extension WebViewContextMenuDelegate {
     func webView(_ webView: WKWebView, didRequestLinkAction action: ContextMenuLinkAction, at point: NSPoint) {}
+    func webViewWillOpenContextMenu(_ webView: WKWebView) {}
 }
 
 /// Session webview that edits WebKit's native context menu. WebKit exposes
@@ -57,6 +61,7 @@ final class ContextMenuWebView: WKWebView {
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
         lastMenuPoint = convert(event.locationInWindow, from: nil)
+        contextMenuDelegate?.webViewWillOpenContextMenu(self)
         insertLinkItemsIfNeeded(into: menu)
         insertSuggestItemIfNeeded(into: menu)
     }

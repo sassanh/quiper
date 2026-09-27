@@ -40,6 +40,14 @@ final class WebViewContextMenuTests: XCTestCase {
         XCTAssertTrue(script.contains("\"contextmenu\""))
         XCTAssertTrue(script.contains("clientX"))
         XCTAssertTrue(script.contains("Date.now()"))
+        // The anchor is resolved in the frame that received the right-click
+        // and posted to native, so links inside subframes survive
+        // main-frame-only evaluation.
+        XCTAssertTrue(script.contains(WebScripts.contextLinkHandlerName))
+        XCTAssertTrue(script.contains("composedPath"))
+        XCTAssertTrue(script.contains("closest"))
+        XCTAssertTrue(script.contains("e.target.closest"))
+        XCTAssertTrue(script.contains("postMessage"))
     }
 
     func testPageMenuGainsSuggestItem() throws {
@@ -199,6 +207,154 @@ final class WebViewContextMenuTests: XCTestCase {
         XCTAssertTrue(script.contains("closest"))
         XCTAssertTrue(script.contains("a[href]"))
         XCTAssertTrue(script.contains("__quiperLastContextMenu"))
+    }
+
+    func testContextLinkRecordingAnswersOnlyItsOwnMenu() {
+        let webView = WKWebView()
+        let otherWebView = WKWebView()
+        let menuOpenedAt = Date()
+
+        // Delivered just before the menu opened and just after it (delivery
+        // trailing the menu) both answer this menu.
+        let deliveredBefore = ContextLinkRecording(
+            href: "https://example.com/before",
+            webViewIdentifier: ObjectIdentifier(webView),
+            receivedAt: menuOpenedAt.addingTimeInterval(-0.5)
+        )
+        XCTAssertTrue(deliveredBefore.answers(menuOpenedAt: menuOpenedAt, on: webView))
+        let deliveredAfter = ContextLinkRecording(
+            href: "https://example.com/after",
+            webViewIdentifier: ObjectIdentifier(webView),
+            receivedAt: menuOpenedAt.addingTimeInterval(1)
+        )
+        XCTAssertTrue(deliveredAfter.answers(menuOpenedAt: menuOpenedAt, on: webView))
+
+        // A posting from an earlier menu (its own delivery lost) must never
+        // answer this menu: opening the earlier link would be worse than
+        // falling back to point resolution.
+        let earlierMenu = ContextLinkRecording(
+            href: "https://example.com/earlier",
+            webViewIdentifier: ObjectIdentifier(webView),
+            receivedAt: menuOpenedAt.addingTimeInterval(-ContextLinkRecording.menuDeliveryAllowance - 1)
+        )
+        XCTAssertFalse(earlierMenu.answers(menuOpenedAt: menuOpenedAt, on: webView))
+
+        // Another webview's posting never answers this menu.
+        XCTAssertFalse(deliveredBefore.answers(menuOpenedAt: menuOpenedAt, on: otherWebView))
+    }
+
+    func testRecordedContextLinkURLGatesTheRecordingPath() {
+        let webView = WKWebView()
+        let otherWebView = WKWebView()
+        let menuOpenedAt = Date()
+
+        // The recording that answers this menu on this webview resolves —
+        // the path that makes link actions work inside iframes.
+        let recording = ContextLinkRecording(
+            href: "https://example.com/link",
+            webViewIdentifier: ObjectIdentifier(webView),
+            receivedAt: menuOpenedAt
+        )
+        XCTAssertEqual(
+            WebViewManager.recordedContextLinkURL(recording: recording, menuOpenedAt: menuOpenedAt, for: webView),
+            URL(string: "https://example.com/link")
+        )
+
+        // No recording, no recorded menu, or another webview's recording:
+        // resolution falls back to the main-frame point path.
+        XCTAssertNil(WebViewManager.recordedContextLinkURL(recording: nil, menuOpenedAt: menuOpenedAt, for: webView))
+        XCTAssertNil(WebViewManager.recordedContextLinkURL(recording: recording, menuOpenedAt: nil, for: webView))
+        XCTAssertNil(WebViewManager.recordedContextLinkURL(recording: recording, menuOpenedAt: menuOpenedAt, for: otherWebView))
+
+        // A posting from outside the delivery allowance belongs to an
+        // earlier menu and must not resolve.
+        let stale = ContextLinkRecording(
+            href: "https://example.com/stale",
+            webViewIdentifier: ObjectIdentifier(webView),
+            receivedAt: menuOpenedAt.addingTimeInterval(-ContextLinkRecording.menuDeliveryAllowance - 1)
+        )
+        XCTAssertNil(WebViewManager.recordedContextLinkURL(recording: stale, menuOpenedAt: menuOpenedAt, for: webView))
+
+        // Only http(s) hrefs qualify, the same rule the point path applies.
+        for href in ["", "mailto:someone@example.com", "javascript:alert(1)"] {
+            let invalid = ContextLinkRecording(
+                href: href,
+                webViewIdentifier: ObjectIdentifier(webView),
+                receivedAt: menuOpenedAt
+            )
+            XCTAssertNil(WebViewManager.recordedContextLinkURL(recording: invalid, menuOpenedAt: menuOpenedAt, for: webView))
+        }
+    }
+
+    func testWillOpenMenuNotifiesDelegate() throws {
+        @MainActor
+        final class MenuOpenSpy: NSObject, WebViewContextMenuDelegate {
+            var openedCount = 0
+            func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {}
+            func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool { false }
+            func webViewWillOpenContextMenu(_ webView: WKWebView) {
+                openedCount += 1
+            }
+        }
+        let view = ContextMenuWebView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: WKWebViewConfiguration()
+        )
+        let menuOpenSpy = MenuOpenSpy()
+        view.contextMenuDelegate = menuOpenSpy
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Reload Page", action: nil, keyEquivalent: "")
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
+        view.willOpenMenu(menu, with: event)
+        XCTAssertEqual(menuOpenSpy.openedCount, 1)
+    }
+
+    func testContextMenuRecorderInjectedOnlyForEngineTabs() {
+        let service = Service(
+            id: UUID(),
+            name: "Test Engine",
+            url: "https://example.com",
+            focus_selector: "#prompt",
+            customCSS: nil
+        )
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let manager = WebViewManager(containerView: container)
+        manager.updateServices([service])
+        let engineTab = manager.getOrCreateWebView(
+            for: service,
+            sessionIndex: 0,
+            dragArea: nil,
+            loadImmediately: false
+        )
+        let privateTab = manager.getOrCreateWebView(
+            for: service,
+            sessionIndex: 1,
+            dragArea: nil,
+            loadImmediately: false,
+            isQuiperPrivate: true
+        )
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            manager.removeWebView(for: service, sessionIndex: 1)
+        }
+        let engineScripts = engineTab.configuration.userContentController.userScripts.map(\.source)
+        XCTAssertTrue(engineScripts.contains { $0.contains(WebScripts.contextLinkHandlerName) })
+        // Private tabs stay marker-free: no recorder, so their link actions
+        // keep resolving at the point in the main frame. Only the script half
+        // is observable here — WKUserContentController exposes no way to list
+        // registered message handlers.
+        let privateScripts = privateTab.configuration.userContentController.userScripts.map(\.source)
+        XCTAssertFalse(privateScripts.contains { $0.contains(WebScripts.contextLinkHandlerName) })
     }
 
     func testLinkMenuReplacesDefaultOpenItems() throws {
