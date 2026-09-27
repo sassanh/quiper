@@ -118,6 +118,52 @@ enum ModifierHUDKind {
     case engines
 }
 
+/// Snapshot of one encrypted engine's open tabs, persisted inside its volume
+/// as quiper_tabs.json. Nonisolated pure value state, so its Codable
+/// conformance can be used off the main actor.
+nonisolated struct SecureTabState: Codable, Sendable {
+    var activeIndex: Int
+    var openTabs: [Int: String]
+    var tabTitles: [Int: String]?
+    var tabInputs: [Int: TabInputState]?
+    var tabPromptHistories: [Int: [PromptHistoryEntry]]?
+    var tabPromptHistoryEnabledOverrides: [Int: Bool]?
+    var popups: [PersistedPopupState]?
+
+    enum CodingKeys: String, CodingKey {
+        case activeIndex
+        case openTabs
+        case tabTitles
+        case tabInputs
+        case tabPromptHistories
+        case tabPromptHistoryEnabledOverrides
+        case popups
+    }
+
+    init(activeIndex: Int, openTabs: [Int: String], tabTitles: [Int: String]?, tabInputs: [Int: TabInputState]?, tabPromptHistories: [Int: [PromptHistoryEntry]]?, tabPromptHistoryEnabledOverrides: [Int: Bool]?, popups: [PersistedPopupState]? = nil) {
+        self.activeIndex = activeIndex
+        self.openTabs = openTabs
+        self.tabTitles = tabTitles
+        self.tabInputs = tabInputs
+        self.tabPromptHistories = tabPromptHistories
+        self.tabPromptHistoryEnabledOverrides = tabPromptHistoryEnabledOverrides
+        self.popups = popups
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        activeIndex = try container.decode(Int.self, forKey: .activeIndex)
+        openTabs = try container.decode([Int: String].self, forKey: .openTabs)
+        tabTitles = try container.decodeIfPresent([Int: String].self, forKey: .tabTitles)
+        tabInputs = try container.decodeIfPresent([Int: TabInputState].self, forKey: .tabInputs)
+        tabPromptHistories = try container.decodeIfPresent([Int: [PromptHistoryEntry]].self, forKey: .tabPromptHistories)
+        tabPromptHistoryEnabledOverrides = try container.decodeIfPresent([Int: Bool].self, forKey: .tabPromptHistoryEnabledOverrides)
+        // Lenient like the global state: a corrupt popups array drops popups,
+        // never the engine's sessions.
+        popups = (try? container.decodeIfPresent([PersistedPopupState].self, forKey: .popups)) ?? nil
+    }
+}
+
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     static let jsTools: [String: String] = [
@@ -1097,49 +1143,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         layoutSelectors()
         updateHeaderVisibility(animated: false)
     }
-
-struct SecureTabState: Codable {
-    var activeIndex: Int
-    var openTabs: [Int: String]
-    var tabTitles: [Int: String]?
-    var tabInputs: [Int: TabInputState]?
-    var tabPromptHistories: [Int: [PromptHistoryEntry]]?
-    var tabPromptHistoryEnabledOverrides: [Int: Bool]?
-    var popups: [PersistedPopupState]?
-
-    enum CodingKeys: String, CodingKey {
-        case activeIndex
-        case openTabs
-        case tabTitles
-        case tabInputs
-        case tabPromptHistories
-        case tabPromptHistoryEnabledOverrides
-        case popups
-    }
-
-    init(activeIndex: Int, openTabs: [Int: String], tabTitles: [Int: String]?, tabInputs: [Int: TabInputState]?, tabPromptHistories: [Int: [PromptHistoryEntry]]?, tabPromptHistoryEnabledOverrides: [Int: Bool]?, popups: [PersistedPopupState]? = nil) {
-        self.activeIndex = activeIndex
-        self.openTabs = openTabs
-        self.tabTitles = tabTitles
-        self.tabInputs = tabInputs
-        self.tabPromptHistories = tabPromptHistories
-        self.tabPromptHistoryEnabledOverrides = tabPromptHistoryEnabledOverrides
-        self.popups = popups
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        activeIndex = try container.decode(Int.self, forKey: .activeIndex)
-        openTabs = try container.decode([Int: String].self, forKey: .openTabs)
-        tabTitles = try container.decodeIfPresent([Int: String].self, forKey: .tabTitles)
-        tabInputs = try container.decodeIfPresent([Int: TabInputState].self, forKey: .tabInputs)
-        tabPromptHistories = try container.decodeIfPresent([Int: [PromptHistoryEntry]].self, forKey: .tabPromptHistories)
-        tabPromptHistoryEnabledOverrides = try container.decodeIfPresent([Int: Bool].self, forKey: .tabPromptHistoryEnabledOverrides)
-        // Lenient like the global state: a corrupt popups array drops popups,
-        // never the engine's sessions.
-        popups = (try? container.decodeIfPresent([PersistedPopupState].self, forKey: .popups)) ?? nil
-    }
-}
 
     func saveTabsState() {
         guard Settings.shared.tabSurvivalPolicy != .never else { return }

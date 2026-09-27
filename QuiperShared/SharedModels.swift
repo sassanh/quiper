@@ -450,14 +450,14 @@ extension CustomAction {
 
 // MARK: - Tabs and prompt history
 
-struct TabIdentifier: Equatable, Codable, Hashable {
+nonisolated struct TabIdentifier: Equatable, Codable, Hashable {
     let serviceID: UUID
     let sessionIndex: Int
 }
 
 /// A persisted popup window: its owning session, current URL, frame, and
 /// position in creation order (oldest first) so restores reproduce stacking.
-struct PersistedPopupState: Equatable, Codable, Sendable {
+nonisolated struct PersistedPopupState: Equatable, Codable, Sendable {
     var serviceID: UUID
     var sessionIndex: Int
     var url: String
@@ -477,14 +477,14 @@ struct PersistedPopupState: Equatable, Codable, Sendable {
     }
 }
 
-struct TabInputState: Codable, Equatable {
+nonisolated struct TabInputState: Codable, Equatable {
     var text: String
     var isContentEditable: Bool
     var start: Int
     var end: Int
 }
 
-struct PromptHistoryEntry: Codable, Equatable {
+nonisolated struct PromptHistoryEntry: Codable, Equatable {
     var text: String
     var timestamp: Date
 }

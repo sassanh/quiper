@@ -134,8 +134,6 @@ final class WebKitCacheCleaner {
                 continue
             }
             
-            let uuid = UUID(uuidString: nameWithoutExtension)!
-            
             NSLog("[WebKitCacheCleaner] Purging orphaned leftovers at: \(url.path)")
             try? fileManager.removeItem(at: url)
         }

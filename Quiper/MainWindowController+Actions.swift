@@ -878,7 +878,7 @@ extension MainWindowController: WebViewManagerDelegate {
            let service = services.first(where: { $0.id == serviceID }) {
             let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
             if let data = try? Data(contentsOf: stateURL),
-               let state = try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data) {
+               let state = try? JSONDecoder().decode(SecureTabState.self, from: data) {
                 
                 activeIndicesByID[service.id] = state.activeIndex
 

@@ -683,7 +683,7 @@ class Settings: ObservableObject {
 
     struct DecryptedEngineForExport {
         let service: Service
-        let tabState: MainWindowController.SecureTabState?
+        let tabState: SecureTabState?
     }
 
     func makePersistedSettings(secureChoice: SecureExportChoice, decryptedServices: [Service] = []) -> PersistedSettings {
@@ -962,21 +962,13 @@ class Settings: ObservableObject {
         return DecryptedEngineForExport(service: copy.decryptedForExport, tabState: tabState)
     }
 
-    private static func readSecureTabState(for serviceID: UUID) -> MainWindowController.SecureTabState? {
-        guard Settings.shared.tabSurvivalPolicy != .never else { return nil }
-        guard EncryptedVolumeManager.shared.isUnlocked(for: serviceID) else { return nil }
-        let url = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data)
-    }
-
-    private static func readSecureTabStateAsync(for serviceID: UUID) async -> MainWindowController.SecureTabState? {
+    private static func readSecureTabStateAsync(for serviceID: UUID) async -> SecureTabState? {
         guard Settings.shared.tabSurvivalPolicy != .never else { return nil }
         guard EncryptedVolumeManager.shared.isUnlocked(for: serviceID) else { return nil }
         let url = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
         return await Task.detached(priority: .userInitiated) {
             guard let data = try? Data(contentsOf: url) else { return nil }
-            return try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data)
+            return try? JSONDecoder().decode(SecureTabState.self, from: data)
         }.value
     }
 
@@ -1091,7 +1083,7 @@ class Settings: ObservableObject {
                 if tabSurvivalPolicy != .never, var state = persistedTabState, state.openTabs[serviceID] != nil,
                    !services[index].isPinnedTabs {
                     let activeIndex = state.activeIndicesByID[serviceID] ?? 0
-                    let secureState = MainWindowController.SecureTabState(
+                    let secureState = SecureTabState(
                         activeIndex: activeIndex,
                         openTabs: state.openTabs[serviceID] ?? [:],
                         tabTitles: state.tabTitles[serviceID],

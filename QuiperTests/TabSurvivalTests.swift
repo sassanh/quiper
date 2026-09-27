@@ -187,7 +187,7 @@ struct TabSurvivalTests {
     }
 
     @Test func secureTabState_TitlePersistenceAndBackwardCompatibility() throws {
-        let state = MainWindowController.SecureTabState(
+        let state = SecureTabState(
             activeIndex: 2,
             openTabs: [2: "https://secure.example/chat"],
             tabTitles: [2: "Secure chat"],
@@ -196,7 +196,7 @@ struct TabSurvivalTests {
             tabPromptHistoryEnabledOverrides: nil
         )
         let data = try JSONEncoder().encode(state)
-        let decoded = try JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data)
+        let decoded = try JSONDecoder().decode(SecureTabState.self, from: data)
 
         #expect(decoded.tabTitles?[2] == "Secure chat")
 
@@ -208,7 +208,7 @@ struct TabSurvivalTests {
             }
             """.data(using: .utf8)
         )
-        let legacyState = try JSONDecoder().decode(MainWindowController.SecureTabState.self, from: legacyData)
+        let legacyState = try JSONDecoder().decode(SecureTabState.self, from: legacyData)
 
         #expect(legacyState.tabTitles == nil)
     }
@@ -384,7 +384,7 @@ struct TabSurvivalTests {
             url: "https://example.com/secure",
             frameX: 50, frameY: 60, frameWidth: 500, frameHeight: 600
         )
-        let state = MainWindowController.SecureTabState(
+        let state = SecureTabState(
             activeIndex: 0,
             openTabs: [0: "https://gemini.google.com/chat"],
             tabTitles: nil, tabInputs: nil,
@@ -393,7 +393,7 @@ struct TabSurvivalTests {
         )
 
         let data = try JSONEncoder().encode(state)
-        let decoded = try JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data)
+        let decoded = try JSONDecoder().decode(SecureTabState.self, from: data)
 
         #expect(decoded.popups == [popup])
     }
@@ -402,7 +402,7 @@ struct TabSurvivalTests {
         let json = """
         {"activeIndex": 0, "openTabs": {"0": "https://gemini.google.com/chat"}}
         """.data(using: .utf8) ?? Data()
-        let decoded = try JSONDecoder().decode(MainWindowController.SecureTabState.self, from: json)
+        let decoded = try JSONDecoder().decode(SecureTabState.self, from: json)
 
         #expect(decoded.popups == nil)
         #expect(decoded.openTabs[0] == "https://gemini.google.com/chat")
@@ -412,7 +412,7 @@ struct TabSurvivalTests {
         let json = """
         {"activeIndex": 0, "openTabs": {"0": "https://gemini.google.com/chat"}, "popups": "oops"}
         """.data(using: .utf8) ?? Data()
-        let decoded = try JSONDecoder().decode(MainWindowController.SecureTabState.self, from: json)
+        let decoded = try JSONDecoder().decode(SecureTabState.self, from: json)
 
         #expect(decoded.popups == nil)
         #expect(decoded.openTabs[0] == "https://gemini.google.com/chat")

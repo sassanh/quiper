@@ -577,7 +577,7 @@ struct OnboardingWizardView: View {
                         // bundle from birth, so the legacy-migration prompt
                         // never fires for them. A write failure leaves the
                         // engine legacy and the prompt remains a real fallback.
-                        try await EngineMetadataMigrationManager.shared.writeMetadata(
+                        try EngineMetadataMigrationManager.shared.writeMetadata(
                             SecuredEngineMetadata(from: settings.services[idx]),
                             for: serviceID
                         )

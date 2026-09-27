@@ -1158,7 +1158,7 @@ final class WebViewManager: NSObject {
                             if Settings.shared.tabSurvivalPolicy != .never {
                                 let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceId).appendingPathComponent("quiper_tabs.json")
                                 if let data = try? Data(contentsOf: stateURL),
-                                   let state = try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data) {
+                                   let state = try? JSONDecoder().decode(SecureTabState.self, from: data) {
                                     // Pinned-tab URLs come from the engine
                                     // definition; saved addresses never win.
                                     if !unlockedService.isPinnedTabs, let saved = state.openTabs[sessionIndex] {
@@ -3125,7 +3125,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         guard EncryptedVolumeManager.shared.isUnlocked(for: serviceID) else { return }
         let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
         guard let data = try? Data(contentsOf: stateURL),
-              var secureState = try? JSONDecoder().decode(MainWindowController.SecureTabState.self, from: data),
+              var secureState = try? JSONDecoder().decode(SecureTabState.self, from: data),
               secureState.popups != nil else { return }
         secureState.popups = nil
         if let updated = try? JSONEncoder().encode(secureState) {
