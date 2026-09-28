@@ -1,5 +1,5 @@
 import AppKit
-import Carbon
+import Combine
 import SwiftUI
 import LocalAuthentication
 import LocalAuthenticationEmbeddedUI
@@ -207,6 +207,8 @@ final class LockOverlayView: NSView {
     private let errorContainer = NSView()
     private let errorTitleLabel = NSTextField(labelWithString: "Decryption Error")
     private let errorDetailsLabel = NSTextField()
+    private weak var passwordButton: LockScreenShortcutButton?
+    private var lockBindingCancellables = Set<AnyCancellable>()
 
     private var loadingTimer: Timer?
     private var windowBecomeObserver: NSObjectProtocol?
@@ -240,6 +242,7 @@ final class LockOverlayView: NSView {
         super.init(frame: frameRect)
         autoresizingMask = [.width, .height]
         setupUI(serviceName: serviceName)
+        observeLockBinding()
         registerFocusObservers()
     }
 
@@ -303,11 +306,19 @@ final class LockOverlayView: NSView {
         subtitleLabel.cell?.isScrollable = false
         containerStack.addArrangedSubview(subtitleLabel)
 
-        let passwordButton = LockScreenShortcutButton(title: "Use Password...", shortcut: "⌘P")
+        // The badge shows the primary `Lock Current Engine` binding — the
+        // same Settings source the shortcut monitor routes from — and
+        // `observeLockBinding` keeps it current while the lock screen is up.
+        let lockBinding = Settings.shared.appShortcutBindings.lockCurrentEngine
+        let passwordButton = LockScreenShortcutButton(
+            title: "Use Password...",
+            shortcut: lockBinding.isDisabled ? nil : ShortcutFormatter.string(for: lockBinding)
+        )
         passwordButton.onClick = { [weak self] in
-            self?.usePasswordClicked()
+            self?.usePasswordFallback()
         }
         passwordButton.translatesAutoresizingMaskIntoConstraints = false
+        self.passwordButton = passwordButton
         
         containerStack.addArrangedSubview(passwordButton)
 
@@ -375,16 +386,20 @@ final class LockOverlayView: NSView {
         errorStack.addArrangedSubview(errorDetailsLabel)
     }
 
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .option] {
-            if event.keyCode == UInt16(kVK_ANSI_L) {
-                if activeFallbackContext == nil {
-                    usePasswordClicked()
-                    return true
-                }
+    /// The badge follows the primary `Lock Current Engine` binding from the
+    /// moment Settings changes it, so the key shown on screen and the key the
+    /// shortcut monitor routes here stay identical without any refresh call
+    /// to remember.
+    private func observeLockBinding() {
+        Settings.shared.$appShortcutBindings
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] bindings in
+                self?.passwordButton?.shortcut = bindings.lockCurrentEngine.isDisabled
+                    ? nil
+                    : ShortcutFormatter.string(for: bindings.lockCurrentEngine)
             }
-        }
-        return super.performKeyEquivalent(with: event)
+            .store(in: &lockBindingCancellables)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -429,14 +444,20 @@ final class LockOverlayView: NSView {
         errorContainer.isHidden = false
     }
 
-    @objc private func usePasswordClicked() {
+    /// Single entry for the password fallback: the Use Password button and
+    /// the `Lock Current Engine` shortcut pressed on this locked engine both
+    /// land here, so the shortcut is defined only in Settings. No-op while a
+    /// fallback is already running, so a second press never spawns a second
+    /// prompt.
+    func usePasswordFallback() {
+        guard activeFallbackContext == nil else { return }
         laContext.invalidate()
         laView?.removeFromSuperview()
         laView = nil
         isBiometricsInitialized = false
         isUnlockInProgress = false
         errorContainer.isHidden = true
-        NSLog("[LockOverlay] usePasswordClicked fired - releasing biometrics and spawning dedicated fallback context")
+        NSLog("[LockOverlay] usePasswordFallback fired - releasing biometrics and spawning dedicated fallback context")
         let fallbackContext = LAContext()
         self.activeFallbackContext = fallbackContext
         
@@ -669,15 +690,25 @@ final class LockOverlayView: NSView {
 final class LockScreenShortcutButton: NSControl {
     var onClick: (() -> Void)?
     
+    /// The key shown in the badge, or nil when there is none: the badge then
+    /// hides and the title closes the gap. Settable so the display can follow
+    /// the `Lock Current Engine` binding whenever Settings changes it.
+    var shortcut: String? {
+        didSet { applyShortcut() }
+    }
+    
     private let titleField = NSTextField(labelWithString: "")
     private let shortcutContainer = NSView()
     private let shortcutField = NSTextField(labelWithString: "")
+    private var badgeConstraints: [NSLayoutConstraint] = []
+    private var titleTrailingConstraint: NSLayoutConstraint?
     
     private var isHovered = false { didSet { updateAppearance() } }
     private var isPressed = false { didSet { updateAppearance() } }
     private var trackingArea: NSTrackingArea?
     
-    init(title: String, shortcut: String) {
+    init(title: String, shortcut: String?) {
+        self.shortcut = shortcut
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 6
@@ -696,7 +727,14 @@ final class LockScreenShortcutButton: NSControl {
         titleField.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleField)
         
-        // Shortcut Badge
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 28),
+            titleField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            titleField.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        
+        // Shortcut Badge. Built here, activated only while a key is shown, so
+        // the badge and the bare title never both claim the trailing edge.
         shortcutContainer.wantsLayer = true
         shortcutContainer.layer?.cornerRadius = 5
         shortcutContainer.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.2).cgColor
@@ -705,7 +743,6 @@ final class LockScreenShortcutButton: NSControl {
         shortcutContainer.translatesAutoresizingMaskIntoConstraints = false
         addSubview(shortcutContainer)
         
-        shortcutField.stringValue = shortcut
         shortcutField.font = NSFont.systemFont(ofSize: 10, weight: .bold)
         shortcutField.textColor = .secondaryLabelColor
         shortcutField.alignment = .center
@@ -716,23 +753,32 @@ final class LockScreenShortcutButton: NSControl {
         shortcutField.translatesAutoresizingMaskIntoConstraints = false
         shortcutContainer.addSubview(shortcutField)
         
-        NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 28),
-            
-            titleField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            titleField.centerYAnchor.constraint(equalTo: centerYAnchor),
-            
+        badgeConstraints = [
             shortcutContainer.leadingAnchor.constraint(equalTo: titleField.trailingAnchor, constant: 8),
             shortcutContainer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             shortcutContainer.centerYAnchor.constraint(equalTo: centerYAnchor),
             shortcutContainer.heightAnchor.constraint(equalToConstant: 18),
-            
             shortcutField.leadingAnchor.constraint(equalTo: shortcutContainer.leadingAnchor, constant: 5),
             shortcutField.trailingAnchor.constraint(equalTo: shortcutContainer.trailingAnchor, constant: -5),
-            shortcutField.centerYAnchor.constraint(equalTo: shortcutContainer.centerYAnchor)
-        ])
+            shortcutField.centerYAnchor.constraint(equalTo: shortcutContainer.centerYAnchor),
+        ]
+        titleTrailingConstraint = titleField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12)
         
+        applyShortcut()
         updateAppearance()
+    }
+    
+    private func applyShortcut() {
+        if let shortcut, !shortcut.isEmpty {
+            shortcutField.stringValue = shortcut
+            shortcutContainer.isHidden = false
+            titleTrailingConstraint?.isActive = false
+            NSLayoutConstraint.activate(badgeConstraints)
+        } else {
+            shortcutContainer.isHidden = true
+            NSLayoutConstraint.deactivate(badgeConstraints)
+            titleTrailingConstraint?.isActive = true
+        }
     }
     
     required init?(coder: NSCoder) { fatalError() }

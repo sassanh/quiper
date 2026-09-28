@@ -27,6 +27,7 @@
 - **Popup Windows Stay in Sync With Their Tab**: Zoom changes, prompt-recording indicator updates, and focus-loss dimming now reach popup windows, so popups match their owning tab at all times.
 - **Popup Windows Keep Their Order When Switching Tabs**: Switching sessions no longer lets the main window render in front of its popups — popups keep their stacking so the newest stays on top.
 - **Only the Active Window Stays Clear**: The focus-loss dim judges each window on its own: whichever Quiper window holds focus — the main window or a popup — renders clear while every other window stays dimmed. Clicking a popup lifts the dim from that popup alone instead of dimming the whole overlay behind it, and leaving the app still dims everything.
+- **Use Password Follows the Lock Shortcut**: On a locked engine, the Lock current engine shortcut now opens the password fallback and the button on the lock screen shows that exact key — instead of `⌘P`, which turned the shielded tab into a private one.
 
 ## [6.2.0] - 2026-09-23
 

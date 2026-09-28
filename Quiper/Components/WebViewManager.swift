@@ -2215,11 +2215,23 @@ final class WebViewManager: NSObject {
         return counts
     }
 
+    /// The overlay shielding `tab` while its encrypted engine is still
+    /// locked, or nil once unlocked (or for an unencrypted engine). The
+    /// single way callers reach a locked session's unlock UI.
+    func lockOverlay(for tab: TabIdentifier) -> LockOverlayView? {
+        Self.lockOverlay(in: webView(for: tab)?.superview)
+    }
+
+    /// The single detection of a lock overlay inside a session's hosting view.
+    private static func lockOverlay(in hostingView: NSView?) -> LockOverlayView? {
+        hostingView?.subviews.first(where: { $0 is LockOverlayView }) as? LockOverlayView
+    }
+
     /// Whether the session is still behind its lock overlay (encrypted engine
     /// not yet unlocked): its placeholder webview must not sprout popups.
     @MainActor
     private func isLockedPlaceholder(_ sessionWebView: WKWebView) -> Bool {
-        sessionWebView.superview?.subviews.contains(where: { $0 is LockOverlayView }) == true
+        Self.lockOverlay(in: sessionWebView.superview) != nil
     }
 
     /// Closes every popup owned by `tab`. Called when the owning session is

@@ -356,16 +356,31 @@ extension MainWindowController {
         }
     }
 
+    /// Entry for the `Lock Current Engine` binding. The lock screen decides
+    /// the meaning, not the mount probe: while the overlay is up the binding
+    /// opens the password fallback, so a volume left mounted by an earlier
+    /// run still asks for the password; otherwise the binding locks the
+    /// engine.
     @objc func handleLockCurrentEngineShortcut() {
         guard let service = currentService() else { return }
         
         if service.isEncrypted {
-            if EncryptedVolumeManager.shared.isMounted(for: service.id) {
+            if let overlay = currentLockedEngineOverlay() {
+                overlay.usePasswordFallback()
+            } else if EncryptedVolumeManager.shared.isMounted(for: service.id) {
                 manualLockTapped(NSButton())
             }
         } else {
             promptToSecureEngine(service)
         }
+    }
+
+    /// The overlay shielding the active tab while its engine is still locked.
+    /// Shared by the lock binding's password fallback and the shortcuts that
+    /// must stay inert behind the lock.
+    func currentLockedEngineOverlay() -> LockOverlayView? {
+        guard let tab = currentTabIdentifier(), let manager = webViewManager else { return nil }
+        return manager.lockOverlay(for: tab)
     }
     
     @objc func handleLockAllEnginesShortcut() {

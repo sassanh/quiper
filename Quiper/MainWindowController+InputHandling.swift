@@ -838,6 +838,12 @@ extension MainWindowController {
         // before custom actions so it wins over any persisted soft-action
         // shortcut.
         if matches(config, ephemeralTemporaryShortcut) {
+            // A locked engine shows only its placeholder behind the overlay:
+            // there is no real tab here to take private, so the shortcut is
+            // inert until the engine unlocks.
+            if currentLockedEngineOverlay() != nil {
+                return true
+            }
             createQuiperPrivateTemporarySession()
             return true
         }
