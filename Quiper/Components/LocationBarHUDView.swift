@@ -118,8 +118,9 @@ final class LocationBarHUDView: NSView {
         self.isHidden = false
         self.alphaValue = 0
 
-        // Prefill with the current page's address
-        self.urlField.stringValue = wc?.currentWebView()?.url?.absoluteString ?? ""
+        // Prefill with the current page's address — the page the bar's own
+        // host window shows, not necessarily the main window's tab.
+        self.urlField.stringValue = wc?.locationBarTargetWebView()?.url?.absoluteString ?? ""
 
         if let window = self.window {
             window.makeFirstResponder(self.urlField)
@@ -164,7 +165,7 @@ final class LocationBarHUDView: NSView {
     }
 
     private func navigateToCurrentInput() {
-        guard let wc = wc, let webView = wc.currentWebView() else { return }
+        guard let wc = wc, let webView = wc.locationBarTargetWebView() else { return }
         guard let url = Self.navigationURL(fromInput: self.urlField.stringValue) else {
             wc.playErrorSound()
             return

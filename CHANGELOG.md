@@ -4,6 +4,7 @@
 
 ### Added
 
+- **An Address Bar for Popups**: `⌘⇧L` or a click on a popup's title opens the location bar over that popup — prefilled with, and navigating, the popup's own page — instead of the main window's bar.
 - **Pick How Every Download Saves**: A new General setting switches between two behaviors — off (the default) saves files silently to their folder, on opens the macOS save dialog so each download can be renamed or redirected before it lands.
 - **Secure Storage Keeps Its Own Downloads**: Engines with Secure Storage save downloads into a Downloads folder inside their own storage — the save dialog opens there and offers a Secure Storage shortcut — and a download started while the storage is locked stops with a clear message instead of falling back to the general Downloads folder.
 - **Replacing a File Can't Lose It**: Confirming Replace in the save dialog keeps the original file in place and working until the new content lands — a download that fails never costs you the original.
@@ -11,6 +12,7 @@
 
 ### Changed
 
+- **Popups No Longer Freeze the Window Behind Them**: with a popup open, the parent window takes clicks and typing normally while the popup stays pinned on top, instead of the parent blocking all interaction until the popup closes.
 - **Popups Get the Main Window's Chrome**: Popup windows drop the macOS window shape for the overlay's borderless look — rounded corners, themed outline, shadow — and gain their own toolbar: back/forward with long-press history, refresh/stop, the page title, the animated loading border, drag-to-move, and a close button (`⌘W` still works). Session selectors, prompt history, and session actions stay out of popups, where they mean nothing.
 - **Close and Stop Side by Side, Never Confused**: The popup's close button and refresh/stop share the toolbar's trailing end, drawn as different glyphs — close ✕, stop ■ — so the two can never read as one control while a page loads.
 - **Stop Loading Reads as Stop**: The stop-loading control now draws the standard filled square instead of another ✕ — in the popup toolbar, the main header, and the iOS control bar alike.
@@ -18,6 +20,8 @@
 
 ### Fixed
 
+- **Popup Titles Offer the Full Page Menu**: Right-clicking a popup's title now shows the same Copy URL, Copy Title, Open in Default Browser, Find, and Suggest Selector items as the main window's title, each acting on the popup's own page.
+- **Shortcuts Reach the Focused Popup**: `⌘W`, `⌘R`, and `⌘F` now act on the popup you're working in — closing it, reloading or finding in its page — instead of the main window's tab while the popup or its address bar holds focus.
 - **Context Menu Downloads Actually Save**: Choosing Download Linked File or Download Image from a link's right-click menu now downloads the file through Quiper's destination rules — secure engines into their storage, the save dialog when enabled — instead of silently doing nothing.
 - **Link Actions Work Inside Iframes**: Right-clicking a link inside an embedded frame and choosing Open Link Here, Open Link in New Window, Open Link in System Browser, or Open Private now opens that link, instead of the item silently doing nothing.
 - **Closing a Popup No Longer Silently Breaks the Opening Tab**: The tab that opened a popup keeps its custom styles, input tracking, prompt history, and notification support after the popup closes, instead of losing them on the tab's next reload.

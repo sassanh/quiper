@@ -440,8 +440,8 @@ extension MainWindowController {
 
         // Sync last: restoring the active tab's popups re-keys them, so a
         // session switch back to a popup-owning tab leaves the popup (not
-        // the shield-blocked webview behind it) holding focus. Matches the
-        // overlay show() path order.
+        // the webview behind it) holding focus. Matches the overlay show()
+        // path order.
         webViewManager.syncPopupVisibility(forActiveTab: currentTab)
     }
     

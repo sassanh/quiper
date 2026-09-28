@@ -32,7 +32,7 @@ extension MainWindowController {
     }
 
     @objc func startSelectorSuggestMode(_ sender: Any?) {
-        guard let webView = currentWebView() else { return }
+        guard let webView = targetPage(from: sender) else { return }
         beginSelectorSuggestHover(on: webView)
     }
 

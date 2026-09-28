@@ -18,8 +18,8 @@ extension MainWindowController {
         panel.isReleasedWhenClosed = false
     }
 
-    func raiseHUDWindow(_ hudWindow: NSWindow?) {
-        guard let parentWindow = window, let hudWindow = hudWindow, hudWindow.isVisible else { return }
+    func raiseHUDWindow(_ hudWindow: NSWindow?, parent: NSWindow? = nil) {
+        guard let parentWindow = parent ?? window, let hudWindow = hudWindow, hudWindow.isVisible else { return }
         hudWindow.level = parentWindow.level
         parentWindow.addChildWindow(hudWindow, ordered: .above)
         hudWindow.orderFront(nil)
@@ -29,7 +29,9 @@ extension MainWindowController {
         raiseHUDWindow(tabHistoryHUDWindow)
         raiseHUDWindow(promptHistoryHUDWindow)
         raiseHUDWindow(modifierHUDWindow)
-        raiseHUDWindow(locationBarHUDWindow)
+        // The location bar rides on whatever window it addresses — a popup
+        // or the main window — never the main window by default.
+        raiseHUDWindow(locationBarHUDWindow, parent: locationBarHUDWindow?.parent)
     }
 
     /// Closes every open HUD whose frame does not contain the clicked point,
@@ -65,13 +67,15 @@ extension MainWindowController {
         menu.popUp(positioning: nil, at: origin, in: sender)
     }
 
-    /// Builds the page-title context menu. AppKit positions and tracks it
-    /// (see HoverTextField.menu(for:)); no manual pop-up needed.
-    func makeTitleContextMenu() -> NSMenu {
+    /// Builds the page-title context menu for `webView`'s page — the single
+    /// menu the main window's title and every popup title show; each item
+    /// carries the page it operates on. AppKit positions and tracks it (see
+    /// HoverTextField.menu(for:)); no manual pop-up needed.
+    func makeTitleContextMenu(for webView: WKWebView?) -> NSMenu {
         let menu = NSMenu(title: "Page Title")
         menu.autoenablesItems = false
-        let urlString = currentWebView()?.url?.absoluteString
-        let titleString = currentPageTitle()
+        let urlString = webView?.url?.absoluteString
+        let titleString = pageTitle(for: webView)
 
         let copyURLItem = NSMenuItem(
             title: "Copy URL",
@@ -79,6 +83,7 @@ extension MainWindowController {
             keyEquivalent: ""
         )
         copyURLItem.target = self
+        copyURLItem.representedObject = webView
         copyURLItem.isEnabled = urlString != nil && !(urlString?.isEmpty ?? true)
         menu.addItem(copyURLItem)
 
@@ -88,6 +93,7 @@ extension MainWindowController {
             keyEquivalent: ""
         )
         copyTitleItem.target = self
+        copyTitleItem.representedObject = webView
         copyTitleItem.isEnabled = titleString != nil
         menu.addItem(copyTitleItem)
 
@@ -97,6 +103,7 @@ extension MainWindowController {
             keyEquivalent: ""
         )
         openItem.target = self
+        openItem.representedObject = webView
         openItem.isEnabled = urlString != nil && !(urlString?.isEmpty ?? true)
         menu.addItem(openItem)
 
@@ -108,7 +115,8 @@ extension MainWindowController {
             keyEquivalent: "f"
         )
         findItem.target = self
-        findItem.isEnabled = currentWebView() != nil
+        findItem.representedObject = webView
+        findItem.isEnabled = webView != nil
         menu.addItem(findItem)
 
         let suggestItem = NSMenuItem(
@@ -117,48 +125,88 @@ extension MainWindowController {
             keyEquivalent: ""
         )
         suggestItem.target = self
-        suggestItem.isEnabled = currentWebView() != nil && !isCurrentTabEphemeral
+        suggestItem.representedObject = webView
+        // The shared Suggest Selector gate: a popup's page is judged through
+        // its owning tab, exactly like the page's own right-click menu.
+        suggestItem.isEnabled = webView.map {
+            webViewManager?.webViewAllowsPageSelectorSuggest($0) == true
+        } ?? false
         menu.addItem(suggestItem)
 
         return menu
     }
 
-    /// Whether the active tab is an ephemeral (Quiper private) tab. Ephemeral
-    /// tabs run no Quiper automation, so Suggest Selector stays unavailable.
-    /// Tabs with no resolvable service count as ephemeral (disabled).
-    var isCurrentTabEphemeral: Bool {
-        guard let service = currentService() else { return true }
-        let index = activeIndicesByID[service.id] ?? 0
-        return webViewManager.isQuiperPrivateTab(serviceID: service.id, sessionIndex: index)
+    /// The main window's title menu: targets the current page.
+    func makeTitleContextMenu() -> NSMenu {
+        makeTitleContextMenu(for: currentWebView())
+    }
+
+    /// A menu action's target page: the item's own target page, falling
+    /// back to the focused one for menu-bar invocations.
+    func targetPage(from sender: Any?) -> WKWebView? {
+        (sender as? NSMenuItem)?.representedObject as? WKWebView ?? focusedPageWebView()
+    }
+
+    /// The popup window the focused UI addresses: the location bar's host
+    /// while the bar holds key status, the key popup itself, else nil. The
+    /// single key-window resolution — the bar shortcut, Cmd+W, reload, and
+    /// find all route through it, so they can never disagree about which
+    /// popup the keyboard is acting on.
+    func focusedPopupWindow() -> NSWindow? {
+        guard let keyWindow = NSApp.keyWindow, let manager = webViewManager else { return nil }
+        if keyWindow === locationBarHUDWindow,
+           let hostWindow = locationBarHUDWindow?.parent,
+           manager.isPopupWindow(hostWindow) {
+            return hostWindow
+        }
+        if manager.isPopupWindow(keyWindow) {
+            return keyWindow
+        }
+        return nil
+    }
+
+    /// The page the focused UI addresses: the focused popup's page while a
+    /// popup — or the location bar hosted on one — holds key status, else
+    /// the main window's current tab. Every page-scoped shortcut and menu
+    /// routes through this, so the keyboard always acts on the window the
+    /// user is working in.
+    func focusedPageWebView() -> WKWebView? {
+        if let popupWindow = focusedPopupWindow(),
+           let popupWebView = webViewManager?.popupWebView(for: popupWindow) {
+            return popupWebView
+        }
+        return currentWebView()
     }
 
     /// The page title as shown in the toolbar: the webview's title, falling
-    /// back to the label text. Nil when there is nothing worth copying.
-    func currentPageTitle() -> String? {
-        if let title = currentWebView()?.title, !title.isEmpty {
+    /// back to the main window's label text for its own page. Nil when there
+    /// is nothing worth copying.
+    func pageTitle(for webView: WKWebView?) -> String? {
+        if let title = webView?.title, !title.isEmpty {
             return title
         }
-        if let text = titleLabel?.stringValue, !text.isEmpty {
+        if (webView == nil || webView === currentWebView()),
+           let text = titleLabel?.stringValue, !text.isEmpty {
             return text
         }
         return nil
     }
 
     @objc func copyCurrentPageURL(_ sender: Any?) {
-        guard let urlString = currentWebView()?.url?.absoluteString,
+        guard let urlString = targetPage(from: sender)?.url?.absoluteString,
               !urlString.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(urlString, forType: .string)
     }
 
     @objc func copyCurrentPageTitle(_ sender: Any?) {
-        guard let title = currentPageTitle() else { return }
+        guard let title = pageTitle(for: targetPage(from: sender)) else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(title, forType: .string)
     }
 
     @objc func openCurrentPageInBrowser(_ sender: Any?) {
-        guard let url = currentWebView()?.url else { return }
+        guard let url = targetPage(from: sender)?.url else { return }
         NSWorkspace.shared.open(url)
     }
 
@@ -212,10 +260,11 @@ extension MainWindowController {
         hudWindow.setFrame(alignedHUDFrame(width: width, height: height, y: targetY), display: true, animate: false)
     }
 
-    /// Computes a HUD frame centered horizontally over the main window at the
-    /// given bottom-edge Y, clamped to the visible screen.
-    func alignedHUDFrame(width: CGFloat, height: CGFloat, y: CGFloat) -> NSRect {
-        guard let parentWindow = window else { return .zero }
+    /// Computes a HUD frame centered horizontally over the given window
+    /// (the main window by default) at the given bottom-edge Y, clamped to
+    /// the visible screen.
+    func alignedHUDFrame(width: CGFloat, height: CGFloat, y: CGFloat, hostWindow: NSWindow? = nil) -> NSRect {
+        guard let parentWindow = hostWindow ?? window else { return .zero }
 
         let parentFrame = parentWindow.frame
         let screenFrame = (parentWindow.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -247,14 +296,34 @@ extension MainWindowController {
         }
     }
 
-    func showLocationBarHUD() {
-        guard let parentWindow = window else { return }
+    /// The window the location bar addresses: the focused popup, so the bar
+    /// edits the page the user is on; the main window otherwise. A bar that
+    /// already holds key status keeps its own window.
+    private func locationBarTargetWindow() -> NSWindow? {
+        focusedPopupWindow() ?? window
+    }
+
+    /// The page the location bar edits: the host window's own webview — a
+    /// popup's page when the bar hangs off a popup, the current tab
+    /// otherwise.
+    func locationBarTargetWebView() -> WKWebView? {
+        guard let hostWindow = locationBarHUDWindow?.parent else { return currentWebView() }
+        if hostWindow !== window, let manager = webViewManager, manager.isPopupWindow(hostWindow) {
+            return manager.popupWebView(for: hostWindow)
+        }
+        return currentWebView()
+    }
+
+    func showLocationBarHUD(for hostWindow: NSWindow? = nil) {
+        guard let targetWindow = hostWindow ?? locationBarTargetWindow() else { return }
         hideModifierHUD()
         hidePromptHistoryHUD()
         cancelHistoryCycling()
 
-        // Keep the toolbar revealed while the bar is open (matters in auto-hide mode)
-        isHeaderForcedVisibleForLocationBar = true
+        // Keep the toolbar revealed while the bar is open (matters in
+        // auto-hide mode). A popup's toolbar is always visible, so only the
+        // main window pins its header.
+        isHeaderForcedVisibleForLocationBar = targetWindow === window
         updateHeaderVisibility()
 
         if locationBarHUDWindow == nil {
@@ -264,7 +333,7 @@ extension MainWindowController {
                 backing: .buffered,
                 defer: false
             )
-            configureHUDPanel(panel, parentWindow: parentWindow)
+            configureHUDPanel(panel, parentWindow: targetWindow)
 
             let hud = LocationBarHUDView(frame: panel.contentView?.bounds ?? .zero, windowController: self)
             hud.autoresizingMask = [.width, .height]
@@ -272,13 +341,20 @@ extension MainWindowController {
 
             locationBarHUDView = hud
             locationBarHUDWindow = panel
+        }
 
-            parentWindow.addChildWindow(panel, ordered: .above)
+        // Host the bar on the window it addresses — a popup's bar lives on
+        // the popup, the default on the main window — so one bar
+        // implementation serves both.
+        if let panel = locationBarHUDWindow, panel.parent !== targetWindow {
+            panel.parent?.removeChildWindow(panel)
+            panel.level = targetWindow.level
+            targetWindow.addChildWindow(panel, ordered: .above)
         }
 
         alignLocationBarHUDWindow()
         locationBarHUDWindow?.makeKeyAndOrderFront(nil)
-        raiseHUDWindow(locationBarHUDWindow)
+        raiseHUDWindow(locationBarHUDWindow, parent: targetWindow)
         locationBarHUDView?.show()
     }
 
@@ -289,6 +365,12 @@ extension MainWindowController {
         }
         locationBarHUDWindow?.orderOut(nil)
 
+        // A popup host must not keep the bar attached after dismissal: the
+        // popup can close at any time. The main window stays the bar's home.
+        if let panel = locationBarHUDWindow, let hostWindow = panel.parent, hostWindow !== window {
+            hostWindow.removeChildWindow(panel)
+        }
+
         if isHeaderForcedVisibleForLocationBar {
             isHeaderForcedVisibleForLocationBar = false
             updateHeaderVisibility()
@@ -296,33 +378,47 @@ extension MainWindowController {
     }
 
     func toggleLocationBarHUD() {
-        if let hud = locationBarHUDView, hud.isHiding {
-            return
-        } else if let hud = locationBarHUDView, !hud.isHidden {
-            hideLocationBarHUD()
-        } else {
-            showLocationBarHUD()
-        }
+        toggleLocationBarHUD(for: nil)
     }
 
-    /// Sizes the bar to the main window's width plus a margin on each side, and
-    /// places it right next to the toolbar (drag area), following whichever
-    /// window edge the toolbar currently lives on.
+    func toggleLocationBarHUD(for hostWindow: NSWindow?) {
+        let targetWindow = hostWindow ?? locationBarTargetWindow()
+        let isShowingOnTarget = locationBarHUDWindow?.isVisible == true
+            || locationBarHUDView?.isHiding == true
+        if isShowingOnTarget, targetWindow === locationBarHUDWindow?.parent {
+            if locationBarHUDView?.isHiding == true {
+                return // dismissal already in flight (e.g. outside click)
+            }
+            hideLocationBarHUD()
+            return
+        }
+        showLocationBarHUD(for: targetWindow)
+    }
+
+    /// Sizes the bar to its host window's width plus a margin on each side,
+    /// and places it right next to that window's toolbar: the main window's
+    /// drag area (following whichever edge it currently lives on), or a
+    /// popup's always-top strip.
     func alignLocationBarHUDWindow() {
-        guard let parentWindow = window else { return }
-        let width = parentWindow.frame.width + 2 * Constants.LocationBarHUD.sideMargin
+        guard let hostWindow = locationBarHUDWindow?.parent ?? window else { return }
+        let width = hostWindow.frame.width + 2 * Constants.LocationBarHUD.sideMargin
         let height = Constants.LocationBarHUD.height
 
-        let headerInset = currentMargin + CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
+        let isMainWindow = hostWindow === window
+        let headerInset = (isMainWindow ? currentMargin : 0) + CGFloat(Constants.DRAGGABLE_AREA_HEIGHT)
         let gap = Constants.LocationBarHUD.headerGap
-        let parentFrame = parentWindow.frame
-        let isHeaderAtBottom = Settings.shared.dragAreaPosition == .bottom
+        let parentFrame = hostWindow.frame
+        let isHeaderAtBottom = isMainWindow && Settings.shared.dragAreaPosition == .bottom
 
         let targetY = isHeaderAtBottom
             ? parentFrame.minY + headerInset + gap
             : parentFrame.maxY - headerInset - gap - height
 
-        locationBarHUDWindow?.setFrame(alignedHUDFrame(width: width, height: height, y: targetY), display: true, animate: false)
+        locationBarHUDWindow?.setFrame(
+            alignedHUDFrame(width: width, height: height, y: targetY, hostWindow: hostWindow),
+            display: true,
+            animate: false
+        )
     }
 
     @objc func manualLockTapped(_ sender: NSButton) {
@@ -533,32 +629,33 @@ extension MainWindowController {
     }
 
     @objc func reloadActiveWebView(_ sender: Any?) {
-        guard let webView = currentWebView() else { return }
-        webView.reload()
+        focusedPageWebView()?.reload()
     }
 
     @objc func reloadActiveWebViewFromOrigin(_ sender: Any?) {
-        guard let webView = currentWebView() else { return }
-        webView.reloadFromOrigin()
+        focusedPageWebView()?.reloadFromOrigin()
     }
 
     @objc func reinstantiateActiveWebView(_ sender: Any?) {
-        guard let service = currentService(),
-              let webView = currentWebView(),
-              let url = URL(string: service.url) else { return }
+        guard let webView = focusedPageWebView(),
+              let url = webViewManager.serviceURL(for: webView) else { return }
         webViewManager.load(url, in: webView)
     }
 
-    @objc func presentFindPanelFromMenu(_ sender: Any?) {
-        if let keyWindow = NSApp.keyWindow,
-           let manager = webViewManager,
-           manager.isPopupWindow(keyWindow),
-           let popupWebView = manager.popupWebView(for: keyWindow),
-           let popupFindBar = manager.findBarController(forPopupWebView: popupWebView) {
-            popupFindBar.show()
-            return
+    /// The find bar for `page`: a popup page's own bar, else the main
+    /// window's bar. Menu-bar Find, Cmd+F, and Cmd+G all route through it.
+    func findBar(for page: WKWebView?) -> FindBarViewController {
+        if let page,
+           let popupFindBar = webViewManager?.findBarController(forPopupWebView: page) {
+            return popupFindBar
         }
-        findBarViewController.show()
+        return findBarViewController
+    }
+
+    @objc func presentFindPanelFromMenu(_ sender: Any?) {
+        // Menu-bar Find follows the focused window; the title menu passes
+        // its own page explicitly through the item.
+        findBar(for: targetPage(from: sender)).show()
     }
 
     @objc func performMenuToggleInspector(_ sender: Any?) {

@@ -16,6 +16,13 @@ protocol WebViewManagerDelegate: AnyObject {
     /// A link context menu item chose private open. The controller switches
     /// the source tab into private mode and loads `url` in it.
     func webView(_ webView: WKWebView, didRequestPrivateLinkOpen url: URL)
+    /// A popup title was right-clicked: build the shared page-title context
+    /// menu for the popup's page — the same menu the main window's title
+    /// shows, with every action targeting this page.
+    func makeTitleContextMenu(for webView: WKWebView?) -> NSMenu
+    /// A popup title was clicked: toggle the location bar over `hostWindow`.
+    /// The bar hosts on the window it addresses, so a popup gets its own.
+    func toggleLocationBarHUD(for hostWindow: NSWindow?)
 }
 
 @MainActor
@@ -111,7 +118,7 @@ final class WebViewManager: NSObject {
     // it (or the owner inherited from a parent popup). The window registry
     // holds the windows until their close path unregisters them.
     private var popupOwnerByToken: [ObjectIdentifier: TabIdentifier] = [:]
-    private var popupWindowsByToken: [ObjectIdentifier: ModalPopupWindow] = [:]
+    private var popupWindowsByToken: [ObjectIdentifier: PopupWindow] = [:]
     private var popupCreationOrder: [ObjectIdentifier: Int] = [:]
     private var popupCreationCounter = 0
     private var popupFindBars: [ObjectIdentifier: FindBarViewController] = [:]
@@ -1864,7 +1871,7 @@ final class WebViewManager: NSObject {
         // Nest under the opener's window: AppKit pins a child above its
         // parent, so a popup opened from another popup stays above its
         // opener even when the opener is clicked.
-        let popupWindow = ModalPopupWindow(
+        let popupWindow = PopupWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
             parentWindow: parentWindow
         )
@@ -1907,6 +1914,12 @@ final class WebViewManager: NSObject {
         popupWindow.onRefreshStop = { [weak self, weak popupWebView] in
             guard let self, let popupWebView else { return }
             self.refreshOrStop(popupWebView)
+        }
+        popupWindow.pageTitleContextMenuProvider = { [weak self] webView in
+            self?.delegate?.makeTitleContextMenu(for: webView)
+        }
+        popupWindow.onTitleClick = { [weak self] hostWindow in
+            self?.delegate?.toggleLocationBarHUD(for: hostWindow)
         }
         updatePopupWindowTitle(for: popupWebView)
 
@@ -1984,6 +1997,23 @@ final class WebViewManager: NSObject {
             return popupWindow.hostedWebView
         }
         return nil
+    }
+
+    /// Re-pins every visible popup above its parent in creation order, so
+    /// interacting with the parent can never bury a popup: AppKit's child
+    /// stacking is unreliable after order cycles. Oldest re-pins first so
+    /// the newest popup ends on top, matching show-order stacking.
+    @MainActor
+    func raisePopupWindows() {
+        let orderedTokens = popupWindowsByToken.keys.sorted {
+            (popupCreationOrder[$0] ?? 0) < (popupCreationOrder[$1] ?? 0)
+        }
+        for token in orderedTokens {
+            guard let popupWindow = popupWindowsByToken[token],
+                  popupWindow.isVisible,
+                  let parentWindow = popupWindow.parent else { continue }
+            parentWindow.addChildWindow(popupWindow, ordered: .above)
+        }
     }
 
     /// Single gate for a popup's find bar. Each popup webview owns one
@@ -2389,12 +2419,19 @@ final class WebViewManager: NSObject {
 
 // MARK: - WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
 
+/// A popup browser window: a non-modal child of its opener that stays
+/// pinned above the parent while the parent remains fully interactive.
 @MainActor
-private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
+private final class PopupWindow: NSWindow, NSWindowDelegate {
     var onClose: (@MainActor () -> Void)?
     /// Set by the manager: the shared refresh/stop toggle for this popup's
     /// page, so reload semantics stay single-sourced with the main toolbar.
     var onRefreshStop: (@MainActor () -> Void)?
+    /// Set by the manager: builds the shared page-title context menu for
+    /// this popup's page — the main window's menu, retargeted here.
+    var pageTitleContextMenuProvider: ((WKWebView) -> NSMenu?)?
+    /// Set by the manager: toggles the location bar over this window.
+    var onTitleClick: ((NSWindow) -> Void)?
     weak var hostedWebView: WKWebView? {
         didSet {
             guard let hostedWebView else { return }
@@ -2404,7 +2441,6 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
     let toolbarView = PopupToolbarView(frame: .zero)
     private let outlineView = WindowOutlineView(frame: .zero)
     private var navigationObservations: [NSKeyValueObservation] = []
-    private var shield: InteractionShieldView?
     private weak var parentWin: NSWindow?
     private var isCleaningUp = false
 
@@ -2448,13 +2484,6 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
         self.setFrameOrigin(NSPoint(x: x, y: y))
 
         installChrome()
-        
-        if let contentView = parentWindow.contentView {
-            let shieldView = InteractionShieldView(frame: contentView.bounds)
-            shieldView.autoresizingMask = [.width, .height]
-            contentView.addSubview(shieldView, positioned: .above, relativeTo: nil)
-            self.shield = shieldView
-        }
     }
     
     /// Builds the borderless window's chrome: rounded container, blur
@@ -2523,6 +2552,17 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
         }
         toolbarView.onRefreshStop = { [weak self] in self?.onRefreshStop?() }
         toolbarView.onClose = { [weak self] in self?.performClose(nil) }
+        // The title behaves like the main window's: a click toggles this
+        // popup's location bar, a right-click shows the shared page-title
+        // menu, both targeting this popup's page.
+        toolbarView.titleLabel.onClick = { [weak self] in
+            guard let self else { return }
+            self.onTitleClick?(self)
+        }
+        toolbarView.titleLabel.contextMenuProvider = { [weak self] _ in
+            guard let self, let webView = self.hostedWebView else { return nil }
+            return self.pageTitleContextMenuProvider?(webView)
+        }
     }
 
     /// The frame for this popup's web content: the window below the
@@ -2586,18 +2626,14 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
     }
 
     /// Session-scoped hide/show. Hiding orders the window out (preserving its
-    /// frame for an exact restore) and hides its modal shield so the newly
-    /// active session stays interactive. Showing restores the shield and, when
-    /// the Quiper window itself is visible, re-orders the popup front at its
-    /// preserved frame. When Quiper is hidden the reorder is deferred to the
-    /// overlay show path, which re-syncs visibility after AppKit restores
-    /// child windows.
+    /// frame for an exact restore); showing restores it at the preserved frame
+    /// and, when the Quiper window itself is visible, re-orders it front above
+    /// its parent. When Quiper is hidden the reorder is deferred to the overlay
+    /// show path, which re-syncs visibility after AppKit restores child windows.
     func setSessionHidden(_ hidden: Bool) {
         if hidden {
-            shield?.isHidden = true
             orderOut(nil)
         } else {
-            shield?.isHidden = false
             guard let parentWin, parentWin.isVisible == true else { return }
             // Re-pin child above parent in creation order: orderOut cycles
             // plus AppKit's automatic reshow do not reliably restore child
@@ -2628,16 +2664,11 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
 
         // Close child popups first so none outlive their parent as detached
         // orphans. Copied: closing detaches each child from this window.
-        for child in childWindows?.compactMap({ $0 as? ModalPopupWindow }) ?? [] {
+        for child in childWindows?.compactMap({ $0 as? PopupWindow }) ?? [] {
             child.close()
         }
         
-        // 1. Remove only this popup's shield: other sessions' popups keep
-        // their own shields so the newly active session's modality survives.
-        shield?.removeFromSuperview()
-        shield = nil
-        
-        // 2. Hand the hosted webview to the manager's shared teardown while
+        // 1. Hand the hosted webview to the manager's shared teardown while
         // this window still hosts it: it stops loading, clears delegates,
         // uninstalls scripts, handlers, the notification bridge, and
         // observation, then removes the webview. The shared path strips only
@@ -2646,21 +2677,21 @@ private final class ModalPopupWindow: NSWindow, NSWindowDelegate {
         self.onClose = nil
         onClose?()
         
-        // 3. Detach from parent
+        // 2. Detach from parent
         if let parent = parentWin {
             parent.removeChildWindow(self)
             
-            // 4. Asynchronously restore focus to avoid AppKit re-entrancy issues.
+            // 3. Asynchronously restore focus to avoid AppKit re-entrancy issues.
             // Skipped when the parent is itself closing (cascade close),
             // whose own cleanup hands focus upward.
             DispatchQueue.main.async { [weak parent] in
-                guard let parent, (parent as? ModalPopupWindow)?.isClosing != true else { return }
+                guard let parent, (parent as? PopupWindow)?.isClosing != true else { return }
                 parent.makeKeyAndOrderFront(nil)
                 NSApp.activate(ignoringOtherApps: true)
             }
         }
         
-        // 5. Break self-delegate cycle to allow deallocation
+        // 4. Break self-delegate cycle to allow deallocation
         self.delegate = nil
     }
     

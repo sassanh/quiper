@@ -1613,6 +1613,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidResize), name: NSWindow.didResizeNotification, object: window)
             window.addObserver(self, forKeyPath: "effectiveAppearance", options: [.new], context: nil)
         }
+        // The location bar follows its host window — the main window or a
+        // popup — wherever it currently hangs, and drops when that window
+        // closes before it references a dead window.
+        NotificationCenter.default.addObserver(self, selector: #selector(handleLocationBarHostGeometryChanged(_:)), name: NSWindow.didMoveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleLocationBarHostGeometryChanged(_:)), name: NSWindow.didResizeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleLocationBarHostWindowWillClose(_:)), name: NSWindow.willCloseNotification, object: nil)
         
         applyColorScheme()
     }
@@ -1766,7 +1772,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         func repairPopupIfNeeded() {
             guard let webView = capturedPopupWebView,
                   let superview = webView.superview else { return }
-            // Popup webViews are hosted directly in a ModalPopupWindow's
+            // Popup webViews are hosted directly in a PopupWindow's
             // contentView. After fullscreen WebKit leaves them sized to
             // screen dimensions; clamp back to superview bounds.
             if webView.frame != superview.bounds {
@@ -2045,9 +2051,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if let mhw = modifierHUDWindow, mhw.isVisible {
             alignHUDWindow(mhw, width: 492, height: 465)
         }
-        if locationBarHUDWindow?.isVisible == true {
-            alignLocationBarHUDWindow()
-        }
+        // The location bar aligns through the host-window observers installed
+        // in createDragArea, so it follows a popup's frame as well.
+    }
+
+    /// The location bar follows its host window live — the main window's own
+    /// move/resize or a popup's — wherever the bar currently hangs.
+    @objc private func handleLocationBarHostGeometryChanged(_ notification: Notification) {
+        guard let changedWindow = notification.object as? NSWindow,
+              changedWindow === locationBarHUDWindow?.parent,
+              locationBarHUDWindow?.isVisible == true else { return }
+        alignLocationBarHUDWindow()
+    }
+
+    /// A host window closing takes the bar with it; drop it before it
+    /// references a window the user can no longer see.
+    @objc private func handleLocationBarHostWindowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow === locationBarHUDWindow?.parent else { return }
+        hideLocationBarHUD()
     }
 
     func windowShouldBecomeKey(_ sender: NSWindow) -> Bool {
@@ -2085,12 +2107,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
 
         raiseVisibleHUDs()
+        // Interacting with the parent must never bury its popups: re-pin
+        // them above in creation order (child pinning is unreliable after
+        // order cycles), so the newest stays on top.
+        webViewManager?.raisePopupWindows()
 
         let otherChildWindows = window?.childWindows?.filter {
             $0.isVisible &&
             $0 != settingsWindow &&
             $0 != UpdatePromptWindowController.shared.window &&
-            $0 != blurWindow
+            $0 != blurWindow &&
+            // Popups are non-modal: they never block the parent from taking
+            // keyboard focus back.
+            webViewManager?.isPopupWindow($0) != true
         } ?? []
         if !otherChildWindows.isEmpty {
             updateFocusAppearance()

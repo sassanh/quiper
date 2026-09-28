@@ -921,17 +921,20 @@ extension MainWindowController {
             return true
         case UInt16(kVK_ANSI_W):
             // A popup is a window, not a tab: Cmd+W dismisses just the
-            // focused popup. A sheet attached to the popup is modal to it,
-            // so Cmd+W must not escape to the tab close path there either.
-            if let keyWindow = NSApp.keyWindow, let manager = webViewManager,
-               keyWindow.attachedSheet == nil, manager.isPopupWindow(keyWindow) {
-                keyWindow.close()
+            // focused popup — including one whose location bar holds key
+            // status. A sheet attached to the popup is modal to it, so Cmd+W
+            // must not escape to the tab close path there either.
+            if let popupWindow = focusedPopupWindow(), popupWindow.attachedSheet == nil {
+                popupWindow.close()
                 return true
             }
             closeCurrentTab()
             return true
         case UInt16(kVK_ANSI_R):
-            guard !isInspectorFocused() else {
+            // The focused popup's page reloads even while the main window's
+            // inspector is still its first responder: Cmd+R addresses the
+            // window holding focus.
+            guard focusedPopupWindow() != nil || !isInspectorFocused() else {
                 return false
             }
             if isShift {
@@ -943,24 +946,18 @@ extension MainWindowController {
             }
             return true
         case UInt16(kVK_ANSI_F):
-            if let popupFindBar = focusedPopupFindBar() {
-                popupFindBar.show()
-                return true
-            }
-            guard !isInspectorFocused() else {
+            // The focused popup's find bar wins over the main window's
+            // inspector state: Cmd+F addresses the window holding focus.
+            guard focusedPopupWindow() != nil || !isInspectorFocused() else {
                 return false
             }
-            findBarViewController.show()
+            findBar(for: focusedPageWebView()).show()
             return true
         case UInt16(kVK_ANSI_G):
-            if let popupFindBar = focusedPopupFindBar() {
-                popupFindBar.handleFindRepeat(shortcutShifted: isShift)
-                return true
-            }
-            guard !isInspectorFocused() else {
+            guard focusedPopupWindow() != nil || !isInspectorFocused() else {
                 return false
             }
-            findBarViewController.handleFindRepeat(shortcutShifted: isShift)
+            findBar(for: focusedPageWebView()).handleFindRepeat(shortcutShifted: isShift)
             return true
         case UInt16(kVK_ANSI_Comma):
             guard isShift else {
@@ -1035,20 +1032,6 @@ extension MainWindowController {
         return false
     }
 
-    /// The find bar for the focused session popup, if the key window is one
-    /// of `WebViewManager`'s popup windows. Cmd+F / Cmd+G route here instead
-    /// of the main window's find bar while a popup holds key status.
-    private func focusedPopupFindBar() -> FindBarViewController? {
-        guard let keyWindow = NSApp.keyWindow,
-              let manager = webViewManager,
-              manager.isPopupWindow(keyWindow),
-              let popupWebView = manager.popupWebView(for: keyWindow),
-              let popupFindBar = manager.findBarController(forPopupWebView: popupWebView) else {
-            return nil
-        }
-        return popupFindBar
-    }
-    
     private func handleActivationShortcut(for service: Service) {
         let alreadyActiveEngine = currentService()?.id == service.id
         if Settings.shared.hideQuiperWhenRetriggeringActiveEngineShortcut, alreadyActiveEngine {
