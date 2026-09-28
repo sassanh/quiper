@@ -214,8 +214,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var manualLockButton: NSButton!
     var hideWindowButton: HoverIconButton!
     var serviceListObservation: NSKeyValueObservation?
-    
-    var activeDownloads: [Any] = [] 
 
     private var titleObservation: NSKeyValueObservation?
     var sessionTitleObservations: [TabIdentifier: NSKeyValueObservation] = [:]

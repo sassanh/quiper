@@ -4,6 +4,9 @@
 
 ### Added
 
+- **Pick How Every Download Saves**: A new General setting switches between two behaviors — off (the default) saves files silently to their folder, on opens the macOS save dialog so each download can be renamed or redirected before it lands.
+- **Secure Storage Keeps Its Own Downloads**: Engines with Secure Storage save downloads into a Downloads folder inside their own storage — the save dialog opens there and offers a Secure Storage shortcut — and a download started while the storage is locked stops with a clear message instead of falling back to the general Downloads folder.
+- **Replacing a File Can't Lose It**: Confirming Replace in the save dialog keeps the original file in place and working until the new content lands — a download that fails never costs you the original.
 - **Hide the Overlay With the Mouse**: The main window's header gains a ✕ hide button at its trailing edge. It dismisses Quiper exactly like the hide shortcut and keeps every tab open, so the overlay can be put away without the keyboard.
 
 ### Changed
@@ -15,6 +18,7 @@
 
 ### Fixed
 
+- **Context Menu Downloads Actually Save**: Choosing Download Linked File or Download Image from a link's right-click menu now downloads the file through Quiper's destination rules — secure engines into their storage, the save dialog when enabled — instead of silently doing nothing.
 - **Link Actions Work Inside Iframes**: Right-clicking a link inside an embedded frame and choosing Open Link Here, Open Link in New Window, Open Link in System Browser, or Open Private now opens that link, instead of the item silently doing nothing.
 - **Closing a Popup No Longer Silently Breaks the Opening Tab**: The tab that opened a popup keeps its custom styles, input tracking, prompt history, and notification support after the popup closes, instead of losing them on the tab's next reload.
 - **Popups Record Prompt Input to Their Tab**: Prompt input typed inside a popup now records to the owning tab's prompt history, just as if it had been typed in the tab itself.

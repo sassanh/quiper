@@ -220,6 +220,17 @@ struct GeneralSettingsView: View {
                     SettingsDivider()
 
                     SettingsRow(
+                        title: "Downloads",
+                        message: "Save straight to the default folder, or open the save dialog for each file. Engines with Secure Storage save inside it either way.",
+                        icon: "arrow.down.circle.fill",
+                        iconColor: .purple.settingsResolved
+                    ) {
+                        AskWhereToSaveDownloadsPicker()
+                    }
+
+                    SettingsDivider()
+
+                    SettingsRow(
                         title: "Notification Permission",
                         message: notificationPermissionMessage,
                         icon: "bell.and.waveform.fill",

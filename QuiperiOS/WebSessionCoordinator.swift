@@ -447,6 +447,15 @@ extension WebSessionCoordinator: WKNavigationDelegate {
         retain(download)
     }
 
+    /// WebKit creates context-menu downloads — its native "Download Linked
+    /// File" — outside any navigation and reports them only through this
+    /// private navigation-delegate callback. A delegate that doesn't
+    /// implement it never receives the download, so the menu item silently
+    /// does nothing. Same wiring as macOS and WebKit's own MiniBrowser.
+    @objc func _webView(_ webView: WKWebView, contextMenuDidCreateDownload download: WKDownload) {
+        retain(download)
+    }
+
     private func notifyNavigationState(for webView: WKWebView) {
         onNavigationState?(webView.canGoBack, webView.canGoForward)
     }

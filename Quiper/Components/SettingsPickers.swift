@@ -980,6 +980,97 @@ struct GlobalEngineNumberShortcutsPicker: View {
 
 }
 
+/// Two schematic cards for the General tab: downloads that save straight to
+/// their folder versus downloads that open the macOS save dialog first.
+struct AskWhereToSaveDownloadsPicker: View {
+    @ObservedObject private var settings = Settings.shared
+
+    var body: some View {
+        HStack(spacing: 12) {
+            optionButton(
+                asking: false,
+                title: "Save Silently",
+                accessibilityIdentifier: "AskWhereToSaveDownloadsSilently"
+            )
+            optionButton(
+                asking: true,
+                title: "Ask Where to Save",
+                accessibilityIdentifier: "AskWhereToSaveDownloadsAsk"
+            )
+        }
+        .frame(width: 260, alignment: .trailing)
+        .accessibilityIdentifier("AskWhereToSaveDownloads")
+    }
+
+    private func optionButton(
+        asking: Bool,
+        title: String,
+        accessibilityIdentifier: String
+    ) -> some View {
+        Button {
+            guard settings.askWhereToSaveDownloads != asking else { return }
+            settings.setAskWhereToSaveDownloads(asking)
+        } label: {
+            VStack(spacing: 8) {
+                downloadFlowPreview(asking: asking)
+                    .padding(8)
+                    .pickerCardStyle(
+                        isSelected: settings.askWhereToSaveDownloads == asking,
+                        accentColor: .purple
+                    )
+
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(
+                        settings.askWhereToSaveDownloads == asking ? .primary : .secondary
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    /// Silent: a file dropping into a folder. Asking: a miniature save dialog
+    /// with its sidebar strip, name field, and save button.
+    private func downloadFlowPreview(asking: Bool) -> some View {
+        Group {
+            if asking {
+                HStack(spacing: 3) {
+                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                        .fill(Color.purple.settingsResolved.opacity(0.55))
+                        .frame(width: 14, height: 36)
+
+                    VStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                            .fill(Color(NSColor.separatorColor))
+                            .frame(height: 8)
+                        RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                            .fill(Color(NSColor.separatorColor))
+                            .frame(height: 8)
+                        HStack {
+                            Spacer()
+                            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                                .fill(Color.purple.settingsResolved)
+                                .frame(width: 22, height: 10)
+                        }
+                    }
+                }
+                .frame(width: 56, height: 44)
+            } else {
+                VStack(spacing: 3) {
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.secondary)
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(Color.purple.settingsResolved)
+                }
+                .frame(width: 56, height: 44)
+            }
+        }
+    }
+}
+
 struct PromptHistoryPicker: View {
     @ObservedObject private var settings = Settings.shared
 

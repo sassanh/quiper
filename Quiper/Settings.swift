@@ -262,6 +262,9 @@ class Settings: ObservableObject {
     }
     /// Makes the primary Go to engine 1–10 modifier shortcuts available system-wide.
     @Published var globalEngineDigitShortcutsEnabled: Bool = false
+    /// Whether downloads open the macOS save dialog instead of saving straight
+    /// to their default folder (the engine's secure storage for secured engines).
+    @Published var askWhereToSaveDownloads: Bool = false
     /// iOS owns these bindings. macOS retains them so a shared settings file
     /// remains lossless without interpreting UIKit key equivalents as Carbon keys.
     private var preservedIOSHardwareKeyboardSettings: IOSHardwareKeyboardSettings?
@@ -356,6 +359,7 @@ class Settings: ObservableObject {
         enableHUDCmdEscape = true
         hideQuiperWhenRetriggeringActiveEngineShortcut = true
         globalEngineDigitShortcutsEnabled = false
+        askWhereToSaveDownloads = false
         preservedIOSHardwareKeyboardSettings = nil
         showOnAllSpaces = false
         hideOnFocusLoss = false
@@ -566,6 +570,7 @@ class Settings: ObservableObject {
         enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
+        askWhereToSaveDownloads = persisted.askWhereToSaveDownloads ?? false
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         hideOnFocusLoss = persisted.hideOnFocusLoss ?? false
         focusLossEffectEnabled = persisted.focusLossEffectEnabled ?? true
@@ -669,6 +674,7 @@ class Settings: ObservableObject {
                                             hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
                                             hasDismissedEngineSettingsShortcutNotice: hasDismissedEngineSettingsShortcutNotice,
                                             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
+                                            askWhereToSaveDownloads: askWhereToSaveDownloads,
                                             iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
                                             quiperVersion: persistedQuiperVersionForSave())
             try SettingsPersistence.write(payload)
@@ -804,6 +810,7 @@ class Settings: ObservableObject {
             tabNavigationRingSize: tabNavigationRingSize,
             hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
+            askWhereToSaveDownloads: askWhereToSaveDownloads,
             iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
             quiperVersion: persistedQuiperVersionForSave()
         )
@@ -1026,6 +1033,7 @@ class Settings: ObservableObject {
         enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
+        askWhereToSaveDownloads = persisted.askWhereToSaveDownloads ?? false
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         hideOnFocusLoss = persisted.hideOnFocusLoss ?? false
         focusLossEffectEnabled = persisted.focusLossEffectEnabled ?? true
@@ -1301,6 +1309,11 @@ class Settings: ObservableObject {
 
     func setGlobalEngineDigitShortcutsEnabled(_ enabled: Bool) {
         globalEngineDigitShortcutsEnabled = enabled
+        saveSettings()
+    }
+
+    func setAskWhereToSaveDownloads(_ ask: Bool) {
+        askWhereToSaveDownloads = ask
         saveSettings()
     }
 

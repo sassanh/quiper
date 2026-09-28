@@ -132,7 +132,25 @@ final class WebViewManager: NSObject {
     private var pendingContextLinkRecording: ContextLinkRecording?
     private var contextMenuOpenedAt: Date?
     private var processTerminationRetryStates: [ObjectIdentifier: WebProcessTerminationRetryState] = [:]
-    private var activeDownloads: [Any] = []
+    /// One in-flight download: kept alive until WebKit reports it finished or
+    /// failed, together with the engine page that started it so the
+    /// destination decision knows whose storage (if any) the file belongs to.
+    private final class ActiveDownload {
+        let download: WKDownload
+        let serviceID: UUID?
+        weak var webView: WKWebView?
+        /// Set when the destination is decided: the gate's record of where
+        /// this download writes and what it may replace, settled once WebKit
+        /// reports the outcome.
+        var resolvedDestination: DownloadDestination.ResolvedDestination?
+
+        init(download: WKDownload, serviceID: UUID?, webView: WKWebView?) {
+            self.download = download
+            self.serviceID = serviceID
+            self.webView = webView
+        }
+    }
+    private var activeDownloads: [ObjectIdentifier: ActiveDownload] = [:]
     
     // State needed for logic
     private var services: [Service] = []
@@ -168,6 +186,7 @@ final class WebViewManager: NSObject {
         NotificationCenter.default.addObserver(self, selector: #selector(promptHistoryLimitChangedNotification(_:)), name: .promptHistoryLimitChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(engineCustomCSSChangedNotification(_:)), name: .engineCustomCSSChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(enginePromptSelectorChangedNotification(_:)), name: .enginePromptSelectorChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applicationWillTerminateNotification(_:)), name: NSApplication.willTerminateNotification, object: nil)
         Settings.shared.$enablePromptHistory
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -3037,18 +3056,25 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
 
     @available(macOS 11.3, *)
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-        
-        download.delegate = self
-        activeDownloads.append(download)
-        
+        startTracking(download, in: webView)
     }
 
     @available(macOS 11.3, *)
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
-        
-        download.delegate = self
-        activeDownloads.append(download)
-        
+        startTracking(download, in: webView)
+    }
+
+    /// WebKit creates context-menu downloads — its native "Download Linked
+    /// File" and "Download Image" — outside any navigation and reports them
+    /// only through this private navigation-delegate callback. A delegate that
+    /// doesn't implement it never receives the download, so no destination is
+    /// ever decided and the menu item silently does nothing. Handing the
+    /// download to the same tracking as every other download routes it
+    /// through the one destination gate; WebKit's own MiniBrowser wires it
+    /// identically. If a future WebKit drops the callback the item degrades
+    /// back to inert, never to a broken menu.
+    @objc func _webView(_ webView: WKWebView, contextMenuDidCreateDownload download: WKDownload) {
+        startTracking(download, in: webView)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
@@ -3113,23 +3139,70 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
     
     @available(macOS 11.3, *)
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
-        let fileManager = FileManager.default
-        guard let downloadsURL = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
-            completionHandler(nil)
-            return
+        let active = activeDownloads[ObjectIdentifier(download)]
+        DownloadDestination.resolve(
+            service: active?.serviceID.flatMap { serviceID in services.first(where: { $0.id == serviceID }) },
+            suggestedFilename: suggestedFilename,
+            responseURL: response.url,
+            window: active?.webView?.window
+        ) { resolved in
+            if let resolved {
+                if resolved.replacesExisting {
+                    NSLog("[Quiper][WKDownload] Saving to %@ via staged file %@", resolved.destination.path, resolved.stagingFile.path)
+                } else {
+                    NSLog("[Quiper][WKDownload] Saving to %@", resolved.destination.path)
+                }
+                active?.resolvedDestination = resolved
+            }
+            // WebKit only accepts a destination that does not exist yet, so an
+            // occupied destination is written through its staged file and
+            // swapped into place once the download lands.
+            completionHandler(resolved?.stagingFile)
         }
-        let destinationURL = downloadsURL.appendingPathComponent(suggestedFilename)
-        completionHandler(destinationURL)
     }
 
     @available(macOS 11.3, *)
     func downloadDidFinish(_ download: WKDownload) {
-        activeDownloads.removeAll { ($0 as? WKDownload) === download }
+        let identifier = ObjectIdentifier(download)
+        if let active = activeDownloads[identifier], let resolved = active.resolvedDestination {
+            DownloadDestination.finishReplacement(resolved, window: active.webView?.window)
+        }
+        activeDownloads.removeValue(forKey: identifier)
     }
 
     @available(macOS 11.3, *)
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
-        activeDownloads.removeAll { ($0 as? WKDownload) === download }
+        NSLog("[Quiper][WKDownload] Failed: %@", error.localizedDescription)
+        if let active = activeDownloads[ObjectIdentifier(download)], let resolved = active.resolvedDestination {
+            DownloadDestination.abandonReplacement(resolved)
+        }
+        activeDownloads.removeValue(forKey: ObjectIdentifier(download))
+    }
+
+    /// Remembers where a download came from until it finishes, so its
+    /// destination can be decided against the engine that started it.
+    @available(macOS 11.3, *)
+    private func startTracking(_ download: WKDownload, in webView: WKWebView) {
+        download.delegate = self
+        activeDownloads[ObjectIdentifier(download)] = ActiveDownload(
+            download: download,
+            serviceID: service(for: webView)?.id,
+            webView: webView
+        )
+    }
+
+    /// A quit ends in-flight downloads without WebKit reporting an outcome,
+    /// which would strand their staged files. Releasing them here keeps every
+    /// replaced file and drops the stand-in, exactly as a failed download
+    /// would — only the staged files this instance owns are touched, so a
+    /// second running Quiper keeps its live downloads intact. Engine storage
+    /// may already be unmounted by the time this runs, leaving its stand-in
+    /// behind the locked volume; the replaced file is safe either way.
+    @objc private func applicationWillTerminateNotification(_ notification: Notification) {
+        for active in activeDownloads.values {
+            guard let resolved = active.resolvedDestination else { continue }
+            DownloadDestination.abandonReplacement(resolved)
+        }
     }
 
     @objc private func webDataClearedNotification(_ notification: Notification) {

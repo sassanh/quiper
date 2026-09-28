@@ -395,6 +395,7 @@ struct PersistedSettings: Codable {
     var hideQuiperWhenRetriggeringActiveEngineShortcut: Bool?
     var hasDismissedEngineSettingsShortcutNotice: Bool?
     var globalEngineDigitShortcutsEnabled: Bool?
+    var askWhereToSaveDownloads: Bool?
     var iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings?
     var quiperVersion: String?
     var version: Int? = 1
@@ -433,6 +434,7 @@ struct PersistedSettings: Codable {
         case hideQuiperWhenRetriggeringActiveEngineShortcut
         case hasDismissedEngineSettingsShortcutNotice
         case globalEngineDigitShortcutsEnabled
+        case askWhereToSaveDownloads
         case iosHardwareKeyboardSettings
         case quiperVersion
     }
@@ -485,6 +487,7 @@ struct PersistedSettings: Codable {
          hideQuiperWhenRetriggeringActiveEngineShortcut: Bool? = nil,
          hasDismissedEngineSettingsShortcutNotice: Bool? = nil,
          globalEngineDigitShortcutsEnabled: Bool? = nil,
+         askWhereToSaveDownloads: Bool? = nil,
          iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings? = nil,
          quiperVersion: String? = nil,
          version: Int? = 1) {
@@ -528,6 +531,7 @@ struct PersistedSettings: Codable {
         self.hideQuiperWhenRetriggeringActiveEngineShortcut = hideQuiperWhenRetriggeringActiveEngineShortcut
         self.hasDismissedEngineSettingsShortcutNotice = hasDismissedEngineSettingsShortcutNotice
         self.globalEngineDigitShortcutsEnabled = globalEngineDigitShortcutsEnabled
+        self.askWhereToSaveDownloads = askWhereToSaveDownloads
         self.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
         self.quiperVersion = quiperVersion
         self.version = version
@@ -571,6 +575,7 @@ struct PersistedSettings: Codable {
          hideQuiperWhenRetriggeringActiveEngineShortcut: Bool? = nil,
          hasDismissedEngineSettingsShortcutNotice: Bool? = nil,
          globalEngineDigitShortcutsEnabled: Bool? = nil,
+         askWhereToSaveDownloads: Bool? = nil,
          iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings? = nil,
          quiperVersion: String? = nil,
          version: Int? = 1) {
@@ -612,6 +617,7 @@ struct PersistedSettings: Codable {
         self.hideQuiperWhenRetriggeringActiveEngineShortcut = hideQuiperWhenRetriggeringActiveEngineShortcut
         self.hasDismissedEngineSettingsShortcutNotice = hasDismissedEngineSettingsShortcutNotice
         self.globalEngineDigitShortcutsEnabled = globalEngineDigitShortcutsEnabled
+        self.askWhereToSaveDownloads = askWhereToSaveDownloads
         self.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
         self.quiperVersion = quiperVersion
         self.version = version
@@ -722,6 +728,7 @@ struct PersistedSettings: Codable {
         hideQuiperWhenRetriggeringActiveEngineShortcut = try container.decodeBoolIfPresent(forKey: .hideQuiperWhenRetriggeringActiveEngineShortcut)
         hasDismissedEngineSettingsShortcutNotice = try container.decodeBoolIfPresent(forKey: .hasDismissedEngineSettingsShortcutNotice)
         globalEngineDigitShortcutsEnabled = try container.decodeBoolIfPresent(forKey: .globalEngineDigitShortcutsEnabled)
+        askWhereToSaveDownloads = try container.decodeBoolIfPresent(forKey: .askWhereToSaveDownloads)
         iosHardwareKeyboardSettings = try container.decodeIfPresent(
             IOSHardwareKeyboardSettings.self,
             forKey: .iosHardwareKeyboardSettings
