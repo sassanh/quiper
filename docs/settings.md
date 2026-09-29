@@ -9,14 +9,14 @@ This page covers application-wide preferences under **Settings (`⌘ ⇧ ,`)** i
 These controls dictate how Quiper handles session cycling and engine switching during navigation:
 
 ### Automatically Switch Engines
-*   **Description:** Determines behavior when you close the last open session slot of a service engine.
-*   **Enabled:** When the last session of the active engine is closed, Quiper automatically switches focus to the nearest service engine that has active sessions open in memory.
+*   **Description:** Determines behavior when you close the last open session slot of an engine.
+*   **Enabled:** When the last session of the active engine is closed, Quiper automatically switches focus to the nearest engine that has active sessions open in memory.
 *   **Disabled:** Focus remains on the empty active engine, prompting you to create a new session slot manually or switch engines.
 
 ### Auto-Create Session on Engine Activation
 *   **Description:** Controls what happens when you navigate to an engine that has no active session slots open in memory.
 *   **Enabled:** Quiper automatically creates a new session slot (Slot 1) immediately, launching the web view.
-*   **Disabled:** Quiper displays the **Empty State screen**, presenting a summary of your active service engines, session counts, and keyboard shortcuts. No web view is initialized until you manually trigger session creation.
+*   **Disabled:** Quiper displays the **Empty State screen**, presenting a summary of your active engines, session counts, and keyboard shortcuts. No web view is initialized until you manually trigger session creation.
 
 ---
 
@@ -36,7 +36,7 @@ Quiper can maintain a local history of your sent prompts on a per-session basis,
 
 ## Configuration backups (Import/Export)
 
-You can backup or migrate your entire Quiper setup (including all configured service engines, custom CSS layout injects, custom action scripts, and global hotkeys) into a single, encrypted `.quiper` file.
+You can backup or migrate your entire Quiper setup (including all configured engines, custom CSS layout injects, custom action scripts, and global hotkeys) into a single, encrypted `.quiper` file.
 
 ### Export Config
 *   Click **Export** to select a target directory and save your configurations.
@@ -58,7 +58,7 @@ Global deletion controls for troubleshooting or completely resetting Quiper:
 *   **Use Case:** Clears corrupted login states or frees up disk space globally. All engines will behave as if loaded from a fresh browser profile.
 
 ### Erase All Engines
-*   **Action:** Removes every configured service engine and deletes its associated custom CSS and JavaScript action scripts.
+*   **Action:** Removes every configured engine and deletes its associated custom CSS and JavaScript action scripts.
 *   **Use Case:** Wipes the app clean to re-initialize your engine list from scratch.
 
 ### Erase All Actions

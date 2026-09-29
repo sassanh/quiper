@@ -80,7 +80,7 @@ Qwen ships as a built-in engine template, so on a fresh install it's already in 
 3.  A session tab opens and Quiper automatically places the keyboard cursor inside Qwen's prompt field, ready to type.
 
 > [!NOTE]
-> **Don't see a Qwen tab?** On a fresh install all default engines are preloaded, but if Qwen was removed earlier you can add it again: open **Settings (`⌘ ⇧ ,`) → Engines**, click **Add Engine**, set the name to `Qwen` and the URL to `https://chat.qwen.ai?referrer=https://github.io/sassanh/quiper`, then save. See [Managing Engines](../engines) for the focus selector (`.message-input-textarea, textarea[placeholder='How can I help you today?'], textarea`) and custom CSS defaults.
+> **Don't see a Qwen tab?** On a fresh install all default engines are preloaded, but if Qwen was removed earlier you can add it again: open **Settings (`⌘ ⇧ ,`) → Engines**, click **Add Engine**, choose **Blank**, set the name to `Qwen` and the URL to `https://chat.qwen.ai?referrer=https://github.io/sassanh/quiper`, then save. See [Managing Engines](../engines) for the focus selector (`.message-input-textarea, textarea[placeholder='How can I help you today?'], textarea`) and custom CSS defaults.
 
 ---
 

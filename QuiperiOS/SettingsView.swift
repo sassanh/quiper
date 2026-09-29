@@ -30,6 +30,7 @@ struct SettingsView: View {
     @State private var showingSyncProviderActive = false
     @State private var syncProviderData: Data?
     @State private var showingSyncBrowser = false
+    @State private var showingAddEngineSheet = false
 
     var body: some View {
         rootNavigation
@@ -177,6 +178,25 @@ struct SettingsView: View {
 
     private func applySheets(to content: AnyView) -> some View {
         content
+            .sheet(isPresented: $showingAddEngineSheet) {
+                AddEngineSheet(
+                    templates: environment.defaultServiceTemplates,
+                    existingEngines: environment.services,
+                    onAddBlank: {
+                        showingAddEngineSheet = false
+                        environment.addService(
+                            Service(name: "New Engine", url: "https://example.com", focus_selector: "")
+                        )
+                    },
+                    onAddTemplates: { templates in
+                        showingAddEngineSheet = false
+                        environment.addServices(from: templates)
+                    },
+                    onCancel: {
+                        showingAddEngineSheet = false
+                    }
+                )
+            }
             .sheet(isPresented: $showingSecureExportChoice, onDismiss: handleSecureExportDismiss) {
                 SecureExportChoiceSheet(
                     encryptedCount: secureExportServices.count,
@@ -350,57 +370,15 @@ struct SettingsView: View {
                     pendingEngineDeletion = environment.services[index]
                 }
             }
-            let availableTemplates = environment.defaultServiceTemplates.filter { template in
-                !environment.services.contains {
-                    $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                        == template.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                }
-            }
-            let cloudTemplates = availableTemplates.filter {
-                !DefaultEngineDefinitions.localTemplateNames.contains(
-                    $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                )
-            }
-            let localTemplates = availableTemplates.filter {
-                DefaultEngineDefinitions.localTemplateNames.contains(
-                    $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                )
-            }
-            Menu {
-                Button("Blank Engine") {
-                    environment.addService(
-                        Service(name: "New Engine", url: "https://example.com", focus_selector: "")
-                    )
-                }
-                if !cloudTemplates.isEmpty || !localTemplates.isEmpty {
-                    Divider()
-                    ForEach(cloudTemplates) { template in
-                        Button(template.name) {
-                            environment.addService(from: template)
-                        }
-                    }
-                    if !cloudTemplates.isEmpty && !localTemplates.isEmpty {
-                        Divider()
-                    }
-                    ForEach(localTemplates) { template in
-                        Button(template.name) {
-                            environment.addService(from: template)
-                        }
-                    }
-                    Divider()
-                    Button {
-                        environment.addAllServiceTemplates()
-                    } label: {
-                        Label("Add All Templates", systemImage: "plus.rectangle.on.rectangle")
-                    }
-                }
+            Button {
+                showingAddEngineSheet = true
             } label: {
                 Label("Add Engine", systemImage: "plus")
             }
         } header: {
             Text("Engines")
         } footer: {
-            Text("Engines are the AI services Quiper opens. The focus selector targets the prompt input on each site.")
+            Text("Engines are the AI sites Quiper opens. The focus selector targets the prompt input on each site.")
         }
     }
 

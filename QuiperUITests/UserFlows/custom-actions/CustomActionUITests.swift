@@ -36,7 +36,7 @@ final class CustomActionUITests: BaseUITest {
         // ActionRow: Text(action.name.isEmpty ? "Action" : action.name)
         // Add Action logic: `CustomAction(name: "New Action", ...)`?
         // Let's verify default name. ActionsSettingsView:44 "New Action" (implied default if not empty)
-        // Actually line 500: `let newService = Service(name: "New Service", ...)`
+        // Actually line 500: `let newService = Service(name: "New Engine", ...)`
         // Settings.swift line 317 `CustomAction(name: "New Session")`
         // ActionsSettingsView logic for adding blank action:
         // `settings.customActions.append(CustomAction(name: "New Action", ...))`?

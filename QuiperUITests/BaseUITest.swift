@@ -136,22 +136,22 @@ class BaseUITest: XCTestCase {
         _ = statusItem.waitForExistence(timeout: 10.0)
     }
     
-    /// Add a test service via Settings UI
+    /// Add a test engine via Settings UI
     @discardableResult
     func addTestService(name: String, url: String) -> Bool {
-        let addButton = app.descendants(matching: .any).matching(identifier: "Add Service").firstMatch
+        let addButton = app.descendants(matching: .any).matching(identifier: "Add Engine").firstMatch
         guard waitForElement(addButton, timeout: 5) else {
             return false
         }
         
         addButton.click()
         
-        let blankServiceMenuItem = app.menuItems["Blank Service"]
-        guard waitForElement(blankServiceMenuItem, timeout: 1) else {
+        let blankEngineTile = app.buttons["AddEngineBlank"]
+        guard waitForElement(blankEngineTile, timeout: 2) else {
             return false
         }
         
-        blankServiceMenuItem.click()
+        blankEngineTile.click()
         // Wait for name field instead of sleep
         
         // Fill in name

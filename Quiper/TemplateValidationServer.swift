@@ -376,7 +376,7 @@ final class TemplateValidationServer {
         }
 
         guard let serviceIndex else {
-            throw TemplateValidationError.notFound("Service not found")
+            throw TemplateValidationError.notFound("Engine not found")
         }
 
         let service = settings.services[serviceIndex]

@@ -94,7 +94,7 @@ OpenCode ships as a built-in engine template, so on a fresh install it's already
 4.  A session tab opens and Quiper automatically places the keyboard cursor inside OpenCode's prompt field, ready to type.
 
 > [!NOTE]
-> **Don't see an OpenCode tab?** On a fresh install all default engines are preloaded, but if OpenCode was removed earlier you can add it again: open **Settings (`⌘ ⇧ ,`) → Engines**, click **Add Engine**, set the name to `OpenCode` and the URL to `http://127.0.0.1:4096`, then save. See [Managing Engines](../engines) for the focus selector (`div[data-component='prompt-input'][contenteditable='true'], div[role='textbox'][contenteditable='true'], textarea, div[contenteditable='true']`) and custom CSS defaults.
+> **Don't see an OpenCode tab?** On a fresh install all default engines are preloaded, but if OpenCode was removed earlier you can add it again: open **Settings (`⌘ ⇧ ,`) → Engines**, click **Add Engine**, choose **Blank**, set the name to `OpenCode` and the URL to `http://127.0.0.1:4096`, then save. See [Managing Engines](../engines) for the focus selector (`div[data-component='prompt-input'][contenteditable='true'], div[role='textbox'][contenteditable='true'], textarea, div[contenteditable='true']`) and custom CSS defaults.
 
 ---
 

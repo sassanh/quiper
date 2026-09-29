@@ -85,7 +85,7 @@ final class AddingServiceTests: XCTestCase {
             return
         }
         
-        // TEST: Programmatically add a service (Simulating "Add Service" action)
+        // TEST: Programmatically add a service (Simulating "Add Engine" action)
         let newService = Service(
             name: "New Service",
             url: "https://example.com/new",

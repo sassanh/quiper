@@ -1,14 +1,14 @@
 # Managing Engines
 
-Quiper does not restrict you to a single AI ecosystem. You can manage and organize cloud services (like ChatGPT, Claude, and Gemini) alongside local AI instances (like Ollama or Open WebUI) in a single unified list.
+Quiper does not restrict you to a single AI ecosystem. You can manage and organize cloud engines (like ChatGPT, Claude, and Gemini) alongside local engines (like Ollama or Open WebUI) in a single unified list.
 
 ---
 
-## Service Configuration Settings
+## Engine Configuration Settings
 
 To add or configure an engine:
 1.  Open **Settings (`⌘ ⇧ ,`)** and navigate to the **Engines** tab.
-2.  Select an existing engine to edit, or click **Add Engine** at the bottom of the list.
+2.  Select an existing engine to edit, or click **Add Engine** in the toolbar, then choose **Blank** or select bundled templates and confirm.
 3.  Each engine exposes the following properties:
     *   **Name:** The label displayed in the switcher tab (e.g., "ChatGPT").
     *   **Engine Type:** `Single URL` or `Pinned Tabs` (see below).
@@ -74,7 +74,7 @@ document.querySelector("[your-focus-selector]")?.focus();
 ```
 
 ### Finding the Correct Prompt Input Selector
-If you add a custom web service and notice that your keyboard focus doesn't land in the input box, you need to find the element's CSS selector:
+If you add a custom engine and notice that your keyboard focus doesn't land in the input box, you need to find the element's CSS selector:
 1.  Summon the engine inside Quiper.
 2.  Press **`⌘ ⌥ I`** to open the **Web Inspector**.
 3.  Click the **Inspect Element** pointer icon at the top-left of the inspector.
@@ -85,9 +85,9 @@ If you add a custom web service and notice that your keyboard focus doesn't land
 
 For built-in engine templates, enable **Use Latest Default** to follow selector updates bundled with future Quiper versions. Disable it whenever you want to keep an editable custom selector.
 
-### Default Selectors for Common Services
+### Default Selectors for Common Engines
 
-| Service | Prompt Input Selector |
+| Engine | Prompt Input Selector |
 | :--- | :--- |
 | **Gemini** | `rich-textarea .textarea, .textarea, div[contenteditable='true'], textarea` |
 | **Claude** | `[data-testid='chat-input'] div[contenteditable='true'], div[contenteditable='true'], textarea` |
@@ -168,7 +168,7 @@ div[data-testid="primaryColumn"] {
 
 ### Finding Classes for Overrides
 If you want to write your own overrides (e.g. hiding a specific left-hand menu sidebar):
-1.  Summon the active service in Quiper.
+1.  Summon the active engine in Quiper.
 2.  Press **`⌘ ⌥ I`** to open the **Web Inspector**.
 3.  Click the inspection cursor and highlight the sidebar you wish to hide.
 4.  Identify its CSS class or element type (e.g., `<div class="sidebar-container-xyz">`).
@@ -218,7 +218,7 @@ Every engine has its own **Domain Routing** editor (**Settings ➔ Engines ➔ [
 
 ### Authentication Domains (OAuth Sign-In)
 
-Many AI services use third-party OAuth providers for logins (e.g., signing in to Claude or ChatGPT using a Google or Apple account). By default, WebKit restricts cookies and scripts to the engine's main domain, so clicking "Sign in with Google" can otherwise get blocked or bounced externally.
+Many engines use third-party OAuth providers for logins (e.g., signing in to Claude or ChatGPT using a Google or Apple account). By default, WebKit restricts cookies and scripts to the engine's main domain, so clicking "Sign in with Google" can otherwise get blocked or bounced externally.
 
 *   **The Solution:** Add an **Internal** routing rule for the authentication domain so the login flow stays inside Quiper.
 *   **Default Authenticator Expressions:**

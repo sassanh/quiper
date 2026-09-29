@@ -472,7 +472,7 @@ struct GeneralSettingsView: View {
                     
                     SettingsRow(
                         title: "Erase All Engines",
-                        message: "Remove every configured service and its stored scripts.",
+                        message: "Remove every configured engine and its stored scripts.",
                         icon: "cpu.fill",
                         iconColor: .red
                     ) {
@@ -498,7 +498,7 @@ struct GeneralSettingsView: View {
                     
                     SettingsRow(
                         title: "Erase All Actions",
-                        message: "Delete every custom action and its scripts across services.",
+                        message: "Delete every custom action and its scripts across engines.",
                         icon: "terminal.fill",
                         iconColor: .red
                     ) {
@@ -537,7 +537,7 @@ struct GeneralSettingsView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Removes cookies, caches, and storage for every service/engine.")
+            Text("Removes cookies, caches, and storage for every engine.")
         }
         .alert("Erase all engines?", isPresented: $showEraseEnginesConfirmation) {
             Button("Erase", role: .destructive) {
@@ -546,8 +546,8 @@ struct GeneralSettingsView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text(eraseEnginesHasUnsavedChanges
-                ? "Deletes every service and its local scripts." + TabCloseGate.settingsWarningSuffix
-                : "Deletes every service and its local scripts.")
+                ? "Deletes every engine and its local scripts." + TabCloseGate.settingsWarningSuffix
+                : "Deletes every engine and its local scripts.")
         }
         .alert("Erase all actions?", isPresented: $showEraseActionsConfirmation) {
             Button("Erase", role: .destructive) {
@@ -905,7 +905,7 @@ struct ServicesSettingsView: View {
     @ObservedObject private var settings = Settings.shared
     @State private var selectedServiceID: Service.ID?
     @State private var pendingServiceDeletion: PendingServiceDeletion?
-    private let localTemplateNames: Set<String> = DefaultEngineDefinitions.localTemplateNames
+    @State private var showingAddEngineSheet = false
     
     init(appController: AppController?, initialServiceID: UUID?) {
         self.appController = appController
@@ -927,12 +927,29 @@ struct ServicesSettingsView: View {
             Divider()
             serviceDetail
         }
+        .sheet(isPresented: $showingAddEngineSheet) {
+            AddEngineSheet(
+                templates: settings.defaultServiceTemplates,
+                existingEngines: settings.services,
+                onAddBlank: {
+                    showingAddEngineSheet = false
+                    addService()
+                },
+                onAddTemplates: { templates in
+                    showingAddEngineSheet = false
+                    addServices(from: templates)
+                },
+                onCancel: {
+                    showingAddEngineSheet = false
+                }
+            )
+        }
         .alert(item: $pendingServiceDeletion) { pending in
             Alert(
                 title: Text(pending.title),
                 message: Text(pending.hasUnsavedChanges
-                    ? "Deleting a service clears its sessions and custom action scripts." + TabCloseGate.settingsWarningSuffix
-                    : "Deleting a service clears its sessions and custom action scripts."),
+                    ? "Deleting an engine clears its sessions and custom action scripts." + TabCloseGate.settingsWarningSuffix
+                    : "Deleting an engine clears its sessions and custom action scripts."),
                 primaryButton: .destructive(Text("Delete")) {
                     deleteServices(ids: pending.ids)
                 },
@@ -959,14 +976,6 @@ struct ServicesSettingsView: View {
                 selectedServiceID = serviceID
             }
         }
-    }
-
-    private var onlineServiceTemplates: [Service] {
-        settings.defaultServiceTemplates.filter { !localTemplateNames.contains($0.name.lowercased()) }
-    }
-
-    private var localServiceTemplates: [Service] {
-        settings.defaultServiceTemplates.filter { localTemplateNames.contains($0.name.lowercased()) }
     }
 
     private var serviceList: some View {
@@ -1007,41 +1016,17 @@ struct ServicesSettingsView: View {
         .toolbar {
             ToolbarItemGroup {
                 Button(role: .destructive, action: deleteSelectedService) {
-                    Label("Delete Service", systemImage: "trash")
+                    Label("Delete Engine", systemImage: "trash")
                 }
                 .disabled(selectedServiceID == nil)
 
-                Menu {
-                    Button("Blank Service") {
-                        addService()
-                    }
-                    if !settings.defaultServiceTemplates.isEmpty {
-                        Divider()
-                        ForEach(onlineServiceTemplates) { template in
-                            Button(template.name) {
-                                addService(from: template)
-                            }
-                        }
-                        if !onlineServiceTemplates.isEmpty && !localServiceTemplates.isEmpty {
-                            Divider()
-                        }
-                        ForEach(localServiceTemplates) { template in
-                            Button(template.name) {
-                                addService(from: template)
-                            }
-                        }
-                        Divider()
-                        Button {
-                            addAllTemplates()
-                        } label: {
-                            Label("Add All Templates", systemImage: "plus.rectangle.on.rectangle")
-                        }
-                    }
+                Button {
+                    showingAddEngineSheet = true
                 } label: {
-                    Label("Add Service", systemImage: "plus")
+                    Label("Add Engine", systemImage: "plus")
                 }
-                .accessibilityIdentifier("Add Service")
-                .help("Create a blank service or add one from templates")
+                .accessibilityIdentifier("Add Engine")
+                .help("Add a blank engine or pick a bundled template")
             }
         }
     }
@@ -1058,7 +1043,7 @@ struct ServicesSettingsView: View {
                 .id(binding.id)
             } else {
                 VStack {
-                    Text("Select a service")
+                    Text("Select an engine")
                         .font(.headline)
                         .foregroundColor(.secondary)
                 }
@@ -1068,7 +1053,7 @@ struct ServicesSettingsView: View {
     }
     
     func addService() {
-        let newService = Service(name: "New Service", url: "https://example.com", focus_selector: "")
+        let newService = Service(name: "New Engine", url: "https://example.com", focus_selector: "")
         settings.services.append(newService)
         selectedServiceID = newService.id
     }
@@ -1094,19 +1079,12 @@ struct ServicesSettingsView: View {
         }
     }
     
-    private func addAllTemplates() {
-        var knownNames = Set(settings.services.map { $0.name.lowercased() })
-        var addedAny = false
-        for template in settings.defaultServiceTemplates {
-            let key = template.name.lowercased()
-            guard !knownNames.contains(key) else { continue }
+    private func addServices(from templates: [Service]) {
+        guard !templates.isEmpty else { return }
+        for template in templates {
             addService(from: template, enrichIcons: false)
-            knownNames.insert(key)
-            addedAny = true
         }
-        if addedAny {
-            settings.enrichMissingIconsIfNeeded()
-        }
+        settings.enrichMissingIconsIfNeeded()
     }
     
     private func applyDefaultScripts(from template: Service, to service: inout Service) {
@@ -1138,9 +1116,9 @@ struct ServicesSettingsView: View {
         if ids.count == 1, let name = names.first, !name.isEmpty {
             title = "Delete \(name)?"
         } else if ids.count == 1 {
-            title = "Delete this service?"
+            title = "Delete this engine?"
         } else {
-            title = "Delete \(ids.count) services?"
+            title = "Delete \(ids.count) engines?"
         }
         // Probe before showing the alert so the single delete dialog can
         // also carry the unsaved-changes warning. The engine teardown in
@@ -1686,7 +1664,7 @@ struct ServiceDetailView: View {
     private func startActivationShortcutCapture() {
         let serviceID = service.id
         let serviceName = service.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "Service"
+            ? "Engine"
             : service.name
         let session = StandardShortcutSession(onUpdate: { update in
             shortcutState.updateMessage(update)

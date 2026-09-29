@@ -16,7 +16,7 @@
     - All added items appear in their respective lists.
 6.  **Action (Bulk Add)**:
     - User erases all items again.
-    - User clicks "Add All Templates" for Engines.
+    - User clicks "Add Engine", selects all templates, and confirms.
     - User clicks "Add All Templates" for Actions.
 7.  **Expected Result**:
     - All default templates are populated simultaneously.

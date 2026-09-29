@@ -135,8 +135,8 @@ final class GhostOnboardingManager {
             if let target = wc.activeServiceSelector {
                 wc.showOnboardingHUD(
                     step: 1,
-                    title: "Switch AI Services",
-                    text: "This is your service list. Use `⌃⌘1` to `⌃⌘9` to switch between AI services instantly.",
+                    title: "Switch AI Engines",
+                    text: "This is your engine list. Use `⌃⌘1` to `⌃⌘9` to switch between AI engines instantly.",
                     target: target
                 )
             }
@@ -150,7 +150,7 @@ final class GhostOnboardingManager {
                 wc.showOnboardingHUD(
                     step: 2,
                     title: "Independent Chat Slots",
-                    text: "Each service has 10 isolated slots. Press `⌘1` to `⌘0` to switch between slots instantly.",
+                    text: "Each engine has 10 isolated slots. Press `⌘1` to `⌘0` to switch between slots instantly.",
                     target: target
                 )
             }

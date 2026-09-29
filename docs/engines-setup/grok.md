@@ -80,7 +80,7 @@ Grok ships as a built-in engine template, so on a fresh install it's already in 
 3.  A session tab opens and Quiper automatically places the keyboard cursor inside Grok's prompt field, ready to type.
 
 > [!NOTE]
-> **Don't see a Grok tab?** On a fresh install all default engines are preloaded, but if Grok was removed earlier you can add it again: open **Settings (`⌘ ⇧ ,`) → Engines**, click **Add Engine**, set the name to `Grok` and the URL to `https://grok.com?referrer=https://github.io/sassanh/quiper`, then save. See [Managing Engines](../engines) for the focus selector (`textarea[aria-label='Ask Grok anything'], textarea, div[contenteditable='true']`) and custom CSS defaults.
+> **Don't see a Grok tab?** On a fresh install all default engines are preloaded, but if Grok was removed earlier you can add it again: open **Settings (`⌘ ⇧ ,`) → Engines**, click **Add Engine**, choose **Blank**, set the name to `Grok` and the URL to `https://grok.com?referrer=https://github.io/sassanh/quiper`, then save. See [Managing Engines](../engines) for the focus selector (`textarea[aria-label='Ask Grok anything'], textarea, div[contenteditable='true']`) and custom CSS defaults.
 
 ---
 

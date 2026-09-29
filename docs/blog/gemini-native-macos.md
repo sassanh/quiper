@@ -82,7 +82,7 @@ Gemini often takes a while on long prompts. Quiper bridges web notifications to 
 
 ## A keyboard vocabulary that stays the same
 
-Quiper comes with five default custom actions, and each one is backed by an engine-specific JavaScript script because Gemini's DOM doesn't match other services' pages. The shortcuts stay familiar no matter which engine is active:
+Quiper comes with five default custom actions, and each one is backed by an engine-specific JavaScript script because Gemini's DOM doesn't match other engines' pages. The shortcuts stay familiar no matter which engine is active:
 
 | Action | Shortcut |
 | :--- | :--- |
@@ -123,7 +123,7 @@ A feature-level look before the workflow guidance:
 | Hardware | Apple Silicon only | Any Mac that runs the macOS version |
 | Engines | Gemini only | Gemini plus many other cloud and local engines |
 | Concurrent conversations | One active chat; past chats via your Google account | Up to 10 warm, persistent sessions per engine |
-| Service isolation | Not applicable (single service) | Sandboxed WebKit data store per engine |
+| Engine isolation | Not applicable (single app) | Sandboxed WebKit data store per engine |
 | Local data protection | — | Optional Touch ID encryption (AES-256 APFS) |
 | OS-level AI features | Voice, screen sharing, Speak to Window, opt-in file access | Not available (renders the web app) |
 | Customization | Limited | Per-engine CSS and JavaScript actions |
@@ -132,11 +132,11 @@ A feature-level look before the workflow guidance:
 
 ### Where Quiper has an edge
 
-- **One overlay for every service.** Gemini sits next to ChatGPT, Claude, Grok, and many other cloud and local engines. Switching services is a keyboard shortcut away instead of a trip to a different app or tab.
+- **One overlay for every engine.** Gemini sits next to ChatGPT, Claude, Grok, and many other cloud and local engines. Switching engines is a keyboard shortcut away instead of a trip to a different app or tab.
 - **Ten warm sessions per engine.** Each engine keeps up to ten sessions alive in memory, so a coding thread, a research thread, and a writing thread can all be mid-conversation at once, with `⌘ 1`–`⌘ 0` jumping between them instantly. In the official app you work in one active chat and return to older threads through your account history.
 - **Isolation between engines.** Every engine runs in its own sandboxed WebKit data store — cookies, cache, and local storage are separated, so nothing bleeds between Gemini, ChatGPT, and any local engine you add.
 - **Encrypted local storage.** An engine can be locked behind Touch ID, storing its cookies, cache, and local data in an AES-256 encrypted volume that only your biometrics unlock — useful on shared machines or against device theft.
-- **Local and self-hosted models.** Point Quiper at a local interface such as Open WebUI, `llama.cpp`, or oMLX and run local or offline models in the same overlay as cloud services.
+- **Local and self-hosted models.** Point Quiper at a local interface such as Open WebUI, `llama.cpp`, or oMLX and run local or offline models in the same overlay as cloud engines.
 - **Keyboard-first workflow.** A prompt-history HUD, a tab-history switcher, per-engine actions, and find-in-page all stay one shortcut away.
 - **Auditable.** Open source, telemetry-free, direct connections to providers, and cryptographically verified release builds.
 
@@ -150,7 +150,7 @@ A feature-level look before the workflow guidance:
 
 **Prefer the official app if** you're on Apple Silicon with macOS 15 or newer, Gemini is the only assistant you need, and you want first-party features and OS-level integration — voice, screen, and file access.
 
-**Prefer Quiper if** you work across several AI services and want them in one overlay, you juggle multiple live threads per service and want them all warm, you need isolation between services or local encryption behind Touch ID, you use local or self-hosted models, or you'd rather run an open-source, auditable client. On an Intel Mac or macOS 14 — where the official app won't run — Quiper is simply the option that works at all.
+**Prefer Quiper if** you work across several AI engines and want them in one overlay, you juggle multiple live threads per engine and want them all warm, you need isolation between engines or local encryption behind Touch ID, you use local or self-hosted models, or you'd rather run an open-source, auditable client. On an Intel Mac or macOS 14 — where the official app won't run — Quiper is simply the option that works at all.
 
 If both run on your machine, try them side by side and keep whatever fits your routine.
 

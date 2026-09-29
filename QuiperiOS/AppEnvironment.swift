@@ -848,13 +848,12 @@ final class AppEnvironment: ObservableObject {
         }
     }
 
-    func addAllServiceTemplates() {
-        var knownNames = Set(services.map { $0.name.lowercased() })
-        for template in defaultServiceTemplates {
-            let key = template.name.lowercased()
-            guard !knownNames.contains(key) else { continue }
+    /// Adds every selected template with a single icon-enrichment pass,
+    /// mirroring the macOS `addServices(from:)` batch path.
+    func addServices(from templates: [Service]) {
+        guard !templates.isEmpty else { return }
+        for template in templates {
             addService(from: template, enrichIcons: false)
-            knownNames.insert(key)
         }
         enrichMissingIconsIfNeeded()
     }

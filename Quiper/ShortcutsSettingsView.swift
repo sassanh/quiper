@@ -188,7 +188,7 @@ struct KeyBindingsSettingsView: View {
         .alert(item: $pendingDeletion) { pending in
             Alert(
                 title: Text("Delete \(pending.displayName)?"),
-                message: Text("This removes the shortcut and any custom scripts bound to this action across your services."),
+                message: Text("This removes the shortcut and any custom scripts bound to this action across your engines."),
                 primaryButton: .destructive(Text("Delete")) {
                     removeAction(id: pending.id)
                 },
@@ -511,7 +511,7 @@ struct KeyBindingsSettingsView: View {
                 }
             }
         })
-        let serviceName = settings.services.first(where: { $0.id == serviceID })?.name ?? "Service"
+        let serviceName = settings.services.first(where: { $0.id == serviceID })?.name ?? "Engine"
         shortcutState.start(session: session, title: "Launch \(serviceName)")
     }
 
@@ -534,7 +534,7 @@ struct KeyBindingsSettingsView: View {
         if settings.services.isEmpty {
             EmptyView()
         } else {
-            Section("Service Hotkeys") {
+            Section("Engine Hotkeys") {
                 SettingsLabeledControlRow(
                     title: "Use engine shortcuts as toggle",
                     detail: "When Quiper is already visible and focused on an engine, pressing that engine's global shortcut hides Quiper."
@@ -553,7 +553,7 @@ struct KeyBindingsSettingsView: View {
 
                 ForEach(settings.services) { service in
                     ServiceLaunchShortcutRow(
-                        title: service.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Service" : service.name,
+                        title: service.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Engine" : service.name,
                         shortcut: service.activationShortcut,
                         globalDigitShortcut: globalDigitShortcut(for: service.id),
                         statusMessage: activationStatus[service.id] ?? "",

@@ -2,17 +2,17 @@ import XCTest
 
 extension BaseUITest {
     
-    /// Adds a custom service with the given name and URL.
+    /// Adds a custom engine with the given name and URL.
     /// Assumes Settings is already open.
     func addCustomService(name: String, url: String) {
-        let addButton = app.descendants(matching: .any).matching(identifier: "Add Service").firstMatch
-        XCTAssertTrue(waitForElement(addButton, timeout: 5), "Add Service button should exist")
+        let addButton = app.descendants(matching: .any).matching(identifier: "Add Engine").firstMatch
+        XCTAssertTrue(waitForElement(addButton, timeout: 5), "Add Engine button should exist")
         
         addButton.click()
         
-        let blankServiceMenuItem = app.menuItems["Blank Service"]
-        XCTAssertTrue(waitForElement(blankServiceMenuItem, timeout: 2), "Blank Service menu item should appear")
-        blankServiceMenuItem.click()
+        let blankEngineTile = app.buttons["AddEngineBlank"]
+        XCTAssertTrue(waitForElement(blankEngineTile, timeout: 2), "Blank tile should appear in the Add Engine sheet")
+        blankEngineTile.click()
         // Wait for name field to be ready
         let nameField = app.textFields.element(boundBy: 0)
         XCTAssertTrue(waitForElement(nameField, timeout: 3), "Name text field should exist")

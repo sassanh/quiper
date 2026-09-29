@@ -23,7 +23,7 @@ When you lock an engine behind Touch ID, Quiper isolates its entire browser data
 ```
 
 ### 1. The APFS Sparsebundle
-*   **Creation:** When you enable encryption for a service, Quiper runs macOS's native disk utility:
+*   **Creation:** When you enable encryption for an engine, Quiper runs macOS's native disk utility:
     ```bash
     hdiutil create -size 5g -fs APFS -encryption AES-256 -volname QuiperEngine-[ServiceID] -type SPARSEBUNDLE -stdinpass [BundlePath]
     ```
@@ -38,10 +38,10 @@ When you lock an engine behind Touch ID, Quiper isolates its entire browser data
 ### 3. Dynamic WebKit Overlay Mounting
 WebKit stores website databases (cookies, localStorage, IndexedDB databases, HTTP cache, and session state) in a designated directory on your system. 
 
-When you unlock a service:
+When you unlock an engine:
 1.  Quiper requests Touch ID authentication.
 2.  Upon verification, it retrieves the passphrase from the Keychain.
-3.  Quiper mounts the sparsebundle directly over the WebKit cache folder for that specific service ID:
+3.  Quiper mounts the sparsebundle directly over the WebKit cache folder for that specific engine ID:
     *   **Mount Point:** `~/Library/WebKit/app.sassanh.quiper.Quiper/WebsiteDataStore/[service-id-lowercase]/`
     *   **Attach Command:**
         ```bash
@@ -76,4 +76,4 @@ You can configure when Quiper locks your encrypted engines in **Settings (`âŒ˜ â
 
 ### What it Does NOT Protect Against (Out of Scope)
 *   **Transit Security:** Secure Sandboxing only protects data *at rest on your local Mac*. 
-*   **Cloud Provider Servers:** Your prompts are still transmitted to the cloud servers of OpenAI, Google, Anthropic, or whoever runs the destination service. They are processed according to the respective provider's terms of service and are not protected by local APFS encryption once sent.
+*   **Cloud Provider Servers:** Your prompts are still transmitted to the cloud servers of OpenAI, Google, Anthropic, or whoever runs the destination engine. They are processed according to the respective provider's terms of service and are not protected by local APFS encryption once sent.

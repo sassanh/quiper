@@ -80,7 +80,7 @@ Gemini ships as a built-in engine template, so on a fresh install it's already i
 3.  A session tab opens and Quiper automatically places the keyboard cursor inside Gemini's prompt field, ready to type.
 
 > [!NOTE]
-> **Don't see a Gemini tab?** On a fresh install all default engines are preloaded, but if Gemini was removed earlier you can add it again: open **Settings (`⌘ ⇧ ,`) → Engines**, click **Add Engine**, set the name to `Gemini` and the URL to `https://gemini.google.com?referrer=https://github.io/sassanh/quiper`, then save. See [Managing Engines](../engines) for the focus selector and custom CSS defaults.
+> **Don't see a Gemini tab?** On a fresh install all default engines are preloaded, but if Gemini was removed earlier you can add it again: open **Settings (`⌘ ⇧ ,`) → Engines**, click **Add Engine**, choose **Blank**, set the name to `Gemini` and the URL to `https://gemini.google.com?referrer=https://github.io/sassanh/quiper`, then save. See [Managing Engines](../engines) for the focus selector and custom CSS defaults.
 
 ---
 

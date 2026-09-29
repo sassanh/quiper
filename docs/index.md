@@ -26,7 +26,7 @@ features:
     details: Keep up to ten independent sessions per engine for coding, research, writing, and everything between them.
   - icon: ↔️
     title: Cloud and Local Engines
-    details: Switch between services such as ChatGPT, Claude, Gemini, and Grok or connect local interfaces like Open WebUI and llama.cpp.
+    details: Switch between engines such as ChatGPT, Claude, Gemini, and Grok or connect local interfaces like Open WebUI and llama.cpp.
   - icon: ⌨️
     title: Native and Keyboard-First
     details: Navigate engines, sessions, history, search, and custom actions through native macOS controls and configurable shortcuts.

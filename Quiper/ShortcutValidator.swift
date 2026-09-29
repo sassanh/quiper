@@ -60,7 +60,7 @@ enum ShortcutValidator {
                 let name = service.name.trimmingCharacters(in: .whitespacesAndNewlines)
                 return DigitModifierConflict(
                     configuration: configuration,
-                    actionName: "Launch \(name.isEmpty ? "Service" : name)"
+                    actionName: "Launch \(name.isEmpty ? "Engine" : name)"
                 )
             }
 

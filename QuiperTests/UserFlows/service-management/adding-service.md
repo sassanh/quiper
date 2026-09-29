@@ -3,7 +3,7 @@
 **Goal**: Verify a user can add a new service configuration.
 
 1.  **Precondition**: Settings window is open.
-2.  **Action**: User clicks **Add Service**.
+2.  **Action**: User clicks **Add Engine** and chooses **Blank**.
 3.  **Action**: User fills in details:
     -   Name: "NewService"
     -   URL: "http://localhost:8000/new"

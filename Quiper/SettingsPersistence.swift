@@ -329,7 +329,7 @@ enum SettingsPersistence {
         var errorDescription: String? {
             switch self {
             case .wouldWriteEmptySecureMetadata(_, let name):
-                return "Refusing to overwrite secure storage for \(name) with empty metadata — live service is still a stub while unlocked. This would wipe the bundle."
+                return "Refusing to overwrite secure storage for \(name) with empty metadata — live engine is still a stub while unlocked. This would wipe the bundle."
             case .corruptedFile(let file, let backup, let underlying):
                 return "Settings file is corrupted at \(file.path) (backup at \(backup.path)): \(underlying.localizedDescription)"
             }

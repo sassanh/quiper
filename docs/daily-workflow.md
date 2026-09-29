@@ -22,7 +22,7 @@ Quiper is designed to be operated almost entirely from your keyboard, letting yo
 
 Quiper divides your workspaces into two hierarchical layers:
 
-1.  **Engines (Services):** These represent distinct AI models/websites (e.g., Gemini, Claude, ChatGPT, or local Ollama instances). You can configure up to 10 active engines in your main selector bar.
+1.  **Engines:** These represent distinct AI models/websites (e.g., Gemini, Claude, ChatGPT, or local Ollama instances). You can configure up to 10 active engines in your main selector bar.
 2.  **Sessions (Slots):** Each engine maintains **10 independent persistent sessions** (also referred to as slots). Unlike typical browser tabs that discard state when closed, all 10 slots remain active in memory. This lets you keep separate conversations open concurrently without page refreshes.
 
 ---
@@ -91,12 +91,12 @@ Each engine has 10 independent tabs (slots) kept hot in memory.
 
 | Action | Shortcut | Alternate | Description |
 | :--- | :--- | :--- | :--- |
-| **Switch Engine** | `⌘ ⌃ 1` … `⌘ ⌃ 0` | `⌘ ⌥ 1` … `⌘ ⌥ 0` | Instantly switches to service engines 1 through 10. |
-| **Next Engine** | `⌘ ⌃ →` | `⌘ ⌃ L` | Switches to the next configured service engine. |
-| **Previous Engine** | `⌘ ⌃ ←` | `⌘ ⌃ H` | Switches to the previous configured service engine. |
+| **Switch Engine** | `⌘ ⌃ 1` … `⌘ ⌃ 0` | `⌘ ⌥ 1` … `⌘ ⌥ 0` | Instantly switches to engines 1 through 10. |
+| **Next Engine** | `⌘ ⌃ →` | `⌘ ⌃ L` | Switches to the next configured engine. |
+| **Previous Engine** | `⌘ ⌃ ←` | `⌘ ⌃ H` | Switches to the previous configured engine. |
 
 > [!TIP]
-> You can **middle-click** any engine segment to close all active sessions for that service (requires confirmation if multiple sessions are active).
+> You can **middle-click** any engine segment to close all active sessions for that engine (requires confirmation if multiple sessions are active).
 
 ### 4. Web View Control & Zoom
 

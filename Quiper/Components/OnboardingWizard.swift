@@ -181,7 +181,7 @@ struct OnboardingWizardView: View {
             }
             .padding(.top, 24)
             
-            Text("To support multiple accounts and enhanced encryption, Quiper has upgraded to a new isolated engine architecture. Unfortunately, this means your previous sessions and logins could not be automatically migrated, and you will need to sign back in to your services.")
+            Text("To support multiple accounts and enhanced encryption, Quiper has upgraded to a new isolated engine architecture. Unfortunately, this means your previous sessions and logins could not be automatically migrated, and you will need to sign in again in each engine.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -467,7 +467,7 @@ struct OnboardingWizardView: View {
     }
 
     private func startShortcutCapture(for serviceID: UUID) {
-        let serviceName = settings.services.first(where: { $0.id == serviceID })?.name ?? "Service"
+        let serviceName = settings.services.first(where: { $0.id == serviceID })?.name ?? "Engine"
         let session = StandardShortcutSession(onUpdate: { update in
             shortcutRecorder.updateMessage(update)
         }, onFinish: {
@@ -499,7 +499,7 @@ struct OnboardingWizardView: View {
         for other in selectedServices where other.id != serviceID {
             if launchShortcuts[other.id] == configuration {
                 let name = other.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                return "Activate \(name.isEmpty ? "Service" : name)"
+                return "Activate \(name.isEmpty ? "Engine" : name)"
             }
         }
         if configuration == Settings.shared.hotkeyConfiguration { return "Global Shortcut" }

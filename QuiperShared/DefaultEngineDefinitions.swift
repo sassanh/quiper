@@ -37,9 +37,15 @@ enum DefaultEngineDefinitions {
     }
 
     /// Names of bundled templates that run locally on the user's machine rather
-    /// than as cloud services. Used to group the Add Engine menu into cloud and
-    /// local templates, matching macOS.
+    /// than as cloud services. Used to group the Add Engine sheet into Cloud
+    /// and Local sections on both platforms.
     static let localTemplateNames: Set<String> = ["open webui", "llama.cpp", "omlx", "openclaw", "opencode"]
+
+    /// Whether a bundled template runs on the user's machine instead of as a
+    /// cloud service.
+    static func isLocalTemplate(_ template: Service) -> Bool {
+        localTemplateNames.contains(template.name.lowercased())
+    }
 
     static let actionScriptHelpers = """
     function waitFor(check, timeoutMs = 1000) {

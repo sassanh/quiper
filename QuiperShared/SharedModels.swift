@@ -197,7 +197,7 @@ struct Service: Codable, Identifiable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Untitled Service"
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Untitled Engine"
         url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
         engineType = try container.decodeIfPresent(EngineType.self, forKey: .engineType) ?? .singleURL
         pinnedTabURLs = try container.decodeIfPresent([String].self, forKey: .pinnedTabURLs) ?? []

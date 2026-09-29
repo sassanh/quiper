@@ -66,7 +66,7 @@ final class TemplateManagementUITests: BaseUITest {
         ]
         let expectedEngineCount = engineTemplates.count
         
-        let addServiceBtn = app.descendants(matching: .any).matching(identifier: "Add Service").firstMatch
+        let addServiceBtn = app.descendants(matching: .any).matching(identifier: "Add Engine").firstMatch
         
         for name in engineTemplates {
             if !addServiceBtn.exists {
@@ -75,18 +75,34 @@ final class TemplateManagementUITests: BaseUITest {
             }
             addServiceBtn.click()
             
-            // Wait for menu to appear. Scope to toolbars to avoid matching Window menu items (e.g. "ChatGPT" window title)
-            let menuItem = app.toolbars.menuItems[name]
-            if menuItem.waitForExistence(timeout: 1.0) {
-                menuItem.click()
-            } else {
-                let menuButton = app.buttons[name]
-                if menuButton.waitForExistence(timeout: 1.0) {
-                    menuButton.click()
-                } else {
-                    XCTFail("Could not find menu item '\(name)'")
+            // The Add Engine sheet opens; pick the template tile, then confirm.
+            // Local templates sit below the sheet's fold, so the lazy grid
+            // only builds their tiles once scrolling brings them into view.
+            let templateTile = app.buttons["AddEngineTemplate-\(name)"]
+            if !templateTile.waitForExistence(timeout: 2.0) {
+                let sheetGrid = app.sheets.firstMatch.descendants(matching: .scrollView).firstMatch
+                guard sheetGrid.waitForExistence(timeout: 2.0) else {
+                    XCTFail("Could not find template tile '\(name)'")
+                    return
+                }
+                for _ in 0..<4 where !templateTile.isHittable {
+                    sheetGrid.scroll(byDeltaX: 0, deltaY: -300)
+                    _ = templateTile.waitForExistence(timeout: 1.0)
+                }
+                guard templateTile.isHittable else {
+                    XCTFail("Could not find template tile '\(name)'")
+                    return
                 }
             }
+            templateTile.click()
+            
+            let confirmButton = app.buttons["AddEngineConfirm"]
+            guard confirmButton.waitForExistence(timeout: 2.0) else {
+                XCTFail("Confirm button should appear after selecting '\(name)'")
+                return
+            }
+            confirmButton.click()
+            XCTAssertTrue(confirmButton.waitForNonExistence(timeout: 2.0), "Sheet should close after adding '\(name)'")
         }
         XCTAssertEqual(app.outlines.firstMatch.outlineRows.count, expectedEngineCount, "Should have added all engine templates")
         
@@ -140,20 +156,20 @@ final class TemplateManagementUITests: BaseUITest {
         secondActionAlert.buttons["Erase"].click()
         XCTAssertTrue(secondActionAlert.waitForNonExistence(timeout: 3.0))
         
-        // --- Step 4: Add All via Add All Buttons ---
+        // --- Step 4: Add All via Select All Not Added ---
         
         // Engines
         switchToSettingsTab("Engines")
         addServiceBtn.click()
         
-        let addAllEngines = app.menuItems["Add All Templates"]
-        if addAllEngines.waitForExistence(timeout: 2.0) {
-            addAllEngines.click()
-        } else {
-             let btn = app.buttons["Add All Templates"]
-             XCTAssertTrue(btn.waitForExistence(timeout: 2.0), "Add All Templates button (Engines) not found")
-             btn.click()
-        }
+        let selectNotAddedEngines = app.buttons["AddEngineSelectNotAdded"]
+        XCTAssertTrue(selectNotAddedEngines.waitForExistence(timeout: 2.0), "Select All Not Added button (Engines) not found")
+        selectNotAddedEngines.click()
+        
+        let confirmAllEngines = app.buttons["AddEngineConfirm"]
+        XCTAssertTrue(confirmAllEngines.waitForExistence(timeout: 2.0), "Confirm button (Engines) not found")
+        confirmAllEngines.click()
+        XCTAssertTrue(confirmAllEngines.waitForNonExistence(timeout: 2.0), "Sheet should close after bulk add")
         
         XCTAssertEqual(app.outlines.firstMatch.outlineRows.count, expectedEngineCount, "Step 4: Should have all engine templates")
         

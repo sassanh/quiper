@@ -96,19 +96,19 @@ document.querySelector('button[aria-label="Temporary chat"]').click();
 1.  Open **Settings (`⌘ ⇧ ,`)** and navigate to the **Actions** tab.
 2.  Define a new Action template (e.g. "New Chat" or "Toggle Private Session") and assign it a global keyboard shortcut (e.g., `⌘ N`).
 3.  Go to the **Engines** tab, select an engine, and bind that Action template to a specific JavaScript snippet.
-4.  When you press the shortcut, Quiper will evaluate the script bound to the active service engine.
+4.  When you press the shortcut, Quiper will evaluate the script bound to the active engine.
 
 ---
 
 ## Auditing Default Templates
 
-Default service templates and built-in action scripts change as provider web apps evolve. Use the local audit command before and after changing defaults:
+Default engine templates and built-in action scripts change as provider web apps evolve. Use the local audit command before and after changing defaults:
 
 ```bash
 node scripts/audit-default-templates.js
 ```
 
-This reads `Quiper/Settings.swift`, lists every default service template, and validates the JavaScript syntax of each embedded default action. Add `--network` to perform anonymous header-only endpoint checks without using your Quiper WebKit profiles or browser cookies:
+This reads `Quiper/Settings.swift`, lists every default engine template, and validates the JavaScript syntax of each embedded default action. Add `--network` to perform anonymous header-only endpoint checks without using your Quiper WebKit profiles or browser cookies:
 
 ```bash
 node scripts/audit-default-templates.js --network
@@ -121,7 +121,7 @@ Selector behavior still needs manual validation in a clean or test account when 
 ## External Script Editing
 
 For large scripts or when using custom IDEs (like VS Code or Cursor), you can edit your scripts directly on your file system:
-*   **Path:** `~/Library/Application Support/app.sassanh.quiper.Quiper/ActionScripts/[ServiceID]/[ActionID].js`
+*   **Path:** `~/Library/Application Support/app.sassanh.quiper.Quiper/ActionScripts/[EngineID]/[ActionID].js`
 *   **Quick Access:** In the **Engines** tab, next to the script editor, click **Open Externally** (opens the `.js` file in your default code editor) or **Reveal in Finder**.
 *   Quiper loads the script directly from this file path when triggered. Saved external edits also appear live in the Settings editor without restarting the app.
 *   If Quiper and an external editor change the same revision simultaneously, Settings lets you choose **Load External** or **Keep Mine** instead of silently discarding either version.
