@@ -100,6 +100,30 @@ enum DownloadDestination {
             .appendingPathComponent("Downloads", isDirectory: true)
     }
 
+    /// Whether this engine's downloads folder can be opened right now. Every
+    /// engine has one, but a secured engine answers only while its storage is
+    /// mounted — locked storage has no folder to show, and no engine at all
+    /// means no folder to open. Menus and buttons read this so they can say
+    /// why before the click, instead of failing after it.
+    static func canOpenDownloadsFolder(for service: Service?) -> Bool {
+        guard let service else { return false }
+        return !(service.isEncrypted && !EncryptedVolumeManager.shared.isUnlocked(for: service.id))
+    }
+
+    /// Opens this engine's downloads folder in Finder. The folder comes from
+    /// the same gate every download goes through, so opening can never point
+    /// where a download would not write; storage that locked since the caller
+    /// last checked reports itself instead of opening a folder that does not
+    /// exist.
+    static func openDownloadsFolder(for service: Service?, window: NSWindow?) {
+        switch prepareDirectory(for: service) {
+        case .failure(let blocked):
+            presentBlockedDownload(blocked, window: window)
+        case .success(let directory):
+            NSWorkspace.shared.open(directory)
+        }
+    }
+
     /// The name the file gets unless the user renames it in the save panel.
     static func resolvedFilename(suggested: String, responseURL: URL?) -> String {
         if !suggested.isEmpty {

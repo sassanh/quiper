@@ -135,6 +135,26 @@ struct DownloadDestinationTests {
         #expect(directory.path.contains("WebsiteDataStore/\(engineID.uuidString)"))
     }
 
+    @Test func canOpenDownloadsFolder_LocksWithTheEngineStorage() {
+        #expect(!DownloadDestination.canOpenDownloadsFolder(for: nil))
+
+        let plain = Service(name: "Plain Engine", url: "https://plain.example", focus_selector: "")
+        #expect(DownloadDestination.canOpenDownloadsFolder(for: plain))
+
+        let secured = Service(
+            name: "Secured Engine",
+            url: "https://secured.example",
+            focus_selector: "",
+            isEncrypted: true
+        )
+        defer { EncryptedVolumeManager.shared.markLocked(secured.id) }
+
+        #expect(!DownloadDestination.canOpenDownloadsFolder(for: secured))
+
+        EncryptedVolumeManager.shared.markUnlocked(secured.id)
+        #expect(DownloadDestination.canOpenDownloadsFolder(for: secured))
+    }
+
     @Test func askWhereToSaveDownloads_RoundTripsThroughTheSettingsFile() throws {
         let settings = Settings.shared
         let original = settings.askWhereToSaveDownloads

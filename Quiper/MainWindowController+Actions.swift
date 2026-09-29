@@ -107,6 +107,29 @@ extension MainWindowController {
         openItem.isEnabled = urlString != nil && !(urlString?.isEmpty ?? true)
         menu.addItem(openItem)
 
+        // The engine behind the menu's own page decides the item: a locked
+        // secure engine carries a lock and a reason instead of opening a
+        // folder that does not exist while its storage is unmounted.
+        let openDownloadsItem = NSMenuItem(
+            title: "Open Downloads Folder",
+            action: #selector(openEngineDownloadsFolder(_:)),
+            keyEquivalent: ""
+        )
+        openDownloadsItem.target = self
+        openDownloadsItem.representedObject = webView
+        if let service = webView.flatMap({ webViewManager?.service(for: $0) }) {
+            if DownloadDestination.canOpenDownloadsFolder(for: service) {
+                openDownloadsItem.isEnabled = true
+            } else {
+                openDownloadsItem.isEnabled = false
+                openDownloadsItem.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Locked")
+                openDownloadsItem.toolTip = "Unlock “\(service.name)” to open its downloads"
+            }
+        } else {
+            openDownloadsItem.isEnabled = false
+        }
+        menu.addItem(openDownloadsItem)
+
         menu.addItem(.separator())
 
         let findItem = NSMenuItem(
@@ -208,6 +231,15 @@ extension MainWindowController {
     @objc func openCurrentPageInBrowser(_ sender: Any?) {
         guard let url = targetPage(from: sender)?.url else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    /// The title menu's downloads item: opens the folder for the engine that
+    /// owns the menu's page, so the menu for one engine never opens another
+    /// engine's downloads.
+    @objc func openEngineDownloadsFolder(_ sender: Any?) {
+        guard let webView = targetPage(from: sender),
+              let service = webViewManager?.service(for: webView) else { return }
+        DownloadDestination.openDownloadsFolder(for: service, window: webView.window)
     }
 
     @objc func promptHistoryButtonTapped(_ sender: HoverIconButton) {

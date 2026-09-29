@@ -2675,33 +2675,6 @@ struct ServiceDetailView: View {
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     
-                    // High-density Warning Callout Card
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                            .font(.body)
-                            .padding(.top, 1)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Beta Feature Warning")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.primary)
-                            
-                            Text("Local encryption is in beta. OS detaches or keychain issues may cause session disruption or data loss. Please keep secure backups.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .padding(10)
-                    .background(Color.orange.opacity(0.08))
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.orange.opacity(0.2), lineWidth: 1)
-                    )
-                    
                     VStack(alignment: .leading, spacing: 14) {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
@@ -2790,6 +2763,39 @@ struct ServiceDetailView: View {
                                         }
                                     }
                                 }
+                            }
+
+                            // Only the shown auto-lock section needs a line
+                            // under it; a locked engine already sits below
+                            // the separator that follows the toggle.
+                            if !isEngineLocked {
+                                Divider()
+                            }
+
+                            let canOpenDownloads = DownloadDestination.canOpenDownloadsFolder(for: service)
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Downloads")
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                    if !canOpenDownloads {
+                                        Text("Unlock “\(service.name)” to open its downloads.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                                Spacer()
+                                Button {
+                                    DownloadDestination.openDownloadsFolder(for: service, window: nil)
+                                } label: {
+                                    Label(
+                                        "Open Downloads Folder",
+                                        systemImage: canOpenDownloads ? "arrow.down.circle" : "lock.fill"
+                                    )
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(!canOpenDownloads)
                             }
                         }
                     }

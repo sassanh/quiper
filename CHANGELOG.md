@@ -9,6 +9,7 @@
 - **Secure Storage Keeps Its Own Downloads**: Engines with Secure Storage save downloads into a Downloads folder inside their own storage — the save dialog opens there and offers a Secure Storage shortcut — and a download started while the storage is locked stops with a clear message instead of falling back to the general Downloads folder.
 - **Replacing a File Can't Lose It**: Confirming Replace in the save dialog keeps the original file in place and working until the new content lands — a download that fails never costs you the original.
 - **Hide the Overlay With the Mouse**: The main window's header gains a ✕ hide button at its trailing edge. It dismisses Quiper exactly like the hide shortcut and keeps every tab open, so the overlay can be put away without the keyboard.
+- **Open an Engine's Downloads Folder**: Right-click a page title and pick **Open Downloads Folder** — or use the new button in that engine's **Secure Storage** settings — to open exactly where the engine's downloads land: inside its Secure Storage for secured engines, your Downloads folder otherwise. While a secured engine is locked, the item shows a lock and how to unlock it instead of opening nothing.
 
 ### Changed
 
@@ -19,6 +20,7 @@
 - **Close and Stop Side by Side, Never Confused**: The popup's close button and refresh/stop share the toolbar's trailing end, drawn as different glyphs — close ✕, stop ■ — so the two can never read as one control while a page loads.
 - **Stop Loading Reads as Stop**: The stop-loading control now draws the standard filled square instead of another ✕ — in the popup toolbar, the main header, and the iOS control bar alike.
 - **One Icon Size Across the Overlay**: Every header and toolbar button — history, trash, actions, lock, close, refresh/stop, back/forward — now draws its glyph from a single shared size and weight, so no control looks off-grid beside its neighbors.
+- **Secure Storage Drops the Beta Warning**: The Secure Storage tab no longer opens with a warning that local encryption is a beta feature.
 
 ### Fixed
 
