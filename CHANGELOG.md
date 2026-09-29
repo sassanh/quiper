@@ -38,6 +38,7 @@
 - **Use Password Follows the Lock Shortcut**: On a locked engine, the Lock current engine shortcut now opens the password fallback and the button on the lock screen shows that exact key — instead of `⌘P`, which turned the shielded tab into a private one.
 - **Fullscreen Video Stays Edge to Edge Across Spaces**: Using Quiper in another Space while a video is fullscreen no longer shrinks the fullscreen content to the Quiper window's size in the bottom-left corner — the video keeps filling its Space, both in Mission Control and when you return to it.
 - **Fullscreen Content Stays Put While You Switch Tabs**: Switching sessions or engines from the overlay while content is fullscreen no longer blanks the fullscreen Space or pulls the fullscreen content into the Quiper window — and when fullscreen ends, the overlay shows the tab you switched to, not the old fullscreen tab stacked on top of it.
+- **Prompt History Hover Follows the Pointer**: Scrolling the prompt history with the arrow keys no longer leaves a hover glow on rows that slid away or moves the highlight your keyboard navigation selected — only the row under the pointer shows hover, its tooltip rides along with it, and the tooltip disappears when the list is cleared.
 
 ## [6.2.0] - 2026-09-23
 

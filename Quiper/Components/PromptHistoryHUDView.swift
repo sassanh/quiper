@@ -272,6 +272,7 @@ final class PromptHistoryHUDView: NSView {
             row.onHover = { [weak self, weak row] in
                 guard let self, let row,
                       let index = self.filteredItems.firstIndex(where: { $0.view === row }) else { return }
+                guard index != self.highlightedIndex else { return }
                 self.highlightedIndex = index
                 self.updateHighlighting()
             }
@@ -1071,7 +1072,10 @@ fileprivate final class PromptHistoryHUDButton: NSControl {
 fileprivate final class PromptHistoryHUDActionPill: NSControl {
     var onClick: (() -> Void)?
     private var isHovered = false {
-        didSet { updateAppearance() }
+        didSet {
+            guard isHovered != oldValue else { return }
+            updateAppearance()
+        }
     }
     private var trackingArea: NSTrackingArea?
     private let iconView = NSImageView()
@@ -1145,11 +1149,17 @@ fileprivate final class PromptHistoryHUDActionPill: NSControl {
     }
     
     override func mouseEntered(with event: NSEvent) {
-        isHovered = true
+        updateMouseHighlightFromPointerLocation()
     }
     
     override func mouseExited(with event: NSEvent) {
-        isHovered = false
+        updateMouseHighlightFromPointerLocation()
+    }
+    
+    /// Pills scroll with their row, so their highlight re-derives from the
+    /// pointer location the same way the row does.
+    func updateMouseHighlightFromPointerLocation() {
+        isHovered = isPointerInsideVisibleBounds()
     }
     
     override func mouseDown(with event: NSEvent) {
@@ -1201,7 +1211,10 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         didSet { updateAppearance() }
     }
     private var isHovered = false {
-        didSet { updateAppearance() }
+        didSet {
+            guard isHovered != oldValue else { return }
+            updateAppearance()
+        }
     }
     private var trackingArea: NSTrackingArea?
     
@@ -1336,8 +1349,46 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         let hasNewlines = entry.text.contains("\n") || entry.text.contains("\r")
         let textClipped = textWidth > textLabel.bounds.width
         
+        let wasClipped = isClipped
         isClipped = hasNewlines || textClipped
         clippingIndicator.isHidden = !isClipped
+        
+        // Layout is where isClipped becomes known, and it runs on attach,
+        // resize and every rebuild — so hover and tooltip eligibility are
+        // decided here rather than by whichever call site happened to run.
+        applyPointerState()
+        if isClipped != wasClipped {
+            applyEntryTooltip()
+        }
+    }
+    
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: nil)
+        guard window != nil, let contentView = enclosingScrollView?.contentView else {
+            // Detached: the pointer cannot be inside this row, and the
+            // resulting hover transition hides its tooltip.
+            applyPointerState()
+            return
+        }
+        // Scrolling moves rows under a stationary pointer without delivering
+        // any tracking-area event of their own, so the clip view's bounds
+        // change is this row's signal to re-derive.
+        contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(enclosingScrollViewDidScroll),
+            name: NSView.boundsDidChangeNotification,
+            object: contentView
+        )
+        // Reattachment may leave this row's frame untouched, so AppKit has no
+        // reason to call layout() on its own — but layout() is where pointer
+        // state is derived, so request it explicitly.
+        needsLayout = true
+    }
+    
+    @objc private func enclosingScrollViewDidScroll() {
+        applyPointerState()
     }
     
     override func updateTrackingAreas() {
@@ -1345,24 +1396,53 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         if let existing = trackingArea {
             removeTrackingArea(existing)
         }
-        let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways]
+        let options: NSTrackingArea.Options = [.mouseEnteredAndExited, .mouseMoved, .activeAlways]
         trackingArea = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
         addTrackingArea(trackingArea!)
     }
     
     override func mouseEntered(with event: NSEvent) {
-        isHovered = true
+        applyPointerState()
+    }
+    
+    /// Only actual pointer motion may move the keyboard highlight: scrolling
+    /// delivers `mouseEntered` for a row that slides under a stationary
+    /// pointer, and reacting to that would steal the highlight from the row
+    /// the user navigated to.
+    override func mouseMoved(with event: NSEvent) {
+        applyPointerState()
+        guard isHovered else { return }
         onHover?()
-        if isClipped {
-            if let scrollView = findScrollView() {
-                QuickTooltip.shared.showOnRight(of: scrollView, text: entry.text, for: self)
-            }
-        }
     }
     
     override func mouseExited(with event: NSEvent) {
-        isHovered = false
-        QuickTooltip.shared.hide(for: self)
+        applyPointerState()
+    }
+    
+    /// Applies every state the pointer owns for this row — the row's hover,
+    /// its pills' hover, and the entry tooltip — from one geometric
+    /// derivation. Tracking-area events are unreliable while the list scrolls
+    /// under a stationary pointer, so layout, detach, tracking events and
+    /// scrolling all funnel through here instead of mutating hover directly.
+    func applyPointerState() {
+        let wasHovered = isHovered
+        isHovered = isPointerInsideVisibleBounds()
+        for case let pill as PromptHistoryHUDActionPill in subviews {
+            pill.updateMouseHighlightFromPointerLocation()
+        }
+        if isHovered != wasHovered {
+            applyEntryTooltip()
+        }
+    }
+    
+    /// Tooltip policy: the tooltip is the readable form of the hovered entry,
+    /// so it shows exactly while this row is hovered and its entry is clipped.
+    private func applyEntryTooltip() {
+        if isHovered, isClipped, let scrollView = enclosingScrollView {
+            QuickTooltip.shared.showOnRight(of: scrollView, text: entry.text, for: self)
+        } else {
+            QuickTooltip.shared.hide(for: self)
+        }
     }
     
     override func mouseDown(with event: NSEvent) {
@@ -1383,17 +1463,6 @@ fileprivate final class PromptHistoryHUDRow: NSControl {
         if bounds.contains(point) {
             onClick?()
         }
-    }
-    
-    private func findScrollView() -> NSScrollView? {
-        var view: NSView? = self
-        while let current = view {
-            if let scrollView = current as? NSScrollView {
-                return scrollView
-            }
-            view = current.superview
-        }
-        return nil
     }
     
     private func updateAppearance() {
@@ -1426,7 +1495,7 @@ fileprivate final class PromptHistoryHUDFlippedStackView: NSStackView {
     override var isFlipped: Bool { true }
 }
 
-// MARK: - NSView Color Helpers
+// MARK: - NSView Helpers
 extension NSView {
     fileprivate func resolvedColor(_ color: NSColor) -> NSColor {
         var result = color
@@ -1438,5 +1507,20 @@ extension NSView {
     
     fileprivate func resolvedCGColor(_ color: NSColor) -> CGColor {
         return resolvedColor(color).cgColor
+    }
+    
+    /// Whether the pointer rests inside this view within its scroll view's
+    /// visible rectangle. Tracking-area events are unreliable while a scroll
+    /// view moves content under a stationary pointer, so hover state inside
+    /// scrollable content is always derived from this geometric check.
+    fileprivate func isPointerInsideVisibleBounds() -> Bool {
+        guard let mouseLocation = window?.mouseLocationOutsideOfEventStream,
+              let scrollView = enclosingScrollView,
+              let documentView = scrollView.documentView else {
+            return false
+        }
+        let pointInView = convert(mouseLocation, from: nil)
+        let visibleRectInView = convert(scrollView.documentVisibleRect, from: documentView)
+        return bounds.contains(pointInView) && visibleRectInView.contains(pointInView)
     }
 }
