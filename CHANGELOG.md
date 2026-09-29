@@ -32,6 +32,8 @@
 - **Popup Windows Keep Their Order When Switching Tabs**: Switching sessions no longer lets the main window render in front of its popups — popups keep their stacking so the newest stays on top.
 - **Only the Active Window Stays Clear**: The focus-loss dim judges each window on its own: whichever Quiper window holds focus — the main window or a popup — renders clear while every other window stays dimmed. Clicking a popup lifts the dim from that popup alone instead of dimming the whole overlay behind it, and leaving the app still dims everything.
 - **Use Password Follows the Lock Shortcut**: On a locked engine, the Lock current engine shortcut now opens the password fallback and the button on the lock screen shows that exact key — instead of `⌘P`, which turned the shielded tab into a private one.
+- **Fullscreen Video Stays Edge to Edge Across Spaces**: Using Quiper in another Space while a video is fullscreen no longer shrinks the fullscreen content to the Quiper window's size in the bottom-left corner — the video keeps filling its Space, both in Mission Control and when you return to it.
+- **Fullscreen Content Stays Put While You Switch Tabs**: Switching sessions or engines from the overlay while content is fullscreen no longer blanks the fullscreen Space or pulls the fullscreen content into the Quiper window — and when fullscreen ends, the overlay shows the tab you switched to, not the old fullscreen tab stacked on top of it.
 
 ## [6.2.0] - 2026-09-23
 

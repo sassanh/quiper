@@ -754,7 +754,8 @@ final class WebViewManager: NSObject {
     /// clear while the main window and sibling popups stay dimmed.
     func setPopupContentTransparent(_ transparent: Bool, for popupWindow: NSWindow) {
         guard let popup = popupWindowsByToken.values.first(where: { $0 === popupWindow }),
-              let wrapper = popup.hostedWebView?.superview as? WebViewWrapperView else { return }
+              let hostedWebView = popup.hostedWebView,
+              let wrapper = hostingWrapper(for: hostedWebView) else { return }
         wrapper.alphaValue = contentAlpha(for: transparent)
     }
 
@@ -781,6 +782,18 @@ final class WebViewManager: NSObject {
         }
     }
 
+    /// The single answer to "which Quiper view hosts this webView right
+    /// now". Returns nil while WebKit hosts the webView in its
+    /// element-fullscreen window — the superview is then a WebKit-owned
+    /// view — and when the webView is unhosted. Every consumer that would
+    /// lay out, hide, or re-parent a hosting wrapper goes through here:
+    /// acting on WebKit's fullscreen view would corrupt the fullscreen
+    /// Space (overlay layout would shrink the edge-to-edge fullscreen
+    /// content to the Quiper window's frame in the bottom-left corner).
+    private func hostingWrapper(for webView: WKWebView) -> WebViewWrapperView? {
+        webView.superview as? WebViewWrapperView
+    }
+
     /// Whether a managed webview is actually on screen. Ordered-out windows
     /// (hidden-session popups, hidden overlay) hide their content regardless
     /// of wrapper state; session tabs additionally hide behind their
@@ -788,7 +801,10 @@ final class WebViewManager: NSObject {
     /// page visible" goes through here so tabs and popups answer identically.
     func isWebContentVisible(_ webView: WKWebView) -> Bool {
         guard let window = webView.window, window.isVisible else { return false }
-        return (webView.superview as? WebViewWrapperView)?.isHidden != true
+        // Fullscreen-hosted or unhosted: no wrapper flag to consult, and a
+        // visible window means the page itself is on screen.
+        guard let wrapper = hostingWrapper(for: webView) else { return true }
+        return !wrapper.isHidden
     }
 
     /// Syncs the page's input-tracker activation. Every
@@ -1397,7 +1413,7 @@ final class WebViewManager: NSObject {
 
     private func beginMainFrameNavigation(_ webView: WKWebView, to url: URL) {
         let token = ObjectIdentifier(webView)
-        let wrapper = webView.superview as? WebViewWrapperView
+        let wrapper = hostingWrapper(for: webView)
         let errorHadFocus = wrapper?.isShowingError == true && wrapper?.isHidden == false
         failedRequestURLsByWebView.removeValue(forKey: token)
         wrapper?.showWebContent()
@@ -1412,7 +1428,7 @@ final class WebViewManager: NSObject {
         if let url = error.url ?? fallbackURL ?? activeRequestURLsByWebView[token] {
             failedRequestURLsByWebView[token] = url
         }
-        let wrapper = webView.superview as? WebViewWrapperView
+        let wrapper = hostingWrapper(for: webView)
         wrapper?.showError(error, retryAvailable: failedRequestURLsByWebView[token] != nil)
         if wrapper?.isHidden == false {
             wrapper?.focusError()
@@ -1422,7 +1438,7 @@ final class WebViewManager: NSObject {
     private func clearLoadError(for webView: WKWebView) {
         let token = ObjectIdentifier(webView)
         failedRequestURLsByWebView.removeValue(forKey: token)
-        (webView.superview as? WebViewWrapperView)?.showWebContent()
+        hostingWrapper(for: webView)?.showWebContent()
     }
 
     private func handleNavigationFailure(_ error: Error, for webView: WKWebView) {
@@ -1484,21 +1500,24 @@ final class WebViewManager: NSObject {
     }
 
     func hasVisibleLoadError(for webView: WKWebView) -> Bool {
-        (webView.superview as? WebViewWrapperView)?.isShowingError == true
+        hostingWrapper(for: webView)?.isShowingError == true
     }
 
     func focusLoadError(for webView: WKWebView) {
-        (webView.superview as? WebViewWrapperView)?.focusError()
+        hostingWrapper(for: webView)?.focusError()
     }
 
     func hideAll() {
         webviewsByID.values.forEach { sessionMap in
             sessionMap.values.forEach { webView in
-                if let wrapper = webView.superview {
-                    wrapper.isHidden = true
-                    pushInputTrackerState(false, to: webView)
-                    pushRecordingIndicatorState(to: webView)
-                }
+                // A fullscreen-hosted webView has no wrapper to hide: its
+                // wrapper is empty while the page lives in WebKit's
+                // fullscreen window, and its visibility is re-established
+                // when fullscreen exits (handleWindowDidExitWebFullScreen).
+                guard let wrapper = hostingWrapper(for: webView) else { return }
+                wrapper.isHidden = true
+                pushInputTrackerState(false, to: webView)
+                pushRecordingIndicatorState(to: webView)
             }
         }
     }
@@ -1543,31 +1562,37 @@ final class WebViewManager: NSObject {
         
         for sessionMap in webviewsByID.values {
             for webView in sessionMap.values {
-                if let wrapper = webView.superview {
-                    // Ensure no autoresizing conflicts with manual layout
-                    wrapper.autoresizingMask = []
-                    if animated {
-                        wrapper.animator().frame = frame
-                    } else {
-                        wrapper.frame = frame
-                    }
-                    updateMaskedCorners(for: wrapper)
-                    // After element-fullscreen, WebKit leaves the webView sized to
-                    // the fullscreen window. The wrapper itself is already the
-                    // correct (small) size, so autoresizing does not fire and the
-                    // web process keeps a fullscreen viewport (innerWidth stays at
-                    // screen width, media queries stay desktop). Force the webView
-                    // back to the wrapper bounds so the viewport recomputes.
-                    if webView.frame != wrapper.bounds {
-                        webView.frame = wrapper.bounds
-                    }
+                // During element fullscreen WebKit hosts the webView in its
+                // own fullscreen window, so its superview is a WebKit-owned
+                // view, not our wrapper. Laying that view out would size the
+                // fullscreen content to the overlay's frame — the fullscreen
+                // video would drop to the Quiper window's size in the
+                // bottom-left of the fullscreen Space. Skip it; the wrapper
+                // pass below keeps the empty wrapper at the correct overlay
+                // size as the re-parent target for fullscreen exit.
+                guard let wrapper = hostingWrapper(for: webView) else { continue }
+                // Ensure no autoresizing conflicts with manual layout
+                wrapper.autoresizingMask = []
+                if animated {
+                    wrapper.animator().frame = frame
+                } else {
+                    wrapper.frame = frame
+                }
+                updateMaskedCorners(for: wrapper)
+                // After element-fullscreen, WebKit leaves the webView sized to
+                // the fullscreen window. The wrapper itself is already the
+                // correct (small) size, so autoresizing does not fire and the
+                // web process keeps a fullscreen viewport (innerWidth stays at
+                // screen width, media queries stay desktop). Force the webView
+                // back to the wrapper bounds so the viewport recomputes.
+                if webView.frame != wrapper.bounds {
+                    webView.frame = wrapper.bounds
                 }
             }
         }
         // Wrappers whose webView is currently hosted in the WebKit fullscreen
-        // window have no superview link at this moment; ensure the wrapper
-        // itself is still at the correct size so the webView has a correct
-        // target to be restored into on didExit.
+        // window (skipped by the pass above) are sized here too, so the
+        // webView has a correct target to be restored into on didExit.
         for wrapperMap in wrappersByID.values {
             for wrapper in wrapperMap.values {
                 if wrapper.superview != nil, wrapper.frame != frame {
@@ -1604,8 +1629,13 @@ final class WebViewManager: NSObject {
         containerView?.layoutSubtreeIfNeeded()
         for sessionMap in webviewsByID.values {
             for webView in sessionMap.values {
-                webView.superview?.needsLayout = true
-                webView.superview?.layoutSubtreeIfNeeded()
+                // On the immediate willExit pass WebKit may not have
+                // re-parented the page back into its wrapper yet; the later
+                // passes catch the wrapper once it hosts the page again.
+                if let wrapper = hostingWrapper(for: webView) {
+                    wrapper.needsLayout = true
+                    wrapper.layoutSubtreeIfNeeded()
+                }
                 webView.needsLayout = true
                 // Dispatch resize in the web process; harmless for background tabs.
                 webView.evaluateJavaScript("window.dispatchEvent(new Event('resize'));", completionHandler: nil)
@@ -1614,8 +1644,14 @@ final class WebViewManager: NSObject {
     }
     
     func showSession(_ webView: WKWebView) {
-        guard let wrapper = webView.superview else {
-            NSLog("[WebViewManager] showSession failed: webView has no superview!")
+        // Element fullscreen: the webView lives in WebKit's fullscreen
+        // window, so the overlay has nothing to show. Acting on WebKit's
+        // hosting view would un-hide it and re-parent it into the overlay
+        // container, corrupting the fullscreen Space.
+        guard let wrapper = hostingWrapper(for: webView) else {
+            if webView.superview == nil {
+                NSLog("[WebViewManager] showSession failed: webView has no superview!")
+            }
             return
         }
         
@@ -1725,11 +1761,11 @@ final class WebViewManager: NSObject {
     // MARK: - Private Helpers
     
     private func tearDownWebView(_ webView: WKWebView) {
-        // Session chrome: locate the wrapper even while the webView sits in
-        // the WebKit element-fullscreen window (its superview is not the
-        // wrapper there) so no ghost wrapper shows the fullscreen webView as
-        // a background behind the overlay's transparent areas.
-        var wrapper = webView.superview as? WebViewWrapperView
+        // Session chrome: resolve the wrapper even while the webView sits in
+        // the WebKit element-fullscreen window (where `hostingWrapper` is
+        // nil), so no ghost wrapper shows the fullscreen webView as a
+        // background behind the overlay's transparent areas.
+        var wrapper = hostingWrapper(for: webView)
         if wrapper == nil, let serviceID = serviceIDsByWebView[ObjectIdentifier(webView)],
            let sessionMap = webviewsByID[serviceID] {
             for (sessionIndex, candidate) in sessionMap where candidate === webView {
@@ -2027,6 +2063,9 @@ final class WebViewManager: NSObject {
         if let existing = popupFindBars[token], existing.webView === webView {
             return existing
         }
+        // Hosting context, not ownership: the bar attaches once, at
+        // creation, beside wherever the page lives then — it is not
+        // re-attached if the page later moves.
         guard let hostView = webView.superview else { return nil }
         let controller = FindBarViewController()
         if let findDelegate = delegate as? FindBarDelegate {
@@ -2159,7 +2198,7 @@ final class WebViewManager: NSObject {
             x: popup.frameX, y: popup.frameY,
             width: popup.frameWidth, height: popup.frameHeight
         )
-        let shouldShow = sessionWebView.superview?.isHidden == false && overlayWindow.isVisible
+        let shouldShow = hostingWrapper(for: sessionWebView)?.isHidden == false && overlayWindow.isVisible
         guard let popupWebView = makePopupWebView(
             for: service,
             configuration: sessionWebView.configuration,
@@ -2249,7 +2288,8 @@ final class WebViewManager: NSObject {
     /// locked, or nil once unlocked (or for an unencrypted engine). The
     /// single way callers reach a locked session's unlock UI.
     func lockOverlay(for tab: TabIdentifier) -> LockOverlayView? {
-        Self.lockOverlay(in: webView(for: tab)?.superview)
+        guard let webView = webView(for: tab) else { return nil }
+        return Self.lockOverlay(in: hostingWrapper(for: webView))
     }
 
     /// The single detection of a lock overlay inside a session's hosting view.
@@ -2261,7 +2301,7 @@ final class WebViewManager: NSObject {
     /// not yet unlocked): its placeholder webview must not sprout popups.
     @MainActor
     private func isLockedPlaceholder(_ sessionWebView: WKWebView) -> Bool {
-        Self.lockOverlay(in: sessionWebView.superview) != nil
+        Self.lockOverlay(in: hostingWrapper(for: sessionWebView)) != nil
     }
 
     /// Closes every popup owned by `tab`. Called when the owning session is
@@ -2307,11 +2347,12 @@ final class WebViewManager: NSObject {
                 if let currentWindow = hostedWebView.window, currentWindow !== window {
                     currentWindow.close()
                 }
-                // The wrapper is the webview's superview normally, or the
-                // popup content view's subview while fullscreen-reparented.
-                let hostingWrapper = (hostedWebView.superview as? WebViewWrapperView)
+                // The wrapper is the webview's host normally; while it is
+                // fullscreen-reparented it stays behind in the popup
+                // content view.
+                let wrapper = hostingWrapper(for: hostedWebView)
                     ?? (window.contentView?.subviews.first(where: { $0 is WebViewWrapperView }) as? WebViewWrapperView)
-                tearDownWebContent(hostedWebView, hostingWrapper: hostingWrapper)
+                tearDownWebContent(hostedWebView, hostingWrapper: wrapper)
             }
         }
         popupOwnerByToken.removeValue(forKey: token)

@@ -769,6 +769,9 @@ extension MainWindowController {
 
         let controller = FindBarViewController()
         controller.delegate = self
+        // Hosting context, not ownership: the bar attaches once, at
+        // creation, beside wherever the page lives then — it is not
+        // re-attached if the page later moves.
         if let tabView = webView.superview {
             controller.attach(to: webView, in: tabView)
         }

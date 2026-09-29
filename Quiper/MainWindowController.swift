@@ -313,6 +313,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var elementFullscreenWebView: WKWebView?
     private var elementFullscreenOriginSpace: CGSFuncs.CGSSpaceID?
     private var shouldRestoreCollectionBehaviorAfterElementFullscreen = false
+    /// Set when a session page (not a popup) ends element fullscreen:
+    /// `hideAll` cannot touch a fullscreen-hosted webView, so after the
+    /// re-parent the overlay's visible-tab state must be re-established
+    /// once on exit. Consumed by `handleWindowDidExitWebFullScreen`.
+    private var needsActiveSessionVisibilityReassert = false
 
     /// The Space currently owned by a fullscreen element of Quiper's own web
     /// content, if any. Quiper's own overlay must never open inside it —
@@ -1740,6 +1745,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // page overflows / looks zoomed-out).
         guard notification.object as? NSWindow !== self.window else { return }
         restoreWebViewLayoutAfterFullscreen()
+
+        // The page is back in its wrapper now (or lands one runloop turn
+        // later), so after the exit animation settles, re-establish the
+        // invariant that exactly the active session's wrapper is visible.
+        // hideAll skipped the fullscreen-hosted webView all session, so a
+        // tab switch during fullscreen would otherwise leave the old tab's
+        // wrapper visible on top once its page returns.
+        guard needsActiveSessionVisibilityReassert else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self, self.needsActiveSessionVisibilityReassert else { return }
+            self.needsActiveSessionVisibilityReassert = false
+            self.updateActiveWebview(focusWebView: false)
+        }
     }
 
     private func clearElementFullscreenState() {
@@ -1749,6 +1767,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         webFullScreenWindow = nil
         isWebContentFullscreen = false
         removeWebFullScreenBanner()
+        // Only a session-driven fullscreen (the KVO path that owns
+        // `elementFullscreenWebView`) can leave two session wrappers
+        // visible; popup fullscreen runs entirely in its own window.
+        // Set-only: a later clear with nothing to remember must not cancel
+        // an owed re-assert.
+        if previousFullscreenWebView != nil {
+            needsActiveSessionVisibilityReassert = true
+        }
 
         // The fullscreen session is over: give the overlay its normal
         // all-Spaces behavior back (it was pinned to a single Space so it
@@ -1765,16 +1791,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func restoreWebViewLayoutAfterFullscreen(previousFullscreenWebView: WKWebView? = nil) {
         // Capture the specific fullscreen webView before it is nil-ed so
         // popup windows (whose webView is not in WebViewManager) are also
-        // repaired. For managed webViews the manager iteration below is
-        // sufficient, but this covers the unmanaged popup case.
+        // repaired. For managed session webViews WebViewManager.updateLayout
+        // performs the same correction through hostingWrapper(for:), but
+        // this covers the unmanaged popup case.
         let capturedPopupWebView = previousFullscreenWebView ?? elementFullscreenWebView
 
         func repairPopupIfNeeded() {
             guard let webView = capturedPopupWebView,
                   let superview = webView.superview else { return }
-            // Popup webViews are hosted directly in a PopupWindow's
-            // contentView. After fullscreen WebKit leaves them sized to
-            // screen dimensions; clamp back to superview bounds.
+            // Hosting context, not ownership: after fullscreen WebKit
+            // leaves the page sized to screen dimensions, so clamp it back
+            // to the bounds of whatever hosts it right now — WebKit's own
+            // fullscreen view (a no-op, still fullscreen-sized) until the
+            // re-parent, the wrapper afterwards.
             if webView.frame != superview.bounds {
                 webView.frame = superview.bounds
             }
