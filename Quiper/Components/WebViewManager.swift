@@ -2076,6 +2076,14 @@ final class WebViewManager: NSObject {
         return controller
     }
 
+    /// Includes hidden and nested session popups, not just attached children.
+    /// Keep existing child ordering and visibility while changing stacking.
+    func updatePopupWindowLevels(_ level: NSWindow.Level) {
+        for popupWindow in popupWindowsByToken.values {
+            popupWindow.level = level
+        }
+    }
+
     /// Applies session-scoped popup visibility and syncs the popup page's
     /// input tracker to the new state in the same step, so a popup that
     /// loaded while hidden still tracks input the moment it is shown.
@@ -2503,7 +2511,7 @@ private final class PopupWindow: NSWindow, NSWindowDelegate {
         self.parentWin = parentWindow
         super.init(contentRect: contentRect, styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
         
-        self.level = .floating
+        self.level = parentWindow.level
         self.collectionBehavior = Settings.shared.showOnAllSpaces
             ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             : [.moveToActiveSpace, .fullScreenAuxiliary]

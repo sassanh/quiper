@@ -5,9 +5,11 @@ import WebKit
 class MockHotkeyManager: HotkeyManaging {
     var registerCurrentHotkeyCalled = false
     var updateConfigurationCalled = false
+    var callback: (() -> Void)?
 
     func registerCurrentHotkey(_ callback: @escaping () -> Void) {
         registerCurrentHotkeyCalled = true
+        self.callback = callback
     }
 
     func updateConfiguration(_ configuration: HotkeyManager.Configuration) {
@@ -75,10 +77,12 @@ class MockMainWindowController: MainWindowControlling {
 
     func show() {
         showCalled = true
+        window?.orderFront(nil)
     }
 
     func hide() {
         hideCalled = true
+        window?.orderOut(nil)
     }
 
     func toggleInspector() {
@@ -145,6 +149,7 @@ final class AppControllerTests: XCTestCase {
     var mockEngineHotkeyManager: MockEngineHotkeyManager!
     var mockMainWindowController: MockMainWindowController!
     var mockNotificationDispatcher: MockNotificationDispatcher!
+    var originalActivationPolicy: NSApplication.ActivationPolicy!
 
     override func setUp() async throws {
         try await super.setUp()
@@ -154,6 +159,7 @@ final class AppControllerTests: XCTestCase {
         mockMainWindowController = MockMainWindowController()
         mockNotificationDispatcher = MockNotificationDispatcher()
         
+        originalActivationPolicy = NSApp.activationPolicy()
         await MainActor.run {
             Settings.shared.wipeAllData()
             _ = Settings.shared.loadSettings()
@@ -163,6 +169,9 @@ final class AppControllerTests: XCTestCase {
 
     override func tearDown() async throws {
         await MainActor.run {
+            mockMainWindowController.window?.orderOut(nil)
+            NSApp.setActivationPolicy(originalActivationPolicy)
+            Settings.shared.reset()
             Settings.shared.wipeAllData()
             appController = nil
             mockHotkeyManager = nil
@@ -198,6 +207,64 @@ final class AppControllerTests: XCTestCase {
         
         XCTAssertTrue(mockHotkeyManager.registerCurrentHotkeyCalled)
         XCTAssertTrue(mockEngineHotkeyManager.registerCalled)
+    }
+
+    func testOverlayHotkeyShowsHiddenWindowForBothLevels() throws {
+        appController.start()
+        let callback = try XCTUnwrap(mockHotkeyManager.callback)
+        let window = try XCTUnwrap(mockMainWindowController.window)
+
+        for keepOnTop in [true, false] {
+            Settings.shared.keepOverlayOnTop = keepOnTop
+            window.orderOut(nil)
+            XCTAssertFalse(window.isVisible)
+            callback()
+            XCTAssertTrue(window.isVisible)
+        }
+    }
+
+    func testTopmostOverlayHotkeyStillHidesVisibleWindow() throws {
+        Settings.shared.keepOverlayOnTop = true
+        appController.start()
+        let callback = try XCTUnwrap(mockHotkeyManager.callback)
+        let window = try XCTUnwrap(mockMainWindowController.window)
+        window.collectionBehavior.insert(.canJoinAllSpaces)
+        window.orderFront(nil)
+        XCTAssertTrue(window.isVisible)
+        XCTAssertTrue(window.isOnActiveSpace)
+
+        callback()
+        XCTAssertFalse(window.isVisible)
+    }
+
+    func testNormalOverlayHotkeyDoesNotHideVisibleNonKeyWindow() throws {
+        Settings.shared.keepOverlayOnTop = false
+        appController.start()
+        let callback = try XCTUnwrap(mockHotkeyManager.callback)
+        let window = try XCTUnwrap(mockMainWindowController.window)
+        window.collectionBehavior.insert(.canJoinAllSpaces)
+        window.orderFront(nil)
+        window.resignKey()
+        XCTAssertTrue(window.isVisible)
+        XCTAssertTrue(window.isOnActiveSpace)
+        XCTAssertFalse(window.isKeyWindow)
+
+        callback()
+        XCTAssertTrue(window.isVisible)
+    }
+
+    func testOverlayHotkeyPreservesFullscreenException() throws {
+        appController.start()
+        let callback = try XCTUnwrap(mockHotkeyManager.callback)
+        let window = try XCTUnwrap(mockMainWindowController.window)
+        mockMainWindowController.isActiveSpaceWebFullscreen = true
+
+        for keepOnTop in [true, false] {
+            Settings.shared.keepOverlayOnTop = keepOnTop
+            window.orderOut(nil)
+            callback()
+            XCTAssertFalse(window.isVisible)
+        }
     }
 
     func testShowWindow() {

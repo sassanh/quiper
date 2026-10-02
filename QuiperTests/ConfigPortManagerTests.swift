@@ -3,6 +3,7 @@ import Foundation
 @testable import Quiper
 import Carbon
 
+@Suite(.serialized)
 @MainActor
 final class ConfigPortManagerTests {
     
@@ -87,5 +88,21 @@ final class ConfigPortManagerTests {
         
         // Cleanup after tests
         Settings.shared.wipeAllData()
+    }
+
+    @Test func keepOverlayOnTop_ExportImportPreservesOptOut() throws {
+        let settings = Settings.shared
+        settings.wipeAllData()
+        _ = settings.loadSettings()
+        defer { settings.wipeAllData() }
+
+        settings.keepOverlayOnTop = false
+        let exportedData = try ConfigPortManager.exportConfig()
+        settings.keepOverlayOnTop = true
+        try ConfigPortManager.importConfig(from: exportedData)
+        #expect(settings.keepOverlayOnTop == false)
+
+        _ = settings.loadSettings()
+        #expect(settings.keepOverlayOnTop == false)
     }
 }

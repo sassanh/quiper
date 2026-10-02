@@ -198,6 +198,12 @@ class Settings: ObservableObject {
             saveSettings()
         }
     }
+    @Published var keepOverlayOnTop: Bool = true {
+        didSet {
+            NotificationCenter.default.post(name: .keepOverlayOnTopChanged, object: nil)
+            saveSettings()
+        }
+    }
     @Published var hideOnFocusLoss: Bool = false {
         didSet {
             saveSettings()
@@ -362,6 +368,7 @@ class Settings: ObservableObject {
         askWhereToSaveDownloads = false
         preservedIOSHardwareKeyboardSettings = nil
         showOnAllSpaces = false
+        keepOverlayOnTop = true
         hideOnFocusLoss = false
         focusLossEffectEnabled = true
         settingsColorStyle = .colorful
@@ -572,6 +579,7 @@ class Settings: ObservableObject {
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
         askWhereToSaveDownloads = persisted.askWhereToSaveDownloads ?? false
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
+        keepOverlayOnTop = persisted.keepOverlayOnTop ?? true
         hideOnFocusLoss = persisted.hideOnFocusLoss ?? false
         focusLossEffectEnabled = persisted.focusLossEffectEnabled ?? true
         tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
@@ -659,6 +667,7 @@ class Settings: ObservableObject {
                                             enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
                                             enableHUDCmdEscape: enableHUDCmdEscape,
                                             showOnAllSpaces: showOnAllSpaces,
+                                            keepOverlayOnTop: keepOverlayOnTop,
                                             hideOnFocusLoss: hideOnFocusLoss,
                                             focusLossEffectEnabled: focusLossEffectEnabled,
                                             settingsColorStyle: settingsColorStyle,
@@ -796,6 +805,7 @@ class Settings: ObservableObject {
             enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
             enableHUDCmdEscape: enableHUDCmdEscape,
             showOnAllSpaces: showOnAllSpaces,
+            keepOverlayOnTop: keepOverlayOnTop,
             hideOnFocusLoss: hideOnFocusLoss,
             focusLossEffectEnabled: focusLossEffectEnabled,
             settingsColorStyle: settingsColorStyle,
@@ -1035,6 +1045,7 @@ class Settings: ObservableObject {
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
         askWhereToSaveDownloads = persisted.askWhereToSaveDownloads ?? false
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
+        keepOverlayOnTop = persisted.keepOverlayOnTop ?? true
         hideOnFocusLoss = persisted.hideOnFocusLoss ?? false
         focusLossEffectEnabled = persisted.focusLossEffectEnabled ?? true
         settingsColorStyle = persisted.settingsColorStyle ?? .colorful

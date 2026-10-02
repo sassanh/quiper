@@ -20,6 +20,7 @@ extension Notification.Name {
     static let windowAppearanceChanged = Notification.Name("QuiperWindowAppearanceChanged")
     static let colorSchemeChanged = Notification.Name("QuiperColorSchemeChanged")
     static let showOnAllSpacesChanged = Notification.Name("QuiperShowOnAllSpacesChanged")
+    static let keepOverlayOnTopChanged = Notification.Name("QuiperKeepOverlayOnTopChanged")
     static let focusLossEffectChanged = Notification.Name("QuiperFocusLossEffectChanged")
     static let windowDidShow = Notification.Name("QuiperWindowDidShow")
     static let windowDidHide = Notification.Name("QuiperWindowDidHide")
@@ -646,7 +647,11 @@ final class AppController: NSObject, NSWindowDelegate {
                 self.activateLastKnownApplicationForFullscreenExit()
                 return
             }
-            if self.isWindowVisible {
+            let shouldHide = self.isWindowVisible && (
+                Settings.shared.keepOverlayOnTop
+                    || (NSApp.isActive && self.windowController.window?.isKeyWindow == true)
+            )
+            if shouldHide {
                 self.hideWindow(nil)
             } else {
                 self.showWindow(nil)

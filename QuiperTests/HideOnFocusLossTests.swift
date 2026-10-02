@@ -70,4 +70,54 @@ struct HideOnFocusLossTests {
         Settings.shared.reset()
         #expect(Settings.shared.hideOnFocusLoss == false)
     }
+
+    @Test func keepOverlayOnTop_FalseSurvivesDiskReload() throws {
+        let settings = Settings.shared
+        settings.wipeAllData()
+        _ = settings.loadSettings()
+        defer { settings.wipeAllData() }
+
+        settings.keepOverlayOnTop = false
+        settings.saveSettings()
+        let saved = try Data(contentsOf: SettingsPersistence.settingsFile)
+        settings.keepOverlayOnTop = true
+        try saved.write(to: SettingsPersistence.settingsFile, options: .atomic)
+
+        _ = settings.loadSettings()
+        #expect(settings.keepOverlayOnTop == false)
+    }
+
+    @Test(arguments: [false, true])
+    func keepOverlayOnTop_LegacyMissingOrNullRestoresTopmost(explicitNull: Bool) throws {
+        let settings = Settings.shared
+        settings.wipeAllData()
+        _ = settings.loadSettings()
+        defer { settings.wipeAllData() }
+
+        let legacyData = Data("""
+        {"services": [], "quiperVersion": "6.2.0", "version": 1\(explicitNull ? ", \"keepOverlayOnTop\": null" : "")}
+        """.utf8)
+        settings.keepOverlayOnTop = false
+        try legacyData.write(to: SettingsPersistence.settingsFile, options: .atomic)
+        _ = settings.loadSettings()
+        #expect(settings.keepOverlayOnTop == true)
+
+        settings.keepOverlayOnTop = false
+        try ConfigPortManager.importConfig(from: legacyData)
+        #expect(settings.keepOverlayOnTop == true)
+    }
+
+    @Test func keepOverlayOnTop_ResetRestoresTopmostAfterOptOut() {
+        let settings = Settings.shared
+        settings.wipeAllData()
+        _ = settings.loadSettings()
+        defer { settings.wipeAllData() }
+
+        settings.keepOverlayOnTop = false
+        settings.reset()
+        #expect(settings.keepOverlayOnTop == true)
+        settings.saveSettings()
+        _ = settings.loadSettings()
+        #expect(settings.keepOverlayOnTop == true)
+    }
 }
