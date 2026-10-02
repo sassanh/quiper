@@ -380,6 +380,7 @@ struct PersistedSettings: Codable {
     var enableHUDDoubleTapCmd: Bool?
     var enableHUDCmdEscape: Bool?
     var showOnAllSpaces: Bool?
+    var keepOverlayOnTop: Bool?
     var hideOnFocusLoss: Bool?
     var focusLossEffectEnabled: Bool?
     var settingsColorStyle: SettingsColorStyle?
@@ -419,6 +420,7 @@ struct PersistedSettings: Codable {
         case enableHUDDoubleTapCmd
         case enableHUDCmdEscape
         case showOnAllSpaces
+        case keepOverlayOnTop
         case hideOnFocusLoss
         case focusLossEffectEnabled
         case settingsColorStyle
@@ -472,6 +474,7 @@ struct PersistedSettings: Codable {
          enableHUDDoubleTapCmd: Bool? = nil,
          enableHUDCmdEscape: Bool? = nil,
          showOnAllSpaces: Bool? = nil,
+         keepOverlayOnTop: Bool? = nil,
          hideOnFocusLoss: Bool? = nil,
          focusLossEffectEnabled: Bool? = nil,
          settingsColorStyle: SettingsColorStyle? = nil,
@@ -516,6 +519,7 @@ struct PersistedSettings: Codable {
         self.enableHUDDoubleTapCmd = enableHUDDoubleTapCmd
         self.enableHUDCmdEscape = enableHUDCmdEscape
         self.showOnAllSpaces = showOnAllSpaces
+        self.keepOverlayOnTop = keepOverlayOnTop
         self.hideOnFocusLoss = hideOnFocusLoss
         self.focusLossEffectEnabled = focusLossEffectEnabled
         self.settingsColorStyle = settingsColorStyle
@@ -560,6 +564,7 @@ struct PersistedSettings: Codable {
          enableHUDDoubleTapCmd: Bool? = nil,
          enableHUDCmdEscape: Bool? = nil,
          showOnAllSpaces: Bool? = nil,
+         keepOverlayOnTop: Bool? = nil,
          hideOnFocusLoss: Bool? = nil,
          focusLossEffectEnabled: Bool? = nil,
          settingsColorStyle: SettingsColorStyle? = nil,
@@ -602,6 +607,7 @@ struct PersistedSettings: Codable {
         self.enableHUDDoubleTapCmd = enableHUDDoubleTapCmd
         self.enableHUDCmdEscape = enableHUDCmdEscape
         self.showOnAllSpaces = showOnAllSpaces
+        self.keepOverlayOnTop = keepOverlayOnTop
         self.hideOnFocusLoss = hideOnFocusLoss
         self.focusLossEffectEnabled = focusLossEffectEnabled
         self.settingsColorStyle = settingsColorStyle
@@ -693,6 +699,7 @@ struct PersistedSettings: Codable {
         enableHUDDoubleTapCmd = try container.decodeBoolIfPresent(forKey: .enableHUDDoubleTapCmd)
         enableHUDCmdEscape = try container.decodeBoolIfPresent(forKey: .enableHUDCmdEscape)
         showOnAllSpaces = try container.decodeBoolIfPresent(forKey: .showOnAllSpaces)
+        keepOverlayOnTop = try container.decodeBoolIfPresent(forKey: .keepOverlayOnTop)
         hideOnFocusLoss = try container.decodeBoolIfPresent(forKey: .hideOnFocusLoss)
         focusLossEffectEnabled = try container.decodeBoolIfPresent(forKey: .focusLossEffectEnabled)
         settingsColorStyle = try container.decodeIfPresent(SettingsColorStyle.self, forKey: .settingsColorStyle)

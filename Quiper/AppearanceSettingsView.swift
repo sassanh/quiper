@@ -196,6 +196,16 @@ struct AppearanceSettingsView: View {
             )
             
             SettingsDivider()
+
+            SettingsToggleRow(
+                title: "Keep overlay on top",
+                message: "Keep Quiper above other apps. When off, the hotkey brings it forward before hiding it. Spaces and focus-loss behavior are unchanged.",
+                icon: "square.3.layers.3d.top.filled",
+                iconColor: .indigo,
+                isOn: $settings.keepOverlayOnTop
+            )
+
+            SettingsDivider()
             
             // Background Style row with Light and Dark pickers
             DualThemeRow(

@@ -43,6 +43,35 @@ struct IOSAuditTests {
         #expect(firstSave == secondSave)
     }
 
+    @Test func importedOverlayOptOutSurvivesOrdinarySaveAndExport() throws {
+        let settingsURL = temporarySettingsURL()
+        defer { removeSettings(at: settingsURL) }
+        let environment = testEnvironment(settingsURL: settingsURL)
+        let importedData = Data("""
+        {"services": [], "quiperVersion": "6.2.0", "version": 1, "keepOverlayOnTop": false}
+        """.utf8)
+
+        try environment.importConfiguration(from: importedData)
+        environment.colorScheme = .dark
+        #expect(environment.save())
+
+        let reloaded = testEnvironment(settingsURL: settingsURL)
+        #expect(reloaded.colorScheme == .dark)
+        let exported = reloaded.makePersistedSettingsForExport(secureChoice: .keepLocked)
+        let data = try JSONEncoder().encode(exported)
+        let decoded = try JSONDecoder().decode(PersistedSettings.self, from: data)
+        #expect(decoded.keepOverlayOnTop == false)
+
+        let secondURL = temporarySettingsURL()
+        defer { removeSettings(at: secondURL) }
+        let secondEnvironment = testEnvironment(settingsURL: secondURL)
+        try secondEnvironment.importConfiguration(from: data)
+        #expect(secondEnvironment.save())
+        let finalExport = testEnvironment(settingsURL: secondURL)
+            .makePersistedSettingsForExport(secureChoice: .keepLocked)
+        #expect(finalExport.keepOverlayOnTop == false)
+    }
+
     @Test func emptyServicesRemainEmptyAndNeverPolicyRemovesTabState() throws {
         let service = makeService()
         let settings = PersistedSettings(

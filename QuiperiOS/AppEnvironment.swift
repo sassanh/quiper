@@ -1317,6 +1317,9 @@ final class AppEnvironment: ObservableObject {
         }()
 
         var payload = PersistedSettings(services: servicesForExport)
+        if case let .loaded(snapshot, _) = settingsDocumentState {
+            payload.keepOverlayOnTop = snapshot?.keepOverlayOnTop
+        }
         payload.customActions = customActions
         payload.colorScheme = colorScheme
         payload.dragAreaPosition = dragAreaPosition
@@ -1460,6 +1463,19 @@ final class AppEnvironment: ObservableObject {
     }
 
     private func applyImportedSettings(_ persisted: PersistedSettings) {
+        // iOS does not own this desktop preference, but an explicit import
+        // replaces it so subsequent passive saves and exports round-trip it.
+        if case let .loaded(snapshot, json) = settingsDocumentState {
+            var snapshot = snapshot ?? PersistedSettings(services: services)
+            var json = json
+            snapshot.keepOverlayOnTop = persisted.keepOverlayOnTop
+            if let keepOverlayOnTop = persisted.keepOverlayOnTop {
+                json["keepOverlayOnTop"] = keepOverlayOnTop
+            } else {
+                json.removeValue(forKey: "keepOverlayOnTop")
+            }
+            settingsDocumentState = .loaded(snapshot: snapshot, json: json)
+        }
         // Invalidate sessions for services that will be replaced or removed.
         let incomingIDs = Set(persisted.services.map(\.id))
         let removedIDs = Set(services.map(\.id)).subtracting(incomingIDs)

@@ -4,6 +4,25 @@ extension MainWindowController {
     
     // MARK: - Appearance & Theming
 
+    @objc func handleKeepOverlayOnTopChanged(_ notification: Notification) {
+        updateWindowLevel()
+    }
+
+    /// Change stacking without ordering windows front or changing focus.
+    /// Only overlay-owned companions follow this preference; system and
+    /// settings panels retain their specialized window levels.
+    func updateWindowLevel() {
+        guard let window else { return }
+        let level: NSWindow.Level = Settings.shared.keepOverlayOnTop ? .floating : .normal
+        window.level = level
+        blurWindow?.level = level
+        tabHistoryHUDWindow?.level = level
+        promptHistoryHUDWindow?.level = level
+        modifierHUDWindow?.level = level
+        locationBarHUDWindow?.level = level
+        webViewManager?.updatePopupWindowLevels(level)
+    }
+
     /// True when Quiper's own UI can be interacted with at all: the app is
     /// active and no settings window or update prompt sits above the
     /// overlay. Settings and update prompts take key in child windows; the
@@ -130,6 +149,7 @@ extension MainWindowController {
             bw.backgroundColor = .clear
             bw.hasShadow = false
             bw.ignoresMouseEvents = true
+            bw.level = win.level
             win.addChildWindow(bw, ordered: .below)
             blurWindow = bw
             updateCollectionBehaviorForVisibilityState()

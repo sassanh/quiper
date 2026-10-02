@@ -1047,7 +1047,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func configureWindow(for window: NSWindow) {
-        window.level = .floating
+        updateWindowLevel()
         updateCollectionBehaviorForVisibilityState()
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
@@ -1605,6 +1605,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleWorkspaceWake), name: NSWorkspace.didWakeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleColorSchemeChanged), name: .colorSchemeChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowOnAllSpacesChanged), name: .showOnAllSpacesChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleKeepOverlayOnTopChanged), name: .keepOverlayOnTopChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleFocusLossEffectChanged), name: .focusLossEffectChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowSettings), name: .settingsWindowDidOpen, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleCloseSettings), name: .settingsWindowDidClose, object: nil)
