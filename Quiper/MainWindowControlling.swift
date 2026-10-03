@@ -12,6 +12,7 @@ protocol MainWindowControlling: AnyObject {
     var activeWebView: WKWebView? { get }
     var isWebContentFullscreen: Bool { get }
     var isActiveSpaceWebFullscreen: Bool { get }
+    var isAnyQuiperWindowKey: Bool { get }
     func showWebFullScreenBanner()
     func focusInputInActiveWebview()
     func focusInputInActiveWebviewWithFallback()

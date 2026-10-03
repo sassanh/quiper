@@ -9,8 +9,13 @@ extension MainWindowController {
     }
 
     /// Change stacking without ordering windows front or changing focus.
-    /// Only overlay-owned companions follow this preference; system and
-    /// settings panels retain their specialized window levels.
+    /// Attached child windows follow the parent's level automatically,
+    /// so the settings and update-prompt child windows move with the
+    /// overlay instead of retaining a specialized level; standalone
+    /// system panels (export/import sheets, About) are not children and
+    /// keep their own levels. The explicit writes below also cover
+    /// popups and HUDs that are detached or hidden when the preference
+    /// changes.
     func updateWindowLevel() {
         guard let window else { return }
         let level: NSWindow.Level = Settings.shared.keepOverlayOnTop ? .floating : .normal
@@ -42,6 +47,18 @@ extension MainWindowController {
         guard let window else { return false }
         guard isOverlayInteractable else { return false }
         return window.isKeyWindow || webViewManager?.hasKeyPopupWindow == true
+    }
+
+    /// True while any Quiper window — the overlay, a session popup, a HUD,
+    /// Settings, or the update prompt — holds key status. The overlay
+    /// shortcut hides only while Quiper itself is in use and brings the
+    /// overlay forward otherwise. `NSApp.keyWindow` is AppKit's single
+    /// record of this app's key window, so every current and future Quiper
+    /// window counts without a hand-maintained list. Unlike
+    /// `hasWindowFocus`, an open settings or update-prompt window doesn't
+    /// mask this.
+    var isAnyQuiperWindowKey: Bool {
+        NSApp.keyWindow != nil
     }
 
     /// The focus-loss dim for one specific window of the overlay. Exactly

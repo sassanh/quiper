@@ -62,6 +62,12 @@ class MockMainWindowController: MainWindowControlling {
     var showWebFullScreenBannerCalled = false
     var isWebContentFullscreen = false
     var isActiveSpaceWebFullscreen = false
+    /// Simulates any other Quiper window (popup, HUD, Settings, update
+    /// prompt) holding key status in the real controller.
+    var otherQuiperWindowHasKeyStatus = false
+    var isAnyQuiperWindowKey: Bool {
+        window?.isKeyWindow == true || otherQuiperWindowHasKeyStatus
+    }
     
     func showWebFullScreenBanner() {
         showWebFullScreenBannerCalled = true
@@ -251,6 +257,25 @@ final class AppControllerTests: XCTestCase {
 
         callback()
         XCTAssertTrue(window.isVisible)
+    }
+
+    func testNormalOverlayHotkeyHidesWhenAnotherQuiperWindowHasKeyStatus() throws {
+        Settings.shared.keepOverlayOnTop = false
+        appController.start()
+        let callback = try XCTUnwrap(mockHotkeyManager.callback)
+        let window = try XCTUnwrap(mockMainWindowController.window)
+        window.collectionBehavior.insert(.canJoinAllSpaces)
+        window.orderFront(nil)
+        XCTAssertTrue(window.isVisible)
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard NSApp.isActive else {
+            throw XCTSkip("The test host refused activation")
+        }
+        mockMainWindowController.otherQuiperWindowHasKeyStatus = true
+
+        callback()
+        XCTAssertFalse(window.isVisible)
     }
 
     func testOverlayHotkeyPreservesFullscreenException() throws {

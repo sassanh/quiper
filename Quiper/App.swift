@@ -649,7 +649,7 @@ final class AppController: NSObject, NSWindowDelegate {
             }
             let shouldHide = self.isWindowVisible && (
                 Settings.shared.keepOverlayOnTop
-                    || (NSApp.isActive && self.windowController.window?.isKeyWindow == true)
+                    || (NSApp.isActive && self.windowController.isAnyQuiperWindowKey)
             )
             if shouldHide {
                 self.hideWindow(nil)

@@ -26,7 +26,7 @@ Upgrading from an older version preserves the previous shared selector display c
 
 **Keep overlay on top** is enabled by default. Turn it off to let other applications cover Quiper like a normal window. Changing it takes effect immediately for the overlay, its blur backdrop, selector HUDs, and session popups without changing focus.
 
-With this option off, the overlay shortcut brings a hidden or background overlay forward; pressing it again while the main overlay is focused hides it. With it on, the existing show/hide shortcut behavior is unchanged. Web-page fullscreen handling, **Show on all spaces**, and the separate focus-loss settings are unchanged.
+With this option off, the overlay shortcut shows the overlay when hidden and brings it forward while another application is frontmost; pressing it again while any Quiper window is focused — the overlay, a session popup, a HUD, Settings, or the update prompt — hides it. Settings and the update prompt attach to the overlay as child windows, so they switch to the same stacking while open. With it on, the existing show/hide shortcut behavior is unchanged. Web-page fullscreen handling, **Show on all spaces**, and the separate focus-loss settings are unchanged.
 
 The preference survives relaunch and configuration export/import. Older configurations without it retain the default topmost behavior. iOS has no corresponding window setting, but preserves the preference when saving or exporting an imported configuration.
 
