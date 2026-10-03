@@ -328,7 +328,10 @@ final class AppController: NSObject, NSWindowDelegate {
         case .never:
             NSApp.setActivationPolicy(.accessory)
         case .whenVisible:
-            if windowController.window?.isVisible == true {
+            // An element-fullscreen session deliberately hides the overlay
+            // while Quiper's own video fills a fullscreen Space, so the app
+            // still counts as visible for the Dock icon.
+            if windowController.window?.isVisible == true || windowController.isWebContentFullscreen {
                 NSApp.setActivationPolicy(.regular)
             } else {
                 NSApp.setActivationPolicy(.accessory)

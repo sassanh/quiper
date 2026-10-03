@@ -340,6 +340,23 @@ final class AppControllerTests: XCTestCase {
         Settings.shared.dockVisibility = .whenVisible
     }
 
+    func testDockVisibilityChangeCountsWebContentFullscreenAsVisible() throws {
+        Settings.shared.dockVisibility = .whenVisible
+        let window = try XCTUnwrap(mockMainWindowController.window)
+        window.collectionBehavior.insert(.canJoinAllSpaces)
+
+        // An element-fullscreen session hides the overlay while Quiper's
+        // own video keeps the app on screen.
+        window.orderOut(nil)
+        mockMainWindowController.isWebContentFullscreen = true
+        Settings.shared.dockVisibility = .whenVisible
+        XCTAssertEqual(
+            NSApp.activationPolicy(),
+            .regular,
+            "While a web page is fullscreen, 'When Visible' must keep the Dock icon even with the overlay hidden"
+        )
+    }
+
     func testOverlayHotkeyPreservesFullscreenException() throws {
         appController.start()
         let callback = try XCTUnwrap(mockHotkeyManager.callback)

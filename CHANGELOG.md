@@ -25,6 +25,7 @@
 
 ### Fixed
 
+- **The Dock Icon Stays Through a Page's Fullscreen**: Changing Dock Icon Visibility while a web page is fullscreen inside Quiper now counts Quiper as visible — the Dock icon stays with the fullscreen video instead of vanishing and staying gone after leaving fullscreen with the overlay back on screen.
 - **Dock Icon Visibility Picks Always Apply the Right State**: Changing the Dock Icon Visibility picker now follows the overlay's actual visibility — picking When Visible while the overlay is hidden no longer leaves the Dock icon showing just because the Settings window is open.
 - **The Dock Icon Follows Its Setting Over Fullscreen Spaces**: The Dock icon no longer disappears when a native fullscreen Space (e.g., a fullscreen video) is active — Dock Icon Visibility now behaves the same over fullscreen Spaces as anywhere else, in both Always and When Visible modes.
 - **A Quick Hide and Show Keeps the Dock Icon**: Hiding the overlay and showing it again within a fraction of a second no longer removes the Dock icon under **When Visible** — the delayed hide no longer runs once the overlay is already back on screen.
