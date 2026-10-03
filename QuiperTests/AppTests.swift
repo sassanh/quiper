@@ -81,18 +81,14 @@ class MockMainWindowController: MainWindowControlling {
         saveTabsStateCalled = true
     }
 
-    /// Mimics the real controller: show() and hide() post these so
-    /// AppController's visibility handling runs in tests too.
     func show() {
         showCalled = true
         window?.orderFront(nil)
-        NotificationCenter.default.post(name: .windowDidShow, object: nil)
     }
 
     func hide() {
         hideCalled = true
         window?.orderOut(nil)
-        NotificationCenter.default.post(name: .windowDidHide, object: nil)
     }
 
     func toggleInspector() {
@@ -180,6 +176,10 @@ final class AppControllerTests: XCTestCase {
     override func tearDown() async throws {
         await MainActor.run {
             mockMainWindowController.window?.orderOut(nil)
+            // The shared settings window holds a strong reference to the last
+            // controller through its hosted view; release it so this test's
+            // controller deinit removes its notification observers.
+            AppDelegate.sharedSettingsWindow.appController = nil
             NSApp.setActivationPolicy(originalActivationPolicy)
             Settings.shared.reset()
             Settings.shared.wipeAllData()
@@ -280,6 +280,33 @@ final class AppControllerTests: XCTestCase {
 
         callback()
         XCTAssertFalse(window.isVisible)
+    }
+
+    func testQuickHideThenShowKeepsDockIconForWhenVisible() async throws {
+        Settings.shared.dockVisibility = .whenVisible
+        let window = try XCTUnwrap(mockMainWindowController.window)
+        window.collectionBehavior.insert(.canJoinAllSpaces)
+
+        appController.showWindow(nil)
+        XCTAssertTrue(window.isVisible)
+
+        appController.hideWindow(nil)
+        // Drive this controller's delayed hide handling directly instead of
+        // broadcasting: a stale controller left over from another test would
+        // otherwise react to a broadcast and flip the shared Dock icon policy
+        // while this overlay is visible again.
+        appController.handleWindowDidHide(Notification(name: .windowDidHide))
+        appController.showWindow(nil)
+        XCTAssertTrue(window.isVisible)
+
+        // The hide handler applies .accessory on a 0.1s delay; wait it out.
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(
+            NSApp.activationPolicy(),
+            .regular,
+            "A visible overlay under 'When Visible' must keep the Dock icon across a quick hide/show"
+        )
     }
 
     func testOverlayHotkeyPreservesFullscreenException() throws {

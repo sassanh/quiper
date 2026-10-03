@@ -217,11 +217,7 @@ final class AppController: NSObject, NSWindowDelegate {
 
     @objc func showWindow(_ sender: Any?) {
         captureFrontmostNonQuiperApplication()
-        if !windowController.isWebContentFullscreen && isActiveSpaceFullscreen() {
-            NSApp.setActivationPolicy(.accessory)
-        } else {
-            ensureActivationPolicyForShowingOverlay()
-        }
+        ensureActivationPolicyForShowingOverlay()
         windowController.show()
     }
 
@@ -234,9 +230,7 @@ final class AppController: NSObject, NSWindowDelegate {
     private func ensureActivationPolicyForShowingOverlay() {
         let visibility = Settings.shared.dockVisibility
         if !windowController.isWebContentFullscreen, visibility == .always || visibility == .whenVisible {
-            if !isActiveSpaceFullscreen() {
-                NSApp.setActivationPolicy(.regular)
-            }
+            NSApp.setActivationPolicy(.regular)
         }
     }
 
@@ -253,52 +247,6 @@ final class AppController: NSObject, NSWindowDelegate {
         return true
     }
 
-    private func isActiveSpaceFullscreen() -> Bool {
-        guard let mainScreen = NSScreen.main else { return false }
-
-        let screenFrame = mainScreen.frame
-        let options = CGWindowListOption(arrayLiteral: .excludeDesktopElements, .optionOnScreenOnly)
-        guard let windowListInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
-            return false
-        }
-
-        for info in windowListInfo {
-            let ownerName = info[kCGWindowOwnerName as String] as? String ?? ""
-            let layer = info[kCGWindowLayer as String] as? Int ?? -1
-            let ownerPID = info[kCGWindowOwnerPID as String] as? Int ?? -1
-
-            // Ignore windows owned by Quiper itself
-            if ownerPID == NSRunningApplication.current.processIdentifier {
-                continue
-            }
-
-            // Ignore system UI elements
-            if ownerName == "Dock" || ownerName == "Window Server" || ownerName == "Control Center" {
-                continue
-            }
-
-            guard layer < 20 else { continue }
-
-            var bounds = CGRect.zero
-            if let boundsDict = info[kCGWindowBounds as String] as? [String: Any] {
-                bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) ?? .zero
-            }
-
-            let widthDiff = abs(bounds.width - screenFrame.width)
-            let isXAligned = abs(bounds.minX - screenFrame.minX) < 10
-            let yDiff = bounds.minY - screenFrame.minY
-            let heightDiff = screenFrame.height - bounds.height
-
-            // Allow a tolerance (up to 120 points) for notch area at the top of the screen
-            if isXAligned && widthDiff < 10 && yDiff >= 0 && yDiff <= 120 && heightDiff >= 0 && heightDiff <= 120 {
-                return true
-            }
-        }
-
-        return false
-    }
-
-
     @objc private func handleWindowDidShow(_ notification: Notification) {
         ensureActivationPolicyForShowingOverlay()
         if UpdatePromptWindowController.shared.window?.isVisible == true {
@@ -309,7 +257,7 @@ final class AppController: NSObject, NSWindowDelegate {
         NotificationCenter.default.post(name: .appVisibilityChanged, object: true)
     }
 
-    @objc private func handleWindowDidHide(_ notification: Notification) {
+    @objc func handleWindowDidHide(_ notification: Notification) {
         activateLastKnownApplication()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
@@ -325,11 +273,7 @@ final class AppController: NSObject, NSWindowDelegate {
             let visibility = Settings.shared.dockVisibility
             if !self.windowController.isWebContentFullscreen {
                 if visibility == .always {
-                    if !self.isActiveSpaceFullscreen() {
-                        NSApp.setActivationPolicy(.regular)
-                    } else {
-                        NSApp.setActivationPolicy(.accessory)
-                    }
+                    NSApp.setActivationPolicy(.regular)
                 } else if visibility == .whenVisible {
                     NSApp.setActivationPolicy(.accessory)
                 }
@@ -570,15 +514,6 @@ final class AppController: NSObject, NSWindowDelegate {
         // auto-focus of the overlay into the moving space. On any other app/
         // space, only an explicit show shortcut may bring Quiper forward.
         guard !windowController.isWebContentFullscreen else { return }
-
-        let visibility = Settings.shared.dockVisibility
-        if visibility == .always {
-            if !isActiveSpaceFullscreen() {
-                NSApp.setActivationPolicy(.regular)
-            } else {
-                NSApp.setActivationPolicy(.accessory)
-            }
-        }
 
         guard Settings.shared.showOnAllSpaces else { return }
 
