@@ -81,14 +81,18 @@ class MockMainWindowController: MainWindowControlling {
         saveTabsStateCalled = true
     }
 
+    /// Mimics the real controller: show() and hide() post these so
+    /// AppController's visibility handling runs in tests too.
     func show() {
         showCalled = true
         window?.orderFront(nil)
+        NotificationCenter.default.post(name: .windowDidShow, object: nil)
     }
 
     func hide() {
         hideCalled = true
         window?.orderOut(nil)
+        NotificationCenter.default.post(name: .windowDidHide, object: nil)
     }
 
     func toggleInspector() {

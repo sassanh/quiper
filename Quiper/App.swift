@@ -310,11 +310,19 @@ final class AppController: NSObject, NSWindowDelegate {
     }
 
     @objc private func handleWindowDidHide(_ notification: Notification) {
-        let visibility = Settings.shared.dockVisibility
         activateLastKnownApplication()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self = self else { return }
+            // The overlay can be re-shown within the delay (a quick
+            // hide/show double-press). The show path already asserted the
+            // visible state, so drop out instead of dropping the app back
+            // to accessory and posting a stale hidden state.
+            if self.windowController.window?.isVisible == true {
+                return
+            }
+            // Read at execution time: the setting may change during the delay.
+            let visibility = Settings.shared.dockVisibility
             if !self.windowController.isWebContentFullscreen {
                 if visibility == .always {
                     if !self.isActiveSpaceFullscreen() {

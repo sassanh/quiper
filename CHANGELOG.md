@@ -25,6 +25,7 @@
 
 ### Fixed
 
+- **A Quick Hide and Show Keeps the Dock Icon**: Hiding the overlay and showing it again within a fraction of a second no longer removes the Dock icon under **When Visible** — the delayed hide no longer runs once the overlay is already back on screen.
 - **Popup Titles Offer the Full Page Menu**: Right-clicking a popup's title now shows the same Copy URL, Copy Title, Open in Default Browser, Find, and Suggest Selector items as the main window's title, each acting on the popup's own page.
 - **Shortcuts Reach the Focused Popup**: `⌘W`, `⌘R`, and `⌘F` now act on the popup you're working in — closing it, reloading or finding in its page — instead of the main window's tab while the popup or its address bar holds focus.
 - **Context Menu Downloads Actually Save**: Choosing Download Linked File or Download Image from a link's right-click menu now downloads the file through Quiper's destination rules — secure engines into their storage, the save dialog when enabled — instead of silently doing nothing.
