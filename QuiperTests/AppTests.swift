@@ -309,6 +309,37 @@ final class AppControllerTests: XCTestCase {
         )
     }
 
+    func testDockVisibilityChangeAppliesVisibilityAwarePolicy() throws {
+        let window = try XCTUnwrap(mockMainWindowController.window)
+        window.collectionBehavior.insert(.canJoinAllSpaces)
+
+        // The setting's didSet posts .dockVisibilityChanged; the resulting
+        // policy must follow the overlay's visibility alone.
+        window.orderOut(nil)
+        Settings.shared.dockVisibility = .whenVisible
+        XCTAssertEqual(
+            NSApp.activationPolicy(),
+            .accessory,
+            "A hidden overlay under 'When Visible' must drop the Dock icon"
+        )
+
+        window.orderFront(nil)
+        Settings.shared.dockVisibility = .whenVisible
+        XCTAssertEqual(
+            NSApp.activationPolicy(),
+            .regular,
+            "A visible overlay under 'When Visible' must show the Dock icon"
+        )
+
+        Settings.shared.dockVisibility = .never
+        XCTAssertEqual(
+            NSApp.activationPolicy(),
+            .accessory,
+            "'Never' must drop the Dock icon regardless of visibility"
+        )
+        Settings.shared.dockVisibility = .whenVisible
+    }
+
     func testOverlayHotkeyPreservesFullscreenException() throws {
         appController.start()
         let callback = try XCTUnwrap(mockHotkeyManager.callback)

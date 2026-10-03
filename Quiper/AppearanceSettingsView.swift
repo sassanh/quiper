@@ -29,23 +29,12 @@ struct AppearanceSettingsView: View {
                     ) {
                         DockVisibilityPicker(selection: $settings.dockVisibility)
                     }
-                    .onChange(of: settings.dockVisibility) { _, newValue in
+                    .onChange(of: settings.dockVisibility) { _, _ in
+                        // The visibility-aware activation policy is applied
+                        // by AppController's handler for the
+                        // .dockVisibilityChanged notification, posted by the
+                        // setting's didSet — a single gate for every change.
                         settings.saveSettings()
-                        
-                        // Apply activation policy immediately
-                        switch newValue {
-                        case .never:
-                            NSApp.setActivationPolicy(.accessory)
-                        case .whenVisible:
-                            // Only set to .regular if window or settings are visible
-                            if NSApp.windows.contains(where: { $0.isVisible && $0.identifier != nil }) {
-                                NSApp.setActivationPolicy(.regular)
-                            } else {
-                                NSApp.setActivationPolicy(.accessory)
-                            }
-                        case .always:
-                            NSApp.setActivationPolicy(.regular)
-                        }
                     }
                 }
                 SettingsSection(title: "Toolbar", icon: "menubar.rectangle", iconColor: .blue) {
