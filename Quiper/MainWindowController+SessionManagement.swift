@@ -366,6 +366,9 @@ extension MainWindowController {
             }
         }
         let currentTab = TabIdentifier(serviceID: service.id, sessionIndex: activeIndex)
+        // Captured before the MRU bookkeeping below adopts currentTab: only
+        // a real tab change may move focus via the popup stage at the end.
+        let didTabChange = lastActiveTab != currentTab
         let existingTargetWebView = webViewManager.getWebView(for: service, sessionIndex: activeIndex)
         if findBarViewController?.webView !== existingTargetWebView {
             findBarViewController?.tabWillHide()
@@ -438,11 +441,29 @@ extension MainWindowController {
             }
         }
 
-        // Sync last: restoring the active tab's popups re-keys them, so a
-        // session switch back to a popup-owning tab leaves the popup (not
-        // the webview behind it) holding focus. Matches the overlay show()
-        // path order.
+        // Sync visibility last so the focus stage below judges the popups as
+        // they will actually be on screen; matches the overlay show() path
+        // order.
         webViewManager.syncPopupVisibility(forActiveTab: currentTab)
+        if didTabChange {
+            applySessionPopupFocus(for: currentTab)
+        }
+    }
+
+    /// The session-switch focus policy: when the activated session owns
+    /// popups, one of them holds key status — the popup this session last
+    /// had key if it is still around, otherwise the topmost — so focus
+    /// never lands on the webview hidden behind a popup. A session with no
+    /// popups keeps the webview focus the switch already applied.
+    private func applySessionPopupFocus(for tab: TabIdentifier) {
+        let focusable = webViewManager.focusablePopups(for: tab)
+        guard !focusable.isEmpty else { return }
+        let preferred = lastKeyPopupBySession[tab]?.window
+        let target = preferred.flatMap { candidate in
+            focusable.first(where: { $0 === candidate })
+        } ?? focusable.last
+        guard let target else { return }
+        webViewManager.focusPopup(target)
     }
     
     func stepSession(by delta: Int) {

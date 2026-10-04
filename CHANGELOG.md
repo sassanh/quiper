@@ -44,6 +44,8 @@
 - **Fullscreen Video Stays Edge to Edge Across Spaces**: Using Quiper in another Space while a video is fullscreen no longer shrinks the fullscreen content to the Quiper window's size in the bottom-left corner — the video keeps filling its Space, both in Mission Control and when you return to it.
 - **Fullscreen Content Stays Put While You Switch Tabs**: Switching sessions or engines from the overlay while content is fullscreen no longer blanks the fullscreen Space or pulls the fullscreen content into the Quiper window — and when fullscreen ends, the overlay shows the tab you switched to, not the old fullscreen tab stacked on top of it.
 - **Prompt History Hover Follows the Pointer**: Scrolling the prompt history with the arrow keys no longer leaves a hover glow on rows that slid away or moves the highlight your keyboard navigation selected — only the row under the pointer shows hover, its tooltip rides along with it, and the tooltip disappears when the list is cleared.
+- **Reopening the Overlay Returns Focus Where You Left It**: Showing the overlay again restores the exact window you had focused before hiding it — the popup you were working in, a HUD, or the overlay itself — instead of handing keyboard focus to the most recently opened popup.
+- **Popup Focus Follows the Popup You Were Using**: Switching back to a session now refocuses the popup you were working in there — the same window, not whichever popup opened last — and a popup appearing on its own never claims keyboard focus from the window you are using.
 
 ## [6.2.0] - 2026-09-23
 

@@ -2035,6 +2035,48 @@ final class WebViewManager: NSObject {
         return nil
     }
 
+    /// The session that owns `window`'s popup, or nil when `window` is not
+    /// a session popup. Single gate for popup ownership: focus-history
+    /// recording never sniffs popup internals.
+    @MainActor
+    func ownerTab(forPopupWindow window: NSWindow) -> TabIdentifier? {
+        for (token, popupWindow) in popupWindowsByToken where popupWindow === window {
+            return popupOwnerByToken[token]
+        }
+        return nil
+    }
+
+    /// `tab`'s visible popup windows in creation order; the last element is
+    /// the topmost one under show-order stacking.
+    @MainActor
+    func focusablePopups(for tab: TabIdentifier) -> [NSWindow] {
+        popupWindowsByToken
+            .filter { token, popupWindow in
+                popupOwnerByToken[token] == tab && popupWindow.isVisible
+            }
+            .sorted { lhs, rhs in
+                (popupCreationOrder[lhs.key] ?? 0) < (popupCreationOrder[rhs.key] ?? 0)
+            }
+            .map(\.value)
+    }
+
+    /// Gives key status and content focus to a managed, visible popup.
+    /// Returns false when `window` is not a live popup of the overlay, so
+    /// callers fall back to their default focus target.
+    @MainActor
+    @discardableResult
+    func focusPopup(_ window: NSWindow) -> Bool {
+        guard let popupWindow = popupWindowsByToken.values.first(where: { $0 === window }),
+              popupWindow.isVisible else { return false }
+        // Already ordered front by the visibility sync; only key status and
+        // the responder chain move, so sibling stacking stays untouched.
+        popupWindow.makeKey()
+        if let hostedWebView = popupWindow.hostedWebView, hostedWebView.superview != nil {
+            popupWindow.makeFirstResponder(hostedWebView)
+        }
+        return true
+    }
+
     /// Re-pins every visible popup above its parent in creation order, so
     /// interacting with the parent can never bury a popup: AppKit's child
     /// stacking is unreliable after order cycles. Oldest re-pins first so
@@ -2679,6 +2721,8 @@ private final class PopupWindow: NSWindow, NSWindowDelegate {
     /// and, when the Quiper window itself is visible, re-orders it front above
     /// its parent. When Quiper is hidden the reorder is deferred to the overlay
     /// show path, which re-syncs visibility after AppKit restores child windows.
+    /// Visibility only: which window holds key status is decided by the show
+    /// and session-switch focus stages, never by merely appearing here.
     func setSessionHidden(_ hidden: Bool) {
         if hidden {
             orderOut(nil)
@@ -2690,13 +2734,10 @@ private final class PopupWindow: NSWindow, NSWindowDelegate {
             // Re-adding moves this child front among its siblings; callers
             // show oldest-first so the newest ends on top.
             parentWin.addChildWindow(self, ordered: .above)
-            if isVisible {
-                // Re-assert creation-order position: AppKit's own reshow of
-                // a hidden tree does not reliably restore child stacking.
-                orderFront(nil)
-            } else {
-                makeKeyAndOrderFront(nil)
-            }
+            // Orders an ordered-out window back in at its preserved frame
+            // without touching key status: AppKit's own reshow of a hidden
+            // tree does not reliably restore child stacking either.
+            orderFront(nil)
             // Commit the mapping before younger siblings show, so opener
             // chains pin even when the whole tree shows at once.
             CATransaction.flush()

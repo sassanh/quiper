@@ -248,6 +248,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var tabHistoryHUDView: TabHistoryHUDView?
     var tabHistoryHUDWindow: NSWindow?
     var modifierHUDKind: ModifierHUDKind?
+
+    // MARK: - Key Window History
+    /// A weak window handle for focus-history storage: entries never keep
+    /// their window alive and are pruned when found dead.
+    struct WeakWindowReference {
+        weak var window: NSWindow?
+    }
+    /// The Quiper window that most recently held key status. show() snaps
+    /// this at entry — before ordering the main window front overwrites it —
+    /// so re-showing the overlay restores the same window (a popup, a HUD,
+    /// or the overlay itself) that was active before the hide.
+    private weak var lastKeyWindow: NSWindow?
+    /// The most recent key popup per session. A session re-activated by a
+    /// switch recovers exactly its own active popup instead of whichever
+    /// popup happened to be created last.
+    var lastKeyPopupBySession: [TabIdentifier: WeakWindowReference] = [:]
     /// Decoded engine icons for ring cards, keyed by service id. Cleared
     /// whenever services refresh so icon edits and refetches apply.
     var engineIconCache: [UUID: NSImage] = [:]
@@ -725,6 +741,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         checkInactivityLock()
+        // Snapshot before ordering the main window front below: that fires
+        // didBecomeKey and overwrites the history this restores from.
+        let keyWindowToRestore = lastKeyWindow
         var didTeleport = false
         if let window = window {
             // Session-aware: during an element-fullscreen session this keeps
@@ -789,15 +808,45 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             updateCollectionBehaviorForVisibilityState()
         }
         NotificationCenter.default.post(name: .windowDidShow, object: nil)
-        // Re-read focus after activation settles. show() itself never applied
-        // focus appearance, and the key/active notifications can arrive before
-        // the window is actually key (or not at all when already key/active),
-        // which left the dim and its click-eating shield stuck on the focused
-        // window until the next click. This is idempotent with those handlers.
+        // Re-read focus after activation settles: restore the window that
+        // was key before the hide, then re-read the key state for the
+        // appearance gate. show() itself never applied focus appearance,
+        // and the key/active notifications can arrive before the window is
+        // actually key (or not at all when already key/active), which left
+        // the dim and its click-eating shield stuck on the focused window
+        // until the next click. This is idempotent with those handlers.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.window?.isVisible == true else { return }
+            self.restoreKeyWindow(from: keyWindowToRestore)
             self.updateFocusAppearance()
         }
+    }
+
+    /// Restores key status to the window that held it before the overlay
+    /// was hidden — popup A, a HUD, or the overlay itself. Windows with
+    /// their own show precedence (an attached sheet, Settings, the update
+    /// prompt, onboarding) keep it, and a target that is gone falls back
+    /// to the overlay, so the show path — not popup visibility — is the
+    /// single authority on what is key after a show.
+    private func restoreKeyWindow(from target: NSWindow?) {
+        guard !GhostOnboardingManager.shared.isActive,
+              window?.attachedSheet == nil,
+              !AppDelegate.sharedSettingsWindow.isVisible,
+              UpdatePromptWindowController.shared.window?.isVisible != true else {
+            return
+        }
+
+        if let target, target !== window, target.isVisible {
+            if webViewManager?.isPopupWindow(target) == true {
+                if webViewManager?.focusPopup(target) == true { return }
+            } else {
+                target.makeKey()
+                return
+            }
+        }
+        // No recoverable target: the overlay itself, whatever the visibility
+        // sync left holding key.
+        window?.makeKey()
     }
 
     func hide() {
@@ -1600,8 +1649,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowAppearanceChanged), name: .windowAppearanceChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationStatusChanged), name: NSApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleApplicationStatusChanged), name: NSApplication.didResignActiveNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handlePopupKeyStatusChanged), name: NSWindow.didBecomeKeyNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handlePopupKeyStatusChanged), name: NSWindow.didResignKeyNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleKeyWindowStatusChanged), name: NSWindow.didBecomeKeyNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleKeyWindowStatusChanged), name: NSWindow.didResignKeyNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleWorkspaceWake), name: NSWorkspace.didWakeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleColorSchemeChanged), name: .colorSchemeChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowOnAllSpacesChanged), name: .showOnAllSpacesChanged, object: nil)
@@ -1667,15 +1716,45 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateFocusAppearance()
     }
 
-    /// Popup windows take and drop key status without ever passing through
-    /// the main window's own delegate events, so the shared focus gate must
-    /// re-run whenever one of them changes key: the dim then follows the
-    /// user's actual focus instead of freezing after the main window left
-    /// key status behind.
-    @objc private func handlePopupKeyStatusChanged(_ notification: Notification) {
-        guard let popupWindow = notification.object as? NSWindow,
-              webViewManager?.isPopupWindow(popupWindow) == true else { return }
+    /// Key status moves between the overlay's windows without ever passing
+    /// through the main window's own delegate events, so this one gate both
+    /// records the key-window history that show() and session switches
+    /// restore from and re-runs the shared focus gate when a popup changes
+    /// key: the dim then follows the user's actual focus instead of
+    /// freezing after the main window left key status behind.
+    @objc private func handleKeyWindowStatusChanged(_ notification: Notification) {
+        guard let changedWindow = notification.object as? NSWindow else { return }
+        if notification.name == NSWindow.didBecomeKeyNotification {
+            recordKeyWindow(changedWindow)
+        }
+        guard webViewManager?.isPopupWindow(changedWindow) == true else { return }
         updateFocusAppearance()
+    }
+
+    /// Remembers which window — and which session's popup — just took key
+    /// status, so a later show or session switch can restore it. Popup
+    /// entries hold their window weakly; the pass over the table prunes
+    /// entries whose window has since closed.
+    private func recordKeyWindow(_ window: NSWindow) {
+        // Focus history only learns from windows the user could actually
+        // choose. While the overlay is ordered out, no Quiper window is on
+        // screen: AppKit hands key status sideways as the hide tears the
+        // window tree down — to a sibling popup or a leftover window — and
+        // recording that would aim the next show restore at a window nobody
+        // picked.
+        guard self.window?.isVisible == true else { return }
+        guard let owner = webViewManager?.ownerTab(forPopupWindow: window) else {
+            lastKeyWindow = window
+            return
+        }
+        // A popup only earns focus history while its own session is on
+        // screen: key handed sideways mid-switch (an ordered-out popup
+        // passing key to a sibling that the same pass hides next) is
+        // teardown noise, not a choice the user made.
+        guard owner == currentTabIdentifier() else { return }
+        lastKeyWindow = window
+        lastKeyPopupBySession[owner] = WeakWindowReference(window: window)
+        lastKeyPopupBySession = lastKeyPopupBySession.filter { $0.value.window != nil }
     }
 
     @objc private func handleWorkspaceWake(_ notification: Notification) {
