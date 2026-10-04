@@ -760,6 +760,18 @@ extension KeyedDecodingContainer {
 
 // MARK: - Persisted tab state
 
+/// Which window held key status when the tab state was saved: the
+/// overlay itself, or a session popup identified by its owner and its
+/// position among that owner's saved popups — the same owner-and-order
+/// identity restores recreate windows in. Absent means no focus was
+/// recorded: files written before this field, saves where nothing held
+/// key, and a focused popup kept out of plaintext state (a secure
+/// engine's) fall back to the popup in front at relaunch.
+enum PersistedKeyWindow: Equatable, Codable {
+    case overlay
+    case popup(owner: TabIdentifier, occurrence: Int)
+}
+
 struct PersistedTabState: Codable {
     var activeServiceID: UUID?
     var activeIndicesByID: [UUID: Int] = [:]
@@ -770,6 +782,7 @@ struct PersistedTabState: Codable {
     var tabPromptHistoryEnabledOverrides: [UUID: [Int: Bool]] = [:] // serviceID -> [sessionIndex: Bool]
     var tabHistory: [TabIdentifier]?
     var popups: [PersistedPopupState]? // session-owned popup windows in creation order (oldest first)
+    var keyWindow: PersistedKeyWindow? // which window held key status at save, absent = no record
 
     enum CodingKeys: String, CodingKey {
         case activeServiceID
@@ -781,9 +794,10 @@ struct PersistedTabState: Codable {
         case tabPromptHistoryEnabledOverrides
         case tabHistory
         case popups
+        case keyWindow
     }
 
-    init(activeServiceID: UUID? = nil, activeIndicesByID: [UUID: Int] = [:], openTabs: [UUID: [Int: String]] = [:], tabTitles: [UUID: [Int: String]] = [:], tabInputs: [UUID: [Int: TabInputState]] = [:], tabPromptHistories: [UUID: [Int: [PromptHistoryEntry]]] = [:], tabPromptHistoryEnabledOverrides: [UUID: [Int: Bool]] = [:], tabHistory: [TabIdentifier]? = nil, popups: [PersistedPopupState]? = nil) {
+    init(activeServiceID: UUID? = nil, activeIndicesByID: [UUID: Int] = [:], openTabs: [UUID: [Int: String]] = [:], tabTitles: [UUID: [Int: String]] = [:], tabInputs: [UUID: [Int: TabInputState]] = [:], tabPromptHistories: [UUID: [Int: [PromptHistoryEntry]]] = [:], tabPromptHistoryEnabledOverrides: [UUID: [Int: Bool]] = [:], tabHistory: [TabIdentifier]? = nil, popups: [PersistedPopupState]? = nil, keyWindow: PersistedKeyWindow? = nil) {
         self.activeServiceID = activeServiceID
         self.activeIndicesByID = activeIndicesByID
         self.openTabs = openTabs
@@ -793,6 +807,7 @@ struct PersistedTabState: Codable {
         self.tabPromptHistoryEnabledOverrides = tabPromptHistoryEnabledOverrides
         self.tabHistory = tabHistory
         self.popups = popups
+        self.keyWindow = keyWindow
     }
 
     init(from decoder: Decoder) throws {
@@ -808,6 +823,9 @@ struct PersistedTabState: Codable {
         // Lenient like SecureTabState: a corrupt popups array drops popups,
         // never the whole tab state.
         popups = (try? container.decodeIfPresent([PersistedPopupState].self, forKey: .popups)) ?? nil
+        // Same leniency: a corrupt focus descriptor drops the record of
+        // which window was focused, never the whole tab state.
+        keyWindow = (try? container.decodeIfPresent(PersistedKeyWindow.self, forKey: .keyWindow)) ?? nil
     }
 
     private enum LegacyCodingKeys: String, CodingKey {
@@ -956,6 +974,12 @@ struct PersistedTabState: Codable {
         let popups: [PersistedPopupState]? =
             (try? currentContainer.decodeIfPresent([PersistedPopupState].self, forKey: .popups)) ?? nil
 
+        // The focus descriptor is current-schema only, like popups: absent
+        // stays absent (older files), and a corrupt value drops just the
+        // descriptor so relaunch falls back to the popup in front.
+        let keyWindow: PersistedKeyWindow? =
+            (try? currentContainer.decodeIfPresent(PersistedKeyWindow.self, forKey: .keyWindow)) ?? nil
+
         return (
             PersistedTabState(
                 activeServiceID: activeServiceID,
@@ -966,7 +990,8 @@ struct PersistedTabState: Codable {
                 tabPromptHistories: tabPromptHistories.value,
                 tabPromptHistoryEnabledOverrides: tabPromptHistoryEnabledOverrides.value,
                 tabHistory: tabHistory,
-                popups: popups
+                popups: popups,
+                keyWindow: keyWindow
             ),
             didMigrateLegacyIdentifiers
         )

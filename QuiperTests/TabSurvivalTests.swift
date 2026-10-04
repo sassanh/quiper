@@ -377,6 +377,76 @@ struct TabSurvivalTests {
         #expect(direct.openTabs.isEmpty)
     }
 
+    @Test func persistedTabState_Codable_WithKeyWindow() throws {
+        let serviceID = UUID()
+        let owner = TabIdentifier(serviceID: serviceID, sessionIndex: 3)
+        var state = PersistedTabState()
+        state.activeServiceID = serviceID
+        state.openTabs = [serviceID: [3: "https://gemini.google.com/chat"]]
+        state.keyWindow = .popup(owner: owner, occurrence: 2)
+
+        let data = try JSONEncoder().encode(state)
+        let direct = try JSONDecoder().decode(PersistedTabState.self, from: data)
+        #expect(direct.keyWindow == .popup(owner: owner, occurrence: 2))
+
+        // The settings file's own decode path must carry it too: that is
+        // the path a real relaunch reads.
+        struct Wrapper: Decodable {
+            let state: PersistedTabState
+            init(from decoder: Decoder) throws {
+                state = try MainActor.assumeIsolated {
+                    try PersistedTabState.decode(from: decoder, services: []).state
+                }
+            }
+        }
+        let viaSettingsPath = try JSONDecoder().decode(Wrapper.self, from: data).state
+        #expect(viaSettingsPath.keyWindow == .popup(owner: owner, occurrence: 2))
+
+        var overlayState = PersistedTabState()
+        overlayState.keyWindow = .overlay
+        let overlayData = try JSONEncoder().encode(overlayState)
+        let overlayDecoded = try JSONDecoder().decode(PersistedTabState.self, from: overlayData)
+        #expect(overlayDecoded.keyWindow == .overlay)
+    }
+
+    @Test func persistedTabState_WithoutKeyWindowEncodesNoRecord() throws {
+        // Absent stays absent in both directions: a save with no focus
+        // record writes no field, and a file from before the field decodes
+        // as no record.
+        let data = try JSONEncoder().encode(PersistedTabState())
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(object?["keyWindow"] == nil)
+
+        let preFieldJSON = """
+        {"openTabs": [], "tabTitles": []}
+        """.data(using: .utf8) ?? Data()
+        let decoded = try JSONDecoder().decode(PersistedTabState.self, from: preFieldJSON)
+        #expect(decoded.keyWindow == nil)
+    }
+
+    @Test func persistedTabState_CorruptKeyWindowFallsBackToNil() throws {
+        struct Wrapper: Decodable {
+            let state: PersistedTabState
+            init(from decoder: Decoder) throws {
+                state = try MainActor.assumeIsolated {
+                    try PersistedTabState.decode(from: decoder, services: []).state
+                }
+            }
+        }
+        let json = """
+        {"openTabs": [], "keyWindow": 7}
+        """.data(using: .utf8) ?? Data()
+        let decoded = try JSONDecoder().decode(Wrapper.self, from: json)
+
+        #expect(decoded.state.keyWindow == nil)
+        #expect(decoded.state.openTabs.isEmpty)
+
+        // The direct Decodable entry point is equally lenient.
+        let direct = try JSONDecoder().decode(PersistedTabState.self, from: json)
+        #expect(direct.keyWindow == nil)
+        #expect(direct.openTabs.isEmpty)
+    }
+
     @Test func secureTabState_Codable_WithPopups() throws {
         let serviceID = UUID()
         let popup = PersistedPopupState(

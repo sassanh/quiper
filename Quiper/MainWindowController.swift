@@ -225,6 +225,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// first show(): attaching while the overlay is hidden silently fails,
     /// so creation waits until the overlay is displayed.
     var pendingPopupRestore: [PersistedPopupState]?
+    /// The focus descriptor stashed by restoreTabsState: which window held
+    /// key at the previous quit. restoreKeyWindow consumes it at the first
+    /// show that has no live focus history of its own, then it is gone.
+    private var pendingKeyWindowRestore: PersistedKeyWindow?
     var emptyStateView: EmptyStateView!
     var findBarViewController: FindBarViewController!
     var findBarViewControllers: [ObjectIdentifier: FindBarViewController] = [:]
@@ -823,11 +827,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// Restores key status to the window that held it before the overlay
-    /// was hidden — popup A, a HUD, or the overlay itself. Windows with
+    /// was hidden — popup A, a HUD, or the overlay itself. On the first
+    /// show after launch there is no such history, so the descriptor saved
+    /// at quit decides: the overlay, or the session popup identified by
+    /// its owner and position among its siblings. Only when neither exists
+    /// does focus go to the popup the user sees in front. Windows with
     /// their own show precedence (an attached sheet, Settings, the update
-    /// prompt, onboarding) keep it, and a target that is gone falls back
-    /// to the overlay, so the show path — not popup visibility — is the
-    /// single authority on what is key after a show.
+    /// prompt, onboarding) keep it, and a recorded target that is gone
+    /// falls back to the overlay, so the show path — not popup visibility
+    /// — is the single authority on what is key after a show.
     private func restoreKeyWindow(from target: NSWindow?) {
         guard !GhostOnboardingManager.shared.isActive,
               window?.attachedSheet == nil,
@@ -843,6 +851,33 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 target.makeKey()
                 return
             }
+        }
+        // The descriptor from the previous run, consumed on first use: it
+        // is the only record of which window held key at quit. An overlay
+        // record keys the overlay — popups in front stay dim — and a popup
+        // record that no longer resolves falls through to the defaults.
+        if let launch = pendingKeyWindowRestore {
+            pendingKeyWindowRestore = nil
+            switch launch {
+            case .overlay:
+                window?.makeKey()
+                return
+            case .popup(let owner, let occurrence):
+                if webViewManager?.focusRestoredPopup(owner: owner, occurrence: occurrence) == true {
+                    return
+                }
+            }
+        }
+        // Nothing remembered: no record exists (a first launch), or the
+        // recorded window is gone (it closed while the overlay was
+        // hidden). The session's popups sit in front of the overlay, and
+        // the window the user sees on top is the one that should hold
+        // focus.
+        if target == nil,
+           let activeTab = currentTabIdentifier(),
+           let frontmost = webViewManager?.focusablePopups(for: activeTab).last,
+           webViewManager?.focusPopup(frontmost) == true {
+            return
         }
         // No recoverable target: the overlay itself, whatever the visibility
         // sync left holding key.
@@ -869,6 +904,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hideModifierHUD()
         hideModifierHUDRing()
         hideLocationBarHUD()
+        // Putting the overlay away is a checkpoint worth saving: with no
+        // previous app to hand focus to, the app stays active and no
+        // deactivation save would run until much later.
+        saveTabsState()
         NotificationCenter.default.post(name: .windowDidHide, object: nil)
     }
 
@@ -1198,6 +1237,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func saveTabsState() {
         guard Settings.shared.tabSurvivalPolicy != .never else { return }
+        // Termination already wrote the tab state it will restore from;
+        // from here the teardown shrinks the live session, and a rebuild
+        // would resurrect tabs the user chose to close.
+        guard !AppDelegate.hasCommittedTermination else { return }
+        // Before the first show, restored popups exist only as pending
+        // state — a save now would write them out of the very file that
+        // is about to recreate them.
+        guard pendingPopupRestore == nil else { return }
 
         var state = PersistedTabState()
         
@@ -1273,8 +1320,50 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             state.tabPromptHistories = allPromptHistories
             state.tabPromptHistoryEnabledOverrides = allPromptHistoryOverrides
             state.popups = allPopups.isEmpty ? nil : allPopups
+            // Derived from the live key window against the popup array as
+            // saved, so the descriptor indexes exactly what restores read.
+            state.keyWindow = persistedKeyWindowState(for: lastKeyWindow, popupStates: state.popups ?? [])
         }
 
+        Settings.shared.persistedTabState = state
+        Settings.shared.saveSettings()
+    }
+
+    /// The focus descriptor for the state being saved — derived from the
+    /// live key window, never stored apart from it. The overlay, and any
+    /// other Quiper window a relaunch cannot bring back (Settings, a HUD),
+    /// map to `.overlay`; a session popup maps to its owner and its
+    /// position among that owner's saved popups, which is exactly where
+    /// restores recreate it. The popup is found by its exact snapshot,
+    /// falling back to owner and URL when its frame moved on since the
+    /// last save; a popup this save leaves out (a secure engine's, or one
+    /// with no URL yet) leaves no record at all, so relaunch falls back
+    /// to the popup in front.
+    private func persistedKeyWindowState(for keyWindow: NSWindow?, popupStates: [PersistedPopupState]) -> PersistedKeyWindow? {
+        guard let keyWindow else { return nil }
+        guard let manager = webViewManager, manager.isPopupWindow(keyWindow) else {
+            return .overlay
+        }
+        guard let snapshot = manager.popupSnapshotState(for: keyWindow),
+              let index = popupStates.firstIndex(of: snapshot)
+                  ?? popupStates.firstIndex(where: { $0.hasSameOwnerAndURL(as: snapshot) }) else {
+            return nil
+        }
+        let occurrence = popupStates[..<index].filter { $0.owner == snapshot.owner }.count
+        return .popup(owner: snapshot.owner, occurrence: occurrence)
+    }
+
+    /// Persists the focus descriptor alone, onto the saved tab state as
+    /// it stands. A focus change is not a tab-state change: the saved
+    /// popup array, tab URLs, and prompt histories belong to the saves
+    /// that observe them wholesale, and a focus event can only vouch for
+    /// which window is key. Rebuilding tab state from here would write
+    /// back whatever the live session happens to hold — a popup mid-load,
+    /// a teardown handing windows away — over state saved complete.
+    private func persistFocusDescriptor() {
+        guard Settings.shared.tabSurvivalPolicy != .never,
+              var state = Settings.shared.persistedTabState else { return }
+        state.keyWindow = persistedKeyWindowState(for: lastKeyWindow, popupStates: state.popups ?? [])
         Settings.shared.persistedTabState = state
         Settings.shared.saveSettings()
     }
@@ -1363,6 +1452,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // restored window ends up parentless). First show() creates them
         // after forcing display, then syncs visibility for the active tab.
         pendingPopupRestore = restoredPopups.isEmpty ? nil : restoredPopups
+        // The focus descriptor rides along with them: restoreKeyWindow
+        // applies it once the popups exist, so relaunch reopens on the
+        // window that held key at quit instead of guessing.
+        pendingKeyWindowRestore = savedState.keyWindow
         if let service = currentService() {
             let activeIndex = activeIndicesByID[service.id] ?? 0
             webViewManager.syncPopupVisibility(
@@ -1732,9 +1825,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// Remembers which window — and which session's popup — just took key
-    /// status, so a later show or session switch can restore it. Popup
-    /// entries hold their window weakly; the pass over the table prunes
-    /// entries whose window has since closed.
+    /// status, so a later show or session switch can restore it, and
+    /// persists that focus as the saved state's focus descriptor: a quit
+    /// right after this, with no further key transition, must reopen on
+    /// this window. The descriptor is written only for a move between
+    /// windows still on screen — a choice the user made — because when the
+    /// window being replaced has already left the screen, the move is that
+    /// departure passing key sideways (a close, an order-out), and the
+    /// durable record must keep naming the user's last choice; the next
+    /// tab-state save re-derives the record from this in-memory history.
+    /// Popup entries hold their window weakly; the pass over the table
+    /// prunes entries whose window has since closed.
     private func recordKeyWindow(_ window: NSWindow) {
         // Focus history only learns from windows the user could actually
         // choose. While the overlay is ordered out, no Quiper window is on
@@ -1743,8 +1844,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // recording that would aim the next show restore at a window nobody
         // picked.
         guard self.window?.isVisible == true else { return }
+        let replacesDepartedFocus = lastKeyWindow.map { !$0.isVisible } ?? false
         guard let owner = webViewManager?.ownerTab(forPopupWindow: window) else {
             lastKeyWindow = window
+            if !replacesDepartedFocus {
+                persistFocusDescriptor()
+            }
             return
         }
         // A popup only earns focus history while its own session is on
@@ -1755,6 +1860,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         lastKeyWindow = window
         lastKeyPopupBySession[owner] = WeakWindowReference(window: window)
         lastKeyPopupBySession = lastKeyPopupBySession.filter { $0.value.window != nil }
+        if !replacesDepartedFocus {
+            persistFocusDescriptor()
+        }
     }
 
     @objc private func handleWorkspaceWake(_ notification: Notification) {
@@ -2266,7 +2374,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             GhostOnboardingManager.shared.windowDidResignKey()
         }
         hideModifierHUD()
-        saveTabsState()
+        // No tab-state save here: key status is intra-app focus, and
+        // while this window orders out the session is already coming
+        // apart. applicationDidResignActive owns the durability snapshot.
     }
 }
 

@@ -2077,6 +2077,20 @@ final class WebViewManager: NSObject {
         return true
     }
 
+    /// Gives key status to the popup recorded in a saved focus descriptor:
+    /// the `occurrence`-th popup of `owner` in creation order — the same
+    /// owner-and-order identity the save wrote and restores recreate. The
+    /// descriptor carries no URL, so a restored page whose load has not
+    /// committed still resolves. Returns false when that popup is not live
+    /// and visible, so the caller falls back to its default focus target.
+    @MainActor
+    @discardableResult
+    func focusRestoredPopup(owner: TabIdentifier, occurrence: Int) -> Bool {
+        let siblings = focusablePopups(for: owner)
+        guard siblings.indices.contains(occurrence) else { return false }
+        return focusPopup(siblings[occurrence])
+    }
+
     /// Re-pins every visible popup above its parent in creation order, so
     /// interacting with the parent can never bury a popup: AppKit's child
     /// stacking is unreliable after order cycles. Oldest re-pins first so
@@ -2187,25 +2201,54 @@ final class WebViewManager: NSObject {
             (popupCreationOrder[$0] ?? 0) < (popupCreationOrder[$1] ?? 0)
         }
         return orderedTokens.compactMap { token in
-            guard let popupWindow = popupWindowsByToken[token],
-                  let owner = popupOwnerByToken[token],
-                  !isTemporaryTab(serviceID: owner.serviceID, sessionIndex: owner.sessionIndex),
-                  webviewsByID[owner.serviceID]?[owner.sessionIndex] != nil,
-                  let rawURL = popupWindow.hostedWebView?.url?.absoluteString,
-                  let urlString = Self.normalizedPopupURLString(rawURL) ?? popupPendingURLByToken[token],
-                  !urlString.isEmpty
-            else { return nil }
-            let frame = popupWindow.frame
-            return PersistedPopupState(
-                serviceID: owner.serviceID,
-                sessionIndex: owner.sessionIndex,
-                url: urlString,
-                frameX: frame.origin.x,
-                frameY: frame.origin.y,
-                frameWidth: frame.size.width,
-                frameHeight: frame.size.height
-            )
+            popupSnapshotState(forToken: token)
         }
+    }
+
+    /// The URL a popup persists and counts under: its committed URL once
+    /// the load commits, the restore-pending URL until then, and nil when
+    /// the popup has neither. Every path that derives saved state from a
+    /// popup's address resolves it here, so a still-loading restored
+    /// popup contributes its pending URL uniformly instead of dropping
+    /// out of some snapshots and staying in others.
+    @MainActor
+    private func persistablePopupURLString(forToken token: ObjectIdentifier) -> String? {
+        let rawURL = popupWindowsByToken[token]?.hostedWebView?.url?.absoluteString
+        return rawURL.flatMap(Self.normalizedPopupURLString) ?? popupPendingURLByToken[token]
+    }
+
+    /// The snapshot entry one popup token contributes, or nil when it does
+    /// not persist. Single source behind both snapshot consumers — the
+    /// saved popup array and a window's focus descriptor can never
+    /// disagree about what a popup is.
+    @MainActor
+    private func popupSnapshotState(forToken token: ObjectIdentifier) -> PersistedPopupState? {
+        guard let popupWindow = popupWindowsByToken[token],
+              let owner = popupOwnerByToken[token],
+              !isTemporaryTab(serviceID: owner.serviceID, sessionIndex: owner.sessionIndex),
+              webviewsByID[owner.serviceID]?[owner.sessionIndex] != nil,
+              let urlString = persistablePopupURLString(forToken: token),
+              !urlString.isEmpty
+        else { return nil }
+        let frame = popupWindow.frame
+        return PersistedPopupState(
+            serviceID: owner.serviceID,
+            sessionIndex: owner.sessionIndex,
+            url: urlString,
+            frameX: frame.origin.x,
+            frameY: frame.origin.y,
+            frameWidth: frame.size.width,
+            frameHeight: frame.size.height
+        )
+    }
+
+    /// The snapshot entry `window`'s popup contributes to a save, or nil
+    /// when `window` is not a popup or its popup does not persist (a
+    /// secure engine's, a blank or still-unsaved page).
+    @MainActor
+    func popupSnapshotState(for window: NSWindow) -> PersistedPopupState? {
+        guard let token = popupWindowsByToken.first(where: { $0.value === window })?.key else { return nil }
+        return popupSnapshotState(forToken: token)
     }
 
     /// Recreates persisted popups in stored (creation) order so stacking
@@ -2325,9 +2368,7 @@ final class WebViewManager: NSObject {
     private func livePopupCountsByOwnerURL() -> [PopupOwnerURL: Int] {
         var counts: [PopupOwnerURL: Int] = [:]
         for (token, owner) in popupOwnerByToken {
-            let rawURL = popupWindowsByToken[token]?.hostedWebView?.url?.absoluteString
-            let normalized = rawURL.flatMap(Self.normalizedPopupURLString) ?? popupPendingURLByToken[token]
-            guard let normalized else { continue }
+            guard let normalized = persistablePopupURLString(forToken: token) else { continue }
             let key = PopupOwnerURL(serviceID: owner.serviceID, sessionIndex: owner.sessionIndex, url: normalized)
             counts[key, default: 0] += 1
         }

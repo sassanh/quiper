@@ -795,6 +795,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     static var sharedSettingsWindow = SettingsWindow.shared
 
+    /// Set once termination passes the point where the keep/discard
+    /// decision is made and every confirmation before it has resolved:
+    /// from then on the saved tab state is final, and the teardown ahead
+    /// must not feed a save a session that is coming apart.
+    static var hasCommittedTermination = false
+
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Clean up any stale mounts from previous crashed sessions
         unmountAllEncryptedVolumes()
@@ -1018,6 +1024,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    /// The durability snapshot: the user has stepped away with the tab
+    /// state still current, so capture it now in case a crash never
+    /// brings them back. Focus events never save tab state — key status
+    /// changes just as readily while windows are being torn down as when
+    /// the user moves focus.
+    func applicationDidResignActive(_ notification: Notification) {
+        statusBarController?.appController.window.saveTabsState()
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         statusBarController?.appController.window.saveTabsState()
         if Settings.shared.tabSurvivalPolicy == .askOnExit {
@@ -1042,6 +1057,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Settings.shared.discardSavedTabs()
         }
 
+        // The keep/discard decision is made: the saved tab state is
+        // final, and every later save must stay out of its way — the
+        // teardown ahead would rebuild it from a session coming apart
+        // and resurrect tabs the user just chose to close.
+        AppDelegate.hasCommittedTermination = true
+
         // 1b. Web `beforeunload`: quitting destroys every tab, so pages
         // reporting unsaved state get one shared confirmation. Synchronous
         // by necessity (see below); cancelling aborts the quit.
@@ -1050,6 +1071,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if !blocking.isEmpty {
                 NSApp.activate(ignoringOtherApps: true)
                 if !mainWindow.confirmUnloadSync(tabs: blocking, reason: .quit) {
+                    // The quit is off and the app keeps running: the saves
+                    // that keep the tab state current resume.
+                    AppDelegate.hasCommittedTermination = false
                     return .terminateCancel
                 }
             }

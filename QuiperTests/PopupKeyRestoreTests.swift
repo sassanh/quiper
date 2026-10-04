@@ -86,12 +86,101 @@ final class PopupKeyRestoreTests: XCTestCase {
     private func withSettingsRestored(_ body: () async throws -> Void) async throws {
         let originalOnboarding = Settings.shared.hasCompletedGhostOnboarding
         let originalServices = Settings.shared.services
+        let originalTabSurvivalPolicy = Settings.shared.tabSurvivalPolicy
+        let originalTabState = Settings.shared.persistedTabState
         Settings.shared.hasCompletedGhostOnboarding = true
+        Settings.shared.tabSurvivalPolicy = .always
+        // The launch focus descriptor is an explicit input of every
+        // scenario here: pin it to "no record" unless a test seeds one,
+        // so no save another test triggered can steer the first show.
+        Settings.shared.persistedTabState?.keyWindow = nil
         defer {
             Settings.shared.hasCompletedGhostOnboarding = originalOnboarding
             Settings.shared.services = originalServices
+            Settings.shared.tabSurvivalPolicy = originalTabSurvivalPolicy
+            Settings.shared.persistedTabState = originalTabState
         }
         try await body()
+    }
+
+    /// The quit-side stage of a relaunch scenario: tab state seeded with
+    /// two saved popups for one session, then a controller whose first
+    /// show restored them. Focusing a window here records the focus
+    /// descriptor the save-on-focus writes; the relaunch leg builds a
+    /// fresh controller from that state.
+    @MainActor
+    private struct QuitStage {
+        let controller: MainWindowController
+        let manager: WebViewManager
+        let services: [Service]
+        let owner: TabIdentifier
+        let popups: [NSWindow]
+
+        func cleanup() {
+            for popup in popups { popup.close() }
+            manager.removeWebView(for: services[0], sessionIndex: 0)
+            controller.window?.orderOut(nil)
+        }
+    }
+
+    private func openQuitStage() throws -> QuitStage {
+        let services = [
+            Service(name: "Alpha", url: "https://alpha.test", focus_selector: "body"),
+            Service(name: "Beta", url: "https://beta.test", focus_selector: "body")
+        ]
+        Settings.shared.services = services
+        let owner = TabIdentifier(serviceID: services[0].id, sessionIndex: 0)
+        var seed = PersistedTabState()
+        seed.activeServiceID = services[0].id
+        seed.openTabs = [services[0].id: [0: "https://alpha.test"]]
+        seed.popups = [
+            PersistedPopupState(
+                serviceID: owner.serviceID, sessionIndex: 0,
+                url: "https://popup.test/older",
+                frameX: 90, frameY: 90, frameWidth: 480, frameHeight: 360
+            ),
+            PersistedPopupState(
+                serviceID: owner.serviceID, sessionIndex: 0,
+                url: "https://popup.test/newer",
+                frameX: 420, frameY: 140, frameWidth: 480, frameHeight: 360
+            )
+        ]
+        Settings.shared.persistedTabState = seed
+
+        let controller = MainWindowController(services: services)
+        // The focus gate must not be short-circuited by windows other tests
+        // left on screen: both force `isOverlayInteractable` to false by design.
+        AppDelegate.sharedSettingsWindow.orderOut(nil)
+        UpdatePromptWindowController.shared.window?.orderOut(nil)
+        controller.show()
+        let manager = try XCTUnwrap(controller.webViewManager, "The overlay's manager must exist")
+        return QuitStage(
+            controller: controller,
+            manager: manager,
+            services: services,
+            owner: owner,
+            popups: manager.focusablePopups(for: owner)
+        )
+    }
+
+    /// The relaunch leg: tears the quit stage down — its save already
+    /// holds the state a quit writes — then builds and shows a fresh
+    /// controller from that saved state, letting the deferred focus
+    /// stages settle before the caller inspects the windows.
+    private func relaunch(from quit: QuitStage) async throws -> MainWindowController {
+        quit.cleanup()
+        let controller = MainWindowController(services: quit.services)
+        AppDelegate.sharedSettingsWindow.orderOut(nil)
+        UpdatePromptWindowController.shared.window?.orderOut(nil)
+        controller.show()
+        await settleFocusStages()
+        return controller
+    }
+
+    private func cleanup(_ controller: MainWindowController, owner: TabIdentifier, services: [Service]) {
+        controller.webViewManager?.focusablePopups(for: owner).forEach { $0.close() }
+        controller.webViewManager?.removeWebView(for: services[0], sessionIndex: 0)
+        controller.window?.orderOut(nil)
     }
 
     func testShowRestoresThePopupThatWasKeyBeforeTheHide() async throws {
@@ -173,6 +262,22 @@ final class PopupKeyRestoreTests: XCTestCase {
         }
     }
 
+    func testFirstShowWithoutHistoryFocusesTheFrontmostPopup() async throws {
+        try await withSettingsRestored {
+            // The relaunch state: show() runs with no key history — nothing
+            // held key before it — and the session's popups are on screen by
+            // the time the deferred restore decides, exactly as launch
+            // restoration leaves them.
+            let stage = try await openStage()
+            defer { stage.cleanup() }
+
+            XCTAssertTrue(
+                stage.secondPopup.isKeyWindow,
+                "The first show with no focus history must hand focus to the popup in front, not the overlay behind it"
+            )
+        }
+    }
+
     func testSwitchingBackRestoresTheSessionsOwnKeyPopup() async throws {
         try await withSettingsRestored {
             let stage = try await openStage()
@@ -188,6 +293,118 @@ final class PopupKeyRestoreTests: XCTestCase {
             XCTAssertTrue(
                 stage.firstPopup.isKeyWindow,
                 "Switching back must restore the popup this session last had key, not the newest popup"
+            )
+        }
+    }
+
+    func testQuitWithTheOverlayFocusedReopensOnTheOverlay() async throws {
+        try await withSettingsRestored {
+            let quit = try openQuitStage()
+            defer { quit.cleanup() }
+            XCTAssertEqual(quit.popups.count, 2, "The quit stage must restore both saved popups")
+
+            // The user quits with the overlay focused while popups sit in
+            // front of it — the case a frontmost-popup fallback would get
+            // wrong.
+            try makeKeyOrFail(quit.controller.window, reason: "the overlay")
+            XCTAssertEqual(
+                Settings.shared.persistedTabState?.keyWindow, .overlay,
+                "Focusing the overlay must persist that choice for the next launch"
+            )
+
+            let relaunched = try await relaunch(from: quit)
+            defer { cleanup(relaunched, owner: quit.owner, services: quit.services) }
+
+            let restoredPopups = relaunched.webViewManager?.focusablePopups(for: quit.owner) ?? []
+            XCTAssertEqual(restoredPopups.count, 2, "Both saved popups must come back")
+            XCTAssertEqual(
+                relaunched.window?.isKeyWindow, true,
+                "Relaunch must key the overlay that held focus at quit, not a popup in front of it"
+            )
+            XCTAssertFalse(
+                restoredPopups.contains(where: { $0.isKeyWindow }),
+                "The popups in front must stay dim: focus belonged to the overlay at quit"
+            )
+        }
+    }
+
+    func testQuitWithTheOlderPopupFocusedReopensOnThatPopup() async throws {
+        try await withSettingsRestored {
+            let quit = try openQuitStage()
+            defer { quit.cleanup() }
+            XCTAssertEqual(quit.popups.count, 2, "The quit stage must restore both saved popups")
+
+            // The older popup is key at quit while a newer one sits in
+            // front — the case a frontmost-popup fallback would get wrong.
+            let older = try XCTUnwrap(quit.popups.first, "The older popup must exist")
+            try makeKeyOrFail(older, reason: "the popup")
+            XCTAssertEqual(
+                Settings.shared.persistedTabState?.keyWindow, .popup(owner: quit.owner, occurrence: 0),
+                "Focusing the popup must persist its owner and position among its siblings"
+            )
+
+            let relaunched = try await relaunch(from: quit)
+            defer { cleanup(relaunched, owner: quit.owner, services: quit.services) }
+
+            let restoredPopups = try XCTUnwrap(
+                relaunched.webViewManager?.focusablePopups(for: quit.owner),
+                "The relaunched overlay's manager must exist"
+            )
+            XCTAssertEqual(restoredPopups.count, 2, "Both saved popups must come back")
+            let restoredOlder = try XCTUnwrap(restoredPopups.first, "The older popup must come back")
+            let restoredInFront = try XCTUnwrap(restoredPopups.last, "The newer popup must come back")
+            XCTAssertTrue(
+                restoredOlder.isKeyWindow,
+                "Relaunch must key the popup that held focus at quit — the older one, not the popup in front"
+            )
+            XCTAssertFalse(
+                restoredInFront.isKeyWindow,
+                "The popup in front must not steal the focus the older popup held at quit"
+            )
+        }
+    }
+
+    func testSavingFocusRecordsTheFocusedPopupsPositionAmongItsSiblings() async throws {
+        try await withSettingsRestored {
+            let quit = try openQuitStage()
+            defer { quit.cleanup() }
+            XCTAssertEqual(quit.popups.count, 2, "The quit stage must restore both saved popups")
+
+            // A popup behind no other — the one in front — must still
+            // record its own rank, so the descriptor names one popup of
+            // the session instead of collapsing onto the oldest. (Relaunch
+            // focus for this record lands on the popup in front either
+            // way, so the record itself is what this pins down.)
+            let newer = try XCTUnwrap(quit.popups.last, "The newer popup must exist")
+            try makeKeyOrFail(newer, reason: "the newer popup")
+
+            XCTAssertEqual(
+                Settings.shared.persistedTabState?.keyWindow, .popup(owner: quit.owner, occurrence: 1),
+                "The record must name which of the session's popups held focus, not just the session"
+            )
+        }
+    }
+
+    func testSavingFocusOnAPopupThatIsNotSavedLeavesNoRecord() async throws {
+        try await withSettingsRestored {
+            let stage = try await openStage()
+            defer { stage.cleanup() }
+
+            // Seed a save target: with no saved state at all, the focus
+            // save's early return would leave the record nil without ever
+            // reaching the popup-exclusion path this pins down.
+            Settings.shared.persistedTabState = PersistedTabState()
+
+            // about:blank popups never reach the saved popup array, so
+            // there is nothing to point a record at — the same path a
+            // secure engine's popup takes by staying out of plaintext
+            // state. With no record, relaunch falls back to the popup in
+            // front instead of guessing.
+            try makeKeyOrFail(stage.firstPopup, reason: "the popup")
+
+            XCTAssertNil(
+                Settings.shared.persistedTabState?.keyWindow,
+                "A popup excluded from the save must leave no focus record"
             )
         }
     }
