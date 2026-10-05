@@ -47,7 +47,7 @@ final class UpdatePromptWindowController: NSWindowController, NSWindowDelegate {
             }
         }
 
-        window?.makeKeyAndOrderFront(nil)
+        KeyFocusGate.shared.focus(window)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -55,10 +55,11 @@ final class UpdatePromptWindowController: NSWindowController, NSWindowDelegate {
         if let parent = window?.parent, let window {
             parent.removeChildWindow(window)
         }
-        window?.orderOut(nil)
+        KeyFocusGate.shared.orderOut(window)
     }
 
     func windowWillClose(_ notification: Notification) {
+        if let window { KeyFocusGate.shared.windowWillClose(window) }
         if let parent = window?.parent, let window {
             parent.removeChildWindow(window)
         }

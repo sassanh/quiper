@@ -139,6 +139,56 @@ final class HUDClickAwayTests: XCTestCase {
         XCTAssertNil(controller.tabHistoryHUDWindow)
     }
 
+    // MARK: - Departure declaration on the click-dismiss flow
+
+    /// The click's order of events: the overlay takes key while the
+    /// mouse-down event is dispatched — before the dismissal runs — so
+    /// the HUD has already lost key status when it starts fading. The
+    /// departure must be declared anyway: openHUDs excludes the fading
+    /// HUD, and the overlay's deferred re-key never hands key status
+    /// back to a window that is closing.
+    func testDismissingTheHUDAfterTheOverlayTookKeyNeverRekeysTheFadingHUD() async throws {
+        let controller = makeController()
+        defer { settleAllHUDs(controller) }
+        let overlay = try XCTUnwrap(controller.window, "The overlay must exist")
+
+        controller.showPromptHistoryHUD()
+        let hud = try XCTUnwrap(controller.promptHistoryHUDWindow)
+
+        NSApp.activate(ignoringOtherApps: true)
+        overlay.makeKeyAndOrderFront(nil)
+        guard overlay.isKeyWindow else {
+            throw XCTSkip("The test host refused key status to the overlay")
+        }
+        XCTAssertFalse(
+            hud.isKeyWindow,
+            "The overlay's key move must leave the HUD without key status"
+        )
+
+        controller.hidePromptHistoryHUD()
+
+        XCTAssertTrue(
+            KeyFocusGate.shared.isDeparting(hud),
+            "A dismissal that starts after the HUD lost key status must still declare the departure"
+        )
+        XCTAssertFalse(
+            controller.openHUDs.contains(where: { $0 === hud }),
+            "The fading HUD must not count as an open HUD the overlay could hand focus to"
+        )
+
+        // The re-key the overlay scheduled when it took key runs now.
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertFalse(
+            hud.isKeyWindow,
+            "The deferred re-key must not hand key status back to the HUD the dismissal is fading out"
+        )
+        XCTAssertTrue(
+            overlay.isKeyWindow,
+            "The overlay must keep the key status its click gave it"
+        )
+    }
+
     // MARK: - Helpers
 
     private func makeController() -> MainWindowController {

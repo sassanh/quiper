@@ -455,19 +455,42 @@ nonisolated struct TabIdentifier: Equatable, Codable, Hashable {
     let sessionIndex: Int
 }
 
-/// A persisted popup window: its owning session, current URL, frame, and
-/// position in creation order (oldest first) so restores reproduce stacking.
+/// A persisted popup window: its owning session, current URL, frame, the
+/// owner-position of the popup that opened it, and its own position in
+/// creation order (oldest first) — the identity order the focus descriptor
+/// indexes into. The opener link lets restores rebuild the saved opener
+/// tree instead of inventing one.
 nonisolated struct PersistedPopupState: Equatable, Codable, Sendable {
     var serviceID: UUID
     var sessionIndex: Int
+    /// Normalized http(s) address: the popup's restore and dedup identity.
     var url: String
     var frameX: Double
     var frameY: Double
     var frameWidth: Double
     var frameHeight: Double
+    /// Position among its owning session's saved popups (creation order)
+    /// of the popup that opened this one; nil when it opened straight
+    /// from its session or its opener did not persist. Owner-scoped, so
+    /// the save's per-engine split of the snapshot array cannot shift it.
+    /// Structure, not identity: equality ignores it.
+    var openerOccurrence: Int? = nil
 
     var owner: TabIdentifier {
         TabIdentifier(serviceID: serviceID, sessionIndex: sessionIndex)
+    }
+
+    /// Identity: owning session, address, and frame. The opener link is
+    /// structure, so a snapshot without it still matches the saved entry
+    /// it describes.
+    static func == (lhs: PersistedPopupState, rhs: PersistedPopupState) -> Bool {
+        lhs.serviceID == rhs.serviceID
+            && lhs.sessionIndex == rhs.sessionIndex
+            && lhs.url == rhs.url
+            && lhs.frameX == rhs.frameX
+            && lhs.frameY == rhs.frameY
+            && lhs.frameWidth == rhs.frameWidth
+            && lhs.frameHeight == rhs.frameHeight
     }
 
     /// Restore/merge identity: same owning session and URL regardless of

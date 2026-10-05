@@ -87,12 +87,16 @@ public struct OnboardingWizard {
     public static func show(completion: @escaping () -> Void) {
         let window = OnboardingWizardWindow(hasLegacyData: hasLegacyData, completion: completion)
         activeWindow = window
-        window.makeKeyAndOrderFront(nil)
+        KeyFocusGate.shared.focus(window)
         NSApp.activate(ignoringOtherApps: true)
     }
     
     @MainActor
     fileprivate static func dismiss() {
+        // Decide the hand-back before the close takes focus away.
+        if let window = activeWindow {
+            KeyFocusGate.shared.windowWillClose(window)
+        }
         activeWindow?.close()
         activeWindow = nil
     }

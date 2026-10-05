@@ -472,7 +472,7 @@ final class LockOverlayView: NSView {
                 onUnlock?(fallbackContext)
                 DispatchQueue.main.async {
                     if NSApp.isActive {
-                        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                        KeyFocusGate.shared.reassertCurrentKey()
                     }
                 }
             } catch {
@@ -484,7 +484,7 @@ final class LockOverlayView: NSView {
                     stopLoading()
                     DispatchQueue.main.async {
                         if NSApp.isActive {
-                            NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                            KeyFocusGate.shared.reassertCurrentKey()
                         }
                     }
                     return
@@ -492,7 +492,7 @@ final class LockOverlayView: NSView {
                 showError(error.localizedDescription)
                 DispatchQueue.main.async {
                     if NSApp.isActive {
-                        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                        KeyFocusGate.shared.reassertCurrentKey()
                     }
                 }
             }
@@ -515,7 +515,7 @@ final class LockOverlayView: NSView {
                 onUnlock?(laContext)
                 DispatchQueue.main.async {
                     if NSApp.isActive {
-                        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                        KeyFocusGate.shared.reassertCurrentKey()
                     }
                 }
             } catch {
@@ -527,7 +527,7 @@ final class LockOverlayView: NSView {
                     stopLoading()
                     DispatchQueue.main.async {
                         if NSApp.isActive {
-                            NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                            KeyFocusGate.shared.reassertCurrentKey()
                         }
                     }
                     return
@@ -535,7 +535,7 @@ final class LockOverlayView: NSView {
                 showError(error.localizedDescription)
                 DispatchQueue.main.async {
                     if NSApp.isActive {
-                        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                        KeyFocusGate.shared.reassertCurrentKey()
                     }
                 }
             }
@@ -594,9 +594,10 @@ final class LockOverlayView: NSView {
     }
     
     private func registerFocusObservers() {
-        // Observe window becoming key
+        // Observe window becoming key — through the gate, the app's single
+        // listener for key-status notifications.
         windowBecomeObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didBecomeKeyNotification,
+            forName: .quiperKeyWindowDidBecomeKey,
             object: nil,
             queue: .main
         ) { [weak self] notification in
@@ -608,7 +609,7 @@ final class LockOverlayView: NSView {
 
         // Observe window resigning key
         windowResignObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResignKeyNotification,
+            forName: .quiperKeyWindowDidResignKey,
             object: nil,
             queue: .main
         ) { [weak self] notification in

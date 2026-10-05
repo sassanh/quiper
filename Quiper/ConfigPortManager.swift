@@ -92,7 +92,7 @@ enum ConfigPortManager {
 
         NSApp.activate(ignoringOtherApps: true)
         if let window {
-            window.makeKeyAndOrderFront(nil)
+            KeyFocusGate.shared.focus(window)
             panel.beginSheetModal(for: window, completionHandler: handler)
         } else {
             panel.begin(completionHandler: handler)
@@ -122,7 +122,7 @@ enum ConfigPortManager {
 
         NSApp.activate(ignoringOtherApps: true)
         if let window {
-            window.makeKeyAndOrderFront(nil)
+            KeyFocusGate.shared.focus(window)
             panel.beginSheetModal(for: window, completionHandler: handler)
         } else {
             panel.begin(completionHandler: handler)
@@ -157,7 +157,7 @@ enum ConfigPortManager {
 
         NSApp.activate(ignoringOtherApps: true)
         if let window {
-            window.makeKeyAndOrderFront(nil)
+            KeyFocusGate.shared.focus(window)
             panel.beginSheetModal(for: window, completionHandler: handler)
         } else {
             panel.level = .modalPanel

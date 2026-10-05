@@ -121,10 +121,29 @@ final class WebViewManager: NSObject {
     private var popupWindowsByToken: [ObjectIdentifier: PopupWindow] = [:]
     private var popupCreationOrder: [ObjectIdentifier: Int] = [:]
     private var popupCreationCounter = 0
+    // Live popup stacking, back to front (the last entry renders on top).
+    // The window tree stays in AppKit's parent links; this sequence is the
+    // single source for where each branch sits in it. Sibling order comes
+    // from interaction — a popup taking key status raises its whole branch
+    // — never from creation time. The show pass, the parent-key repair,
+    // and new-popup insertion all replay this one sequence, so z-order
+    // survives hide/show cycles and clicks on the parent alike.
+    private var popupStackingOrder: [ObjectIdentifier] = []
+    // The launch restore's record: for each session, the window its k-th
+    // saved popup became (weakly). The focus descriptor's
+    // owner-and-occurrence resolves through here — the same
+    // owner-position identity the save wrote the descriptor from — so no
+    // visibility or URL filter can shift the position between save and
+    // restore. The opener resolution shares this record.
+    private var restoredPopupWindowsByOwnerPosition: [TabIdentifier: [Int: WeakWindowReference]] = [:]
     private var popupFindBars: [ObjectIdentifier: FindBarViewController] = [:]
     // Intended URL (normalized) for restored popups whose load has not
     // committed yet: consulted by snapshot and dedup until the live URL
     // takes over. Cleared on commit, failure, or close.
+    // The saved URL of a restored popup, keyed by its webview: its identity
+    // in snapshots and dedup, set at creation and living until a usable
+    // http(s) address replaces it (didFinish) or the popup unregisters.
+    // A failure never replaces it: a failed load never committed.
     private var popupPendingURLByToken: [ObjectIdentifier: String] = [:]
     private var pendingLazyLoadURLs: [ObjectIdentifier: String] = [:]
     private var lastKnownTitlesByWebView: [ObjectIdentifier: String] = [:]
@@ -194,6 +213,7 @@ final class WebViewManager: NSObject {
         NotificationCenter.default.addObserver(self, selector: #selector(engineCustomCSSChangedNotification(_:)), name: .engineCustomCSSChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(enginePromptSelectorChangedNotification(_:)), name: .enginePromptSelectorChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(applicationWillTerminateNotification(_:)), name: NSApplication.willTerminateNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(popupDidBecomeKey(_:)), name: .quiperKeyWindowDidBecomeKey, object: nil)
         Settings.shared.$enablePromptHistory
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -720,16 +740,10 @@ final class WebViewManager: NSObject {
 
     /// Focus-loss dim for the main window's session pages, so focus loss
     /// reads through the page itself; popups are judged per window via
-    /// `setPopupContentTransparent(_:for:)`. Clicks on the overlay are
+    /// `setPopupContentFocusLossLevel(_:for:)`. Clicks on the overlay are
     /// still caught by the focus shield above the session wrappers, never
     /// by the page.
-    private var lastSessionContentTransparent = false
-
-    /// Wrapper alpha for the focus-loss dim, single-sourced so surfaces
-    /// created mid-dim start consistent with live ones.
-    private func contentAlpha(for transparent: Bool) -> CGFloat {
-        transparent ? 0.5 : 1.0
-    }
+    private var lastSessionContentLevel: FocusLossLevel = .clear
 
     /// The main window's session wrappers — one population of the hosted
     /// web content, kept apart from popups because each window dims by
@@ -740,23 +754,25 @@ final class WebViewManager: NSObject {
             .compactMap { $0 as? WebViewWrapperView }
     }
 
-    func setSessionContentTransparent(_ transparent: Bool) {
-        guard lastSessionContentTransparent != transparent else { return }
-        lastSessionContentTransparent = transparent
-        let alpha = contentAlpha(for: transparent)
+    func setSessionContentFocusLossLevel(_ level: FocusLossLevel) {
+        guard lastSessionContentLevel != level else { return }
+        lastSessionContentLevel = level
         for wrapper in sessionWrappers {
-            wrapper.alphaValue = alpha
+            wrapper.alphaValue = level.alpha
         }
     }
 
-    /// Focus-loss dim for one popup's page, judged from that popup
-    /// window's own focus: only the popup holding key status renders
-    /// clear while the main window and sibling popups stay dimmed.
-    func setPopupContentTransparent(_ transparent: Bool, for popupWindow: NSWindow) {
+    /// Focus-loss dim for one popup's window, judged from that window's
+    /// own tier: only the popup holding key status renders clear; a popup
+    /// on the key window's ancestor/descendant line takes the standard
+    /// dim of its page; a popup outside that line renders dimmed harder —
+    /// the page more transparent and its toolbar receded with it.
+    func setPopupContentFocusLossLevel(_ level: FocusLossLevel, for popupWindow: NSWindow) {
         guard let popup = popupWindowsByToken.values.first(where: { $0 === popupWindow }),
               let hostedWebView = popup.hostedWebView,
               let wrapper = hostingWrapper(for: hostedWebView) else { return }
-        wrapper.alphaValue = contentAlpha(for: transparent)
+        wrapper.alphaValue = level.alpha
+        popup.toolbarView.alphaValue = level.popupChromeAlpha
     }
 
     /// Pushes window focus to every managed webview so the composer recording
@@ -1032,7 +1048,7 @@ final class WebViewManager: NSObject {
         wrapperView.layer?.cornerRadius = Constants.WINDOW_CORNER_RADIUS
         updateMaskedCorners(for: wrapperView)
         wrapperView.layer?.masksToBounds = true
-        wrapperView.alphaValue = contentAlpha(for: lastSessionContentTransparent)
+        wrapperView.alphaValue = lastSessionContentLevel.alpha
         wrapperView.isHidden = true
         
         let isUnlocked = !service.isEncrypted || EncryptedVolumeManager.shared.isUnlocked(for: service.id)
@@ -1899,7 +1915,7 @@ final class WebViewManager: NSObject {
     /// unattributable popup would be half-managed, and WebKit only asks for
     /// popups from live webviews, so this indicates a teardown race.
     @MainActor
-    private func makePopupWebView(for service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow, opener: WKWebView? = nil, restoredOwner: TabIdentifier? = nil, restoredFrame: NSRect? = nil, startHidden: Bool = false) -> WKWebView? {
+    private func makePopupWebView(for service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow, opener: WKWebView? = nil, restoredOwner: TabIdentifier? = nil, restoredFrame: NSRect? = nil, restoredURL: String? = nil, startHidden: Bool = false) -> WKWebView? {
         guard let owner = restoredOwner ?? opener.flatMap({ ownerTab(for: $0) }) else {
             NSLog("[Quiper] Dropped popup for %@: could not resolve the owning tab", service.name)
             return nil
@@ -1941,8 +1957,17 @@ final class WebViewManager: NSObject {
         serviceIDsByWebView[token] = service.id
         popupOwnerByToken[token] = owner
         popupWindowsByToken[token] = popupWindow
+        // A restored popup's saved URL is its identity from the moment the
+        // window exists: the focus this function triggers below records a
+        // snapshot synchronously, before any caller could set it.
+        popupPendingURLByToken[token] = restoredURL
         popupCreationCounter += 1
         popupCreationOrder[token] = popupCreationCounter
+        // A new child lands at the top of its parent's band — the end of
+        // that window's run in the stacking order — and an unparented
+        // window (attaching to a hidden overlay can fail silently) has no
+        // band, so it appends to the stack.
+        insertIntoStackingOrder(token, parentWindow: popupWindow.parent)
         popupWindow.hostedWebView = popupWebView
         popupWindow.onClose = { [weak self] in
             self?.unregisterPopupWebView(token: token)
@@ -1968,7 +1993,8 @@ final class WebViewManager: NSObject {
         // only when the effect is on and the overlay is inactive — every
         // other case starts clear. The popup's own key notification then
         // re-evaluates the exact state for this window right away.
-        wrapper.alphaValue = contentAlpha(for: Settings.shared.focusLossEffectEnabled && !NSApp.isActive)
+        let seedLevel: FocusLossLevel = (Settings.shared.focusLossEffectEnabled && !NSApp.isActive) ? .dimmed : .clear
+        wrapper.alphaValue = seedLevel.alpha
         popupWindow.hostWebContent(wrapper)
         wrapper.addSubview(popupWebView)
         installErrorView(for: popupWebView, in: wrapper)
@@ -1977,7 +2003,7 @@ final class WebViewManager: NSObject {
             // overlay show path syncs visibility for the active tab.
             setPopupVisibility(token: token, hidden: true)
         } else {
-            popupWindow.makeKeyAndOrderFront(nil)
+            KeyFocusGate.shared.focus(popupWindow)
             // Composite immediately so opener chains attach to displayed
             // parents even when the whole tree shows at once.
             popupWindow.display()
@@ -2046,8 +2072,11 @@ final class WebViewManager: NSObject {
         return nil
     }
 
-    /// `tab`'s visible popup windows in creation order; the last element is
-    /// the topmost one under show-order stacking.
+    /// `tab`'s visible popup windows in creation order — the identity
+    /// order the save derives the focus descriptor from. Stacking is
+    /// interaction-driven and lives in the stacking order, so a position
+    /// here never implies a z position; `frontmostPopup(for:)` answers
+    /// that question.
     @MainActor
     func focusablePopups(for tab: TabIdentifier) -> [NSWindow] {
         popupWindowsByToken
@@ -2060,52 +2089,168 @@ final class WebViewManager: NSObject {
             .map(\.value)
     }
 
-    /// Gives key status and content focus to a managed, visible popup.
-    /// Returns false when `window` is not a live popup of the overlay, so
-    /// callers fall back to their default focus target.
+    /// `tab`'s visible popup that renders on top of the stack — the window
+    /// the user sees in front. Read from the stacking order interaction
+    /// maintains, never from creation time.
     @MainActor
-    @discardableResult
-    func focusPopup(_ window: NSWindow) -> Bool {
-        guard let popupWindow = popupWindowsByToken.values.first(where: { $0 === window }),
-              popupWindow.isVisible else { return false }
-        // Already ordered front by the visibility sync; only key status and
-        // the responder chain move, so sibling stacking stays untouched.
-        popupWindow.makeKey()
-        if let hostedWebView = popupWindow.hostedWebView, hostedWebView.superview != nil {
-            popupWindow.makeFirstResponder(hostedWebView)
+    func frontmostPopup(for tab: TabIdentifier) -> NSWindow? {
+        for token in popupStackingOrder.reversed() {
+            guard let popupWindow = popupWindowsByToken[token],
+                  popupWindow.isVisible,
+                  popupOwnerByToken[token] == tab else { continue }
+            return popupWindow
         }
-        return true
+        return nil
     }
 
-    /// Gives key status to the popup recorded in a saved focus descriptor:
-    /// the `occurrence`-th popup of `owner` in creation order — the same
-    /// owner-and-order identity the save wrote and restores recreate. The
-    /// descriptor carries no URL, so a restored page whose load has not
-    /// committed still resolves. Returns false when that popup is not live
-    /// and visible, so the caller falls back to its default focus target.
+    /// Gives content focus — the responder chain — to a managed, visible
+    /// popup. The content-focus half of `KeyFocusGate.focusPopup`, which
+    /// moves key status through the gate first; key status never moves
+    /// here, so sibling stacking stays untouched.
     @MainActor
-    @discardableResult
-    func focusRestoredPopup(owner: TabIdentifier, occurrence: Int) -> Bool {
-        let siblings = focusablePopups(for: owner)
-        guard siblings.indices.contains(occurrence) else { return false }
-        return focusPopup(siblings[occurrence])
+    func focusPopupContent(_ window: NSWindow) {
+        guard let popupWindow = popupWindowsByToken.values.first(where: { $0 === window }),
+              popupWindow.isVisible,
+              let hostedWebView = popupWindow.hostedWebView,
+              hostedWebView.superview != nil else { return }
+        popupWindow.makeFirstResponder(hostedWebView)
     }
 
-    /// Re-pins every visible popup above its parent in creation order, so
-    /// interacting with the parent can never bury a popup: AppKit's child
-    /// stacking is unreliable after order cycles. Oldest re-pins first so
-    /// the newest popup ends on top, matching show-order stacking.
+    /// Re-pins every visible popup in its recorded position by replaying
+    /// the stacking order, back to front: order cycles drop child
+    /// stacking, and replaying repairs it without re-deciding where
+    /// anything sits, so the order interaction built survives
+    /// interacting with the parent.
     @MainActor
     func raisePopupWindows() {
-        let orderedTokens = popupWindowsByToken.keys.sorted {
-            (popupCreationOrder[$0] ?? 0) < (popupCreationOrder[$1] ?? 0)
-        }
-        for token in orderedTokens {
+        for token in popupStackingOrder {
             guard let popupWindow = popupWindowsByToken[token],
                   popupWindow.isVisible,
                   let parentWindow = popupWindow.parent else { continue }
-            parentWindow.addChildWindow(popupWindow, ordered: .above)
+            redeclareTopChild(popupWindow, of: parentWindow)
         }
+    }
+
+    /// Re-declares `popupWindow` as the top child of `parentWindow` —
+    /// the one call the window server honors for sibling position.
+    ///
+    /// `addChildWindow(_:ordered:)` applies only when the link is new:
+    /// re-adding an already-child window does nothing, and every
+    /// `order`/`orderFront` variant parks a child directly above its
+    /// parent — child windows get no click-to-front among siblings, so
+    /// sibling position has to be re-declared. Detaching and making the
+    /// declaration again moves the child above its siblings; its subtree
+    /// rides along, key status is untouched, and no key notification
+    /// fires, so the fan-out never re-enters.
+    @MainActor
+    private func redeclareTopChild(_ popupWindow: NSWindow, of parentWindow: NSWindow) {
+        parentWindow.removeChildWindow(popupWindow)
+        parentWindow.addChildWindow(popupWindow, ordered: .above)
+    }
+
+    /// The gate's key-status fan-out: a popup taking key status re-declares
+    /// its whole branch as the front band of the stack — the interaction
+    /// that decides z-order, since the window server gives child windows
+    /// no click-to-front among siblings and sibling position is never
+    /// implied by creation time. Pure stacking: key status never moves
+    /// here, it only follows the key the gate already recorded.
+    @objc private func popupDidBecomeKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              let token = popupWindowsByToken.first(where: { $0.value === window })?.key
+        else { return }
+        raisePopupBranch(of: token)
+    }
+
+    /// Raises `token`'s branch: at every level from the popup up to the
+    /// overlay, the branch is re-declared as the top sibling, so the
+    /// popup comes to the front of the whole stack with its subtree riding
+    /// along — and unrelated branches keep their relative order.
+    @MainActor
+    private func raisePopupBranch(of token: ObjectIdentifier) {
+        var childToken: ObjectIdentifier? = token
+        while let current = childToken,
+              let popupWindow = popupWindowsByToken[current],
+              let parentWindow = popupWindow.parent {
+            let insertionIndex: Int
+            var parentToken: ObjectIdentifier?
+            if let candidate = popupWindowsByToken.first(where: { $0.value === parentWindow })?.key,
+               let parentIndex = popupStackingOrder.firstIndex(of: candidate) {
+                parentToken = candidate
+                // Top of the parent's band = the end of its contiguous run.
+                insertionIndex = endOfStackingRun(startingAt: parentIndex, of: candidate)
+            } else {
+                // The overlay has no run of its own: its children sit at
+                // the top of the whole stack.
+                insertionIndex = popupStackingOrder.count
+            }
+            moveStackingRun(of: current, toTopAt: insertionIndex)
+            // Apply the move to AppKit in the same step: the record and
+            // the rendered stack move together, so the raise shows
+            // immediately and the next replay agrees with what is on
+            // screen. A click path reaches no other ordering call.
+            redeclareTopChild(popupWindow, of: parentWindow)
+            childToken = parentToken
+        }
+    }
+
+    /// Places a new popup at the top of its parent's band — the end of
+    /// that window's contiguous run in the stacking order, or the end of
+    /// the whole order when the parent is the overlay.
+    @MainActor
+    private func insertIntoStackingOrder(_ token: ObjectIdentifier, parentWindow: NSWindow?) {
+        guard let parentWindow,
+              let parentToken = popupWindowsByToken.first(where: { $0.value === parentWindow })?.key,
+              let parentIndex = popupStackingOrder.firstIndex(of: parentToken)
+        else {
+            popupStackingOrder.append(token)
+            return
+        }
+        popupStackingOrder.insert(token, at: endOfStackingRun(startingAt: parentIndex, of: parentToken))
+    }
+
+    /// Moves `token`'s band to the top of its parent's band: the
+    /// contiguous run (the popup plus every live descendant) is extracted
+    /// and reinserted, keeping the subtree's internal order intact.
+    @MainActor
+    private func moveStackingRun(of token: ObjectIdentifier, toTopAt insertionIndex: Int) {
+        guard let tokenIndex = popupStackingOrder.firstIndex(of: token) else { return }
+        let end = endOfStackingRun(startingAt: tokenIndex, of: token)
+        let run = Array(popupStackingOrder[tokenIndex..<end])
+        var order = popupStackingOrder
+        order.removeSubrange(tokenIndex..<end)
+        // The insertion point was measured before the removal; the target
+        // band always ends at or past the run, so the shift is exact.
+        order.insert(contentsOf: run, at: insertionIndex - run.count)
+        popupStackingOrder = order
+    }
+
+    /// The end of `token`'s contiguous band in the stacking order: the
+    /// popup itself plus every following entry that descends from it in
+    /// the window tree. Bands stay contiguous by construction — insertion
+    /// lands inside the parent's run, a raise moves whole runs, and a
+    /// close removes one entry after its children closed.
+    @MainActor
+    private func endOfStackingRun(startingAt index: Int, of token: ObjectIdentifier) -> Int {
+        guard let tokenWindow = popupWindowsByToken[token] else { return index + 1 }
+        var end = index + 1
+        while end < popupStackingOrder.count,
+              let candidateWindow = popupWindowsByToken[popupStackingOrder[end]],
+              isDescendant(candidateWindow, of: tokenWindow) {
+            end += 1
+        }
+        return end
+    }
+
+    /// Whether `window` hangs under `ancestor` in the window tree. The
+    /// parent links are the tree: they change only at popup creation and
+    /// close, never by stacking.
+    private func isDescendant(_ window: NSWindow, of ancestor: NSWindow) -> Bool {
+        var current = window.parent
+        while let parent = current {
+            if parent === ancestor { return true }
+            current = parent.parent
+        }
+        return false
     }
 
     /// Single gate for a popup's find bar. Each popup webview owns one
@@ -2160,11 +2305,11 @@ final class WebViewManager: NSObject {
     /// inactive ones).
     @MainActor
     func syncPopupVisibility(forActiveTab active: TabIdentifier) {
-        // Two passes so a show can never be buried by a later hide, and
-        // restores follow creation order so the stacking matches before.
-        let orderedTokens = popupWindowsByToken.keys.sorted {
-            (popupCreationOrder[$0] ?? 0) < (popupCreationOrder[$1] ?? 0)
-        }
+        // Two passes so a show can never be buried by a later hide; the
+        // show pass runs back to front through the stacking order, each
+        // re-add topping the ones already shown, so the finished stack
+        // matches the order interaction built before the switch.
+        let orderedTokens = popupStackingOrder
         for token in orderedTokens {
             if let owner = popupOwnerByToken[token], owner != active {
                 setPopupVisibility(token: token, hidden: true)
@@ -2188,8 +2333,10 @@ final class WebViewManager: NSObject {
         }
     }
 
-    /// Snapshots open popups for tab survival, oldest first so restores
-    /// reproduce stacking. Only popups with a known owner, a live owning
+    /// Snapshots open popups for tab survival, oldest first — the identity
+    /// order the focus descriptor indexes — with each entry's opener link
+    /// recorded, so restores rebuild the saved opener tree instead of
+    /// inventing one. Only popups with a known owner, a live owning
     /// session, and a real http(s) URL persist; ownerless popups, temporary
     /// tabs' popups, and blank pages stay in-memory only. URLs are stored
     /// normalized (lowercased host, no trailing slash or fragment) so
@@ -2200,9 +2347,27 @@ final class WebViewManager: NSObject {
         let orderedTokens = popupWindowsByToken.keys.sorted {
             (popupCreationOrder[$0] ?? 0) < (popupCreationOrder[$1] ?? 0)
         }
-        return orderedTokens.compactMap { token in
-            popupSnapshotState(forToken: token)
+        var entries: [(token: ObjectIdentifier, state: PersistedPopupState, ownerPosition: Int)] = []
+        var ownerCounts: [TabIdentifier: Int] = [:]
+        for token in orderedTokens {
+            guard let state = popupSnapshotState(forToken: token) else { continue }
+            let ownerPosition = ownerCounts[state.owner, default: 0]
+            ownerCounts[state.owner] = ownerPosition + 1
+            entries.append((token, state, ownerPosition))
         }
+        // An opener edge points into this same snapshot: the opener's
+        // position among its session's entries — a position the save's
+        // per-engine split of this array cannot shift — and nothing when
+        // the parent did not persist, then the saved popup opens straight
+        // from its session on restore.
+        let ownerPositionByToken = Dictionary(uniqueKeysWithValues: entries.map { ($0.token, $0.ownerPosition) })
+        for index in entries.indices {
+            guard let parentWindow = popupWindowsByToken[entries[index].token]?.parent,
+                  let parentToken = popupWindowsByToken.first(where: { $0.value === parentWindow })?.key,
+                  let openerOccurrence = ownerPositionByToken[parentToken] else { continue }
+            entries[index].state.openerOccurrence = openerOccurrence
+        }
+        return entries.map(\.state)
     }
 
     /// The URL a popup persists and counts under: its committed URL once
@@ -2251,42 +2416,74 @@ final class WebViewManager: NSObject {
         return popupSnapshotState(forToken: token)
     }
 
-    /// Recreates persisted popups in stored (creation) order so stacking
-    /// matches the previous run. Each popup reloads its URL in its session's
-    /// configuration (same store/process pool as its owner); `window.opener`
-    /// links, history, and POST state are inherently unrestorable. Popups
-    /// whose owner has no live session are skipped. Callers sync visibility
-    /// for the active tab afterwards (late arrivals self-show when their
-    /// owner is displayed).
+    /// Recreates persisted popups in stored (creation) order, nesting each
+    /// under the popup its saved opener link names — so the restored
+    /// window tree is the tree that was saved, not a chain invented from
+    /// creation order. Each popup reloads its URL in its session's
+    /// configuration (same store/process pool as its owner); the JS
+    /// `window.opener` link, history, and POST state are inherently
+    /// unrestorable. Popups whose owner has no live session are skipped.
+    /// The pass records which owner-position became which window, the
+    /// record the focus descriptor resolves through. Callers sync
+    /// visibility for the active tab afterwards (late arrivals self-show
+    /// when their owner is displayed).
     @MainActor
     func restorePopups(_ popups: [PersistedPopupState]) {
         var occurrenceByKey: [PopupOwnerURL: Int] = [:]
+        // Owner positions count every saved entry before any guard, so
+        // they stay aligned with the positions the snapshot wrote, even
+        // if a legacy entry fails to normalize below.
+        var ownerPositionCounts: [TabIdentifier: Int] = [:]
+        var windowByOwnerPosition: [TabIdentifier: [Int: NSWindow]] = [:]
         let baseline = livePopupCountsByOwnerURL()
         for popup in popups {
+            let owner = popup.owner
+            let ownerPosition = ownerPositionCounts[owner, default: 0]
+            ownerPositionCounts[owner] = ownerPosition + 1
+            let openerWindow = popup.openerOccurrence.flatMap { windowByOwnerPosition[owner]?[$0] }
             guard let normalizedURL = Self.normalizedPopupURLString(popup.url) else { continue }
             let key = PopupOwnerURL(serviceID: popup.serviceID, sessionIndex: popup.sessionIndex, url: normalizedURL)
             let occurrence = (occurrenceByKey[key] ?? 0) + 1
             occurrenceByKey[key] = occurrence
-            restoreOnePopup(popup, key: key, occurrence: occurrence, baseline: baseline)
+            if let correspondingWindow = restoreOnePopup(popup, key: key, occurrence: occurrence, baseline: baseline, openerWindow: openerWindow) {
+                windowByOwnerPosition[owner, default: [:]][ownerPosition] = correspondingWindow
+            }
+        }
+        // Merged into the record, never replacing it: each pass restores
+        // only the popups it was handed (the unlock pass gets just its
+        // engine's), and a wholesale write would drop entries an earlier
+        // pass recorded — the descriptor the launch restore still has to
+        // resolve would silently stop matching.
+        let restored = windowByOwnerPosition.mapValues { position in
+            position.mapValues { WeakWindowReference(window: $0) }
+        }
+        for (owner, positions) in restored {
+            restoredPopupWindowsByOwnerPosition[owner, default: [:]]
+                .merge(positions) { _, incoming in incoming }
         }
     }
 
     /// Creates one persisted popup now. The k-th persisted entry for an
     /// owner+URL is skipped while k live ones already cover it, making
     /// repeat restores idempotent without collapsing legit same-URL
-    /// duplicates. Nests under the owner's newest live popup to rebuild
-    /// opener chains, and shows immediately when its owner is displayed.
+    /// duplicates. Nests under its saved opener's window (or the overlay
+    /// when it opened straight from its session), and shows immediately
+    /// when its owner is displayed. Returns the window this entry now
+    /// corresponds to — the one just created, or the live window covering
+    /// a skipped entry — so later entries can nest under it.
     @MainActor
-    private func restoreOnePopup(_ popup: PersistedPopupState, key: PopupOwnerURL, occurrence: Int, baseline: [PopupOwnerURL: Int]) {
+    private func restoreOnePopup(_ popup: PersistedPopupState, key: PopupOwnerURL, occurrence: Int, baseline: [PopupOwnerURL: Int], openerWindow: NSWindow?) -> NSWindow? {
         guard let service = services.first(where: { $0.id == popup.serviceID }),
               let sessionWebView = webviewsByID[service.id]?[popup.sessionIndex],
               !isTemporaryTab(serviceID: service.id, sessionIndex: popup.sessionIndex),
               !isLockedPlaceholder(sessionWebView),
               let overlayWindow = containerView?.window ?? sessionWebView.window
-        else { return }
+        else { return nil }
         let liveNow = livePopupCountsByOwnerURL()[key] ?? 0
-        guard liveNow < (baseline[key] ?? 0) + occurrence else { return }
-        guard let url = URL(string: key.url) else { return }
+        guard liveNow < (baseline[key] ?? 0) + occurrence else {
+            return coveringPopupWindow(for: key, occurrence: occurrence, baseline: baseline)
+        }
+        guard let url = URL(string: key.url) else { return nil }
         let frame = NSRect(
             x: popup.frameX, y: popup.frameY,
             width: popup.frameWidth, height: popup.frameHeight
@@ -2295,23 +2492,44 @@ final class WebViewManager: NSObject {
         guard let popupWebView = makePopupWebView(
             for: service,
             configuration: sessionWebView.configuration,
-            parentWindow: newestLivePopupWindow(for: popup.owner) ?? overlayWindow,
+            parentWindow: openerWindow ?? overlayWindow,
             restoredOwner: popup.owner,
             restoredFrame: validatedRestoredFrame(frame),
+            restoredURL: key.url,
             startHidden: !shouldShow
-        ) else { return }
-        popupPendingURLByToken[ObjectIdentifier(popupWebView)] = key.url
+        ) else { return nil }
         popupWebView.load(URLRequest(url: url))
+        return popupWebView.window
     }
 
-    /// Newest live popup window for an owner, used to rebuild opener chains
-    /// at restore time without tracking order across passes.
+    /// The live window that already covers a skipped restore entry: the
+    /// entry's slot in the live stack of its owner and address — the
+    /// popups that were there before this pass, plus this entry's own rank
+    /// beyond them, matching the skip guard's arithmetic.
     @MainActor
-    private func newestLivePopupWindow(for owner: TabIdentifier) -> NSWindow? {
-        popupOwnerByToken.compactMap { token, existingOwner -> (Int, NSWindow)? in
-            guard existingOwner == owner, let window = popupWindowsByToken[token] else { return nil }
-            return (popupCreationOrder[token] ?? 0, window)
-        }.max(by: { $0.0 < $1.0 })?.1
+    private func coveringPopupWindow(for key: PopupOwnerURL, occurrence: Int, baseline: [PopupOwnerURL: Int]) -> NSWindow? {
+        let liveWindows = popupWindowsByToken.keys
+            .filter { token in
+                guard let owner = popupOwnerByToken[token],
+                      owner.serviceID == key.serviceID,
+                      owner.sessionIndex == key.sessionIndex else { return false }
+                return persistablePopupURLString(forToken: token) == key.url
+            }
+            .sorted { (popupCreationOrder[$0] ?? 0) < (popupCreationOrder[$1] ?? 0) }
+            .compactMap { popupWindowsByToken[$0] }
+        let index = (baseline[key] ?? 0) + occurrence - 1
+        guard liveWindows.indices.contains(index) else { return nil }
+        return liveWindows[index]
+    }
+
+    /// The live window for the focus descriptor's `occurrence`-th saved
+    /// popup of `owner`: resolved through the launch restore's own record
+    /// of which owner-position became which window — the descriptor the
+    /// save wrote carries the same owner-position identity, and no
+    /// visibility or URL filter can shift it between the two.
+    @MainActor
+    func restoredPopupWindow(owner: TabIdentifier, occurrence: Int) -> NSWindow? {
+        restoredPopupWindowsByOwnerPosition[owner]?[occurrence]?.window
     }
 
     /// Cascade origin for a newly opened popup: centered frame shifted right
@@ -2449,6 +2667,9 @@ final class WebViewManager: NSObject {
         popupOwnerByToken.removeValue(forKey: token)
         popupWindowsByToken.removeValue(forKey: token)
         popupCreationOrder.removeValue(forKey: token)
+        // Children close before their parent (the cleanup path closes the
+        // subtree first), so this removes one band's last entry cleanly.
+        popupStackingOrder.removeAll { $0 == token }
         popupPendingURLByToken.removeValue(forKey: token)
         popupFindBars.removeValue(forKey: token)
     }
@@ -2583,6 +2804,24 @@ private final class PopupWindow: NSWindow, NSWindowDelegate {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    /// A click on an inactive popup activates it and nothing else — the
+    /// whole window's first click, not just the web page's (which already
+    /// behaves this way natively). Key status moves through the focus
+    /// gate and the event is swallowed, so toolbar buttons, the close
+    /// control, and drags only take effect on the next click, once the
+    /// window is key.
+    override func sendEvent(_ event: NSEvent) {
+        let isClick = event.type == .leftMouseDown
+            || event.type == .rightMouseDown
+            || event.type == .otherMouseDown
+        if isClick, !isKeyWindow {
+            KeyFocusGate.shared.focus(self, ordering: .keyOnly)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        super.sendEvent(event)
+    }
 
     /// Borderless windows have no close button for AppKit's default path;
     /// the toolbar button and ⌘W both land here.
@@ -2766,14 +3005,15 @@ private final class PopupWindow: NSWindow, NSWindowDelegate {
     /// and session-switch focus stages, never by merely appearing here.
     func setSessionHidden(_ hidden: Bool) {
         if hidden {
-            orderOut(nil)
+            KeyFocusGate.shared.orderOut(self)
         } else {
             guard let parentWin, parentWin.isVisible == true else { return }
-            // Re-pin child above parent in creation order: orderOut cycles
+            // Re-pin child above parent, then order front: the show pass
+            // calls this back to front through the stacking order, so each
+            // re-add tops the siblings already shown and the finished
+            // stack matches the order interaction built. orderOut cycles
             // plus AppKit's automatic reshow do not reliably restore child
-            // stacking, so a click can otherwise bring the parent front.
-            // Re-adding moves this child front among its siblings; callers
-            // show oldest-first so the newest ends on top.
+            // stacking themselves.
             parentWin.addChildWindow(self, ordered: .above)
             // Orders an ordered-out window back in at its preserved frame
             // without touching key status: AppKit's own reshow of a hidden
@@ -2808,21 +3048,22 @@ private final class PopupWindow: NSWindow, NSWindowDelegate {
         self.onClose = nil
         onClose?()
         
-        // 2. Detach from parent
+        // 2. Decide the key hand-back BEFORE the close takes focus away:
+        // if this popup holds key status the gate keys its parent first,
+        // synchronously — AppKit never gets to choose a successor, and a
+        // hidden parent is never re-ordered front. Skipped when the parent
+        // is itself closing (cascade close), whose own cleanup hands
+        // focus upward.
         if let parent = parentWin {
+            KeyFocusGate.shared.popupWillClose(
+                self,
+                parent: parent,
+                parentIsClosing: (parent as? PopupWindow)?.isClosing ?? false
+            )
             parent.removeChildWindow(self)
-            
-            // 3. Asynchronously restore focus to avoid AppKit re-entrancy issues.
-            // Skipped when the parent is itself closing (cascade close),
-            // whose own cleanup hands focus upward.
-            DispatchQueue.main.async { [weak parent] in
-                guard let parent, (parent as? PopupWindow)?.isClosing != true else { return }
-                parent.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
         }
         
-        // 4. Break self-delegate cycle to allow deallocation
+        // 3. Break self-delegate cycle to allow deallocation
         self.delegate = nil
     }
     
@@ -3283,9 +3524,15 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         // Loads re-run the creation-time stylesheet, so re-apply whatever is
         // current (covers lazy tabs and post-edit navigations).
         applyCurrentCustomCSS(to: webView)
-        // A restored popup's load committed: the live URL takes over from
-        // the pending one in snapshots and dedup.
-        popupPendingURLByToken.removeValue(forKey: token)
+        // A restored popup's load committed: a usable live address takes
+        // over from the saved one in snapshots and dedup. Only an
+        // http(s)-normalizable commit retires it — an about:blank or
+        // otherwise unusable commit leaves the popup without an address,
+        // and the saved URL is then its only identity.
+        let committedURL = webView.url.flatMap { Self.normalizedPopupURLString($0.absoluteString) }
+        if committedURL != nil {
+            popupPendingURLByToken.removeValue(forKey: token)
+        }
         
         if let continuation = navigationContinuations.removeValue(forKey: token) {
             continuation.resume()
@@ -3300,12 +3547,15 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        popupPendingURLByToken.removeValue(forKey: ObjectIdentifier(webView))
+        // The pending URL is NOT cleared here: a failed load never
+        // committed, so no live URL exists to take over (didFinish's rule).
+        // Clearing it would leave the popup permanently URL-less, and every
+        // later snapshot — and with it the focus descriptor — would write
+        // nil for a popup that is still alive.
         handleNavigationFailure(error, for: webView)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        popupPendingURLByToken.removeValue(forKey: ObjectIdentifier(webView))
         handleNavigationFailure(error, for: webView)
     }
     

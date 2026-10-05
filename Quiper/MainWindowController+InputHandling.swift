@@ -212,7 +212,7 @@ extension MainWindowController {
                               let hud = self.modifierHUDView,
                               !hud.isHidden,
                               !hud.isHiding else { return }
-                        self.modifierHUDWindow?.makeKey()
+                        KeyFocusGate.shared.focus(self.modifierHUDWindow, ordering: .keyOnly)
                         hud.focusSearchField()
                     }
                 } else {
@@ -471,7 +471,7 @@ extension MainWindowController {
         }
         // The click may have moved key status to the ring panel; hand it
         // back so typing keeps going to the newly selected tab.
-        window?.makeKeyAndOrderFront(nil)
+        KeyFocusGate.shared.focus(window)
         if let webView = currentWebView() {
             window?.makeFirstResponder(webView)
         }
@@ -627,17 +627,20 @@ extension MainWindowController {
         }
         
         alignHUDWindow(modifierHUDWindow, width: 492, height: 465)
-        modifierHUDWindow?.makeKeyAndOrderFront(nil)
+        KeyFocusGate.shared.focus(modifierHUDWindow)
         raiseHUDWindow(modifierHUDWindow)
         modifierHUDView?.show()
     }
     
     func hideModifierHUD() {
         if let hud = modifierHUDView, !hud.isHidden, !hud.isHiding {
+            // The fade orders the window out through this same function
+            // when it finishes; move focus now so AppKit never chooses.
+            KeyFocusGate.shared.willHide(modifierHUDWindow)
             hud.hide()
             return
         }
-        modifierHUDWindow?.orderOut(nil)
+        KeyFocusGate.shared.orderOut(modifierHUDWindow)
     }
     
     func toggleModifierHUD() {
@@ -1098,7 +1101,7 @@ extension MainWindowController {
     
     func hideTabHistoryHUD() {
         tabHistoryHUDView?.isHidden = true
-        tabHistoryHUDWindow?.orderOut(nil)
+        KeyFocusGate.shared.orderOut(tabHistoryHUDWindow)
     }
     func updateHUDWindowFrame() {
         guard tabHistoryHUDView != nil else { return }

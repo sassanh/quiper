@@ -249,11 +249,9 @@ final class AppController: NSObject, NSWindowDelegate {
 
     @objc private func handleWindowDidShow(_ notification: Notification) {
         ensureActivationPolicyForShowingOverlay()
-        if UpdatePromptWindowController.shared.window?.isVisible == true {
-            UpdatePromptWindowController.shared.window?.makeKeyAndOrderFront(nil)
-        } else if AppDelegate.sharedSettingsWindow.isVisible {
-            AppDelegate.sharedSettingsWindow.makeKeyAndOrderFront(nil)
-        }
+        // Settings and the update prompt outrank the overlay: whichever is
+        // visible takes key status back through the gate's single policy.
+        KeyFocusGate.shared.applyPrecedence()
         NotificationCenter.default.post(name: .appVisibilityChanged, object: true)
     }
 
@@ -412,17 +410,15 @@ final class AppController: NSObject, NSWindowDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
 
-            if UpdatePromptWindowController.shared.window?.isVisible == true {
-                UpdatePromptWindowController.shared.window?.makeKeyAndOrderFront(nil)
-            } else if AppDelegate.sharedSettingsWindow.isVisible {
-                AppDelegate.sharedSettingsWindow.makeKeyAndOrderFront(nil)
-            } else {
-                self.windowController.window?.makeKeyAndOrderFront(nil)
-                if let sheet = self.windowController.window?.attachedSheet {
-                    sheet.makeKeyAndOrderFront(nil)
-                } else if !GhostOnboardingManager.shared.isActive {
-                    self.windowController.focusInputInActiveWebviewWithFallback()
-                }
+            // The same precedence the show restore and the key delegate
+            // share: Settings, the update prompt, else the overlay.
+            guard !KeyFocusGate.shared.applyPrecedence() else { return }
+            let overlay = self.windowController.window
+            KeyFocusGate.shared.focus(overlay)
+            if let sheet = overlay?.attachedSheet {
+                KeyFocusGate.shared.focus(sheet)
+            } else if !GhostOnboardingManager.shared.isActive {
+                self.windowController.focusInputInActiveWebviewWithFallback()
             }
         }
 
@@ -536,13 +532,13 @@ final class AppController: NSObject, NSWindowDelegate {
         settingsWindow.appController = self
         guard let mainWindow = windowController.window else {
             if settingsWindow.isVisible == true {
-                settingsWindow.orderOut(nil as Any?)
+                KeyFocusGate.shared.orderOut(settingsWindow)
             } else {
                 let visibility = Settings.shared.dockVisibility
                 if visibility == .always || visibility == .whenVisible {
                     NSApp.setActivationPolicy(.regular)
                 }
-                settingsWindow.makeKeyAndOrderFront(nil as Any?)
+                KeyFocusGate.shared.focus(settingsWindow)
                 NSApp.activate(ignoringOtherApps: true)
                 NotificationCenter.default.post(name: .settingsWindowDidOpen, object: nil)
             }
@@ -564,20 +560,40 @@ final class AppController: NSObject, NSWindowDelegate {
         if visibility == .always || visibility == .whenVisible {
             NSApp.setActivationPolicy(.regular)
         }
-        settingsWindow.makeKeyAndOrderFront(nil as Any?)
+        KeyFocusGate.shared.focus(settingsWindow)
         NSApp.activate(ignoringOtherApps: true)
         NotificationCenter.default.post(name: .settingsWindowDidOpen, object: nil)
     }
 
     private func dismissSettingsWindow() {
+        // Settings cannot leave while a secure-data migration runs — the
+        // window's own close and order-out veto it. Bailing before any
+        // cleanup keeps the dismissal atomic: otherwise the child-window
+        // detach and shield removal run, then the gate hands focus off
+        // for a departure that never happens, leaving Settings visible
+        // without key status and the overlay dim behind its shield.
+        if SecureDataMigrationManager.shared.isMigrationPending {
+            NSSound.beep()
+            return
+        }
         let settingsWindow = AppDelegate.sharedSettingsWindow
         if let parent = settingsWindow.parent {
             parent.removeChildWindow(settingsWindow)
         }
-        settingsWindow.orderOut(nil as Any?)
+        // Cleanup first, then the gate: the hand-back may key the overlay,
+        // and its own key handling must be the one to land input focus —
+        // the shield's responder reset may not run after it.
         removeShieldIfNeeded(from: windowController.window)
         setMainWindowShortcutsEnabled(true)
-        focusMainWindowIfVisible()
+        // The gate's order-out decides the successor — the content window
+        // the user was on before Settings interrupted it — and orders the
+        // window out itself; no focus request of ours may follow, or it
+        // would undo the hand-back.
+        KeyFocusGate.shared.orderOut(settingsWindow)
+        if windowController.window?.isVisible == true,
+           windowController.isActiveSpaceWebFullscreen {
+            windowController.showWebFullScreenBanner()
+        }
 
         let visibility = Settings.shared.dockVisibility
         if isWindowVisible == false && visibility == .whenVisible {
@@ -746,7 +762,16 @@ final class AppController: NSObject, NSWindowDelegate {
             }
             removeShieldIfNeeded(from: windowController.window)
             setMainWindowShortcutsEnabled(true)
-            focusMainWindowIfVisible()
+            // The gate decides the successor — the content window the user
+            // was on before Settings interrupted it — so no focus request
+            // of ours may follow and undo the hand-back. The fullscreen
+            // banner is additional, in the same order as the toggle path:
+            // both dismissals are the same action and take the same route.
+            KeyFocusGate.shared.windowWillClose(window)
+            if windowController.window?.isVisible == true,
+               windowController.isActiveSpaceWebFullscreen {
+                windowController.showWebFullScreenBanner()
+            }
         }
     }
 

@@ -446,24 +446,8 @@ extension MainWindowController {
         // order.
         webViewManager.syncPopupVisibility(forActiveTab: currentTab)
         if didTabChange {
-            applySessionPopupFocus(for: currentTab)
+            KeyFocusGate.shared.sessionSwitchFocus(for: currentTab)
         }
-    }
-
-    /// The session-switch focus policy: when the activated session owns
-    /// popups, one of them holds key status — the popup this session last
-    /// had key if it is still around, otherwise the topmost — so focus
-    /// never lands on the webview hidden behind a popup. A session with no
-    /// popups keeps the webview focus the switch already applied.
-    private func applySessionPopupFocus(for tab: TabIdentifier) {
-        let focusable = webViewManager.focusablePopups(for: tab)
-        guard !focusable.isEmpty else { return }
-        let preferred = lastKeyPopupBySession[tab]?.window
-        let target = preferred.flatMap { candidate in
-            focusable.first(where: { $0 === candidate })
-        } ?? focusable.last
-        guard let target else { return }
-        webViewManager.focusPopup(target)
     }
     
     func stepSession(by delta: Int) {

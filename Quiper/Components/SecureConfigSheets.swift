@@ -170,11 +170,11 @@ final class SecureExportProgressPanel {
 
     func show() {
         NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
+        KeyFocusGate.shared.focus(panel)
     }
 
     func close() {
-        panel.orderOut(nil)
+        KeyFocusGate.shared.orderOut(panel)
     }
 }
 

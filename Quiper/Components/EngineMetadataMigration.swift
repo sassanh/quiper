@@ -495,7 +495,7 @@ final class MetadataMigrationProgressPanel {
     func show() {
         panel.center()
         NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
+        KeyFocusGate.shared.focus(panel)
     }
 
     func updateEngineName(_ name: String) {
@@ -508,12 +508,12 @@ final class MetadataMigrationProgressPanel {
 
     func bringToFront() {
         NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
+        KeyFocusGate.shared.focus(panel)
     }
 
     func close() {
         spinner.stopAnimation(nil)
-        panel.orderOut(nil)
+        KeyFocusGate.shared.orderOut(panel)
     }
 }
 

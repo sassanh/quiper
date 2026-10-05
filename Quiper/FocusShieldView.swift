@@ -2,7 +2,7 @@ import AppKit
 
 /// Transparent shield over the content area while the overlay is unfocused.
 /// The unfocused state reads through see-through web content (see
-/// WebViewManager.setSessionContentTransparent); this shield stays
+/// WebViewManager.setSessionContentFocusLossLevel); this shield stays
 /// invisible and only ensures the first click focuses the window instead
 /// of reaching the page, so shortcuts can't silently land elsewhere.
 @MainActor
@@ -23,7 +23,7 @@ final class FocusShieldView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        window?.makeKeyAndOrderFront(nil)
+        KeyFocusGate.shared.focus(window)
         NSApp.activate(ignoringOtherApps: true)
     }
 

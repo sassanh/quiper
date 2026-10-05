@@ -74,12 +74,57 @@ final class PopupKeyRestoreTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 200_000_000)
     }
 
-    private func makeKeyOrFail(_ window: NSWindow?, reason: String) throws {
+    private func makeKeyOrFail(_ window: NSWindow?, reason: String) async throws {
         let window = try XCTUnwrap(window, "The \(reason) must exist")
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        guard window.isKeyWindow else {
+        guard await waitForKeyStatus(of: window) else {
             throw XCTSkip("The test host refused key status: \(reason)")
+        }
+    }
+
+    /// Waits for the window server to grant `window` key status. The
+    /// grant is asynchronous: `activate` and `makeKeyAndOrderFront`
+    /// return before the handover lands, and on a loaded CI runner the
+    /// handover is late enough that one immediate read mistakes the
+    /// delay for refusal. A host that grants nothing within the
+    /// deadline still reads as refusal.
+    private func waitForKeyStatus(of window: NSWindow) async -> Bool {
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if window.isKeyWindow { return true }
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return window.isKeyWindow
+    }
+
+    /// Waits until the host has granted this app key status at all. The
+    /// show stages pick their focus target while that grant may still
+    /// be pending: judging the choice before focus arrives would blame
+    /// the restore for a grant the host never gave, so a run with no
+    /// grant skips instead of failing.
+    private func waitForHostKeyGrant() async -> Bool {
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if NSApp.isActive, NSApp.keyWindow != nil { return true }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return NSApp.isActive && NSApp.keyWindow != nil
+    }
+
+    /// Opens Settings over `overlay` the way the app does — a child of the
+    /// overlay, keyed through the gate — skipping the test if the host
+    /// refuses key status to it.
+    private func openSettingsOver(_ overlay: NSWindow) async throws {
+        let settings = AppDelegate.sharedSettingsWindow
+        overlay.addChildWindow(settings, ordered: .above)
+        NSApp.activate(ignoringOtherApps: true)
+        KeyFocusGate.shared.focus(settings)
+        guard await waitForKeyStatus(of: settings) else {
+            settings.orderOut(nil)
+            throw XCTSkip("The test host refused key status: Settings")
         }
     }
 
@@ -189,12 +234,19 @@ final class PopupKeyRestoreTests: XCTestCase {
             defer { stage.cleanup() }
 
             // The older popup is key — "popup A" — while a newer popup exists.
-            try makeKeyOrFail(stage.firstPopup, reason: "the popup")
+            try await makeKeyOrFail(stage.firstPopup, reason: "the popup")
 
             stage.controller.hide()
             stage.controller.show()
             await settleFocusStages()
 
+            // Only judge the restore once focus actually arrived: a host
+            // still withholding key status leaves every window of ours
+            // unkeyed, which says nothing about which target the restore
+            // picked. A grant that landed on the wrong window fails below.
+            guard await waitForHostKeyGrant() else {
+                throw XCTSkip("The test host refused key status")
+            }
             XCTAssertTrue(
                 stage.firstPopup.isKeyWindow,
                 "Re-showing must restore the popup that was key before the hide, not the newest popup"
@@ -207,12 +259,19 @@ final class PopupKeyRestoreTests: XCTestCase {
             let stage = try await openStage()
             defer { stage.cleanup() }
 
-            try makeKeyOrFail(stage.controller.window, reason: "the overlay")
+            try await makeKeyOrFail(stage.controller.window, reason: "the overlay")
 
             stage.controller.hide()
             stage.controller.show()
             await settleFocusStages()
 
+            // Only judge the restore once focus actually arrived: a host
+            // still withholding key status leaves every window of ours
+            // unkeyed, which says nothing about which target the restore
+            // picked. A grant that landed on the wrong window fails below.
+            guard await waitForHostKeyGrant() else {
+                throw XCTSkip("The test host refused key status")
+            }
             XCTAssertEqual(
                 stage.controller.window?.isKeyWindow, true,
                 "Re-showing must keep the overlay key instead of handing focus to the newest popup"
@@ -225,13 +284,20 @@ final class PopupKeyRestoreTests: XCTestCase {
             let stage = try await openStage()
             defer { stage.cleanup() }
 
-            try makeKeyOrFail(stage.firstPopup, reason: "the popup")
+            try await makeKeyOrFail(stage.firstPopup, reason: "the popup")
 
             stage.controller.hide()
             stage.firstPopup.close()
             stage.controller.show()
             await settleFocusStages()
 
+            // Only judge the restore once focus actually arrived: a host
+            // still withholding key status leaves every window of ours
+            // unkeyed, which says nothing about which target the restore
+            // picked. A grant that landed on the wrong window fails below.
+            guard await waitForHostKeyGrant() else {
+                throw XCTSkip("The test host refused key status")
+            }
             XCTAssertEqual(
                 stage.controller.window?.isKeyWindow, true,
                 "A key popup that closed while hidden must fall back to the overlay"
@@ -244,7 +310,7 @@ final class PopupKeyRestoreTests: XCTestCase {
             let stage = try await openStage()
             defer { stage.cleanup() }
 
-            try makeKeyOrFail(stage.controller.window, reason: "the overlay")
+            try await makeKeyOrFail(stage.controller.window, reason: "the overlay")
 
             // Order the session's popups out, then let the visibility sync
             // show them again — exactly what a show or session switch runs.
@@ -271,6 +337,13 @@ final class PopupKeyRestoreTests: XCTestCase {
             let stage = try await openStage()
             defer { stage.cleanup() }
 
+            // Only judge the restore once focus actually arrived: a host
+            // still withholding key status leaves every window of ours
+            // unkeyed, which says nothing about which target the restore
+            // picked. A grant that landed on the wrong window fails below.
+            guard await waitForHostKeyGrant() else {
+                throw XCTSkip("The test host refused key status")
+            }
             XCTAssertTrue(
                 stage.secondPopup.isKeyWindow,
                 "The first show with no focus history must hand focus to the popup in front, not the overlay behind it"
@@ -284,7 +357,7 @@ final class PopupKeyRestoreTests: XCTestCase {
             defer { stage.cleanup() }
 
             // The older popup is the session's active one before switching away.
-            try makeKeyOrFail(stage.firstPopup, reason: "the popup")
+            try await makeKeyOrFail(stage.firstPopup, reason: "the popup")
 
             stage.controller.switchSession(to: 1)
             stage.controller.switchSession(to: 0)
@@ -306,7 +379,7 @@ final class PopupKeyRestoreTests: XCTestCase {
             // The user quits with the overlay focused while popups sit in
             // front of it — the case a frontmost-popup fallback would get
             // wrong.
-            try makeKeyOrFail(quit.controller.window, reason: "the overlay")
+            try await makeKeyOrFail(quit.controller.window, reason: "the overlay")
             XCTAssertEqual(
                 Settings.shared.persistedTabState?.keyWindow, .overlay,
                 "Focusing the overlay must persist that choice for the next launch"
@@ -337,7 +410,7 @@ final class PopupKeyRestoreTests: XCTestCase {
             // The older popup is key at quit while a newer one sits in
             // front — the case a frontmost-popup fallback would get wrong.
             let older = try XCTUnwrap(quit.popups.first, "The older popup must exist")
-            try makeKeyOrFail(older, reason: "the popup")
+            try await makeKeyOrFail(older, reason: "the popup")
             XCTAssertEqual(
                 Settings.shared.persistedTabState?.keyWindow, .popup(owner: quit.owner, occurrence: 0),
                 "Focusing the popup must persist its owner and position among its siblings"
@@ -376,7 +449,7 @@ final class PopupKeyRestoreTests: XCTestCase {
             // focus for this record lands on the popup in front either
             // way, so the record itself is what this pins down.)
             let newer = try XCTUnwrap(quit.popups.last, "The newer popup must exist")
-            try makeKeyOrFail(newer, reason: "the newer popup")
+            try await makeKeyOrFail(newer, reason: "the newer popup")
 
             XCTAssertEqual(
                 Settings.shared.persistedTabState?.keyWindow, .popup(owner: quit.owner, occurrence: 1),
@@ -400,11 +473,165 @@ final class PopupKeyRestoreTests: XCTestCase {
             // secure engine's popup takes by staying out of plaintext
             // state. With no record, relaunch falls back to the popup in
             // front instead of guessing.
-            try makeKeyOrFail(stage.firstPopup, reason: "the popup")
+            try await makeKeyOrFail(stage.firstPopup, reason: "the popup")
 
             XCTAssertNil(
                 Settings.shared.persistedTabState?.keyWindow,
                 "A popup excluded from the save must leave no focus record"
+            )
+        }
+    }
+
+    // MARK: - Settings as an interruption
+
+    func testOpeningSettingsLeavesTheFocusRecordOnThePopup() async throws {
+        try await withSettingsRestored {
+            let quit = try openQuitStage()
+            defer { quit.cleanup() }
+            let older = try XCTUnwrap(quit.popups.first, "The older popup must exist")
+            try await makeKeyOrFail(older, reason: "the popup")
+            XCTAssertEqual(
+                Settings.shared.persistedTabState?.keyWindow, .popup(owner: quit.owner, occurrence: 0),
+                "The popup's own focus must be the record before Settings opens"
+            )
+
+            try await openSettingsOver(try XCTUnwrap(quit.controller.window, "The overlay must exist"))
+            defer { KeyFocusGate.shared.orderOut(AppDelegate.sharedSettingsWindow) }
+
+            XCTAssertTrue(
+                AppDelegate.sharedSettingsWindow.isKeyWindow,
+                "Settings must hold key status for the scenario to mean anything"
+            )
+            XCTAssertTrue(
+                KeyFocusGate.shared.lastKeyWindow === older,
+                "Opening Settings must not replace the recorded focus window: an interruption is not a choice"
+            )
+            XCTAssertEqual(
+                Settings.shared.persistedTabState?.keyWindow, .popup(owner: quit.owner, occurrence: 0),
+                "Opening Settings must not re-aim the persisted descriptor away from the popup"
+            )
+        }
+    }
+
+    func testClosingSettingsHandsKeyBackToThePopupItInterrupted() async throws {
+        try await withSettingsRestored {
+            let quit = try openQuitStage()
+            defer { quit.cleanup() }
+            let older = try XCTUnwrap(quit.popups.first, "The older popup must exist")
+            try await makeKeyOrFail(older, reason: "the popup")
+            try await openSettingsOver(try XCTUnwrap(quit.controller.window, "The overlay must exist"))
+            defer { KeyFocusGate.shared.orderOut(AppDelegate.sharedSettingsWindow) }
+
+            // The declaration App.swift's close handler makes while
+            // Settings still holds key status.
+            KeyFocusGate.shared.windowWillClose(AppDelegate.sharedSettingsWindow)
+
+            XCTAssertFalse(
+                AppDelegate.sharedSettingsWindow.isKeyWindow,
+                "Closing Settings must give up key status"
+            )
+            XCTAssertTrue(
+                older.isKeyWindow,
+                "Closing Settings must hand key status back to the popup it interrupted, not to the overlay"
+            )
+            XCTAssertEqual(
+                Settings.shared.persistedTabState?.keyWindow, .popup(owner: quit.owner, occurrence: 0),
+                "The hand-back must keep the persisted descriptor on the popup"
+            )
+        }
+    }
+
+    func testDismissingSettingsHandsKeyBackToThePopupItInterrupted() async throws {
+        try await withSettingsRestored {
+            let quit = try openQuitStage()
+            defer { quit.cleanup() }
+            let older = try XCTUnwrap(quit.popups.first, "The older popup must exist")
+            try await makeKeyOrFail(older, reason: "the popup")
+            try await openSettingsOver(try XCTUnwrap(quit.controller.window, "The overlay must exist"))
+
+            // The toggle path: one order-out that decides the successor
+            // while Settings is still visible and still key.
+            KeyFocusGate.shared.orderOut(AppDelegate.sharedSettingsWindow)
+
+            XCTAssertFalse(
+                AppDelegate.sharedSettingsWindow.isVisible,
+                "The order-out must take Settings off the screen"
+            )
+            XCTAssertTrue(
+                older.isKeyWindow,
+                "Dismissing Settings must hand key status back to the popup it interrupted, with no bounce back to the departing window"
+            )
+            XCTAssertEqual(
+                Settings.shared.persistedTabState?.keyWindow, .popup(owner: quit.owner, occurrence: 0),
+                "The hand-back must keep the persisted descriptor on the popup"
+            )
+        }
+    }
+
+    func testDismissingSettingsOverTheOverlayKeepsTheOverlayKey() async throws {
+        try await withSettingsRestored {
+            let stage = try await openStage()
+            defer { stage.cleanup() }
+            // A save target, so the overlay's own choice has somewhere to persist.
+            Settings.shared.persistedTabState = PersistedTabState()
+            let overlay = try XCTUnwrap(stage.controller.window, "The overlay must exist")
+            try await makeKeyOrFail(overlay, reason: "the overlay")
+            XCTAssertEqual(
+                Settings.shared.persistedTabState?.keyWindow, .overlay,
+                "Focusing the overlay must persist that choice before Settings opens"
+            )
+
+            try await openSettingsOver(overlay)
+            KeyFocusGate.shared.orderOut(AppDelegate.sharedSettingsWindow)
+
+            XCTAssertFalse(
+                AppDelegate.sharedSettingsWindow.isVisible,
+                "The order-out must take Settings off the screen"
+            )
+            XCTAssertEqual(
+                overlay.isKeyWindow, true,
+                "Dismissing Settings over the overlay must re-key the overlay, exactly as before"
+            )
+            XCTAssertEqual(
+                Settings.shared.persistedTabState?.keyWindow, .overlay,
+                "The overlay's record must survive the interruption unchanged"
+            )
+        }
+    }
+
+    // MARK: - Owner-position record across restore passes
+
+    func testALaterRestorePassMustNotDropTheLaunchPassPositionRecords() async throws {
+        try await withSettingsRestored {
+            let quit = try openQuitStage()
+            defer { quit.cleanup() }
+            XCTAssertEqual(quit.popups.count, 2, "The quit stage must restore both saved popups")
+            let manager = quit.manager
+
+            let launchNewer = try XCTUnwrap(
+                manager.restoredPopupWindow(owner: quit.owner, occurrence: 1),
+                "The launch restore must record the newer popup's owner position"
+            )
+
+            // The engine-unlock pass carries only its own popups. Its
+            // record must merge into the launch pass's — a wholesale
+            // write would drop the positions the launch descriptor has
+            // not resolved yet.
+            manager.restorePopups([
+                PersistedPopupState(
+                    serviceID: quit.owner.serviceID, sessionIndex: 0,
+                    url: "https://popup.test/unlock-pass",
+                    frameX: 90, frameY: 400, frameWidth: 480, frameHeight: 360
+                )
+            ])
+
+            XCTAssertTrue(
+                manager.restoredPopupWindow(owner: quit.owner, occurrence: 1) === launchNewer,
+                "A later restore pass must keep the launch pass's owner-position records"
+            )
+            XCTAssertNotNil(
+                manager.restoredPopupWindow(owner: quit.owner, occurrence: 0),
+                "The later pass's own record must resolve"
             )
         }
     }

@@ -564,7 +564,7 @@ class CollapsibleSelector: NSView {
             Task { @MainActor in
                 // The captured panel owns only its own visual cleanup. It never
                 // mutates the state of a panel created by a later expansion.
-                panel.orderOut(nil)
+                KeyFocusGate.shared.orderOut(panel)
             }
         }
     }

@@ -78,6 +78,17 @@ final class QuickTooltip: NSPanel {
                 return TooltipTargetID(owner: control, segment: index)
             }
         }
+
+        /// The view the tooltip is positioned against — the window it
+        /// lives in can close under it.
+        var anchorView: NSView {
+            switch self {
+            case .view(_, let anchor):
+                return anchor
+            case .segment(let control, _):
+                return control
+            }
+        }
     }
     
     static let shared = QuickTooltip()
@@ -199,6 +210,13 @@ final class QuickTooltip: NSPanel {
         
         contentView = visualEffect
         shortcutBadge.isHidden = true
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(anchorWindowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: nil
+        )
     }
     
     /// Show tooltip immediately
@@ -457,6 +475,18 @@ final class QuickTooltip: NSPanel {
         loadingBorderView.stopAnimating()
         alphaValue = 0
         orderOut(nil)
+    }
+
+    /// A tooltip can only be exited by a hover crossing out of its
+    /// anchor; once the anchor's window closes, nothing will ever deliver
+    /// that exit — so take the tooltip down with the window instead of
+    /// leaving it dangling over empty space until an unrelated hover
+    /// replaces it.
+    @objc private func anchorWindowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              let anchor = currentTarget?.anchorView,
+              anchor.window === closingWindow else { return }
+        hideImmediately()
     }
     
     /// Show tooltip on the right of the given alignment view, matching its height

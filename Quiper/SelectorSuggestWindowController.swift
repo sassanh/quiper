@@ -175,7 +175,7 @@ final class SelectorSuggestWindowController: NSWindowController, NSWindowDelegat
         if window?.isVisible == false {
             window?.center()
         }
-        window?.makeKeyAndOrderFront(nil)
+        KeyFocusGate.shared.focus(window)
     }
 
     func updateMatchCount(_ count: Int?) {
@@ -190,13 +190,14 @@ final class SelectorSuggestWindowController: NSWindowController, NSWindowDelegat
             if let parent = popup.parent {
                 parent.removeChildWindow(popup)
             }
-            popup.orderOut(nil)
+            KeyFocusGate.shared.orderOut(popup)
         }
         isDismissing = false
     }
 
     func windowWillClose(_ notification: Notification) {
         guard !isDismissing else { return }
+        if let window { KeyFocusGate.shared.windowWillClose(window) }
         onClose?()
     }
 

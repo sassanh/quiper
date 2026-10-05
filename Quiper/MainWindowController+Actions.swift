@@ -272,17 +272,20 @@ extension MainWindowController {
         }
         
         alignHUDWindow(promptHistoryHUDWindow, width: 520, height: 480)
-        promptHistoryHUDWindow?.makeKeyAndOrderFront(nil)
+        KeyFocusGate.shared.focus(promptHistoryHUDWindow)
         raiseHUDWindow(promptHistoryHUDWindow)
         promptHistoryHUDView?.show()
     }
 
     func hidePromptHistoryHUD() {
         if let hud = promptHistoryHUDView, !hud.isHidden, !hud.isHiding {
+            // The fade orders the window out through this same function
+            // when it finishes; move focus now so AppKit never chooses.
+            KeyFocusGate.shared.willHide(promptHistoryHUDWindow)
             hud.hide()
             return
         }
-        promptHistoryHUDWindow?.orderOut(nil)
+        KeyFocusGate.shared.orderOut(promptHistoryHUDWindow)
     }
 
     func alignHUDWindow(_ hudWindow: NSWindow?, width: CGFloat, height: CGFloat, offsetY: CGFloat = -50) {
@@ -385,17 +388,20 @@ extension MainWindowController {
         }
 
         alignLocationBarHUDWindow()
-        locationBarHUDWindow?.makeKeyAndOrderFront(nil)
+        KeyFocusGate.shared.focus(locationBarHUDWindow)
         raiseHUDWindow(locationBarHUDWindow, parent: targetWindow)
         locationBarHUDView?.show()
     }
 
     func hideLocationBarHUD() {
         if let hud = locationBarHUDView, !hud.isHidden, !hud.isHiding {
+            // The fade orders the window out through this same function
+            // when it finishes; move focus now so AppKit never chooses.
+            KeyFocusGate.shared.willHide(locationBarHUDWindow)
             hud.hide()
             return
         }
-        locationBarHUDWindow?.orderOut(nil)
+        KeyFocusGate.shared.orderOut(locationBarHUDWindow)
 
         // A popup host must not keep the bar attached after dismissal: the
         // popup can close at any time. The main window stays the bar's home.

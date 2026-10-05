@@ -325,7 +325,7 @@ extension MainWindowController {
                 width: titleWidth,
                 height: selectorHeight
             )
-            borderView.isHidden = isEmptyStateActive || shouldHideTitleArea || !borderView.isAnimating || focusLossEffectApplies(to: window)
+            borderView.isHidden = isEmptyStateActive || shouldHideTitleArea || !borderView.isAnimating || focusLossLevel(for: window) != .clear
         }
         
         let titlePadding: CGFloat = 4

@@ -23,6 +23,10 @@ final class WebViewCreationGateTests: XCTestCase {
             backing: .buffered,
             defer: false
         )
+        // AppKit's default releases the window on close while this test
+        // still holds it in liveWindows — the same double-release the app's
+        // own windows opt out of.
+        window.isReleasedWhenClosed = false
         liveWindows.append(window)
         return window
     }
@@ -280,18 +284,30 @@ final class WebViewCreationGateTests: XCTestCase {
         // main window's sessions leaves the popup untouched. A popup
         // seeds its starting dim from ambient app activity the test host
         // controls, so pin its baseline before comparing.
-        manager.setPopupContentTransparent(false, for: popupWindow)
-        manager.setSessionContentTransparent(true)
+        manager.setPopupContentFocusLossLevel(.clear, for: popupWindow)
+        manager.setSessionContentFocusLossLevel(.dimmed)
         XCTAssertEqual(sessionWrapper.alphaValue, 0.5, accuracy: 0.01, "Focus-loss dim reaches the session wrapper")
         XCTAssertEqual(popupWrapper.alphaValue, 1.0, accuracy: 0.01, "Session dimming never reaches the popup wrapper")
 
         // ...and the popup dims independently of the session tabs.
-        manager.setPopupContentTransparent(true, for: popupWindow)
+        manager.setPopupContentFocusLossLevel(.dimmed, for: popupWindow)
         XCTAssertEqual(popupWrapper.alphaValue, 0.5, accuracy: 0.01, "Focus-loss dim reaches the popup wrapper")
         XCTAssertEqual(sessionWrapper.alphaValue, 0.5, accuracy: 0.01, "Popup dimming never reaches the session wrappers")
 
-        manager.setSessionContentTransparent(false)
-        manager.setPopupContentTransparent(false, for: popupWindow)
+        // Outside the key window's line the popup dims harder than the
+        // standard tier: the page goes more transparent and its toolbar
+        // recedes with it, so the two populations read apart.
+        guard let popupChrome = popupWindow.contentView?.subviews,
+              let popupToolbar = popupChrome.compactMap({ $0 as? PopupToolbarView }).first else {
+            XCTFail("The popup's toolbar must exist to judge its dim")
+            return
+        }
+        manager.setPopupContentFocusLossLevel(.deeplyDimmed, for: popupWindow)
+        XCTAssertEqual(popupWrapper.alphaValue, 0.3, accuracy: 0.01, "A popup outside the active line renders more transparent than the standard dim")
+        XCTAssertEqual(popupToolbar.alphaValue, 0.5, accuracy: 0.01, "A popup outside the active line recedes its chrome too")
+
+        manager.setSessionContentFocusLossLevel(.clear)
+        manager.setPopupContentFocusLossLevel(.clear, for: popupWindow)
         XCTAssertEqual(sessionWrapper.alphaValue, 1.0, accuracy: 0.01, "Restoring focus restores the session wrapper")
         XCTAssertEqual(popupWrapper.alphaValue, 1.0, accuracy: 0.01, "Restoring focus restores the popup wrapper")
     }
@@ -469,5 +485,78 @@ final class WebViewCreationGateTests: XCTestCase {
             RefreshStopButton.stopSymbolName,
             "Two different controls can never share a glyph"
         )
+    }
+
+    /// The first click on an inactive popup is the activation click: it
+    /// moves key status through the focus gate and never reaches the
+    /// window's content, so the next click can act on it — the whole
+    /// window, not just the web page.
+    func testFirstClickOnAnInactivePopupActivatesWithoutReachingContent() throws {
+        let service = makeService()
+        let window = makeHostWindow()
+        let (manager, _) = makeSession(with: service, in: window)
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            window.close()
+        }
+
+        guard let (popupWindow, _) = openPopup(from: manager) else {
+            XCTFail("A hosted popup must exist")
+            return
+        }
+        defer { popupWindow.close() }
+
+        // A probe at the click point records whether the event reached the
+        // window's views at all.
+        let probe = ClickProbeView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        popupWindow.contentView?.addSubview(probe)
+
+        // Park key status anywhere but the popup; if the host refuses to
+        // deactivate it, there is no inactive popup to judge.
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        guard !popupWindow.isKeyWindow else {
+            throw XCTSkip("The test host refused to deactivate the popup")
+        }
+
+        let click = try XCTUnwrap(
+            NSEvent.mouseEvent(
+                with: .leftMouseDown,
+                location: NSPoint(x: 50, y: 50),
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: popupWindow.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: 1
+            ),
+            "A mouse-down event must be constructible"
+        )
+
+        popupWindow.sendEvent(click)
+        XCTAssertEqual(
+            probe.mouseDownCount, 0,
+            "The activating click must not reach the window's content"
+        )
+        guard popupWindow.isKeyWindow else {
+            throw XCTSkip("The test host refused key status to the popup")
+        }
+
+        popupWindow.sendEvent(click)
+        XCTAssertEqual(
+            probe.mouseDownCount, 1,
+            "With the popup key, the next click must reach the content"
+        )
+    }
+}
+
+/// Records whether a mouse-down reached it, pinning what an event
+/// routing decided: swallowed versus delivered.
+private final class ClickProbeView: NSView {
+    var mouseDownCount = 0
+
+    override func mouseDown(with event: NSEvent) {
+        mouseDownCount += 1
     }
 }

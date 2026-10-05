@@ -80,7 +80,7 @@ final class ScreenshotPromptController: NSWindowController {
     
     func show(name: String) {
         nameLabel.stringValue = name
-        window?.makeKeyAndOrderFront(nil)
+        KeyFocusGate.shared.focus(window)
         // Position at the top of the screen to stay out of the way
         if let screen = NSScreen.main {
             let x = (screen.frame.width - 300) / 2
@@ -90,7 +90,7 @@ final class ScreenshotPromptController: NSWindowController {
     }
     
     @objc private func captureClicked() {
-        window?.orderOut(nil)
+        KeyFocusGate.shared.orderOut(window)
         onCapture?()
     }
 }

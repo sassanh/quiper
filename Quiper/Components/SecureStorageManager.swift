@@ -71,7 +71,7 @@ final class SecureStorageManager {
         defer {
             DispatchQueue.main.async {
                 NSApp.activate(ignoringOtherApps: true)
-                NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+                KeyFocusGate.shared.reassertCurrentKey()
             }
         }
         let serviceName = serviceName(for: serviceID)

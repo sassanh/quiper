@@ -22,6 +22,7 @@
 - **Stop Loading Reads as Stop**: The stop-loading control now draws the standard filled square instead of another ✕ — in the popup toolbar, the main header, and the iOS control bar alike.
 - **One Icon Size Across the Overlay**: Every header and toolbar button — history, trash, actions, lock, close, refresh/stop, back/forward — now draws its glyph from a single shared size and weight, so no control looks off-grid beside its neighbors.
 - **Secure Storage Drops the Beta Warning**: The Secure Storage tab no longer opens with a warning that local encryption is a beta feature.
+- **The Focused Line Reads as the Foreground**: The focus-loss dim now judges every window by its relationship to the focused one — the focused window stays clear, windows on its parent/child line take the standard dim, and windows outside that line fade harder and more transparent, so they read as background to where you're working.
 
 ### Fixed
 
@@ -47,6 +48,12 @@
 - **Reopening the Overlay Returns Focus Where You Left It**: Showing the overlay again restores the exact window you had focused before hiding it — the popup you were working in, a HUD, or the overlay itself — instead of handing keyboard focus to the most recently opened popup.
 - **Popup Focus Follows the Popup You Were Using**: Switching back to a session now refocuses the popup you were working in there — the same window, not whichever popup opened last — and a popup appearing on its own never claims keyboard focus from the window you are using.
 - **Reopening Quiper Restores the Window You Quit On**: Quiper now remembers which of its windows held focus when you quit and reopens on it — the popup you were working in even when another popup sits in front, or the overlay itself if that's what you had focused, with the popups ahead of it staying dimmed. Only when nothing could be remembered does launch focus go to the popup in front.
+- **Closing Settings Returns You Exactly Where You Were**: Closing or dismissing Settings hands keyboard focus back to the exact window it interrupted — the popup you were working in, or the overlay — and opening Settings over a popup no longer overwrites that popup's place as the window you quit on.
+- **A Closing HUD Never Steals Focus Back**: Dismissing a HUD no longer hands keyboard focus to the HUD that is already fading out.
+- **The First Click on a Dimmed Popup Brings It Forward**: Clicking an inactive popup activates it first instead of passing the click through to the page beneath it.
+- **Tooltips Don't Outlive Their Window**: A hover tooltip now disappears when the window it points at closes, instead of hanging over empty space until an unrelated hover replaces it.
+- **Popups Reopen Under the Popup That Opened Them**: Relaunch rebuilds the saved opener relationships, so each restored popup stays nested above the popup that opened it instead of an invented stacking.
+- **A Saved Popup That Won't Load Can't Lose Your Focus**: A popup whose address fails to load no longer erases the window remembered at quit or drops out of the saved popup list — relaunch still reopens on the window you quit on.
 
 ## [6.2.0] - 2026-09-23
 

@@ -335,7 +335,9 @@ struct TabSurvivalTests {
         let data = try JSONEncoder().encode(state)
         let decoded = try JSONDecoder().decode(PersistedTabState.self, from: data)
 
-        // Order survives the round trip: restores reproduce stacking.
+        // Order survives the round trip: the array stays the creation
+        // order that restores index their opener edges and the focus
+        // descriptor against.
         #expect(decoded.popups == [first, second])
         #expect(decoded.popups?.first?.owner == TabIdentifier(serviceID: serviceID, sessionIndex: 1))
     }

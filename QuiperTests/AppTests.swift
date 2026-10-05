@@ -426,4 +426,43 @@ final class AppControllerTests: XCTestCase {
         // The test ensures the method is callable and does not crash.
         appController.uninstallFromLogin(nil)
     }
+
+    /// The dismissal must be atomic under the secure-data migration
+    /// veto: the window's own close and order-out refuse to run, so no
+    /// cleanup may happen first — Settings stays on screen, keeps key
+    /// status, and stays in the child-window tree.
+    func testDismissingSettingsDuringSecureDataMigrationBailsOutBeforeAnyCleanup() throws {
+        let settings = AppDelegate.sharedSettingsWindow
+        let overlay = try XCTUnwrap(mockMainWindowController.window)
+
+        settings.parent?.removeChildWindow(settings)
+        overlay.orderFront(nil)
+        overlay.addChildWindow(settings, ordered: .above)
+        NSApp.activate(ignoringOtherApps: true)
+        KeyFocusGate.shared.focus(settings)
+        guard settings.isKeyWindow else {
+            settings.orderOut(nil)
+            throw XCTSkip("The test host refused key status: Settings")
+        }
+
+        SecureDataMigrationManager.shared.isMigrationPending = true
+        defer {
+            SecureDataMigrationManager.shared.isMigrationPending = false
+            settings.parent?.removeChildWindow(settings)
+            KeyFocusGate.shared.orderOut(settings)
+            overlay.orderOut(nil)
+        }
+
+        appController.closeSettingsOrHide(nil)
+
+        XCTAssertTrue(settings.isVisible, "The migration veto must keep Settings on screen")
+        XCTAssertTrue(
+            settings.isKeyWindow,
+            "A vetoed dismissal must not hand focus off — Settings keeps key status"
+        )
+        XCTAssertTrue(
+            settings.parent === overlay,
+            "The veto must fire before the child-window detach, or dismissal leaves a half-torn-down window behind"
+        )
+    }
 }

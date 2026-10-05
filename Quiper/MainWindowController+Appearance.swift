@@ -1,5 +1,51 @@
 import AppKit
 
+/// The focus-loss dim's rendering tier for one of the overlay's windows.
+/// Exactly one window can be active — the key one, while Quiper is in
+/// use — and only that window renders clear; windows never judge their
+/// own tier, `focusLossLevel(for:)` decides it.
+enum FocusLossLevel {
+    /// The key window: the effect does not apply.
+    case clear
+    /// On the key window's ancestor/descendant line — its parent,
+    /// grandparent, … or child, grandchild, … at any depth: the standard
+    /// dim.
+    case dimmed
+    /// Outside that line — a sibling subtree or a window the tree does
+    /// not span — dimmed harder and more transparent than the standard
+    /// dim, so it reads as background to the line the focus is on.
+    case deeplyDimmed
+}
+
+extension FocusLossLevel {
+    /// Transparency for a dimmed surface — content wrappers, headers,
+    /// banners — single-sourced so surfaces created mid-dim start
+    /// consistent with live ones.
+    var alpha: CGFloat {
+        switch self {
+        case .clear:
+            return 1.0
+        case .dimmed:
+            return 0.5
+        case .deeplyDimmed:
+            return 0.3
+        }
+    }
+
+    /// Popup chrome under the tier: the toolbar stays fully lit through
+    /// the standard dim — it never dimmed before this tier existed — and
+    /// recedes only outside the active window's line, giving the two dim
+    /// populations a chrome difference, not just a page-transparency one.
+    var popupChromeAlpha: CGFloat {
+        switch self {
+        case .clear, .dimmed:
+            return 1.0
+        case .deeplyDimmed:
+            return 0.5
+        }
+    }
+}
+
 extension MainWindowController {
     
     // MARK: - Appearance & Theming
@@ -32,11 +78,14 @@ extension MainWindowController {
     /// active and no settings window or update prompt sits above the
     /// overlay. Settings and update prompts take key in child windows; the
     /// overlay behind them counts as unfocused so its animations freeze.
+    /// The gate's own precedence decides — the single source, which
+    /// already excludes a precedence window whose declared departure is in
+    /// flight: a departing interruption must not block the focus
+    /// appearance derived while its hand-back runs, or that derivation
+    /// lands wrong and nothing later re-runs it once the window is gone.
     var isOverlayInteractable: Bool {
         guard NSApp.isActive else { return false }
-        if AppDelegate.sharedSettingsWindow.isVisible { return false }
-        if UpdatePromptWindowController.shared.window?.isVisible == true { return false }
-        return true
+        return KeyFocusGate.shared.precedenceTarget() == nil
     }
 
     /// True while the user can interact with the overlay content as a
@@ -61,15 +110,42 @@ extension MainWindowController {
         NSApp.keyWindow != nil
     }
 
-    /// The focus-loss dim for one specific window of the overlay. Exactly
-    /// one window can be active — the key one, while Quiper is in use —
-    /// so only that window renders clear and every other window, main or
-    /// popup, stays dimmed. Single gate: windows never judge their own
-    /// dim.
-    func focusLossEffectApplies(to target: NSWindow?) -> Bool {
-        guard Settings.shared.focusLossEffectEnabled else { return false }
-        guard let target, isOverlayInteractable, target.isKeyWindow else { return true }
+    /// The focus-loss dim for one specific window of the overlay — its
+    /// single gate. Only the key window renders clear; a window on the
+    /// key window's ancestor/descendant line takes the standard dim, and
+    /// a window outside that line renders dimmed harder and more
+    /// transparent. With the effect off, nothing dims; with no usable key
+    /// status — a precedence window above the overlay, or no key window
+    /// at all — every window takes the standard dim, as it always has.
+    /// A key window the tree does not span (a standalone progress panel,
+    /// a sheet without a parent link) sits on nothing's line, so every
+    /// window the tree spans takes the deep tier while it holds key
+    /// status: focus is elsewhere and the tree reads as background.
+    /// Windows never judge their own dim.
+    func focusLossLevel(for target: NSWindow?) -> FocusLossLevel {
+        guard Settings.shared.focusLossEffectEnabled else { return .clear }
+        guard let target, isOverlayInteractable else { return .dimmed }
+        guard let active = NSApp.keyWindow else { return .dimmed }
+        if target === active { return .clear }
+        return isAncestorOrDescendant(target, of: active) ? .dimmed : .deeplyDimmed
+    }
+
+    /// Whether `candidate` sits on `window`'s parent chain at any depth —
+    /// its parent, grandparent, … in the child-window tree.
+    private func isAncestor(_ candidate: NSWindow, of window: NSWindow) -> Bool {
+        var ancestor = window.parent
+        while let current = ancestor {
+            if current === candidate { return true }
+            ancestor = current.parent
+        }
         return false
+    }
+
+    /// Whether the two windows stand in an ancestor/descendant relation —
+    /// one is the other's parent, grandparent, … or child, grandchild,
+    /// …, any length. Siblings and separate subtrees are not.
+    private func isAncestorOrDescendant(_ first: NSWindow, of second: NSWindow) -> Bool {
+        isAncestor(first, of: second) || isAncestor(second, of: first)
     }
 
     /// Single gate for focus-driven chrome state. Animation freezing
@@ -78,25 +154,27 @@ extension MainWindowController {
     /// composer indicator hide follow `hasWindowFocus` — they report
     /// whether Quiper is in use at all. Visuals (vibrancy, outline/margin
     /// dim, header dim, content transparency, focus shield) are judged
-    /// per window through `focusLossEffectApplies(to:)`: only the active
-    /// window renders clear. Web content is only faded, never recolored.
+    /// per window through `focusLossLevel(for:)`: only the active window
+    /// renders clear, the line it sits on takes the standard dim, and
+    /// everything outside that line renders dimmed harder. Web content is
+    /// only faded, never recolored.
     func updateFocusAppearance() {
+        let overlayLevel = focusLossLevel(for: window)
         let overlayFocused = hasWindowFocus
         let mainWindowFocused = isOverlayInteractable && window?.isKeyWindow == true
-        let mainEffectOn = focusLossEffectApplies(to: window)
         windowOutlineView?.setWindowFocused(mainWindowFocused)
         windowMarginView?.setWindowFocused(mainWindowFocused)
         loadingBorderView?.setWindowFocused(mainWindowFocused)
         QuickTooltip.shared.setWindowFocused(overlayFocused)
         webViewManager?.setWindowHasFocus(overlayFocused)
-        backgroundEffectView?.state = mainEffectOn ? .inactive : .active
-        webViewManager?.setSessionContentTransparent(mainEffectOn)
-        emptyStateView?.alphaValue = mainEffectOn ? 0.5 : 1.0
-        setHeaderDimmed(mainEffectOn)
-        setFocusShieldHidden(!mainEffectOn)
+        backgroundEffectView?.state = overlayLevel == .clear ? .active : .inactive
+        webViewManager?.setSessionContentFocusLossLevel(overlayLevel)
+        emptyStateView?.alphaValue = overlayLevel.alpha
+        setHeaderDimmed(overlayLevel)
+        setFocusShieldHidden(overlayLevel == .clear)
         if let manager = webViewManager {
             for popupWindow in manager.popupWindows {
-                manager.setPopupContentTransparent(focusLossEffectApplies(to: popupWindow), for: popupWindow)
+                manager.setPopupContentFocusLossLevel(focusLossLevel(for: popupWindow), for: popupWindow)
             }
         }
     }
@@ -117,12 +195,11 @@ extension MainWindowController {
         }
     }
 
-    /// Dims header controls when unfocused. This gate owns dragArea
-    /// subviews' alphaValue; subviews must not manage their own alpha.
-    /// dragArea.alphaValue itself stays owned by header show/hide logic.
-    private func setHeaderDimmed(_ dimmed: Bool) {
-        let alpha: CGFloat = dimmed ? 0.5 : 1.0
-        dragArea?.subviews.forEach { $0.alphaValue = alpha }
+    /// Dims header controls to the tier's transparency. This gate owns
+    /// dragArea subviews' alphaValue; subviews must not manage their own
+    /// alpha. dragArea.alphaValue itself stays owned by header show/hide logic.
+    private func setHeaderDimmed(_ level: FocusLossLevel) {
+        dragArea?.subviews.forEach { $0.alphaValue = level.alpha }
     }
     
     @objc func appearanceSettingsChanged() {
