@@ -1,0 +1,16 @@
+# Tests allowed to skip in CI, one identifier per line (Suite/testName).
+# Every entry here is a deliberate, reviewed exception: a skip hides a
+# scenario nobody verified. Add a new entry only with the reason it cannot
+# run, and never for a focus or activation refusal — those must fail.
+
+# Fixture precondition: no bundled service template carries both CSS and a
+# prompt selector, so the injection scenario has nothing to run against.
+WebViewInjectionTests/testWebViewUsesCurrentTemplateCSSAndPromptSelectorWhenPassedStaleService()
+
+# Never runs in the normal flow by design; generate-screenshots.sh drives it.
+ScreenshotGenerator/testGenerateScreenshotsInteractive()
+ScreenshotGenerator/testGenerateScreenshotsNonInteractive()
+
+# Skipped because Cmd+H suspends the WebKit process in CI and hangs the
+# accessibility wait; tracked as a CI-environment limitation, not a product gap.
+GeneralShortcutsUITests/testHideShortcut()

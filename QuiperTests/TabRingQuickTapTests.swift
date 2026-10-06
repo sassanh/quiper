@@ -125,7 +125,7 @@ final class TabRingQuickTapTests: XCTestCase {
 
     // MARK: - Registration follows focus
 
-    func testTheRingHotkeyFollowsAPopupThatHoldsFocus() throws {
+    func testTheRingHotkeyFollowsAPopupThatHoldsFocus() async throws {
         // ⌘` is a global Carbon hotkey that used to be registered only
         // while the overlay itself was key — the moment a popup took
         // focus it went dead, exactly where the ring is needed.
@@ -153,12 +153,16 @@ final class TabRingQuickTapTests: XCTestCase {
 
         NSApp.activate(ignoringOtherApps: true)
         controller.show()
-        guard controller.window?.isKeyWindow == true else {
-            throw XCTSkip("The test host refused key status to the overlay")
-        }
-        guard PreviousTabHotkeyManager.shared.isRegistered else {
-            throw XCTSkip("The test host refused the ⌘` registration")
-        }
+        // The show must land the overlay's key status — that is what installs
+        // the ring hotkey — so a host that never hands focus over fails here.
+        try await HostPrecondition.require(
+            "The test host refused key status to the overlay",
+            until: { controller.window?.isKeyWindow == true }
+        )
+        try await HostPrecondition.require(
+            "The test host refused the ⌘` registration",
+            until: { PreviousTabHotkeyManager.shared.isRegistered }
+        )
 
         guard let manager = controller.webViewManager,
               let webView = controller.activeWebView else {
@@ -173,10 +177,11 @@ final class TabRingQuickTapTests: XCTestCase {
         }
         defer { popup.close() }
 
-        popup.makeKeyAndOrderFront(nil)
-        guard popup.isKeyWindow else {
-            throw XCTSkip("The test host refused key status to the popup")
-        }
+        try await HostPrecondition.require(
+            "The test host refused key status to the popup",
+            requesting: { popup.makeKeyAndOrderFront(nil) },
+            until: { popup.isKeyWindow }
+        )
 
         XCTAssertTrue(
             PreviousTabHotkeyManager.shared.isRegistered,

@@ -155,11 +155,14 @@ final class HUDClickAwayTests: XCTestCase {
         controller.showPromptHistoryHUD()
         let hud = try XCTUnwrap(controller.promptHistoryHUDWindow)
 
-        NSApp.activate(ignoringOtherApps: true)
-        overlay.makeKeyAndOrderFront(nil)
-        guard overlay.isKeyWindow else {
-            throw XCTSkip("The test host refused key status to the overlay")
-        }
+        try await HostPrecondition.require(
+            "The test host refused key status to the overlay",
+            requesting: {
+                NSApp.activate(ignoringOtherApps: true)
+                overlay.makeKeyAndOrderFront(nil)
+            },
+            until: { overlay.isKeyWindow }
+        )
         XCTAssertFalse(
             hud.isKeyWindow,
             "The overlay's key move must leave the HUD without key status"

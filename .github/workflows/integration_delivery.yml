@@ -106,6 +106,7 @@ jobs:
             coverage_path: coverage-macos-unit.lcov
             coverage_html_path: coverage-html-macos-unit
             codecov_flag: macos-unittests
+            min_tests: 450
             result_bundle: build/DerivedData-macos-unit/TestResult.xcresult
             result_artifact: macOS-Unit-TestResult.xcresult
           - category: macos-ui
@@ -113,6 +114,7 @@ jobs:
             coverage_path: coverage-macos-ui.lcov
             coverage_html_path: coverage-html-macos-ui
             codecov_flag: macos-uitests
+            min_tests: 25
             result_bundle: build/DerivedData-macos-ui/TestResult.xcresult
             result_artifact: macOS-UI-TestResult.xcresult
           - category: ios-unit
@@ -120,6 +122,7 @@ jobs:
             coverage_path: coverage-ios-unit.lcov
             coverage_html_path: coverage-html-ios-unit
             codecov_flag: ios-unittests
+            min_tests: 60
             result_bundle: build/DerivedData-ios-unit/TestResult.xcresult
             result_artifact: iOS-Unit-TestResult.xcresult
           - category: ios-ui
@@ -127,6 +130,7 @@ jobs:
             coverage_path: coverage-ios-ui.lcov
             coverage_html_path: coverage-html-ios-ui
             codecov_flag: ios-uitests
+            min_tests: 6
             result_bundle: build/DerivedData-ios-ui/TestResult.xcresult
             result_artifact: iOS-UI-TestResult.xcresult
     environment:
@@ -162,6 +166,9 @@ jobs:
 
       - name: Run tests with coverage
         run: ./tests-with-coverage.sh "${{ matrix.category }}" -retry-tests-on-failure -test-iterations 2
+
+      - name: Verify test results
+        run: ./scripts/verify-test-results.sh "${{ matrix.result_bundle }}" "${{ matrix.min_tests }}"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6

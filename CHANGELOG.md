@@ -8,6 +8,8 @@
 
 ### Changed
 
+- **Focus Checks Fail Instead of Skipping**: When the test host withholds focus, activation, or a shortcut registration, the tests that depend on it now fail and report which window holds focus — instead of quietly skipping, which let a focus regression pass as a green build.
+- **CI Rejects Skipped and Empty Test Runs**: Every test job now verifies its result bundle and fails when a test skipped outside a short checked-in allowlist, or when the run executed far fewer tests than expected — an unverified scenario can no longer ship behind a passing check.
 - **Popup Toolbars Dim With Their Pages**: The focus-loss dim now fades a popup's toolbar together with the page beneath it, with the title held at full strength so it stays readable — instead of leaving a bright toolbar over faded content.
 
 ### Fixed

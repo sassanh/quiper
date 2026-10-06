@@ -263,7 +263,7 @@ final class AppControllerTests: XCTestCase {
         XCTAssertTrue(window.isVisible)
     }
 
-    func testNormalOverlayHotkeyHidesWhenAnotherQuiperWindowHasKeyStatus() throws {
+    func testNormalOverlayHotkeyHidesWhenAnotherQuiperWindowHasKeyStatus() async throws {
         Settings.shared.keepOverlayOnTop = false
         appController.start()
         let callback = try XCTUnwrap(mockHotkeyManager.callback)
@@ -272,10 +272,11 @@ final class AppControllerTests: XCTestCase {
         window.orderFront(nil)
         XCTAssertTrue(window.isVisible)
 
-        NSApp.activate(ignoringOtherApps: true)
-        guard NSApp.isActive else {
-            throw XCTSkip("The test host refused activation")
-        }
+        try await HostPrecondition.require(
+            "The test host refused activation",
+            requesting: { NSApp.activate(ignoringOtherApps: true) },
+            until: { NSApp.isActive }
+        )
         mockMainWindowController.otherQuiperWindowHasKeyStatus = true
 
         callback()
@@ -431,18 +432,25 @@ final class AppControllerTests: XCTestCase {
     /// veto: the window's own close and order-out refuse to run, so no
     /// cleanup may happen first — Settings stays on screen, keeps key
     /// status, and stays in the child-window tree.
-    func testDismissingSettingsDuringSecureDataMigrationBailsOutBeforeAnyCleanup() throws {
+    func testDismissingSettingsDuringSecureDataMigrationBailsOutBeforeAnyCleanup() async throws {
         let settings = AppDelegate.sharedSettingsWindow
         let overlay = try XCTUnwrap(mockMainWindowController.window)
 
         settings.parent?.removeChildWindow(settings)
         overlay.orderFront(nil)
         overlay.addChildWindow(settings, ordered: .above)
-        NSApp.activate(ignoringOtherApps: true)
-        KeyFocusGate.shared.focus(settings)
-        guard settings.isKeyWindow else {
+        do {
+            try await HostPrecondition.requireKey(
+                settings,
+                named: "Settings",
+                requesting: {
+                    NSApp.activate(ignoringOtherApps: true)
+                    KeyFocusGate.shared.focus(settings)
+                }
+            )
+        } catch {
             settings.orderOut(nil)
-            throw XCTSkip("The test host refused key status: Settings")
+            throw error
         }
 
         SecureDataMigrationManager.shared.isMigrationPending = true

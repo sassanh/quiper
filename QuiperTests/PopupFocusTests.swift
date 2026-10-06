@@ -9,7 +9,7 @@ import AppKit
 @MainActor
 final class PopupFocusTests: XCTestCase {
 
-    func testDimClearsOnlyTheKeyWindowAndDimsTheRest() throws {
+    func testDimClearsOnlyTheKeyWindowAndDimsTheRest() async throws {
         let originalFocusLossEffect = Settings.shared.focusLossEffectEnabled
         let originalOnboarding = Settings.shared.hasCompletedGhostOnboarding
         let originalServices = Settings.shared.services
@@ -50,13 +50,16 @@ final class PopupFocusTests: XCTestCase {
         defer { manager.removeWebView(for: services[0], sessionIndex: 0) }
         defer { popupWindow.close() }
 
-        // Headless hosts can refuse key status; then there is no focus
-        // transition to observe and nothing to verify.
-        NSApp.activate(ignoringOtherApps: true)
-        popupWindow.makeKeyAndOrderFront(nil)
-        guard popupWindow.isKeyWindow, controller.window?.isKeyWindow == false else {
-            throw XCTSkip("The test host refused key status to the popup")
-        }
+        // The popup must take key status — and the overlay must lose it —
+        // before the focus transition behind the dim can be judged.
+        try await HostPrecondition.require(
+            "The test host refused key status to the popup",
+            requesting: {
+                NSApp.activate(ignoringOtherApps: true)
+                popupWindow.makeKeyAndOrderFront(nil)
+            },
+            until: { popupWindow.isKeyWindow && controller.window?.isKeyWindow == false }
+        )
 
         // The resolver keeps its whole-overlay contract: Quiper counts as
         // in use while any of its own windows is key.
@@ -102,7 +105,7 @@ final class PopupFocusTests: XCTestCase {
     /// z-order: the key window renders clear, its ancestors and
     /// descendants take the standard dim, and a sibling subtree renders
     /// dimmed harder and more transparent than both.
-    func testDimTiersFollowTheActiveWindowsLineInTheChildWindowTree() throws {
+    func testDimTiersFollowTheActiveWindowsLineInTheChildWindowTree() async throws {
         let originalFocusLossEffect = Settings.shared.focusLossEffectEnabled
         let originalOnboarding = Settings.shared.hasCompletedGhostOnboarding
         let originalServices = Settings.shared.services
@@ -149,14 +152,16 @@ final class PopupFocusTests: XCTestCase {
         defer { secondPopup.close() }
         defer { manager.removeWebView(for: services[0], sessionIndex: 0) }
 
-        // A host that refuses key status or stays inactive has no active
-        // window to read a line from: everything takes the standard dim
-        // by design, and there are no tiers to judge.
-        NSApp.activate(ignoringOtherApps: true)
-        firstPopup.makeKeyAndOrderFront(nil)
-        guard firstPopup.isKeyWindow, NSApp.isActive else {
-            throw XCTSkip("The test host refused key status or stayed inactive")
-        }
+        // The tiers are read from an active window's line: the host must
+        // key the popup and stay active before there is a line to judge.
+        try await HostPrecondition.require(
+            "The test host refused key status or stayed inactive",
+            requesting: {
+                NSApp.activate(ignoringOtherApps: true)
+                firstPopup.makeKeyAndOrderFront(nil)
+            },
+            until: { firstPopup.isKeyWindow && NSApp.isActive }
+        )
 
         XCTAssertEqual(
             controller.focusLossLevel(for: firstPopup), .clear,
@@ -183,7 +188,7 @@ final class PopupFocusTests: XCTestCase {
     /// dim, and once key moves to the other branch it drops to the deep
     /// tier — with no overlay or popup transition in between to drive
     /// the update.
-    func testKeyMovesTheOverlayNeverSeesStillRederiveTheTiers() throws {
+    func testKeyMovesTheOverlayNeverSeesStillRederiveTheTiers() async throws {
         let originalFocusLossEffect = Settings.shared.focusLossEffectEnabled
         let originalOnboarding = Settings.shared.hasCompletedGhostOnboarding
         let originalServices = Settings.shared.services
@@ -250,13 +255,16 @@ final class PopupFocusTests: XCTestCase {
         controller.window?.addChildWindow(overlayChild, ordered: .above)
         defer { overlayChild.close() }
 
-        // A host that refuses key status or stays inactive has no active
-        // window to read a line from, and no transition to observe.
-        NSApp.activate(ignoringOtherApps: true)
-        popupChild.makeKeyAndOrderFront(nil)
-        guard popupChild.isKeyWindow, NSApp.isActive else {
-            throw XCTSkip("The test host refused key status or stayed inactive")
-        }
+        // The host must key the child inside the popup's branch and stay
+        // active before the transition to observe can happen at all.
+        try await HostPrecondition.require(
+            "The test host refused key status or stayed inactive",
+            requesting: {
+                NSApp.activate(ignoringOtherApps: true)
+                popupChild.makeKeyAndOrderFront(nil)
+            },
+            until: { popupChild.isKeyWindow && NSApp.isActive }
+        )
 
         XCTAssertEqual(
             manager.popupWebView(for: popupWindow)?.superview?.alphaValue, 0.5,
@@ -266,10 +274,11 @@ final class PopupFocusTests: XCTestCase {
         // Key moves to the overlay's branch: the popup falls off the active
         // window's line and must drop to the deep tier, even though neither
         // the overlay nor any popup changed key status in this move.
-        overlayChild.makeKeyAndOrderFront(nil)
-        guard overlayChild.isKeyWindow else {
-            throw XCTSkip("The test host refused key status to the overlay's child")
-        }
+        try await HostPrecondition.require(
+            "The test host refused key status to the overlay's child",
+            requesting: { overlayChild.makeKeyAndOrderFront(nil) },
+            until: { overlayChild.isKeyWindow }
+        )
 
         XCTAssertEqual(
             manager.popupWebView(for: popupWindow)?.superview?.alphaValue, 0.3,

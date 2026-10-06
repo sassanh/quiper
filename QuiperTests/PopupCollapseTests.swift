@@ -448,11 +448,14 @@ final class PopupCollapseTests: XCTestCase {
         defer { manager.removeWebView(for: services[0], sessionIndex: 0) }
         defer { popupWindow.close() }
 
-        NSApp.activate(ignoringOtherApps: true)
-        popupWindow.makeKeyAndOrderFront(nil)
-        guard popupWindow.isKeyWindow, controller.window?.isKeyWindow == false else {
-            throw XCTSkip("The test host refused key status to the popup")
-        }
+        try await HostPrecondition.require(
+            "The test host refused key status to the popup",
+            requesting: {
+                NSApp.activate(ignoringOtherApps: true)
+                popupWindow.makeKeyAndOrderFront(nil)
+            },
+            until: { popupWindow.isKeyWindow && controller.window?.isKeyWindow == false }
+        )
 
         let overlayFrame = controller.window?.frame
 

@@ -491,7 +491,7 @@ final class WebViewCreationGateTests: XCTestCase {
     /// moves key status through the focus gate and never reaches the
     /// window's content, so the next click can act on it — the whole
     /// window, not just the web page.
-    func testFirstClickOnAnInactivePopupActivatesWithoutReachingContent() throws {
+    func testFirstClickOnAnInactivePopupActivatesWithoutReachingContent() async throws {
         let service = makeService()
         let window = makeHostWindow()
         let (manager, _) = makeSession(with: service, in: window)
@@ -511,13 +511,16 @@ final class WebViewCreationGateTests: XCTestCase {
         let probe = ClickProbeView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
         popupWindow.contentView?.addSubview(probe)
 
-        // Park key status anywhere but the popup; if the host refuses to
-        // deactivate it, there is no inactive popup to judge.
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-        guard !popupWindow.isKeyWindow else {
-            throw XCTSkip("The test host refused to deactivate the popup")
-        }
+        // Park key status anywhere but the popup: the inactive-popup click
+        // path below can only be judged once the popup has lost it.
+        try await HostPrecondition.require(
+            "The test host refused to deactivate the popup",
+            requesting: {
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeKeyAndOrderFront(nil)
+            },
+            until: { !popupWindow.isKeyWindow }
+        )
 
         let click = try XCTUnwrap(
             NSEvent.mouseEvent(
@@ -539,9 +542,12 @@ final class WebViewCreationGateTests: XCTestCase {
             probe.mouseDownCount, 0,
             "The activating click must not reach the window's content"
         )
-        guard popupWindow.isKeyWindow else {
-            throw XCTSkip("The test host refused key status to the popup")
-        }
+        // The activating click itself must key the popup — no re-drive here,
+        // because a click that fails to activate it is the failure this pins.
+        try await HostPrecondition.require(
+            "The test host refused key status to the popup",
+            until: { popupWindow.isKeyWindow }
+        )
 
         popupWindow.sendEvent(click)
         XCTAssertEqual(
@@ -554,7 +560,7 @@ final class WebViewCreationGateTests: XCTestCase {
     /// activation tax: the first click still moves key status through
     /// the focus gate, and the same click is delivered to the strip's
     /// views — the gesture that expands the window.
-    func testFirstClickOnAMinimizedStripIsDeliveredWhileActivating() throws {
+    func testFirstClickOnAMinimizedStripIsDeliveredWhileActivating() async throws {
         let service = makeService()
         let window = makeHostWindow()
         let (manager, _) = makeSession(with: service, in: window)
@@ -577,13 +583,16 @@ final class WebViewCreationGateTests: XCTestCase {
         let probe = ClickProbeView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
         popupWindow.contentView?.addSubview(probe)
 
-        // Park key status anywhere but the strip; if the host refuses to
-        // deactivate it, there is no inactive strip to judge.
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-        guard !popupWindow.isKeyWindow else {
-            throw XCTSkip("The test host refused to deactivate the popup")
-        }
+        // Park key status anywhere but the strip: the inactive-strip click
+        // path below can only be judged once the strip has lost it.
+        try await HostPrecondition.require(
+            "The test host refused to deactivate the popup",
+            requesting: {
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeKeyAndOrderFront(nil)
+            },
+            until: { !popupWindow.isKeyWindow }
+        )
 
         let click = try XCTUnwrap(
             NSEvent.mouseEvent(

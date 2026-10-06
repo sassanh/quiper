@@ -76,55 +76,39 @@ final class PopupKeyRestoreTests: XCTestCase {
 
     private func makeKeyOrFail(_ window: NSWindow?, reason: String) async throws {
         let window = try XCTUnwrap(window, "The \(reason) must exist")
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-        guard await waitForKeyStatus(of: window) else {
-            throw XCTSkip("The test host refused key status: \(reason)")
-        }
-    }
-
-    /// Waits for the window server to grant `window` key status. The
-    /// grant is asynchronous: `activate` and `makeKeyAndOrderFront`
-    /// return before the handover lands, and on a loaded CI runner the
-    /// handover is late enough that one immediate read mistakes the
-    /// delay for refusal. A host that grants nothing within the
-    /// deadline still reads as refusal.
-    private func waitForKeyStatus(of window: NSWindow) async -> Bool {
-        let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline {
-            if window.isKeyWindow { return true }
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            try? await Task.sleep(nanoseconds: 50_000_000)
-        }
-        return window.isKeyWindow
+        try await HostPrecondition.requireKey(window, named: reason)
     }
 
     /// Waits until the host has granted this app key status at all. The
     /// show stages pick their focus target while that grant may still
     /// be pending: judging the choice before focus arrives would blame
-    /// the restore for a grant the host never gave, so a run with no
-    /// grant skips instead of failing.
-    private func waitForHostKeyGrant() async -> Bool {
-        let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline {
-            if NSApp.isActive, NSApp.keyWindow != nil { return true }
-            try? await Task.sleep(nanoseconds: 50_000_000)
-        }
-        return NSApp.isActive && NSApp.keyWindow != nil
+    /// the restore for a grant the host never gave, so a host that
+    /// never grants focus fails the test instead of skipping it.
+    private func requireHostKeyGrant() async throws {
+        try await HostPrecondition.require(
+            "The test host refused key status",
+            until: { NSApp.isActive && NSApp.keyWindow != nil }
+        )
     }
 
     /// Opens Settings over `overlay` the way the app does — a child of the
-    /// overlay, keyed through the gate — skipping the test if the host
+    /// overlay, keyed through the gate — failing the test if the host
     /// refuses key status to it.
     private func openSettingsOver(_ overlay: NSWindow) async throws {
         let settings = AppDelegate.sharedSettingsWindow
         overlay.addChildWindow(settings, ordered: .above)
-        NSApp.activate(ignoringOtherApps: true)
-        KeyFocusGate.shared.focus(settings)
-        guard await waitForKeyStatus(of: settings) else {
+        do {
+            try await HostPrecondition.requireKey(
+                settings,
+                named: "Settings",
+                requesting: {
+                    NSApp.activate(ignoringOtherApps: true)
+                    KeyFocusGate.shared.focus(settings)
+                }
+            )
+        } catch {
             settings.orderOut(nil)
-            throw XCTSkip("The test host refused key status: Settings")
+            throw error
         }
     }
 
@@ -244,9 +228,7 @@ final class PopupKeyRestoreTests: XCTestCase {
             // still withholding key status leaves every window of ours
             // unkeyed, which says nothing about which target the restore
             // picked. A grant that landed on the wrong window fails below.
-            guard await waitForHostKeyGrant() else {
-                throw XCTSkip("The test host refused key status")
-            }
+            try await requireHostKeyGrant()
             XCTAssertTrue(
                 stage.firstPopup.isKeyWindow,
                 "Re-showing must restore the popup that was key before the hide, not the newest popup"
@@ -269,9 +251,7 @@ final class PopupKeyRestoreTests: XCTestCase {
             // still withholding key status leaves every window of ours
             // unkeyed, which says nothing about which target the restore
             // picked. A grant that landed on the wrong window fails below.
-            guard await waitForHostKeyGrant() else {
-                throw XCTSkip("The test host refused key status")
-            }
+            try await requireHostKeyGrant()
             XCTAssertEqual(
                 stage.controller.window?.isKeyWindow, true,
                 "Re-showing must keep the overlay key instead of handing focus to the newest popup"
@@ -295,9 +275,7 @@ final class PopupKeyRestoreTests: XCTestCase {
             // still withholding key status leaves every window of ours
             // unkeyed, which says nothing about which target the restore
             // picked. A grant that landed on the wrong window fails below.
-            guard await waitForHostKeyGrant() else {
-                throw XCTSkip("The test host refused key status")
-            }
+            try await requireHostKeyGrant()
             XCTAssertEqual(
                 stage.controller.window?.isKeyWindow, true,
                 "A key popup that closed while hidden must fall back to the overlay"
@@ -341,9 +319,7 @@ final class PopupKeyRestoreTests: XCTestCase {
             // still withholding key status leaves every window of ours
             // unkeyed, which says nothing about which target the restore
             // picked. A grant that landed on the wrong window fails below.
-            guard await waitForHostKeyGrant() else {
-                throw XCTSkip("The test host refused key status")
-            }
+            try await requireHostKeyGrant()
             XCTAssertTrue(
                 stage.secondPopup.isKeyWindow,
                 "The first show with no focus history must hand focus to the popup in front, not the overlay behind it"
