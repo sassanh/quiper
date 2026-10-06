@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [7.0.0] - 2026-10-06
+
+This release turns popups into first-class windows with the shared toolbar and their own address bar, gives every download a chosen destination — the save dialog, silent saves, or an engine's Secure Storage — and keeps keyboard focus, the Dock icon, and fullscreen content where you expect them.
+
 ### Added
 
 - **An Address Bar for Popups**: `⌘⇧L` or a click on a popup's title opens the location bar over that popup — prefilled with, and navigating, the popup's own page — instead of the main window's bar.
