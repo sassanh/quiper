@@ -455,11 +455,12 @@ nonisolated struct TabIdentifier: Equatable, Codable, Hashable {
     let sessionIndex: Int
 }
 
-/// A persisted popup window: its owning session, current URL, frame, the
-/// owner-position of the popup that opened it, and its own position in
-/// creation order (oldest first) — the identity order the focus descriptor
-/// indexes into. The opener link lets restores rebuild the saved opener
-/// tree instead of inventing one.
+/// A persisted popup window: its owning session, current URL, frame,
+/// whether it was minimized when saved, the owner-position of the popup
+/// that opened it, and its own position in creation order (oldest first)
+/// — the identity order the focus descriptor indexes into. The opener
+/// link lets restores rebuild the saved opener tree instead of inventing
+/// one.
 nonisolated struct PersistedPopupState: Equatable, Codable, Sendable {
     var serviceID: UUID
     var sessionIndex: Int
@@ -469,6 +470,12 @@ nonisolated struct PersistedPopupState: Equatable, Codable, Sendable {
     var frameY: Double
     var frameWidth: Double
     var frameHeight: Double
+    /// Whether the popup was minimized — its toolbar strip — when this
+    /// entry was saved, so a relaunch brings it back that way. Nil on
+    /// saves that predate the field: an expanded popup, the only state
+    /// those versions knew. Decodes as a present-or-absent key, so old
+    /// data reads unchanged and re-encoding an old entry round-trips.
+    var isMinimized: Bool? = nil
     /// Position among its owning session's saved popups (creation order)
     /// of the popup that opened this one; nil when it opened straight
     /// from its session or its opener did not persist. Owner-scoped, so

@@ -415,6 +415,14 @@ extension MainWindowController {
         }
     }
 
+    /// The location bar, but only while it hosts on `hostWindow`: a popup
+    /// that minimizes to its toolbar takes its bar with it, while any
+    /// other window's bar stays where it is.
+    func hideLocationBarHUD(ifHostedOn hostWindow: NSWindow) {
+        guard locationBarHUDWindow?.parent === hostWindow else { return }
+        hideLocationBarHUD()
+    }
+
     func toggleLocationBarHUD() {
         toggleLocationBarHUD(for: nil)
     }

@@ -7,6 +7,13 @@ public class DraggableView: NSView {
     var onWindowDragBegan: (() -> Void)?
     var onWindowDragEnded: (() -> Void)?
 
+    /// Invoked on mouse-up when the gesture never left the drag
+    /// threshold — the click half of the split `WindowDragTracker.end()`
+    /// reports, so a strip that both drags the window and carries an
+    /// action can tell the two apart. Nil (the default) keeps plain drag
+    /// behavior; a real drag never triggers it.
+    var onClick: (() -> Void)?
+
     private var dragTracker = WindowDragTracker(window: nil)
 
     /// When true the view background is clear; the WindowFrameView border fill acts as background.
@@ -57,8 +64,11 @@ public class DraggableView: NSView {
     }
 
     public override func mouseUp(with event: NSEvent) {
-        dragTracker.end()
+        let didDrag = dragTracker.end()
         onWindowDragEnded?()
+        if !didDrag {
+            onClick?()
+        }
     }
 }
 

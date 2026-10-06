@@ -1772,9 +1772,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// HUD, a panel to a HUD) leave other windows on the wrong tier with
     /// nothing else to re-derive them. The gate's fan-out is the one
     /// route that sees every transition, so this re-runs on each instead
-    /// of judging which windows are worth reacting to.
+    /// of judging which windows are worth reacting to. ⌘`'s registration
+    /// is re-derived from the same route: keyed to this controller's own
+    /// key events alone it dies the moment a popup takes focus, and one
+    /// popup handing focus to another never reaches this controller at all.
     @objc private func handleFocusStatusChanged(_ notification: Notification) {
         updateFocusAppearance()
+        Self.updatePreviousTabHotkeyRegistration()
     }
 
     @objc private func handleWorkspaceWake(_ notification: Notification) {
@@ -2206,16 +2210,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
-        PreviousTabHotkeyManager.shared.register { [weak self] in
-            self?.handleGraveKeyDown()
-        } onReleaseForward: { [weak self] in
-            self?.handleGraveKeyUp()
-        } onPressBackward: { [weak self] in
-            self?.handleGraveBackwardKeyDown()
-        } onReleaseBackward: { [weak self] in
-            self?.handleGraveKeyUp()
-        }
-
         // Settings and the update prompt outrank the overlay: the gate
         // re-keys whichever is visible, so the overlay never holds focus
         // underneath a window that must be answered first.
@@ -2275,7 +2269,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             endHistoryCycling()
         }
 
-        PreviousTabHotkeyManager.shared.unregister()
         updateFocusAppearance()
         if let keyWindow = NSApp.keyWindow,
            window?.childWindows?.contains(keyWindow) == true {

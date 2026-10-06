@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import WebKit
 @testable import Quiper
 
 @MainActor
@@ -120,6 +121,67 @@ final class TabRingQuickTapTests: XCTestCase {
     private final class ForeignBlockingWindow: NSPanel {
         override var canBecomeKey: Bool { true }
         override var isKeyWindow: Bool { true }
+    }
+
+    // MARK: - Registration follows focus
+
+    func testTheRingHotkeyFollowsAPopupThatHoldsFocus() throws {
+        // ⌘` is a global Carbon hotkey that used to be registered only
+        // while the overlay itself was key — the moment a popup took
+        // focus it went dead, exactly where the ring is needed.
+        let originalServices = Settings.shared.services
+        let originalFocusLoss = Settings.shared.focusLossEffectEnabled
+        let originalOnboarding = Settings.shared.hasCompletedGhostOnboarding
+        Settings.shared.focusLossEffectEnabled = false
+        Settings.shared.hasCompletedGhostOnboarding = true
+        defer {
+            Settings.shared.services = originalServices
+            Settings.shared.focusLossEffectEnabled = originalFocusLoss
+            Settings.shared.hasCompletedGhostOnboarding = originalOnboarding
+            PreviousTabHotkeyManager.shared.unregister()
+        }
+
+        let services = [Service(name: "Ring Alpha", url: "https://alpha.test", focus_selector: "body")]
+        Settings.shared.services = services
+        NSApp.windows.filter { $0.isVisible }.forEach { $0.orderOut(nil) }
+        AppDelegate.sharedSettingsWindow.orderOut(nil)
+        UpdatePromptWindowController.shared.window?.orderOut(nil)
+
+        let controller = MainWindowController(services: services)
+        controller.switchSession(to: 0)
+        defer { controller.window?.orderOut(nil) }
+
+        NSApp.activate(ignoringOtherApps: true)
+        controller.show()
+        guard controller.window?.isKeyWindow == true else {
+            throw XCTSkip("The test host refused key status to the overlay")
+        }
+        guard PreviousTabHotkeyManager.shared.isRegistered else {
+            throw XCTSkip("The test host refused the ⌘` registration")
+        }
+
+        guard let manager = controller.webViewManager,
+              let webView = controller.activeWebView else {
+            XCTFail("The overlay's manager and tab must exist")
+            return
+        }
+        manager.openLinkInNewWindow(URL(string: "about:blank")!, from: webView)
+        defer { manager.removeWebView(for: services[0], sessionIndex: 0) }
+        guard let popup = NSApp.windows.first(where: { manager.isPopupWindow($0) }) else {
+            XCTFail("A managed popup window must open")
+            return
+        }
+        defer { popup.close() }
+
+        popup.makeKeyAndOrderFront(nil)
+        guard popup.isKeyWindow else {
+            throw XCTSkip("The test host refused key status to the popup")
+        }
+
+        XCTAssertTrue(
+            PreviousTabHotkeyManager.shared.isRegistered,
+            "⌘` stays installed while a popup holds focus, so the ring works from there"
+        )
     }
 
     // MARK: - Helpers

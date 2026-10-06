@@ -777,7 +777,7 @@ extension MainWindowController {
             if isCommand {
                 switch keyCode {
                 case UInt16(kVK_ANSI_M):
-                    toggleWindowSize()
+                    handleMiniaturizeShortcut()
                     return true
                 case UInt16(kVK_ANSI_H), UInt16(kVK_ANSI_Q):
                     hide()
@@ -908,7 +908,7 @@ extension MainWindowController {
 
         switch keyCode {
         case UInt16(kVK_ANSI_M):
-            toggleWindowSize()
+            handleMiniaturizeShortcut()
             return true
         case UInt16(kVK_ANSI_H), UInt16(kVK_ANSI_Q):
             hide()
@@ -998,6 +998,19 @@ extension MainWindowController {
         }
 
         return false
+    }
+
+    /// ⌘M addresses the window the user is working in: a focused popup
+    /// minimizes to its toolbar, and only the overlay itself keeps the
+    /// compact-size toggle. A sheet is modal to its popup, so while one is
+    /// attached the press moves neither window.
+    private func handleMiniaturizeShortcut() {
+        if let popupWindow = focusedPopupWindow() {
+            guard popupWindow.attachedSheet == nil else { return }
+            webViewManager?.togglePopupCollapsed(for: popupWindow)
+            return
+        }
+        toggleWindowSize()
     }
     
     private func digitValue(for keyCode: UInt16) -> Int? {
@@ -1166,6 +1179,40 @@ extension MainWindowController {
         lastHistorySwitchTime = Date()
     }
     
+    /// Installs or removes ⌘`/⇧⌘` for whichever overlay governs focus.
+    ///
+    /// The ring belongs to the governing overlay — its main window or any
+    /// popup it parents — so registration is derived from that one
+    /// authority's key status on every transition the focus gate fans
+    /// out. Deriving it from the receiving controller instead would let
+    /// two live controllers disagree over one global hotkey and
+    /// unregister each other; deriving it from this controller's own key
+    /// events alone leaves the ring dead the moment a popup holds focus,
+    /// and never sees one popup hand focus to another. Settings,
+    /// prompts, HUDs, and a background app leave it unregistered, as
+    /// before.
+    static func updatePreviousTabHotkeyRegistration() {
+        guard let controller = KeyFocusGate.shared.activeController else {
+            PreviousTabHotkeyManager.shared.unregister()
+            return
+        }
+        let overlayHasKeyFocus = controller.window?.isKeyWindow == true
+            || controller.webViewManager?.hasKeyPopupWindow == true
+        if overlayHasKeyFocus {
+            PreviousTabHotkeyManager.shared.register { [weak controller] in
+                controller?.handleGraveKeyDown()
+            } onReleaseForward: { [weak controller] in
+                controller?.handleGraveKeyUp()
+            } onPressBackward: { [weak controller] in
+                controller?.handleGraveBackwardKeyDown()
+            } onReleaseBackward: { [weak controller] in
+                controller?.handleGraveKeyUp()
+            }
+        } else {
+            PreviousTabHotkeyManager.shared.unregister()
+        }
+    }
+
     func handleGraveKeyDown(currentModifiers: NSEvent.ModifierFlags? = nil) {
         hideModifierHUDRing()
         guard !isActiveSpaceWebFullscreen else {

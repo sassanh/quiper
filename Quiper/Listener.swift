@@ -446,6 +446,11 @@ final class PreviousTabHotkeyManager {
         onPressBackward = nil
         onReleaseBackward = nil
     }
+
+    /// Whether the ⌘` registrations are currently installed. Read from
+    /// the refs themselves, so recomputing registration can never
+    /// disagree with what Carbon actually holds.
+    var isRegistered: Bool { hotKeyRefForward != nil }
     
     private func installHandlerIfNeeded() {
         guard eventHandler == nil else { return }

@@ -31,19 +31,6 @@ extension FocusLossLevel {
             return 0.3
         }
     }
-
-    /// Popup chrome under the tier: the toolbar stays fully lit through
-    /// the standard dim — it never dimmed before this tier existed — and
-    /// recedes only outside the active window's line, giving the two dim
-    /// populations a chrome difference, not just a page-transparency one.
-    var popupChromeAlpha: CGFloat {
-        switch self {
-        case .clear, .dimmed:
-            return 1.0
-        case .deeplyDimmed:
-            return 0.5
-        }
-    }
 }
 
 extension MainWindowController {
@@ -200,6 +187,15 @@ extension MainWindowController {
     /// alpha. dragArea.alphaValue itself stays owned by header show/hide logic.
     private func setHeaderDimmed(_ level: FocusLossLevel) {
         dragArea?.subviews.forEach { $0.alphaValue = level.alpha }
+    }
+
+    /// A popup landed on or off its minimized strip. Minimized windows
+    /// are exempt from the focus-loss dim, so this state change alters
+    /// which rule applies to that window; the single gate judges every
+    /// window of the overlay, so re-run it whole rather than patching
+    /// the one that moved.
+    func popupCollapseStateDidChange() {
+        updateFocusAppearance()
     }
     
     @objc func appearanceSettingsChanged() {

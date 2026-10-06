@@ -23,6 +23,15 @@ protocol WebViewManagerDelegate: AnyObject {
     /// A popup title was clicked: toggle the location bar over `hostWindow`.
     /// The bar hosts on the window it addresses, so a popup gets its own.
     func toggleLocationBarHUD(for hostWindow: NSWindow?)
+    /// `hostWindow` minimized to its toolbar: dismiss the location bar if
+    /// it hosts there — below a toolbar-only strip it would float over
+    /// the desktop with no page under it.
+    func hideLocationBarHUD(ifHostedOn hostWindow: NSWindow)
+    /// A popup finished collapsing to — or expanding from — its
+    /// minimized strip. Minimized windows are exempt from the focus-loss
+    /// dim, so landing on or off the strip changes which rule applies and
+    /// the appearance must be re-judged.
+    func popupCollapseStateDidChange()
 }
 
 @MainActor
@@ -765,14 +774,19 @@ final class WebViewManager: NSObject {
     /// Focus-loss dim for one popup's window, judged from that window's
     /// own tier: only the popup holding key status renders clear; a popup
     /// on the key window's ancestor/descendant line takes the standard
-    /// dim of its page; a popup outside that line renders dimmed harder —
-    /// the page more transparent and its toolbar receded with it.
+    /// dim; a popup outside that line renders dimmed harder. A minimized
+    /// strip is exempt from all of it — it is chrome, not content, and
+    /// has no inactive look to drop — so while collapsed it renders
+    /// clear at every tier. For windows that do dim, the toolbar dims
+    /// exactly with the page and its title strengthens to stay readable
+    /// through the dim.
     func setPopupContentFocusLossLevel(_ level: FocusLossLevel, for popupWindow: NSWindow) {
         guard let popup = popupWindowsByToken.values.first(where: { $0 === popupWindow }),
               let hostedWebView = popup.hostedWebView,
               let wrapper = hostingWrapper(for: hostedWebView) else { return }
-        wrapper.alphaValue = level.alpha
-        popup.toolbarView.alphaValue = level.popupChromeAlpha
+        let effectiveLevel = popup.isCollapsed ? FocusLossLevel.clear : level
+        wrapper.alphaValue = effectiveLevel.alpha
+        popup.toolbarView.setFocusLossDimmed(effectiveLevel)
     }
 
     /// Pushes window focus to every managed webview so the composer recording
@@ -1982,6 +1996,13 @@ final class WebViewManager: NSObject {
         popupWindow.onTitleClick = { [weak self] hostWindow in
             self?.delegate?.toggleLocationBarHUD(for: hostWindow)
         }
+        popupWindow.onWillCollapse = { [weak self, weak popupWindow] in
+            guard let self, let popupWindow else { return }
+            self.delegate?.hideLocationBarHUD(ifHostedOn: popupWindow)
+        }
+        popupWindow.onCollapseStateChanged = { [weak self] in
+            self?.delegate?.popupCollapseStateDidChange()
+        }
         updatePopupWindowTitle(for: popupWebView)
 
         // Host the popup webview in the same wrapper sessions use, so the
@@ -2059,6 +2080,16 @@ final class WebViewManager: NSObject {
             return popupWindow.hostedWebView
         }
         return nil
+    }
+
+    /// Minimizes or restores `window` to its toolbar — the keyboard's
+    /// route into a popup's collapse state; it ends in the same
+    /// `toggleCollapsed()` the toolbar's minimize button calls, so both
+    /// entry points share one transition. No-op when `window` is not a
+    /// managed popup.
+    @MainActor
+    func togglePopupCollapsed(for window: NSWindow) {
+        (window as? PopupWindow)?.toggleCollapsed()
     }
 
     /// The session that owns `window`'s popup, or nil when `window` is not
@@ -2395,7 +2426,11 @@ final class WebViewManager: NSObject {
               let urlString = persistablePopupURLString(forToken: token),
               !urlString.isEmpty
         else { return nil }
-        let frame = popupWindow.frame
+        // A minimized popup persists the expanded rectangle it returns to,
+        // never the toolbar-only strip the restore validator would drop —
+        // plus the minimized flag itself, so relaunch brings it back as
+        // the strip it was saved from.
+        let frame = popupWindow.persistedFrame
         return PersistedPopupState(
             serviceID: owner.serviceID,
             sessionIndex: owner.sessionIndex,
@@ -2403,7 +2438,8 @@ final class WebViewManager: NSObject {
             frameX: frame.origin.x,
             frameY: frame.origin.y,
             frameWidth: frame.size.width,
-            frameHeight: frame.size.height
+            frameHeight: frame.size.height,
+            isMinimized: popupWindow.isCollapsed
         )
     }
 
@@ -2499,7 +2535,17 @@ final class WebViewManager: NSObject {
             startHidden: !shouldShow
         ) else { return nil }
         popupWebView.load(URLRequest(url: url))
-        return popupWebView.window
+        let restoredWindow = popupWebView.window
+        // A saved-minimized popup comes back as its strip: the frame it
+        // restored to is the expanded rectangle, so collapse it before
+        // anything shows it — the same settle as any other minimize,
+        // including the shared strip width. Mid-animation saves never
+        // reach this branch's opposite: the snapshot's flag tracks the
+        // settled target, never a half-animated frame.
+        if popup.isMinimized == true, let popupWindow = restoredWindow as? PopupWindow {
+            popupWindow.setCollapsed(true, animated: false)
+        }
+        return restoredWindow
     }
 
     /// The live window that already covers a skipped restore entry: the
@@ -2774,8 +2820,10 @@ final class WebViewManager: NSObject {
 
 /// A popup browser window: a non-modal child of its opener that stays
 /// pinned above the parent while the parent remains fully interactive.
+/// It can also minimize to its toolbar: the window collapses to the strip
+/// alone with its top edge anchored, so the toolbar never moves.
 @MainActor
-private final class PopupWindow: NSWindow, NSWindowDelegate {
+final class PopupWindow: NSWindow, NSWindowDelegate {
     var onClose: (@MainActor () -> Void)?
     /// Set by the manager: the shared refresh/stop toggle for this popup's
     /// page, so reload semantics stay single-sourced with the main toolbar.
@@ -2785,6 +2833,15 @@ private final class PopupWindow: NSWindow, NSWindowDelegate {
     var pageTitleContextMenuProvider: ((WKWebView) -> NSMenu?)?
     /// Set by the manager: toggles the location bar over this window.
     var onTitleClick: ((NSWindow) -> Void)?
+    /// Set by the manager: runs when this window minimizes to its toolbar,
+    /// so chrome the manager owns that hangs below the strip (the location
+    /// bar) can dismiss instead of floating over the desktop.
+    var onWillCollapse: (@MainActor () -> Void)?
+    /// Set by the manager: runs when a collapse or expand lands — at both
+    /// settle points, after frame and bounds are final. The focus-loss
+    /// dim exempts minimized windows, so landing on or off the strip
+    /// changes which rule applies and the appearance must be re-judged.
+    var onCollapseStateChanged: (@MainActor () -> Void)?
     weak var hostedWebView: WKWebView? {
         didSet {
             guard let hostedWebView else { return }
@@ -2796,6 +2853,37 @@ private final class PopupWindow: NSWindow, NSWindowDelegate {
     private var navigationObservations: [NSKeyValueObservation] = []
     private weak var parentWin: NSWindow?
     private var isCleaningUp = false
+
+    /// Whether the window is minimized to its toolbar strip.
+    private(set) var isCollapsed = false
+    /// The size a collapse remembers and an expand restores. A popup is
+    /// created expanded, so it starts at the ordinary minimum and the
+    /// first collapse overwrites it — snapshots happen only outside an
+    /// in-flight animation, so retargeting ⌘M mid-animation can never
+    /// capture an intermediate size.
+    private var expandedSize = NSSize(
+        width: Constants.WINDOW_MIN_WIDTH,
+        height: Constants.WINDOW_MIN_HEIGHT
+    )
+    /// The width every minimized strip shares, so all of them present the
+    /// same silhouette. Resizing one strip horizontally re-writes it and
+    /// the others follow; height stays pinned to the toolbar.
+    static var collapsedWidth: CGFloat = Constants.WINDOW_MIN_WIDTH
+    /// How far a strip can be dragged inward; otherwise its width is free.
+    private static let minimumCollapsedWidth: CGFloat = 160
+    /// The resize ceiling in force before the collapse. A settled strip
+    /// pins the height through `maxSize`; the expand lifts that pin by
+    /// putting back exactly the ceiling it replaced.
+    private var expandedMaxSize = NSSize(
+        width: CGFloat.greatestFiniteMagnitude,
+        height: CGFloat.greatestFiniteMagnitude
+    )
+    /// Bumped on every transition; completion work of a superseded
+    /// animation finds a stale generation and does nothing.
+    private var collapseAnimationGeneration = 0
+    /// Whether a collapse/expand frame animation is currently running,
+    /// guarding both settled-window snapshots and the constraint settle.
+    private var isCollapseAnimationInFlight = false
 
     /// Whether the window is inside its close path. Children check their
     /// parent's flag before handing focus back, so closing an opener does
@@ -2810,7 +2898,9 @@ private final class PopupWindow: NSWindow, NSWindowDelegate {
     /// behaves this way natively). Key status moves through the focus
     /// gate and the event is swallowed, so toolbar buttons, the close
     /// control, and drags only take effect on the next click, once the
-    /// window is key.
+    /// window is key. A minimized strip is the exception: with the page
+    /// hidden it is nothing but a control, so the activating click is
+    /// handed to it and expands the window in the same gesture.
     override func sendEvent(_ event: NSEvent) {
         let isClick = event.type == .leftMouseDown
             || event.type == .rightMouseDown
@@ -2818,7 +2908,7 @@ private final class PopupWindow: NSWindow, NSWindowDelegate {
         if isClick, !isKeyWindow {
             KeyFocusGate.shared.focus(self, ordering: .keyOnly)
             NSApp.activate(ignoringOtherApps: true)
-            return
+            guard isCollapsed else { return }
         }
         super.sendEvent(event)
     }
@@ -2923,12 +3013,26 @@ private final class PopupWindow: NSWindow, NSWindowDelegate {
         }
         toolbarView.onRefreshStop = { [weak self] in self?.onRefreshStop?() }
         toolbarView.onClose = { [weak self] in self?.performClose(nil) }
+        toolbarView.onToggleCollapse = { [weak self] in self?.toggleCollapsed() }
+        toolbarView.onCollapseMenuItemSelected = { [weak self] item in
+            self?.setCollapsedWithChildren(item == .collapseSubtree)
+        }
         // The title behaves like the main window's: a click toggles this
         // popup's location bar, a right-click shows the shared page-title
-        // menu, both targeting this popup's page.
+        // menu, both targeting this popup's page. A minimized strip has
+        // no controls left — not even a way to expand — so a click
+        // anywhere on it, title or bare margins, expands the window.
         toolbarView.titleLabel.onClick = { [weak self] in
             guard let self else { return }
-            self.onTitleClick?(self)
+            if self.isCollapsed {
+                self.toggleCollapsed()
+            } else {
+                self.onTitleClick?(self)
+            }
+        }
+        toolbarView.onClick = { [weak self] in
+            guard let self, self.isCollapsed else { return }
+            self.toggleCollapsed()
         }
         toolbarView.titleLabel.contextMenuProvider = { [weak self] _ in
             guard let self, let webView = self.hostedWebView else { return nil }
@@ -2966,6 +3070,168 @@ private final class PopupWindow: NSWindow, NSWindowDelegate {
     /// window has no native title bar to render it.
     func setToolbarTitle(_ title: String) {
         toolbarView.setTitleText(title)
+    }
+
+    /// The frame this window persists for relaunch: the expanded rectangle
+    /// it returns to whenever it is not settled and expanded — minimized
+    /// or mid-transition — so relaunch never stores the toolbar strip or a
+    /// half-animated frame the restore validator would drop or misplace.
+    var persistedFrame: NSRect {
+        guard isCollapsed || isCollapseAnimationInFlight else { return frame }
+        var rect = frame
+        rect.size = expandedSize
+        rect.origin.y = frame.maxY - expandedSize.height
+        rect.origin.x = frame.midX - expandedSize.width / 2
+        return rect
+    }
+
+    /// Toggles between the expanded window and the toolbar-only strip.
+    /// The one entry point the toolbar's minimize button and ⌘M share.
+    func toggleCollapsed() {
+        setCollapsed(!isCollapsed, animated: true)
+    }
+
+    /// Minimizes or restores this window together with every popup it
+    /// parented, at any depth — the tree action the minimize control's
+    /// hold menu runs. Each window runs its own transition, so one that is
+    /// mid-animation retargets cleanly instead of being driven twice.
+    func setCollapsedWithChildren(_ collapsed: Bool) {
+        setCollapsed(collapsed, animated: true)
+        for child in descendantPopups {
+            child.setCollapsed(collapsed, animated: true)
+        }
+    }
+
+    /// Every popup nested under this window, depth-first. Other child
+    /// windows — the location bar, HUD panels — are not popups and never
+    /// appear here.
+    private var descendantPopups: [PopupWindow] {
+        (childWindows ?? []).flatMap { child -> [PopupWindow] in
+            guard let popup = child as? PopupWindow else { return [] }
+            return [popup] + popup.descendantPopups
+        }
+    }
+
+    /// Minimizes or restores the window at a fixed top edge, so the
+    /// toolbar holds its screen position through the transition.
+    ///
+    /// The resize bounds are not touched here: they describe the settled
+    /// state and are written once, when a transition lands (see
+    /// `settleResizeConstraints()`), so a settled strip pins its height
+    /// and carries the width every minimized window shares.
+    func setCollapsed(_ collapsed: Bool, animated: Bool) {
+        guard collapsed != isCollapsed else { return }
+
+        if collapsed {
+            // Snapshots happen only from a settled window: an expand still
+            // in flight already holds the right values to return to.
+            if !isCollapseAnimationInFlight {
+                expandedSize = frame.size
+                expandedMaxSize = maxSize
+            }
+            onWillCollapse?()
+        }
+        isCollapsed = collapsed
+        toolbarView.setCollapsed(collapsed)
+        collapseAnimationGeneration += 1
+        let generation = collapseAnimationGeneration
+        let targetFrame = collapseTargetFrame(collapsed: collapsed)
+
+        guard animated else {
+            isCollapseAnimationInFlight = false
+            setFrame(targetFrame, display: true)
+            settleResizeConstraints()
+            onCollapseStateChanged?()
+            return
+        }
+
+        isCollapseAnimationInFlight = true
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            self.animator().setFrame(targetFrame, display: true)
+        }, completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, self.collapseAnimationGeneration == generation else { return }
+                self.isCollapseAnimationInFlight = false
+                self.settleResizeConstraints()
+                self.onCollapseStateChanged?()
+            }
+        })
+    }
+
+    /// The height of the minimized window: exactly the toolbar strip.
+    private var collapsedHeight: CGFloat { CGFloat(Constants.DRAGGABLE_AREA_HEIGHT) }
+
+    /// The frame a transition targets: today's top edge and horizontal
+    /// center, with either the shared strip size or the remembered
+    /// expanded size — so the toolbar holds its place vertically while
+    /// the window narrows to the width all minimized windows share.
+    private func collapseTargetFrame(collapsed: Bool) -> NSRect {
+        let size = collapsed
+            ? NSSize(width: Self.collapsedWidth, height: collapsedHeight)
+            : expandedSize
+        return NSRect(
+            x: frame.midX - size.width / 2,
+            y: frame.maxY - size.height,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    /// The bounds a landed transition leaves behind — the only place they
+    /// are written: minimized, `minSize` and `maxSize` agree on the
+    /// height so no drag can move the strip off the toolbar, while the
+    /// width stays free to drag and re-writes the shared width for every
+    /// strip; expanded, the ordinary minimum and the ceiling captured
+    /// before the collapse go back unchanged. The transitions themselves
+    /// never consult these bounds — `setFrame` ignores them — so one in
+    /// progress animates freely, and a transition superseded mid-flight
+    /// finds a stale generation and never reaches here. Landing minimized
+    /// also lands on the shared width, in case a drag moved it while this
+    /// transition ran.
+    private func settleResizeConstraints() {
+        if isCollapsed {
+            minSize = NSSize(width: Self.minimumCollapsedWidth, height: collapsedHeight)
+            maxSize = NSSize(width: maxSize.width, height: collapsedHeight)
+            if abs(frame.width - Self.collapsedWidth) > 0.5 {
+                resizeToSharedCollapsedWidth()
+            }
+        } else {
+            minSize = NSSize(width: Constants.WINDOW_MIN_WIDTH, height: Constants.WINDOW_MIN_HEIGHT)
+            maxSize = expandedMaxSize
+        }
+    }
+
+    /// A drag on a minimized strip's edges: the settled bounds pin the
+    /// height, so this is the width path — one strip's new width becomes
+    /// the width every minimized strip shares, and the others follow at
+    /// their own centers. Transitions land on the shared width already,
+    /// and a strip mid-animation is skipped (it re-syncs when it lands),
+    /// so nothing here can loop or fight a running animation.
+    func windowDidResize(_ notification: Notification) {
+        guard isCollapsed, !isCollapseAnimationInFlight else { return }
+        let newWidth = frame.width
+        guard abs(newWidth - Self.collapsedWidth) > 0.5 else { return }
+        Self.collapsedWidth = newWidth
+        for other in NSApp.windows {
+            guard let popup = other as? PopupWindow,
+                  popup !== self,
+                  popup.isCollapsed,
+                  !popup.isCollapseAnimationInFlight else { continue }
+            popup.resizeToSharedCollapsedWidth()
+        }
+    }
+
+    /// Re-lays this strip out at the shared width, keeping its center and
+    /// top edge — the two anchors every minimized frame uses.
+    private func resizeToSharedCollapsedWidth() {
+        setFrame(NSRect(
+            x: frame.midX - Self.collapsedWidth / 2,
+            y: frame.maxY - collapsedHeight,
+            width: Self.collapsedWidth,
+            height: collapsedHeight
+        ), display: true)
     }
 
     /// Back/forward availability and loading state for this popup's page —

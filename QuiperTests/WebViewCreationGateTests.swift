@@ -295,8 +295,8 @@ final class WebViewCreationGateTests: XCTestCase {
         XCTAssertEqual(sessionWrapper.alphaValue, 0.5, accuracy: 0.01, "Popup dimming never reaches the session wrappers")
 
         // Outside the key window's line the popup dims harder than the
-        // standard tier: the page goes more transparent and its toolbar
-        // recedes with it, so the two populations read apart.
+        // standard tier: the page and its toolbar go more transparent
+        // together, so a dimmed strip never reads as front.
         guard let popupChrome = popupWindow.contentView?.subviews,
               let popupToolbar = popupChrome.compactMap({ $0 as? PopupToolbarView }).first else {
             XCTFail("The popup's toolbar must exist to judge its dim")
@@ -304,7 +304,7 @@ final class WebViewCreationGateTests: XCTestCase {
         }
         manager.setPopupContentFocusLossLevel(.deeplyDimmed, for: popupWindow)
         XCTAssertEqual(popupWrapper.alphaValue, 0.3, accuracy: 0.01, "A popup outside the active line renders more transparent than the standard dim")
-        XCTAssertEqual(popupToolbar.alphaValue, 0.5, accuracy: 0.01, "A popup outside the active line recedes its chrome too")
+        XCTAssertEqual(popupToolbar.alphaValue, 0.3, accuracy: 0.01, "The toolbar dims with the page, at the same tier")
 
         manager.setSessionContentFocusLossLevel(.clear)
         manager.setPopupContentFocusLossLevel(.clear, for: popupWindow)
@@ -547,6 +547,67 @@ final class WebViewCreationGateTests: XCTestCase {
         XCTAssertEqual(
             probe.mouseDownCount, 1,
             "With the popup key, the next click must reach the content"
+        )
+    }
+
+    /// A minimized strip is nothing but a control, so it refuses the
+    /// activation tax: the first click still moves key status through
+    /// the focus gate, and the same click is delivered to the strip's
+    /// views — the gesture that expands the window.
+    func testFirstClickOnAMinimizedStripIsDeliveredWhileActivating() throws {
+        let service = makeService()
+        let window = makeHostWindow()
+        let (manager, _) = makeSession(with: service, in: window)
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            window.close()
+        }
+
+        guard let (popupWindow, _) = openPopup(from: manager),
+              let popup = popupWindow as? PopupWindow else {
+            XCTFail("A hosted popup must exist")
+            return
+        }
+        defer { popupWindow.close() }
+        popup.setCollapsed(true, animated: false)
+
+        // A probe at the click point records whether the event reached the
+        // window's views at all. The collapsed window is only a toolbar
+        // tall, so the click sits inside the strip.
+        let probe = ClickProbeView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        popupWindow.contentView?.addSubview(probe)
+
+        // Park key status anywhere but the strip; if the host refuses to
+        // deactivate it, there is no inactive strip to judge.
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        guard !popupWindow.isKeyWindow else {
+            throw XCTSkip("The test host refused to deactivate the popup")
+        }
+
+        let click = try XCTUnwrap(
+            NSEvent.mouseEvent(
+                with: .leftMouseDown,
+                location: NSPoint(x: 50, y: 16),
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: popupWindow.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: 1
+            ),
+            "A mouse-down event must be constructible"
+        )
+
+        popupWindow.sendEvent(click)
+        XCTAssertEqual(
+            probe.mouseDownCount, 1,
+            "The activating click lands on the strip: it expands in the same gesture"
+        )
+        XCTAssertTrue(
+            popupWindow.isKeyWindow,
+            "The strip still takes key status through the focus gate"
         )
     }
 }

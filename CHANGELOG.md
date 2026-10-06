@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Minimize Popups to a Toolbar Strip**: `⌘M` — or the −/+ toggle in a popup's toolbar, which offers + while minimized — shrinks the window to a bare title strip pinned under its original top edge. Every minimized strip shares one width, so widening one widens them all, a strip's height never changes, and strips still drag sideways. A click anywhere on a strip expands it back to the exact rectangle it came from — even the first click, before the strip has ever held focus — and hovering it shows a pointing hand with a "Click to expand" tooltip. Minimized popups stay fully lit through the focus-loss dim and come back from relaunch as strips; a long-press on the toggle offers **Collapse All Children** / **Expand All Children**, covering the window together with every popup nested under it.
+
+### Changed
+
+- **Popup Toolbars Dim With Their Pages**: The focus-loss dim now fades a popup's toolbar together with the page beneath it, with the title held at full strength so it stays readable — instead of leaving a bright toolbar over faded content.
+
+### Fixed
+
+- **Previous-Tab Shortcuts Reach Popups**: ⌘\` and ⇧⌘\` now switch tabs while a popup holds focus, instead of going dead the moment focus moved from the overlay to a popup.
+
 ## [7.0.0] - 2026-10-06
 
 This release turns popups into first-class windows with the shared toolbar and their own address bar, gives every download a chosen destination — the save dialog, silent saves, or an engine's Secure Storage — and keeps keyboard focus, the Dock icon, and fullscreen content where you expect them.
