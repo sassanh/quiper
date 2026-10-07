@@ -1509,10 +1509,13 @@ final class WebViewManager: NSObject {
         }
     }
 
-    /// Explicit address-bar navigation. Typed addresses always load in place,
-    /// bypassing link routing (popup/external/prompt) including pinned-tab
-    /// pinning: typing is an explicit instruction to show the address here.
-    /// One-shot: only the typed URL is approved; redirects re-route normally.
+    /// Explicit "show it here" instructions — the address bar, the routing
+    /// prompt's Open Here, an ⌥-click on a new-window link, an Open Private
+    /// choice on a tab that already is private — load in place, bypassing
+    /// link routing (popup/external/prompt); typed addresses do so even
+    /// against pinned-tab pinning: each is an explicit instruction to show
+    /// the address here. One-shot: only this URL is approved; redirects
+    /// re-route normally.
     func loadExplicitUserURL(_ url: URL, in webView: WKWebView) {
         approvedURLs.insert(url)
         load(url, in: webView)
@@ -3519,6 +3522,38 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         // gestures. Let them through so routing cannot divert the same
         // gesture to Safari here before the popup is created.
         if navigationAction.targetFrame == nil {
+            // Held ⌘/⌥/⇧ act on the link even on this path: ⌘⇧ opens it in
+            // a private tab, ⌥ opens the new-window request right here,
+            // ⌘⌥ sends it to the system browser, and ⌘ — like no modifier
+            // at all — keeps the popup below. Only http(s) link clicks are
+            // redirected: other schemes and JS-issued window.open keep the
+            // popup path.
+            if navigationAction.navigationType == .linkActivated,
+               let url = navigationAction.request.url,
+               let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+               let service = service(for: webView) {
+                let (_, pinnedURL) = routingContext(for: webView, service: service)
+                let forced = RoutingResolver.modifierDecision(
+                    modifiers: ClickModifiers(navigationAction.modifierFlags),
+                    bareDecision: .openNewWindow,
+                    isPinnedTabs: pinnedURL != nil && service.isPinnedTabs
+                )
+                if forced == .openPrivate {
+                    decisionHandler(.cancel)
+                    openLinkPrivately(url, from: webView)
+                    return
+                }
+                if forced == .openHere {
+                    decisionHandler(.cancel)
+                    loadExplicitUserURL(url, in: webView)
+                    return
+                }
+                if forced == .openExternal {
+                    decisionHandler(.cancel)
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+            }
             let allowWithoutAppLink = WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow
             decisionHandler(allowWithoutAppLink)
             return
@@ -3543,6 +3578,35 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         // Only route in-place main-frame navigations. New windows
         // (targetFrame == nil) are handled above by the popup path.
         if !targetFrameIsMain {
+            // Held ⌘/⌥/⇧ act on the link, not just the frame it sits in:
+            // ⌘⇧ opens it in a private tab, ⌘ in a Quiper popup, and ⌘⌥ in
+            // the system browser. ⌥ changes nothing — a subframe click
+            // already stays right here — so nothing is forced and the frame
+            // navigation stands.
+            if navigationAction.navigationType == .linkActivated,
+               let forced = RoutingResolver.modifierDecision(
+                   modifiers: ClickModifiers(navigationAction.modifierFlags),
+                   bareDecision: nil,
+                   isPinnedTabs: pinnedURL != nil && service.isPinnedTabs
+               ) {
+                if forced == .openPrivate {
+                    decisionHandler(.cancel)
+                    openLinkPrivately(url, from: webView)
+                    return
+                }
+                if forced == .openNewWindow {
+                    if let parentWindow = webView.window {
+                        openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow, opener: webView)
+                    }
+                    decisionHandler(.cancel)
+                    return
+                }
+                if forced == .openExternal {
+                    NSWorkspace.shared.open(url)
+                    decisionHandler(.cancel)
+                    return
+                }
+            }
             decisionHandler(.allow)
             return
         }
@@ -3555,12 +3619,19 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             return
         }
 
-        let optionPressed = navigationAction.modifierFlags.contains(.option)
-        var action = RoutingResolver.route(for: url, service: service, serviceURL: serviceURL, pinnedURL: pinnedURL, currentURL: webView.url)
-        if action == .openExternal && optionPressed {
-            action = .showPrompt
-        }
-        
+        // Modifiers belong to a link click: form submits, redirects, and JS
+        // navigations route bare, however the keyboard happens to sit.
+        let clickModifiers = navigationAction.navigationType == .linkActivated
+            ? ClickModifiers(navigationAction.modifierFlags)
+            : .none
+        let action = RoutingResolver.route(
+            for: url,
+            service: service,
+            serviceURL: serviceURL,
+            pinnedURL: pinnedURL,
+            currentURL: webView.url,
+            modifiers: clickModifiers
+        )
         switch action {
         case .openHere:
             let allowWithoutAppLink = WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow
@@ -3596,6 +3667,10 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             }
             decisionHandler(.allow)
             
+        case .openPrivate:
+            openLinkPrivately(url, from: webView)
+            decisionHandler(.cancel)
+
         case .showPrompt:
             decisionHandler(.cancel)
             presentRoutingPrompt(for: url, service: service, webView: webView) { [weak self] chosenAction, remember in
@@ -3614,7 +3689,8 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
                     }
                 case .openExternal:
                     NSWorkspace.shared.open(url)
-                case .showPrompt, .cancel:
+                case .showPrompt, .cancel, .openPrivate:
+                    // The prompt offers no private choice; nothing to do.
                     break
                 }
             }
@@ -4001,9 +4077,10 @@ private final class ContextLinkScriptMessageHandler: NSObject, WKScriptMessageHa
 // context-menu recorder made inside the frame that received the right-click
 // — the only document that can see anchors inside a subframe — and falls
 // back to point math in the main frame. When the menu opens it also asks
-// which item a plain click would perform, so that item is rendered bold;
-// that prediction runs through the same sources without consuming the
-// posting, which the chosen action still needs.
+// which item a click would perform under each held-modifier combination,
+// so that item is rendered bold and follows the modifiers while the menu
+// is open; that prediction runs through the same sources without
+// consuming the posting, which the chosen action still needs.
 
 /// One context-menu link posting: the anchor href resolved inside the frame
 /// that received a right-click, with the anchor facts a plain click's
@@ -4056,22 +4133,23 @@ struct ContextLink {
     let parentFrameIsMainFrame: Bool
 }
 
-/// One in-flight "what would a plain click do" request for an open link
-/// menu: the bold item waits here until the link resolves, against the menu
-/// that requested it (`menuOpenedAt`) and the webview it was opened on.
+/// One in-flight "what would a click do" request for an open link menu:
+/// the per-modifier emphasis waits here until the link resolves, against
+/// the menu that requested it (`menuOpenedAt`) and the webview it was
+/// opened on.
 @MainActor
 private final class PlainClickPrediction {
     let menuOpenedAt: Date
     let point: NSPoint
     let webViewToken: ObjectIdentifier
     weak var webView: WKWebView?
-    let completion: @MainActor @Sendable (ContextMenuLinkAction?) -> Void
+    let completion: @MainActor @Sendable (PlainClickEmphasis?) -> Void
 
     init(
         menuOpenedAt: Date,
         point: NSPoint,
         webView: WKWebView,
-        completion: @escaping @MainActor @Sendable (ContextMenuLinkAction?) -> Void
+        completion: @escaping @MainActor @Sendable (PlainClickEmphasis?) -> Void
     ) {
         self.menuOpenedAt = menuOpenedAt
         self.point = point
@@ -4158,19 +4236,21 @@ extension WebViewManager: WebViewContextMenuDelegate {
         return !isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex)
     }
 
-    /// Predicts what a plain left-click on the link at `point` would do, so
-    /// the menu can render that item bold. Nothing is committed immediately:
-    /// this request runs in the same turn that stamped `contextMenuOpenedAt`,
-    /// so any recording already in the slot predates this menu and may be an
-    /// earlier right-click's leftover — while this menu's own posting can
-    /// still be in flight. Committing to the slot would bold the previous
-    /// link for the menu's whole lifetime. The answer instead arrives when
-    /// this menu's posting lands during the grace window, or from the window
-    /// itself — where the newest posting supersedes an older one, and only a
-    /// slot holding no posting that answers this menu falls through to point
-    /// resolution in the main frame. The posting is only read: the chosen
-    /// action still consumes it through `resolveLinkURL`.
-    func webView(_ webView: WKWebView, resolvePlainClickActionAt point: NSPoint, completion: @escaping @MainActor @Sendable (ContextMenuLinkAction?) -> Void) {
+    /// Predicts which menu item a click on the link at `point` performs for
+    /// every held-modifier combination, so the menu can render that item
+    /// bold and move the bold as modifiers change. Nothing is committed
+    /// immediately: this request runs in the same turn that stamped
+    /// `contextMenuOpenedAt`, so any recording already in the slot predates
+    /// this menu and may be an earlier right-click's leftover — while this
+    /// menu's own posting can still be in flight. Committing to the slot
+    /// would bold the previous link for the menu's whole lifetime. The
+    /// answer instead arrives when this menu's posting lands during the
+    /// grace window, or from the window itself — where the newest posting
+    /// supersedes an older one, and only a slot holding no posting that
+    /// answers this menu falls through to point resolution in the main
+    /// frame. The posting is only read: the chosen action still consumes it
+    /// through `resolveLinkURL`.
+    func webView(_ webView: WKWebView, resolvePlainClickActionAt point: NSPoint, completion: @escaping @MainActor @Sendable (PlainClickEmphasis?) -> Void) {
         let prediction = PlainClickPrediction(
             menuOpenedAt: contextMenuOpenedAt ?? Date(),
             point: point,
@@ -4217,12 +4297,13 @@ extension WebViewManager: WebViewContextMenuDelegate {
         }
     }
 
-    /// Runs the prediction for a resolved link: routing decides a main-frame
-    /// destination exactly as `decidePolicyFor` will for the click itself,
-    /// and the anchor's target and frame pick the matching menu item.
-    /// Modifier flags are not predicted — the modifiers that matter belong
-    /// to the future click's press, not to this right-click.
-    private func completePlainClickPrediction(with link: ContextLink?, on webView: WKWebView, completion: @escaping @MainActor @Sendable (ContextMenuLinkAction?) -> Void) {
+    /// Runs the prediction for a resolved link: routing decides each
+    /// combination's main-frame destination exactly as `decidePolicyFor`
+    /// will for the click itself, and the anchor's target and frame pick the
+    /// matching menu item. All four combinations resolve now so the open
+    /// menu can move its bold the moment modifiers change, without
+    /// resolving the link again.
+    private func completePlainClickPrediction(with link: ContextLink?, on webView: WKWebView, completion: @escaping @MainActor @Sendable (PlainClickEmphasis?) -> Void) {
         guard let link, let service = service(for: webView) else {
             completion(nil)
             return
@@ -4232,19 +4313,32 @@ extension WebViewManager: WebViewContextMenuDelegate {
             completion(nil)
             return
         }
-        let decision = RoutingResolver.route(
-            for: link.url,
-            service: service,
-            serviceURL: serviceURL,
-            pinnedURL: pinnedURL,
-            currentURL: webView.url
-        )
-        completion(ContextMenuLinkAction.predictedByClick(
-            target: link.target,
-            isDownload: link.isDownload,
-            isMainFrame: link.isMainFrame,
-            parentFrameIsMainFrame: link.parentFrameIsMainFrame,
-            routingDecision: decision
+        let isPinnedTabs = pinnedURL != nil && service.isPinnedTabs
+        let currentURL = webView.url
+        func emphasis(_ modifiers: ClickModifiers) -> ContextMenuLinkAction? {
+            ContextMenuLinkAction.predictedByClick(
+                target: link.target,
+                isDownload: link.isDownload,
+                isMainFrame: link.isMainFrame,
+                parentFrameIsMainFrame: link.parentFrameIsMainFrame,
+                routingDecision: RoutingResolver.route(
+                    for: link.url,
+                    service: service,
+                    serviceURL: serviceURL,
+                    pinnedURL: pinnedURL,
+                    currentURL: currentURL,
+                    modifiers: modifiers
+                ),
+                modifiers: modifiers,
+                isPinnedTabs: isPinnedTabs
+            )
+        }
+        completion(PlainClickEmphasis(
+            bare: emphasis(.none),
+            command: emphasis(ClickModifiers(commandPressed: true)),
+            commandShift: emphasis(ClickModifiers(commandPressed: true, shiftPressed: true)),
+            commandOption: emphasis(ClickModifiers(commandPressed: true, optionPressed: true)),
+            option: emphasis(ClickModifiers(optionPressed: true))
         ))
     }
 
@@ -4259,12 +4353,7 @@ extension WebViewManager: WebViewContextMenuDelegate {
             case .openSystemBrowser:
                 NSWorkspace.shared.open(url)
             case .openPrivate:
-                if let (service, sessionIndex) = self.findServiceAndSession(for: webView),
-                   self.isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) {
-                    self.loadExplicitUserURL(url, in: webView)
-                } else {
-                    self.delegate?.webView(webView, didRequestPrivateLinkOpen: url)
-                }
+                self.openLinkPrivately(url, from: webView)
             }
         }
     }
@@ -4275,6 +4364,19 @@ extension WebViewManager: WebViewContextMenuDelegate {
         guard let service = service(for: opener),
               let parentWindow = opener.window else { return }
         openInPopup(url: url, service: service, configuration: opener.configuration, parentWindow: parentWindow, opener: opener)
+    }
+
+    /// Single gate for "Open Private" — the context-menu item and
+    /// ⌘⇧-clicks alike: a tab that already is private loads the link in
+    /// place, anything else asks the delegate to open a private tab, so
+    /// both entry points open exactly the same way.
+    private func openLinkPrivately(_ url: URL, from webView: WKWebView) {
+        if let (service, sessionIndex) = findServiceAndSession(for: webView),
+           isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) {
+            loadExplicitUserURL(url, in: webView)
+        } else {
+            delegate?.webView(webView, didRequestPrivateLinkOpen: url)
+        }
     }
 
     /// Resolves the link chosen from the context menu. Prefers the href the

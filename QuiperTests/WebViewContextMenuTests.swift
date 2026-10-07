@@ -379,7 +379,7 @@ final class WebViewContextMenuTests: XCTestCase {
     func testPlainClickPredictionCompletesOnlyForItsOwnWebview() {
         @MainActor
         final class AnswerLog {
-            var answers: [ContextMenuLinkAction?] = []
+            var answers: [PlainClickEmphasis?] = []
         }
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         let manager = WebViewManager(containerView: container)
@@ -418,7 +418,7 @@ final class WebViewContextMenuTests: XCTestCase {
     func testPlainClickPredictionNeverCommitsToAPostingThatPredatesTheMenu() {
         @MainActor
         final class AnswerLog {
-            var answers: [ContextMenuLinkAction?] = []
+            var answers: [PlainClickEmphasis?] = []
         }
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         let manager = WebViewManager(containerView: container)
@@ -728,14 +728,31 @@ final class WebViewContextMenuTests: XCTestCase {
         isDownload: Bool = false,
         isMainFrame: Bool = true,
         parentFrameIsMainFrame: Bool = true,
-        decision: RoutingResolver.Decision
+        decision: RoutingResolver.Decision,
+        modifiers: ClickModifiers = .none,
+        isPinnedTabs: Bool = false
     ) -> ContextMenuLinkAction? {
         ContextMenuLinkAction.predictedByClick(
             target: target,
             isDownload: isDownload,
             isMainFrame: isMainFrame,
             parentFrameIsMainFrame: parentFrameIsMainFrame,
-            routingDecision: decision
+            routingDecision: decision,
+            modifiers: modifiers,
+            isPinnedTabs: isPinnedTabs
+        )
+    }
+
+    /// An emphasis whose every modifier row names the same item, so an
+    /// assertion holds regardless of which flags the test runner itself
+    /// carries when the menu opens.
+    private func emphasis(_ action: ContextMenuLinkAction?) -> PlainClickEmphasis {
+        PlainClickEmphasis(
+            bare: action,
+            command: action,
+            commandShift: action,
+            commandOption: action,
+            option: action
         )
     }
 
@@ -782,6 +799,171 @@ final class WebViewContextMenuTests: XCTestCase {
         XCTAssertNil(predicted(target: "sidebar", decision: .openExternal))
     }
 
+    func testPlainClickEmphasisPicksTheHeldCombination() {
+        let matrix = PlainClickEmphasis(
+            bare: .openHere,
+            command: .openNewWindow,
+            commandShift: .openPrivate,
+            commandOption: .openSystemBrowser,
+            option: .openHere
+        )
+        XCTAssertEqual(matrix.action(modifiers: .none), .openHere)
+        XCTAssertEqual(matrix.action(modifiers: ClickModifiers(commandPressed: true)), .openNewWindow)
+        XCTAssertEqual(matrix.action(modifiers: ClickModifiers(commandPressed: true, shiftPressed: true)), .openPrivate)
+        // ⌘⇧ names Open Private even with ⌥ riding along.
+        XCTAssertEqual(
+            matrix.action(modifiers: ClickModifiers(commandPressed: true, optionPressed: true, shiftPressed: true)),
+            .openPrivate
+        )
+        XCTAssertEqual(
+            matrix.action(modifiers: ClickModifiers(commandPressed: true, optionPressed: true)),
+            .openSystemBrowser
+        )
+        XCTAssertEqual(matrix.action(modifiers: ClickModifiers(optionPressed: true)), .openHere)
+        // Shift without ⌘ means nothing: the bare row stands.
+        XCTAssertEqual(
+            matrix.action(modifiers: ClickModifiers(shiftPressed: true)),
+            matrix.action(modifiers: .none)
+        )
+    }
+
+    func testPlainClickPredictionForcesHeldModifiers() {
+        let command = ClickModifiers(commandPressed: true)
+        let commandShift = ClickModifiers(commandPressed: true, shiftPressed: true)
+        let commandOption = ClickModifiers(commandPressed: true, optionPressed: true)
+        let option = ClickModifiers(optionPressed: true)
+
+        // A main-frame destination is exactly what routing decided with
+        // these same modifiers, so the prediction maps that decision.
+        XCTAssertEqual(predicted(decision: .openNewWindow, modifiers: command), .openNewWindow)
+        XCTAssertEqual(predicted(decision: .openPrivate, modifiers: commandShift), .openPrivate)
+        XCTAssertEqual(predicted(decision: .openHere, modifiers: option), .openHere)
+
+        // target=_blank: the popup path yields to the held modifiers — ⌘⇧
+        // to a private tab, ⌘⌥ to the system browser, ⌘ to the popup, and
+        // ⌥ to opening right here.
+        XCTAssertEqual(predicted(target: "_blank", decision: .openExternal, modifiers: commandShift), .openPrivate)
+        XCTAssertEqual(predicted(target: "_blank", decision: .openExternal, modifiers: commandOption), .openSystemBrowser)
+        XCTAssertEqual(predicted(target: "_blank", decision: .openExternal, modifiers: command), .openNewWindow)
+        XCTAssertEqual(predicted(target: "_blank", decision: .openExternal, modifiers: option), .openHere)
+
+        // A subframe click or a named target the bare click leaves
+        // undecided still answer modifiers that name a definite action;
+        // ⌥ changes nothing about a click that does not leave.
+        XCTAssertEqual(predicted(isMainFrame: false, decision: .openExternal, modifiers: commandShift), .openPrivate)
+        XCTAssertEqual(predicted(isMainFrame: false, decision: .openExternal, modifiers: commandOption), .openSystemBrowser)
+        XCTAssertEqual(predicted(target: "sidebar", decision: .openExternal, modifiers: command), .openNewWindow)
+        XCTAssertNil(predicted(isMainFrame: false, decision: .openExternal, modifiers: option))
+        XCTAssertNil(predicted(target: "sidebar", decision: .openExternal, modifiers: option))
+
+        // Pinned tabs: ⌥'s open-here intent diverts to a popup — the tab
+        // address never changes — while ⌘⇧ still reaches a private tab.
+        XCTAssertEqual(
+            predicted(target: "_blank", decision: .openExternal, modifiers: option, isPinnedTabs: true),
+            .openNewWindow
+        )
+        XCTAssertEqual(
+            predicted(target: "_blank", decision: .openExternal, modifiers: commandShift, isPinnedTabs: true),
+            .openPrivate
+        )
+
+        // Downloads win over every combination: shouldPerformDownload runs
+        // before routing ever sees the click.
+        XCTAssertNil(predicted(isDownload: true, decision: .openHere, modifiers: commandShift))
+        XCTAssertNil(predicted(target: "_blank", isDownload: true, decision: .openHere, modifiers: commandOption))
+    }
+
+    func testMenuPreviewAgreesWithTheClickForEveryModifier() {
+        // The bold and the click must name the same action. Each row runs
+        // the real routing gate with the modifiers held — exactly what
+        // decidePolicyFor does for a click — predicts from that answer the
+        // way the menu does, and asserts the item that must end up bold.
+        let service = Service(name: "Test", url: "https://one.example.com", focus_selector: "")
+        let serviceURL = URL(string: "https://one.example.com")!
+        let sameOrigin = URL(string: "https://one.example.com/other")!
+        let elsewhere = URL(string: "https://example.org/page")!
+        var promptService = service
+        promptService.routingRules = [RoutingRule(pattern: "example\\.org", action: .prompt)]
+        let pinned = Service(
+            name: "Pinned",
+            url: "https://seed.example.com",
+            engineType: .pinnedTabs,
+            pinnedTabURLs: Service.normalizedPinnedTabURLs(["https://one.example.com"]),
+            focus_selector: ""
+        )
+        let pinnedURL = URL(string: "https://one.example.com")!
+        let command = ClickModifiers(commandPressed: true)
+        let commandShift = ClickModifiers(commandPressed: true, shiftPressed: true)
+        let commandOption = ClickModifiers(commandPressed: true, optionPressed: true)
+        let option = ClickModifiers(optionPressed: true)
+
+        func bold(
+            target: String = "",
+            isMainFrame: Bool = true,
+            service: Service,
+            serviceURL: URL,
+            pinnedURL: URL? = nil,
+            url: URL,
+            modifiers: ClickModifiers
+        ) -> ContextMenuLinkAction? {
+            let decision = RoutingResolver.route(
+                for: url,
+                service: service,
+                serviceURL: serviceURL,
+                pinnedURL: pinnedURL,
+                currentURL: nil,
+                modifiers: modifiers
+            )
+            return ContextMenuLinkAction.predictedByClick(
+                target: target,
+                isDownload: false,
+                isMainFrame: isMainFrame,
+                parentFrameIsMainFrame: true,
+                routingDecision: decision,
+                modifiers: modifiers,
+                isPinnedTabs: pinnedURL != nil
+            )
+        }
+
+        // Main frame: the bold names the action the gated decision
+        // performs — including ⌥ stepping over a prompt rule to Open Here.
+        XCTAssertEqual(bold(service: service, serviceURL: serviceURL, url: sameOrigin, modifiers: .none), .openHere)
+        XCTAssertEqual(bold(service: service, serviceURL: serviceURL, url: elsewhere, modifiers: .none), .openSystemBrowser)
+        XCTAssertNil(bold(service: promptService, serviceURL: serviceURL, url: elsewhere, modifiers: .none))
+        XCTAssertEqual(bold(service: service, serviceURL: serviceURL, url: sameOrigin, modifiers: command), .openNewWindow)
+        XCTAssertEqual(bold(service: service, serviceURL: serviceURL, url: elsewhere, modifiers: command), .openNewWindow)
+        XCTAssertEqual(bold(service: service, serviceURL: serviceURL, url: sameOrigin, modifiers: commandShift), .openPrivate)
+        XCTAssertEqual(bold(service: service, serviceURL: serviceURL, url: elsewhere, modifiers: commandShift), .openPrivate)
+        XCTAssertEqual(bold(service: service, serviceURL: serviceURL, url: elsewhere, modifiers: commandOption), .openSystemBrowser)
+        XCTAssertEqual(bold(service: service, serviceURL: serviceURL, url: elsewhere, modifiers: option), .openHere)
+        XCTAssertEqual(bold(service: promptService, serviceURL: serviceURL, url: elsewhere, modifiers: option), .openHere)
+        XCTAssertEqual(bold(service: service, serviceURL: serviceURL, url: sameOrigin, modifiers: option), .openHere)
+
+        // target="_blank": the popup path yields to the held modifiers,
+        // and a pinned engine's popup stands under ⌥.
+        XCTAssertEqual(bold(target: "_blank", service: service, serviceURL: serviceURL, url: elsewhere, modifiers: .none), .openNewWindow)
+        XCTAssertEqual(bold(target: "_blank", service: service, serviceURL: serviceURL, url: elsewhere, modifiers: command), .openNewWindow)
+        XCTAssertEqual(bold(target: "_blank", service: service, serviceURL: serviceURL, url: elsewhere, modifiers: commandShift), .openPrivate)
+        XCTAssertEqual(bold(target: "_blank", service: service, serviceURL: serviceURL, url: elsewhere, modifiers: commandOption), .openSystemBrowser)
+        XCTAssertEqual(bold(target: "_blank", service: service, serviceURL: serviceURL, url: elsewhere, modifiers: option), .openHere)
+        XCTAssertEqual(bold(target: "_blank", service: pinned, serviceURL: pinnedURL, pinnedURL: pinnedURL, url: elsewhere, modifiers: option), .openNewWindow)
+
+        // A subframe click stays: ⌘/⌘⇧/⌘⌥ name definite actions, ⌥ leaves
+        // the frame navigation alone.
+        XCTAssertEqual(bold(isMainFrame: false, service: service, serviceURL: serviceURL, url: elsewhere, modifiers: command), .openNewWindow)
+        XCTAssertEqual(bold(isMainFrame: false, service: service, serviceURL: serviceURL, url: elsewhere, modifiers: commandShift), .openPrivate)
+        XCTAssertEqual(bold(isMainFrame: false, service: service, serviceURL: serviceURL, url: elsewhere, modifiers: commandOption), .openSystemBrowser)
+        XCTAssertNil(bold(isMainFrame: false, service: service, serviceURL: serviceURL, url: elsewhere, modifiers: option))
+
+        // Pinned engine, main frame: the gate's popup answer for ⌥ is what
+        // both sides see; ⌘⇧ still reaches a private tab; the pinned
+        // address itself still reloads in place.
+        XCTAssertEqual(bold(service: pinned, serviceURL: pinnedURL, pinnedURL: pinnedURL, url: elsewhere, modifiers: .none), .openSystemBrowser)
+        XCTAssertEqual(bold(service: pinned, serviceURL: pinnedURL, pinnedURL: pinnedURL, url: elsewhere, modifiers: option), .openNewWindow)
+        XCTAssertEqual(bold(service: pinned, serviceURL: pinnedURL, pinnedURL: pinnedURL, url: elsewhere, modifiers: commandShift), .openPrivate)
+        XCTAssertEqual(bold(service: pinned, serviceURL: pinnedURL, pinnedURL: pinnedURL, url: pinnedURL, modifiers: option), .openHere)
+    }
+
     /// Whether the item's title renders in bold — the plain-click emphasis.
     /// A plain title, or an attributed one without the bold trait, reads as
     /// unemphasized.
@@ -794,10 +976,10 @@ final class WebViewContextMenuTests: XCTestCase {
     func testLinkMenuBoldsThePlainClickAction() throws {
         @MainActor
         final class IndicatorSpy: NSObject, WebViewContextMenuDelegate {
-            var answer: ContextMenuLinkAction?
+            var answer: PlainClickEmphasis?
             func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {}
             func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool { false }
-            func webView(_ webView: WKWebView, resolvePlainClickActionAt point: NSPoint, completion: @escaping @MainActor @Sendable (ContextMenuLinkAction?) -> Void) {
+            func webView(_ webView: WKWebView, resolvePlainClickActionAt point: NSPoint, completion: @escaping @MainActor @Sendable (PlainClickEmphasis?) -> Void) {
                 completion(answer)
             }
         }
@@ -807,7 +989,7 @@ final class WebViewContextMenuTests: XCTestCase {
         )
         let spy = IndicatorSpy()
         view.contextMenuDelegate = spy
-        spy.answer = .openSystemBrowser
+        spy.answer = emphasis(.openSystemBrowser)
         let menu = NSMenu()
         menu.addItem(withTitle: "Open Link in New Window", action: nil, keyEquivalent: "")
         let event = try XCTUnwrap(NSEvent.mouseEvent(
@@ -834,13 +1016,88 @@ final class WebViewContextMenuTests: XCTestCase {
         XCTAssertEqual(item(ContextMenuWebView.openLinkSystemBrowserIdentifier)?.title, "Open Link in System Browser")
     }
 
+    func testLinkMenuMovesTheBoldWithHeldModifiers() throws {
+        @MainActor
+        final class ModifierIndicatorSpy: NSObject, WebViewContextMenuDelegate {
+            var answer: PlainClickEmphasis?
+            func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {}
+            func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool { false }
+            func webView(_ webView: WKWebView, resolvePlainClickActionAt point: NSPoint, completion: @escaping @MainActor @Sendable (PlainClickEmphasis?) -> Void) {
+                completion(answer)
+            }
+        }
+        let view = ContextMenuWebView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: WKWebViewConfiguration()
+        )
+        let spy = ModifierIndicatorSpy()
+        view.contextMenuDelegate = spy
+        // One distinct row per combination — ⌥'s row left empty so a
+        // shift-only press (which falls back to bare) stays distinguishable
+        // and the clear path gets exercised too.
+        spy.answer = PlainClickEmphasis(
+            bare: .openHere,
+            command: .openNewWindow,
+            commandShift: .openPrivate,
+            commandOption: .openSystemBrowser,
+            option: nil
+        )
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Open Link Here", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: "Open Link in New Window", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: "Open Link in Private Browsing", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: "Open Link in System Browser", action: nil, keyEquivalent: "")
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
+        view.willOpenMenu(menu, with: event)
+        defer { view.didCloseMenu(menu, with: nil) }
+
+        func bolded() -> NSUserInterfaceItemIdentifier? {
+            menu.items.first(where: { isBold($0) })?.identifier
+        }
+        // Render every state explicitly — the runner's own held flags at
+        // menu-open time are not the test's business.
+        view.renderPlainClickIndicator(in: menu, modifiers: .none)
+        XCTAssertEqual(bolded(), ContextMenuWebView.openLinkHereIdentifier)
+
+        view.renderPlainClickIndicator(in: menu, modifiers: ClickModifiers(commandPressed: true))
+        XCTAssertEqual(bolded(), ContextMenuWebView.openLinkNewWindowIdentifier)
+
+        view.renderPlainClickIndicator(in: menu, modifiers: ClickModifiers(commandPressed: true, shiftPressed: true))
+        XCTAssertEqual(bolded(), ContextMenuWebView.openLinkPrivateIdentifier)
+
+        view.renderPlainClickIndicator(in: menu, modifiers: ClickModifiers(commandPressed: true, optionPressed: true))
+        XCTAssertEqual(bolded(), ContextMenuWebView.openLinkSystemBrowserIdentifier)
+
+        // ⌥'s row is empty here: the bold clears while the menu is open.
+        view.renderPlainClickIndicator(in: menu, modifiers: ClickModifiers(optionPressed: true))
+        XCTAssertNil(bolded())
+
+        // Shift without ⌘ means nothing: the bare item keeps the bold.
+        view.renderPlainClickIndicator(in: menu, modifiers: ClickModifiers(shiftPressed: true))
+        XCTAssertEqual(bolded(), ContextMenuWebView.openLinkHereIdentifier)
+
+        // Releasing everything lands back on the plain click's item.
+        view.renderPlainClickIndicator(in: menu, modifiers: .none)
+        XCTAssertEqual(bolded(), ContextMenuWebView.openLinkHereIdentifier)
+    }
+
     func testLinkMenuIgnoresAnAnswerFromAnEarlierMenu() throws {
         @MainActor
         final class DelayedIndicatorSpy: NSObject, WebViewContextMenuDelegate {
-            var completions: [@MainActor @Sendable (ContextMenuLinkAction?) -> Void] = []
+            var completions: [@MainActor @Sendable (PlainClickEmphasis?) -> Void] = []
             func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {}
             func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool { false }
-            func webView(_ webView: WKWebView, resolvePlainClickActionAt point: NSPoint, completion: @escaping @MainActor @Sendable (ContextMenuLinkAction?) -> Void) {
+            func webView(_ webView: WKWebView, resolvePlainClickActionAt point: NSPoint, completion: @escaping @MainActor @Sendable (PlainClickEmphasis?) -> Void) {
                 completions.append(completion)
             }
         }
@@ -871,13 +1128,13 @@ final class WebViewContextMenuTests: XCTestCase {
 
         // The first menu's answer lands after a second menu opened; it must
         // emphasize neither the replaced menu nor the current one.
-        spy.completions[0](.openHere)
+        spy.completions[0](emphasis(.openHere))
         XCTAssertTrue(firstMenu.items.allSatisfy { !isBold($0) })
         XCTAssertTrue(secondMenu.items.allSatisfy { !isBold($0) })
 
         // The current menu's own answer emphasizes exactly its matching
         // item, and only there.
-        spy.completions[1](.openHere)
+        spy.completions[1](emphasis(.openHere))
         XCTAssertTrue(isBold(secondMenu.items.first { $0.identifier == ContextMenuWebView.openLinkHereIdentifier }))
         XCTAssertFalse(isBold(secondMenu.items.first { $0.identifier == ContextMenuWebView.openLinkSystemBrowserIdentifier }))
     }

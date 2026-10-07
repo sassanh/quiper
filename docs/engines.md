@@ -206,6 +206,7 @@ Every engine has its own **Domain Routing** editor (**Settings ➔ Engines ➔ [
 1.  **Same-Origin Priority:** Links to the engine's own domain (or its subdomains) always open inline, regardless of any rule — this guarantees normal in-app navigation is never intercepted. Exception: `Pinned Tabs` engines have no same-origin fast path — only the pinned address itself stays; everything else leaves the tab (see Pinned-Tab Engines).
 2.  **Ordered Rule Matching:** For every other link, Quiper walks the **Routing Rules** list from top to bottom and applies the action of the **first rule whose regex pattern matches** the URL. Reorder rules with the chevrons next to each row to control priority.
 3.  **Default Fallback:** If no rule matches, the link opens externally in your default system browser.
+4.  **Modifier Overrides:** The modifiers you hold at the moment of the click pick the destination directly, overriding whatever the rules decided: **⌘** opens the link in a new Quiper window, **⌥** opens it right in the current tab, **⌘⌥** sends it to the system browser, **⌘⇧** opens it in a private tab. The link's context menu shows these as right-aligned shortcuts on its items, and its bold follows the modifiers you hold, so the highlighted item is the one your click will perform. Two outcomes still stand over every modifier: a link with a `download` attribute downloads, and Pinned Tabs engines never navigate in place — there **⌥** opens a popup instead.
 
 ### Routing Actions
 

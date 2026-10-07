@@ -7,8 +7,8 @@ Sign-in is the most common reason a login step leaves Quiper: when a link points
 | Situation | What to use |
 | :--- | :--- |
 | An engine Quiper ships | Nothing — every template keeps Google sign-in inside the overlay, and the engines in these guides also ship rules for the providers they use (Apple, GitHub, or X) |
-| A sign-in link you can see and click | Right-click it → **Open Link Here** |
-| You want Quiper to ask first | Set the rule's action to **Prompt**, or hold **⌥** while clicking |
+| A sign-in link you can see and click | Right-click it → **Open Link Here**, or hold **⌥** while clicking it |
+| You want Quiper to ask first | Set the rule's action to **Prompt** |
 | You want it to always stay | An **Internal** routing rule (or tick **Remember my choice for this domain**) |
 
 ## Why it happens
@@ -36,9 +36,8 @@ These menu choices bypass routing rules entirely — no rule editing needed. The
 2.  Trigger the login again. The **Security & Routing** dialog asks how to open the link: **Open Here**, **Open in New Window**, **Open Externally**, or **Cancel**.
 3.  Choose **Open Here** and tick **Remember my choice for this domain** — Quiper saves that host as an **Internal** rule at the top of the list, so the next sign-in goes straight through (see [Remembering Prompt Decisions](../engines#remembering-prompt-decisions)).
 
-Two variants:
+The remaining way to widen the ask:
 
-- **One-off ask:** hold **⌥** while clicking a link that would otherwise open in the system browser — Quiper asks instead, without changing any rules.
 - **Ask about every off-site link:** append a rule with pattern `^https?://` and action **Prompt** at the bottom of the list. The engine's own site stays regardless of rules, and remembered domains keep their place above it. Heads-up: every external link — citations, docs pages — now asks too.
 
 > [!NOTE]

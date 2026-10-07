@@ -294,6 +294,10 @@ extension WebSessionCoordinator: WKNavigationDelegate {
         case .showPrompt:
             decisionHandler(.cancel)
             presentRoutingPrompt(for: url, webView: webView)
+        case .openPrivate:
+            // Unreachable on iOS: only click modifiers force this decision
+            // and touch clicks carry none; iOS also ships no private tabs.
+            decisionHandler(.allow)
         case .cancel:
             decisionHandler(.cancel)
         }

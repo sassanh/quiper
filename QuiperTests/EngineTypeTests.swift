@@ -247,4 +247,103 @@ final class EngineTypeTests: XCTestCase {
         let service = pinnedService(urls: [])
         XCTAssertTrue(service.visibleSessionIndices.isEmpty)
     }
+
+    // MARK: - Click modifiers
+
+    private let commandModifiers = ClickModifiers(commandPressed: true)
+    private let commandShiftModifiers = ClickModifiers(commandPressed: true, shiftPressed: true)
+    private let commandOptionModifiers = ClickModifiers(commandPressed: true, optionPressed: true)
+    private let optionModifiers = ClickModifiers(optionPressed: true)
+
+    func testModifierDecisionForcesCommandCombosWhereverTheBareClickGoes() {
+        // ⌘/⌘⇧/⌘⌥ name their destination whatever the bare click decides —
+        // a prompt rule and a pinned engine included — and no modifiers at
+        // all never force anything.
+        let bareDecisions: [RoutingResolver.Decision] = [.openHere, .openNewWindow, .openExternal, .showPrompt]
+        for bareDecision in bareDecisions {
+            for isPinnedTabs in [false, true] {
+                XCTAssertNil(RoutingResolver.modifierDecision(modifiers: .none, bareDecision: bareDecision, isPinnedTabs: isPinnedTabs))
+                XCTAssertEqual(RoutingResolver.modifierDecision(modifiers: commandModifiers, bareDecision: bareDecision, isPinnedTabs: isPinnedTabs), .openNewWindow)
+                XCTAssertEqual(RoutingResolver.modifierDecision(modifiers: commandShiftModifiers, bareDecision: bareDecision, isPinnedTabs: isPinnedTabs), .openPrivate)
+                XCTAssertEqual(RoutingResolver.modifierDecision(modifiers: commandOptionModifiers, bareDecision: bareDecision, isPinnedTabs: isPinnedTabs), .openExternal)
+            }
+        }
+        // Shift without ⌘ means nothing.
+        XCTAssertNil(RoutingResolver.modifierDecision(
+            modifiers: ClickModifiers(shiftPressed: true),
+            bareDecision: .openExternal,
+            isPinnedTabs: false
+        ))
+        // ⌘⇧ names Open Private even with ⌥ riding along.
+        XCTAssertEqual(
+            RoutingResolver.modifierDecision(
+                modifiers: ClickModifiers(commandPressed: true, optionPressed: true, shiftPressed: true),
+                bareDecision: .openExternal,
+                isPinnedTabs: false
+            ),
+            .openPrivate
+        )
+    }
+
+    func testOptionForcesHereOnlyWhereHereExists() {
+        // An outward-bound link, a prompt rule, and a popup-bound link all
+        // give way to ⌥: it opens in place — the same instruction the
+        // menu's Open Link Here gives, rules bypassed.
+        XCTAssertEqual(RoutingResolver.modifierDecision(modifiers: optionModifiers, bareDecision: .openExternal, isPinnedTabs: false), .openHere)
+        XCTAssertEqual(RoutingResolver.modifierDecision(modifiers: optionModifiers, bareDecision: .showPrompt, isPinnedTabs: false), .openHere)
+        XCTAssertEqual(RoutingResolver.modifierDecision(modifiers: optionModifiers, bareDecision: .openNewWindow, isPinnedTabs: false), .openHere)
+        // A link that already stays, and an undecided frame-local click,
+        // keep their outcome: here is where they already go.
+        XCTAssertNil(RoutingResolver.modifierDecision(modifiers: optionModifiers, bareDecision: .openHere, isPinnedTabs: false))
+        XCTAssertNil(RoutingResolver.modifierDecision(modifiers: optionModifiers, bareDecision: nil, isPinnedTabs: false))
+        // Pinned tabs never navigate in place: the open-here intent answers
+        // as a popup — unless the bare click was already a popup.
+        XCTAssertEqual(RoutingResolver.modifierDecision(modifiers: optionModifiers, bareDecision: .openExternal, isPinnedTabs: true), .openNewWindow)
+        XCTAssertEqual(RoutingResolver.modifierDecision(modifiers: optionModifiers, bareDecision: .showPrompt, isPinnedTabs: true), .openNewWindow)
+        XCTAssertNil(RoutingResolver.modifierDecision(modifiers: optionModifiers, bareDecision: .openNewWindow, isPinnedTabs: true))
+    }
+
+    func testRouteAppliesClickModifiers() {
+        let service = Service(name: "Test", url: "https://one.example.com", focus_selector: "")
+        let serviceURL = URL(string: "https://one.example.com")!
+        let sameOrigin = URL(string: "https://one.example.com/other")!
+        let elsewhere = URL(string: "https://example.org/page")!
+        var promptService = service
+        promptService.routingRules = [RoutingRule(pattern: "example\\.org", action: .prompt)]
+
+        // A bare click keeps routing's answer; the same links under ⌘/⌘⇧/⌘⌥
+        // take their modifier's destination instead.
+        XCTAssertEqual(RoutingResolver.route(for: sameOrigin, service: service, serviceURL: serviceURL, currentURL: nil), .openHere)
+        XCTAssertEqual(RoutingResolver.route(for: elsewhere, service: service, serviceURL: serviceURL, currentURL: nil), .openExternal)
+        XCTAssertEqual(RoutingResolver.route(for: sameOrigin, service: service, serviceURL: serviceURL, pinnedURL: nil, currentURL: nil, modifiers: commandModifiers), .openNewWindow)
+        XCTAssertEqual(RoutingResolver.route(for: elsewhere, service: service, serviceURL: serviceURL, pinnedURL: nil, currentURL: nil, modifiers: commandModifiers), .openNewWindow)
+        XCTAssertEqual(RoutingResolver.route(for: sameOrigin, service: service, serviceURL: serviceURL, pinnedURL: nil, currentURL: nil, modifiers: commandShiftModifiers), .openPrivate)
+        XCTAssertEqual(RoutingResolver.route(for: elsewhere, service: service, serviceURL: serviceURL, pinnedURL: nil, currentURL: nil, modifiers: commandOptionModifiers), .openExternal)
+
+        // ⌥ opens an outward-bound link in place and steps over a prompt
+        // rule — the explicit Open Link Here instruction — while a link
+        // that already stays answers as before.
+        XCTAssertEqual(RoutingResolver.route(for: elsewhere, service: service, serviceURL: serviceURL, pinnedURL: nil, currentURL: nil, modifiers: optionModifiers), .openHere)
+        XCTAssertEqual(RoutingResolver.route(for: elsewhere, service: promptService, serviceURL: serviceURL, currentURL: nil), .showPrompt)
+        XCTAssertEqual(RoutingResolver.route(for: elsewhere, service: promptService, serviceURL: serviceURL, pinnedURL: nil, currentURL: nil, modifiers: optionModifiers), .openHere)
+        XCTAssertEqual(RoutingResolver.route(for: sameOrigin, service: service, serviceURL: serviceURL, pinnedURL: nil, currentURL: nil, modifiers: optionModifiers), .openHere)
+
+        // Shift without ⌘ changes nothing.
+        XCTAssertEqual(RoutingResolver.route(for: elsewhere, service: service, serviceURL: serviceURL, pinnedURL: nil, currentURL: nil, modifiers: ClickModifiers(shiftPressed: true)), .openExternal)
+    }
+
+    func testRouteOptionInPinnedTabAnswersThePinnedInvariant() {
+        let service = pinnedService(urls: ["https://one.example.com"])
+        let pinned = URL(string: "https://one.example.com")!
+        let elsewhere = URL(string: "https://example.org/page")!
+
+        // ⌥'s open-here intent diverts to a popup — the tab address never
+        // changes — while ⌘/⌘⇧/⌘⌥ keep their own destinations.
+        XCTAssertEqual(RoutingResolver.route(for: elsewhere, service: service, serviceURL: pinned, pinnedURL: pinned, currentURL: nil, modifiers: optionModifiers), .openNewWindow)
+        XCTAssertEqual(RoutingResolver.route(for: elsewhere, service: service, serviceURL: pinned, pinnedURL: pinned, currentURL: nil, modifiers: commandModifiers), .openNewWindow)
+        XCTAssertEqual(RoutingResolver.route(for: elsewhere, service: service, serviceURL: pinned, pinnedURL: pinned, currentURL: nil, modifiers: commandShiftModifiers), .openPrivate)
+        XCTAssertEqual(RoutingResolver.route(for: elsewhere, service: service, serviceURL: pinned, pinnedURL: pinned, currentURL: nil, modifiers: commandOptionModifiers), .openExternal)
+        // The pinned address itself still reloads in place under ⌥.
+        XCTAssertEqual(RoutingResolver.route(for: pinned, service: service, serviceURL: pinned, pinnedURL: pinned, currentURL: nil, modifiers: optionModifiers), .openHere)
+    }
 }

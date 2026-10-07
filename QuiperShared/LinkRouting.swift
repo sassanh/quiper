@@ -1,5 +1,24 @@
 import Foundation
 
+/// The pointer modifiers a link click carries, platform-neutral: the macOS
+/// click pipeline reads them from the click, bare clicks and platforms
+/// without them stay empty.
+struct ClickModifiers {
+    var commandPressed: Bool
+    var optionPressed: Bool
+    var shiftPressed: Bool
+
+    nonisolated init(commandPressed: Bool = false, optionPressed: Bool = false, shiftPressed: Bool = false) {
+        self.commandPressed = commandPressed
+        self.optionPressed = optionPressed
+        self.shiftPressed = shiftPressed
+    }
+
+    nonisolated static let none = ClickModifiers()
+
+    nonisolated var isEmpty: Bool { !commandPressed && !optionPressed && !shiftPressed }
+}
+
 /// Platform-neutral link routing shared by the macOS and iOS targets. This is the
 /// same decision logic the macOS app applies in `WebViewManager`: same-origin
 /// navigations always stay in place, otherwise the engine's routing rules decide,
@@ -9,6 +28,7 @@ enum RoutingResolver {
         case openHere
         case openNewWindow
         case openExternal
+        case openPrivate
         case showPrompt
         case cancel
     }
@@ -29,8 +49,68 @@ enum RoutingResolver {
     /// `currentURL` is the committed page address. Same-document fragment
     /// navigations (target matches the page ignoring `#fragment`) always stay
     /// in place, even when the page host has drifted from the service root
-    /// through redirects or routing rules.
+    /// through redirects or routing rules. Held click modifiers then force
+    /// their own destination through `modifierDecision`, so the outcome is
+    /// exactly what the click performs.
     static func route(
+        for url: URL,
+        service: Service,
+        serviceURL: URL,
+        pinnedURL: URL?,
+        currentURL: URL?,
+        modifiers: ClickModifiers = .none
+    ) -> Decision {
+        let bareDecision = routeWithoutModifiers(
+            for: url,
+            service: service,
+            serviceURL: serviceURL,
+            pinnedURL: pinnedURL,
+            currentURL: currentURL
+        )
+        return modifierDecision(
+            modifiers: modifiers,
+            bareDecision: bareDecision,
+            isPinnedTabs: pinnedURL != nil && service.isPinnedTabs
+        ) ?? bareDecision
+    }
+
+    /// The single gate for what held ⌘/⌥/⇧ force on a link click. ⌘⇧
+    /// always opens the link in a private tab (alone or with ⌥ held too),
+    /// ⌘⌥ always sends it to the system browser, and ⌘ always sends it to
+    /// a new window, wherever the bare click would have gone. ⌥ always
+    /// opens here — except where "here" cannot exist: a bare click that
+    /// already stays keeps its outcome (a same-document scroll, a subframe
+    /// navigation, an undecided named target pass nil here), and pinned
+    /// tabs, which never navigate in place, divert the intent to a popup
+    /// exactly as an internal rule does. Shift without ⌘ means nothing and
+    /// leaves the bare outcome standing. `bareDecision` is what the bare
+    /// click decides; nil when the bare outcome is frame-local or undecided.
+    /// Returns nil when nothing is forced, so the bare outcome stands.
+    static func modifierDecision(
+        modifiers: ClickModifiers,
+        bareDecision: Decision?,
+        isPinnedTabs: Bool
+    ) -> Decision? {
+        guard !modifiers.isEmpty else { return nil }
+        if modifiers.commandPressed {
+            if modifiers.shiftPressed { return .openPrivate }
+            if modifiers.optionPressed { return .openExternal }
+            return .openNewWindow
+        }
+        guard modifiers.optionPressed else { return nil }
+        // Option only: force "here" only where here exists.
+        guard let bareDecision, bareDecision != .openHere else { return nil }
+        guard !isPinnedTabs else {
+            // A popup already stands; anything else that would leave the tab
+            // answers the open-here intent as a popup instead.
+            return bareDecision == .openNewWindow ? nil : .openNewWindow
+        }
+        return .openHere
+    }
+
+    /// The routing rules without click modifiers: the bare click's decision,
+    /// which `route` then hands to `modifierDecision`.
+    private static func routeWithoutModifiers(
         for url: URL,
         service: Service,
         serviceURL: URL,
