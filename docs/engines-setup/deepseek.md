@@ -118,7 +118,7 @@ Once signed in, DeepSeek stays signed in across Quiper sessions.
 | Problem | Likely fix |
 | :--- | :--- |
 | `⌥ Space` doesn't open the overlay | Grant Quiper Accessibility permission in **System Settings → Privacy & Security → Accessibility**, then re-bind the hotkey in **Settings (`⌘ ⇧ ,`) → Shortcuts**. |
-| Google or Apple sign-in bounces to Safari | The `accounts.google.com` or `appleid.apple.com` **Internal** routing rule is missing or reordered. Add it back in **Settings → Engines → DeepSeek → Routing** (defaults: `^https?://([^/]*\.)?accounts\.google\.com(/\|$)` and `^https?://([^/]*\.)?appleid\.apple\.com(/\|$)` → **Internal**). |
+| Google or Apple sign-in bounces to Safari | The `accounts.google.com` or `appleid.apple.com` **Internal** routing rule is missing or reordered. Add it back in **Settings → Engines → DeepSeek → Routing** (defaults: `^https?://([^/]*\.)?accounts\.google\.com(/\|$)` and `^https?://([^/]*\.)?appleid\.apple\.com(/\|$)` → **Internal**), or see [Keeping Sign-In Inside the Overlay](sign-in-routing.md) for right-click and ask-first alternatives. |
 | No DeepSeek tab in the selector | Re-add the engine manually (see [Step 4](#4-open-deepseek-in-quiper)). |
 | Focus doesn't land in the prompt field | The focus selector is stale. Reset it in **Settings → Engines → DeepSeek → Prompt Input** (enable **Use Latest Default**) and reload with `⌘ R`. |
 | No verification code email/SMS | Wait 60 seconds, request again, check spam; some disposable-email domains are blocked — try a primary mailbox. Phone delivery can stall on some carriers — switching to email or Google usually works. |

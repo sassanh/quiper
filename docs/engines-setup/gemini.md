@@ -120,7 +120,7 @@ Once signed in, the Gemini chat interface loads inside the overlay and stays sig
 | :--- | :--- |
 | `⌥ Space` doesn't open the overlay | Grant Quiper Accessibility permission in **System Settings → Privacy & Security → Accessibility**, then re-bind the hotkey in **Settings (`⌘ ⇧ ,`) → Shortcuts**. |
 | `⌥ Space` opens Google's Gemini app instead (or fights with it) | Both apps default to the same shortcut. Rebind Quiper under **Settings → Shortcuts**, or change the hotkey in the Gemini Mac app. |
-| Google sign-in bounces to Safari | The `accounts.google.com` **Internal** routing rule is missing or reordered. Add it back in **Settings → Engines → Gemini → Routing**. |
+| Google sign-in bounces to Safari | The `accounts.google.com` **Internal** routing rule is missing or reordered. Add it back in **Settings → Engines → Gemini → Routing**, or see [Keeping Sign-In Inside the Overlay](sign-in-routing.md) for right-click and ask-first alternatives. |
 | No Gemini tab in the selector | Re-add the engine manually (see [Step 4](#4-open-gemini-in-quiper)). |
 | Focus doesn't land in the prompt field | The focus selector is stale. Reset it in **Settings → Engines → Gemini → Prompt Input** (enable **Use Latest Default**) and reload with `⌘ R`. |
 | No notifications for finished replies | Check **System Settings → Notifications → Quiper** is set to **Banners** or **Alerts**. |

@@ -118,7 +118,7 @@ Once signed in, the Grok chat interface loads inside the overlay and stays signe
 | Problem | Likely fix |
 | :--- | :--- |
 | `⌥ Space` doesn't open the overlay | Grant Quiper Accessibility permission in **System Settings → Privacy & Security → Accessibility**, then re-bind the hotkey in **Settings (`⌘ ⇧ ,`) → Shortcuts**. |
-| X or Google sign-in bounces to Safari | The `x.com` or `accounts.google.com` **Internal** routing rule is missing or reordered. Add it back in **Settings → Engines → Grok → Routing** (defaults: `^https?://([^/]*\.)?x\.com(/\|$)` and `^https?://([^/]*\.)?accounts\.google\.com(/\|$)` → **Internal**). |
+| X or Google sign-in bounces to Safari | The `x.com` or `accounts.google.com` **Internal** routing rule is missing or reordered. Add it back in **Settings → Engines → Grok → Routing** (defaults: `^https?://([^/]*\.)?x\.com(/\|$)` and `^https?://([^/]*\.)?accounts\.google\.com(/\|$)` → **Internal**), or see [Keeping Sign-In Inside the Overlay](sign-in-routing.md) for right-click and ask-first alternatives. |
 | No Grok tab in the selector | Re-add the engine manually (see [Step 4](#4-open-grok-in-quiper)). |
 | Focus doesn't land in the prompt field | The focus selector is stale. Reset it in **Settings → Engines → Grok → Prompt Input** (enable **Use Latest Default**) and reload with `⌘ R`. |
 | No notifications for finished replies | Check **System Settings → Notifications → Quiper** is set to **Banners** or **Alerts**. |

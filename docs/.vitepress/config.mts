@@ -98,11 +98,13 @@ export default defineConfig({
         items: [
           { text: 'Daily Workflow & Shortcuts', link: '/daily-workflow' },
           { text: 'Setting Up Engines', link: '/engines-setup', items: [
+            { text: 'ChatGPT', link: '/engines-setup/chatgpt' },
             { text: 'Gemini', link: '/engines-setup/gemini' },
             { text: 'Grok', link: '/engines-setup/grok' },
             { text: 'DeepSeek', link: '/engines-setup/deepseek' },
             { text: 'Qwen', link: '/engines-setup/qwen' },
             { text: 'OpenCode', link: '/engines-setup/opencode' },
+            { text: 'Sign-In Stays Inside', link: '/engines-setup/sign-in-routing' },
           ] },
           { text: 'Managing Engines', link: '/engines' },
           { text: 'Application Settings', link: '/settings' },
