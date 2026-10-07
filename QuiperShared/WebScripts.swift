@@ -1676,14 +1676,19 @@ enum WebScripts {
 
     /// Records the last right-click point (viewport coordinates plus timestamp)
     /// so a context menu action can resolve the clicked element without native
-    /// point math, and posts the anchor href resolved inside the frame that
+    /// point math, and posts the anchor resolved inside the frame that
     /// received the event — the only document that can see its own anchors,
-    /// since the main frame cannot descend into a subframe. One right-click
-    /// lands in exactly one frame, so at most one posting follows it (empty
-    /// href when the click hit no link); pages can suppress the listener, so
-    /// native treats the posting as optional. Installed at document start,
-    /// before page scripts run, so the capture listener always records even
-    /// on pages that suppress their own menu.
+    /// since the main frame cannot descend into a subframe. Along with the
+    /// href it posts the anchor facts a plain click's destination depends on:
+    /// the `target` attribute (which decides new-window requests), whether
+    /// the `download` attribute turns the click into a download, and whether
+    /// the posting frame's parent is the main frame (where `target="_parent"`
+    /// lands). One
+    /// right-click lands in exactly one frame, so at most one posting follows
+    /// it (empty href when the click hit no link); pages can suppress the
+    /// listener, so native treats the posting as optional. Installed at
+    /// document start, before page scripts run, so the capture listener
+    /// always records even on pages that suppress their own menu.
     static func makeContextMenuRecorderScript() -> WKUserScript {
         let source = """
         (function() {
@@ -1706,8 +1711,15 @@ enum WebScripts {
                 anchor = e.target.closest(selector);
               }
               var href = anchor ? (anchor.href || "") : "";
+              var target = anchor ? (anchor.getAttribute("target") || "") : "";
+              var download = anchor ? anchor.hasAttribute("download") : false;
+              // Whether this frame's parent is the main frame — where
+              // target="_parent" lands. Comparing Window references stays
+              // allowed across origins, since no foreign property is read.
+              var parentIsMainFrame = true;
+              try { parentIsMainFrame = (window.parent === window.top); } catch (err) {}
               if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(contextLinkHandlerName)) {
-                window.webkit.messageHandlers.\(contextLinkHandlerName).postMessage({ href: href });
+                window.webkit.messageHandlers.\(contextLinkHandlerName).postMessage({ href: href, target: target, download: download, parentIsMainFrame: parentIsMainFrame });
               }
             } catch (err) {}
           }, true);
@@ -1716,11 +1728,16 @@ enum WebScripts {
         return WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false)
     }
 
-    /// Resolves the anchor href at a viewport (client) point, preferring the
-    /// point recorded by the contextmenu recorder when fresh. Returns the
-    /// absolute href or an empty string when the point hits no link.
-    static func makeLinkHrefScript(x: Double, y: Double) -> String {
-        """
+    /// Resolves the link context at a viewport (client) point, preferring the
+    /// point recorded by the contextmenu recorder when fresh. Returns a
+    /// dictionary with the anchor's absolute `href`, its `target` attribute,
+    /// and whether it carries `download` — or empty values when the point
+    /// hits no link. Always evaluates in the main frame, so `isMainFrame` is
+    /// true for whatever it finds; subframe links resolve through the
+    /// recorder's posting instead.
+    static func makeLinkContextScript(x: Double, y: Double) -> String {
+        let empty = "{ href: \"\", target: \"\", download: false }"
+        return """
         (function() {
           var x = \(x), y = \(y);
           try {
@@ -1733,11 +1750,13 @@ enum WebScripts {
           } catch (e) {}
           var target = null;
           try { target = document.elementFromPoint(x, y); } catch (e) {}
-          if (!target || target.nodeType !== 1) return "";
+          if (!target || target.nodeType !== 1) return \(empty);
           var anchor = null;
           try { anchor = target.closest ? target.closest("a[href], area[href]") : null; } catch (e) {}
-          if (!anchor) return "";
-          try { return anchor.href || ""; } catch (e) { return ""; }
+          if (!anchor) return \(empty);
+          try {
+            return { href: anchor.href || "", target: anchor.getAttribute("target") || "", download: anchor.hasAttribute("download") };
+          } catch (e) { return \(empty); }
         })();
         """
     }

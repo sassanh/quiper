@@ -166,6 +166,11 @@ final class WebViewManager: NSObject {
     // `ContextLinkRecording.menuDeliveryAllowance`.
     private var pendingContextLinkRecording: ContextLinkRecording?
     private var contextMenuOpenedAt: Date?
+    /// One in-flight plain-click prediction for the open link menu: its href
+    /// can trail the menu or never arrive (pages without the recorder), so
+    /// the bold item resolves through this slot. Superseded by the next menu
+    /// open, the next request, or the webview's removal.
+    private var pendingPlainClickPrediction: PlainClickPrediction?
     private var processTerminationRetryStates: [ObjectIdentifier: WebProcessTerminationRetryState] = [:]
     /// One in-flight download: kept alive until WebKit reports it finished or
     /// failed, together with the engine page that started it so the
@@ -1860,6 +1865,9 @@ final class WebViewManager: NSObject {
         // dropping it keeps the slot from holding dead state.
         if pendingContextLinkRecording?.webViewIdentifier == token {
             pendingContextLinkRecording = nil
+        }
+        if pendingPlainClickPrediction?.webViewToken == token {
+            pendingPlainClickPrediction = nil
         }
         removeLoadState(for: token)
 
@@ -3992,11 +4000,15 @@ private final class ContextLinkScriptMessageHandler: NSObject, WKScriptMessageHa
 // where chosen, bypassing link routing. Resolution prefers the posting the
 // context-menu recorder made inside the frame that received the right-click
 // — the only document that can see anchors inside a subframe — and falls
-// back to point math in the main frame.
+// back to point math in the main frame. When the menu opens it also asks
+// which item a plain click would perform, so that item is rendered bold;
+// that prediction runs through the same sources without consuming the
+// posting, which the chosen action still needs.
 
 /// One context-menu link posting: the anchor href resolved inside the frame
-/// that received a right-click, identified by the webview it came from and
-/// the moment native received it.
+/// that received a right-click, with the anchor facts a plain click's
+/// destination depends on, identified by the webview it came from and the
+/// moment native received it.
 struct ContextLinkRecording {
     /// Binds a posting to its menu. Posting and menu open are milliseconds
     /// apart, so one second is orders of magnitude above normal delivery;
@@ -4006,6 +4018,20 @@ struct ContextLinkRecording {
     static let menuDeliveryAllowance: TimeInterval = 1
 
     let href: String
+    /// The anchor's `target` attribute as the page wrote it: empty, `_self`,
+    /// `_blank`, and friends decide whether a click stays, routes, or opens
+    /// a new window.
+    let target: String
+    /// Whether the anchor carries `download`, which turns the click into a
+    /// download before routing ever runs.
+    let isDownload: Bool
+    /// Whether the posting came from the main frame; the menu replaces the
+    /// native menu of whatever frame was right-clicked.
+    let isMainFrame: Bool
+    /// Whether the posting frame's parent is the main frame (true for the
+    /// main frame itself, which has no parent), deciding where
+    /// `target="_parent"` lands.
+    let parentFrameIsMainFrame: Bool
     let webViewIdentifier: ObjectIdentifier
     let receivedAt: Date
 
@@ -4020,9 +4046,44 @@ struct ContextLinkRecording {
     }
 }
 
+/// The link a context menu was opened for, with the anchor and frame facts
+/// a plain click's outcome depends on.
+struct ContextLink {
+    let url: URL
+    let target: String
+    let isDownload: Bool
+    let isMainFrame: Bool
+    let parentFrameIsMainFrame: Bool
+}
+
+/// One in-flight "what would a plain click do" request for an open link
+/// menu: the bold item waits here until the link resolves, against the menu
+/// that requested it (`menuOpenedAt`) and the webview it was opened on.
+@MainActor
+private final class PlainClickPrediction {
+    let menuOpenedAt: Date
+    let point: NSPoint
+    let webViewToken: ObjectIdentifier
+    weak var webView: WKWebView?
+    let completion: @MainActor @Sendable (ContextMenuLinkAction?) -> Void
+
+    init(
+        menuOpenedAt: Date,
+        point: NSPoint,
+        webView: WKWebView,
+        completion: @escaping @MainActor @Sendable (ContextMenuLinkAction?) -> Void
+    ) {
+        self.menuOpenedAt = menuOpenedAt
+        self.point = point
+        self.webViewToken = ObjectIdentifier(webView)
+        self.webView = webView
+        self.completion = completion
+    }
+}
+
 @MainActor
 extension WebViewManager {
-    /// Accepts the href the context-menu recorder posted from whichever
+    /// Accepts the anchor the context-menu recorder posted from whichever
     /// frame received the right-click. Every right-click posts at most one
     /// posting — empty href when it hit no link. A posting native cannot
     /// attribute to a webview clears the slot instead of being dropped, so
@@ -4034,11 +4095,48 @@ extension WebViewManager {
             pendingContextLinkRecording = nil
             return
         }
-        pendingContextLinkRecording = ContextLinkRecording(
+        let frame = message.frameInfo
+        recordContextLinkPosting(
             href: payload["href"] as? String ?? "",
+            target: payload["target"] as? String ?? "",
+            isDownload: payload["download"] as? Bool ?? false,
+            isMainFrame: frame.isMainFrame,
+            parentFrameIsMainFrame: payload["parentIsMainFrame"] as? Bool ?? true,
+            webView: webView
+        )
+    }
+
+    /// Records one recorder posting and offers it to the open menu's
+    /// plain-click prediction. The prediction accepts it only when it answers
+    /// that prediction's own webview and menu — checked against the
+    /// prediction's webview, never against the posting's own, which was just
+    /// built from it and so always matches itself. A posting for another
+    /// webview still takes the shared slot: every reader gates on the webview
+    /// it expects.
+    func recordContextLinkPosting(
+        href: String,
+        target: String,
+        isDownload: Bool,
+        isMainFrame: Bool,
+        parentFrameIsMainFrame: Bool,
+        webView: WKWebView
+    ) {
+        let recording = ContextLinkRecording(
+            href: href,
+            target: target,
+            isDownload: isDownload,
+            isMainFrame: isMainFrame,
+            parentFrameIsMainFrame: parentFrameIsMainFrame,
             webViewIdentifier: ObjectIdentifier(webView),
             receivedAt: Date()
         )
+        pendingContextLinkRecording = recording
+        if let prediction = pendingPlainClickPrediction,
+           let predictionWebView = prediction.webView,
+           let link = Self.recordedContextLink(recording: recording, menuOpenedAt: prediction.menuOpenedAt, for: predictionWebView) {
+            pendingPlainClickPrediction = nil
+            completePlainClickPrediction(with: link, on: predictionWebView, completion: prediction.completion)
+        }
     }
 }
 
@@ -4049,12 +4147,105 @@ extension WebViewManager: WebViewContextMenuDelegate {
     }
 
     func webViewWillOpenContextMenu(_ webView: WKWebView) {
+        // The next menu supersedes any prediction still waiting for the
+        // previous one; the view's generation guard would drop its answer.
+        pendingPlainClickPrediction = nil
         contextMenuOpenedAt = Date()
     }
 
     func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool {
         guard let (service, sessionIndex) = findServiceAndSession(for: webView) else { return false }
         return !isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex)
+    }
+
+    /// Predicts what a plain left-click on the link at `point` would do, so
+    /// the menu can render that item bold. Nothing is committed immediately:
+    /// this request runs in the same turn that stamped `contextMenuOpenedAt`,
+    /// so any recording already in the slot predates this menu and may be an
+    /// earlier right-click's leftover — while this menu's own posting can
+    /// still be in flight. Committing to the slot would bold the previous
+    /// link for the menu's whole lifetime. The answer instead arrives when
+    /// this menu's posting lands during the grace window, or from the window
+    /// itself — where the newest posting supersedes an older one, and only a
+    /// slot holding no posting that answers this menu falls through to point
+    /// resolution in the main frame. The posting is only read: the chosen
+    /// action still consumes it through `resolveLinkURL`.
+    func webView(_ webView: WKWebView, resolvePlainClickActionAt point: NSPoint, completion: @escaping @MainActor @Sendable (ContextMenuLinkAction?) -> Void) {
+        let prediction = PlainClickPrediction(
+            menuOpenedAt: contextMenuOpenedAt ?? Date(),
+            point: point,
+            webView: webView,
+            completion: completion
+        )
+        pendingPlainClickPrediction = prediction
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.contextLinkDeliveryGrace) { [weak self] in
+            guard let self, self.pendingPlainClickPrediction === prediction else { return }
+            self.resolvePendingPlainClickPrediction()
+        }
+    }
+
+    /// How long the plain-click prediction waits for the recorder's posting
+    /// before resolving: an in-flight posting arrives within it and answers,
+    /// a posting already waiting in the slot answers when it expires — the
+    /// same `answers` allowance link actions live with — and a slot that
+    /// answers no posting for this menu falls through to point resolution.
+    /// Delivery is typically single-digit milliseconds; 50ms stays under
+    /// the threshold where an emphasis appearing would be noticed.
+    static let contextLinkDeliveryGrace: TimeInterval = 0.05
+
+    /// Resolves the pending prediction once the grace window passes: the
+    /// posting wins — one that landed during the window, or one already
+    /// waiting in the slot — otherwise the main-frame point fallback, the
+    /// same two sources link actions use.
+    private func resolvePendingPlainClickPrediction() {
+        guard let prediction = pendingPlainClickPrediction else { return }
+        pendingPlainClickPrediction = nil
+        guard let webView = prediction.webView else {
+            prediction.completion(nil)
+            return
+        }
+        if let link = Self.recordedContextLink(recording: pendingContextLinkRecording, menuOpenedAt: prediction.menuOpenedAt, for: webView) {
+            completePlainClickPrediction(with: link, on: webView, completion: prediction.completion)
+            return
+        }
+        let completion = prediction.completion
+        let zoom = webView.pageZoom > 0 ? webView.pageZoom : 1
+        let client = NSPoint(x: prediction.point.x / zoom, y: (webView.bounds.height - prediction.point.y) / zoom)
+        webView.evaluateJavaScript(WebScripts.makeLinkContextScript(x: client.x, y: client.y)) { [weak self] result, _ in
+            guard let self else { return }
+            self.completePlainClickPrediction(with: Self.contextLink(fromPointEvaluation: result), on: webView, completion: completion)
+        }
+    }
+
+    /// Runs the prediction for a resolved link: routing decides a main-frame
+    /// destination exactly as `decidePolicyFor` will for the click itself,
+    /// and the anchor's target and frame pick the matching menu item.
+    /// Modifier flags are not predicted — the modifiers that matter belong
+    /// to the future click's press, not to this right-click.
+    private func completePlainClickPrediction(with link: ContextLink?, on webView: WKWebView, completion: @escaping @MainActor @Sendable (ContextMenuLinkAction?) -> Void) {
+        guard let link, let service = service(for: webView) else {
+            completion(nil)
+            return
+        }
+        let (serviceURL, pinnedURL) = routingContext(for: webView, service: service)
+        guard let serviceURL else {
+            completion(nil)
+            return
+        }
+        let decision = RoutingResolver.route(
+            for: link.url,
+            service: service,
+            serviceURL: serviceURL,
+            pinnedURL: pinnedURL,
+            currentURL: webView.url
+        )
+        completion(ContextMenuLinkAction.predictedByClick(
+            target: link.target,
+            isDownload: link.isDownload,
+            isMainFrame: link.isMainFrame,
+            parentFrameIsMainFrame: link.parentFrameIsMainFrame,
+            routingDecision: decision
+        ))
     }
 
     func webView(_ webView: WKWebView, didRequestLinkAction action: ContextMenuLinkAction, at point: NSPoint) {
@@ -4106,25 +4297,58 @@ extension WebViewManager: WebViewContextMenuDelegate {
         }
         let zoom = webView.pageZoom > 0 ? webView.pageZoom : 1
         let client = NSPoint(x: viewPoint.x / zoom, y: (webView.bounds.height - viewPoint.y) / zoom)
-        webView.evaluateJavaScript(WebScripts.makeLinkHrefScript(x: client.x, y: client.y)) { result, _ in
-            completion(Self.validatedLinkURL(from: result as? String ?? ""))
+        webView.evaluateJavaScript(WebScripts.makeLinkContextScript(x: client.x, y: client.y)) { result, _ in
+            completion(Self.contextLink(fromPointEvaluation: result)?.url)
         }
     }
 
-    /// The recorded half of `resolveLinkURL`: the URL when `recording`
-    /// answers the menu open since `openedAt` on `webView`. Nil — fall back
-    /// to point resolution — with no recording, no recorded menu, another
-    /// webview's posting, a posting from before the allowance window, or a
-    /// non-http(s) href.
+    /// The recorded half of `resolveLinkURL` and of the plain-click
+    /// prediction: the link when `recording` answers the menu open since
+    /// `openedAt` on `webView`. Nil — each falls back to point resolution —
+    /// with no recording, no recorded menu, another webview's posting, a
+    /// posting from before the allowance window, or a non-http(s) href.
+    static func recordedContextLink(
+        recording: ContextLinkRecording?,
+        menuOpenedAt: Date?,
+        for webView: WKWebView
+    ) -> ContextLink? {
+        guard let recording, let openedAt = menuOpenedAt,
+              recording.answers(menuOpenedAt: openedAt, on: webView),
+              let url = validatedLinkURL(from: recording.href)
+        else { return nil }
+        return ContextLink(
+            url: url,
+            target: recording.target,
+            isDownload: recording.isDownload,
+            isMainFrame: recording.isMainFrame,
+            parentFrameIsMainFrame: recording.parentFrameIsMainFrame
+        )
+    }
+
+    /// The URL half of `recordedContextLink`, kept for the action path's
+    /// callers that only need where to navigate.
     static func recordedContextLinkURL(
         recording: ContextLinkRecording?,
         menuOpenedAt: Date?,
         for webView: WKWebView
     ) -> URL? {
-        guard let recording, let openedAt = menuOpenedAt,
-              recording.answers(menuOpenedAt: openedAt, on: webView)
-        else { return nil }
-        return validatedLinkURL(from: recording.href)
+        recordedContextLink(recording: recording, menuOpenedAt: menuOpenedAt, for: webView)?.url
+    }
+
+    /// The point-fallback half: the link the script found at the menu point.
+    /// The script runs in the main frame, so whatever it finds sits in the
+    /// main frame, whose parent question answers true. Nil when the point
+    /// hit no http(s) link.
+    static func contextLink(fromPointEvaluation result: Any?) -> ContextLink? {
+        guard let payload = result as? [String: Any],
+              let url = validatedLinkURL(from: payload["href"] as? String ?? "") else { return nil }
+        return ContextLink(
+            url: url,
+            target: payload["target"] as? String ?? "",
+            isDownload: payload["download"] as? Bool ?? false,
+            isMainFrame: true,
+            parentFrameIsMainFrame: true
+        )
     }
 
     /// Single validation for link actions: only http(s) hrefs qualify.

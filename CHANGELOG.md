@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Bold on What a Click Would Do**: Right-click a link and the context menu renders in bold the item a plain click on that link would perform — a link that stays gets **Open Link Here**, one that routing sends outward gets **Open Link in System Browser**, a `target="_blank"` link gets **Open Link in New Window** — so you can see where the click goes before you choose. When a click does none of the menu's actions, like downloading a file or following a link inside an embedded frame, no item is emphasized.
 - **Minimize Popups to a Toolbar Strip**: `⌘M` — or the −/+ toggle in a popup's toolbar, which offers + while minimized — shrinks the window to a bare title strip pinned under its original top edge. Every minimized strip shares one width, so widening one widens them all, a strip's height never changes, and strips still drag sideways. A click anywhere on a strip expands it back to the exact rectangle it came from — even the first click, before the strip has ever held focus — and hovering it shows a pointing hand with a "Click to expand" tooltip. Minimized popups stay fully lit through the focus-loss dim and come back from relaunch as strips; a long-press on the toggle offers **Collapse All Children** / **Expand All Children**, covering the window together with every popup nested under it.
 
 ### Changed

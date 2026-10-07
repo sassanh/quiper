@@ -48,6 +48,18 @@ final class WebViewContextMenuTests: XCTestCase {
         XCTAssertTrue(script.contains("closest"))
         XCTAssertTrue(script.contains("e.target.closest"))
         XCTAssertTrue(script.contains("postMessage"))
+        // The anchor facts a plain click's destination depends on travel
+        // with the href: the target attribute decides new-window requests,
+        // the download attribute turns the click into a download.
+        XCTAssertTrue(script.contains("getAttribute(\"target\")"))
+        XCTAssertTrue(script.contains("hasAttribute(\"download\")"))
+        XCTAssertTrue(script.contains("target: target"))
+        XCTAssertTrue(script.contains("download: download"))
+        // target=_parent lands on the main frame only when the posting
+        // frame's parent is the main frame; the page reports it by
+        // reference comparison, which stays allowed across origins.
+        XCTAssertTrue(script.contains("window.parent === window.top"))
+        XCTAssertTrue(script.contains("parentIsMainFrame: parentIsMainFrame"))
     }
 
     func testPageMenuGainsSuggestItem() throws {
@@ -201,12 +213,21 @@ final class WebViewContextMenuTests: XCTestCase {
 
     // MARK: - Link menu
 
-    func testLinkHrefScriptResolvesAnchor() {
-        let script = WebScripts.makeLinkHrefScript(x: 10, y: 20)
+    func testLinkContextScriptResolvesAnchor() {
+        let script = WebScripts.makeLinkContextScript(x: 10, y: 20)
         XCTAssertTrue(script.contains("elementFromPoint"))
         XCTAssertTrue(script.contains("closest"))
         XCTAssertTrue(script.contains("a[href]"))
         XCTAssertTrue(script.contains("__quiperLastContextMenu"))
+        // The fallback reports the same dictionary shape the recorder posts,
+        // so native parses one shape for both sources.
+        XCTAssertTrue(script.contains("getAttribute(\"target\")"))
+        XCTAssertTrue(script.contains("hasAttribute(\"download\")"))
+        XCTAssertTrue(script.contains("href:"))
+        XCTAssertTrue(script.contains("target:"))
+        XCTAssertTrue(script.contains("download:"))
+        // No link at the point answers empty values, never a bare string.
+        XCTAssertTrue(script.contains("{ href: \"\", target: \"\", download: false }"))
     }
 
     func testContextLinkRecordingAnswersOnlyItsOwnMenu() {
@@ -218,12 +239,20 @@ final class WebViewContextMenuTests: XCTestCase {
         // trailing the menu) both answer this menu.
         let deliveredBefore = ContextLinkRecording(
             href: "https://example.com/before",
+            target: "",
+            isDownload: false,
+            isMainFrame: true,
+            parentFrameIsMainFrame: true,
             webViewIdentifier: ObjectIdentifier(webView),
             receivedAt: menuOpenedAt.addingTimeInterval(-0.5)
         )
         XCTAssertTrue(deliveredBefore.answers(menuOpenedAt: menuOpenedAt, on: webView))
         let deliveredAfter = ContextLinkRecording(
             href: "https://example.com/after",
+            target: "",
+            isDownload: false,
+            isMainFrame: true,
+            parentFrameIsMainFrame: true,
             webViewIdentifier: ObjectIdentifier(webView),
             receivedAt: menuOpenedAt.addingTimeInterval(1)
         )
@@ -234,6 +263,10 @@ final class WebViewContextMenuTests: XCTestCase {
         // falling back to point resolution.
         let earlierMenu = ContextLinkRecording(
             href: "https://example.com/earlier",
+            target: "",
+            isDownload: false,
+            isMainFrame: true,
+            parentFrameIsMainFrame: true,
             webViewIdentifier: ObjectIdentifier(webView),
             receivedAt: menuOpenedAt.addingTimeInterval(-ContextLinkRecording.menuDeliveryAllowance - 1)
         )
@@ -252,6 +285,10 @@ final class WebViewContextMenuTests: XCTestCase {
         // the path that makes link actions work inside iframes.
         let recording = ContextLinkRecording(
             href: "https://example.com/link",
+            target: "",
+            isDownload: false,
+            isMainFrame: true,
+            parentFrameIsMainFrame: true,
             webViewIdentifier: ObjectIdentifier(webView),
             receivedAt: menuOpenedAt
         )
@@ -270,6 +307,10 @@ final class WebViewContextMenuTests: XCTestCase {
         // earlier menu and must not resolve.
         let stale = ContextLinkRecording(
             href: "https://example.com/stale",
+            target: "",
+            isDownload: false,
+            isMainFrame: true,
+            parentFrameIsMainFrame: true,
             webViewIdentifier: ObjectIdentifier(webView),
             receivedAt: menuOpenedAt.addingTimeInterval(-ContextLinkRecording.menuDeliveryAllowance - 1)
         )
@@ -279,11 +320,127 @@ final class WebViewContextMenuTests: XCTestCase {
         for href in ["", "mailto:someone@example.com", "javascript:alert(1)"] {
             let invalid = ContextLinkRecording(
                 href: href,
+                target: "",
+                isDownload: false,
+                isMainFrame: true,
+                parentFrameIsMainFrame: true,
                 webViewIdentifier: ObjectIdentifier(webView),
                 receivedAt: menuOpenedAt
             )
             XCTAssertNil(WebViewManager.recordedContextLinkURL(recording: invalid, menuOpenedAt: menuOpenedAt, for: webView))
         }
+    }
+
+    func testRecordedContextLinkCarriesAnchorAndFrameFacts() {
+        let webView = WKWebView()
+        let menuOpenedAt = Date()
+        let recording = ContextLinkRecording(
+            href: "https://example.com/link",
+            target: "_blank",
+            isDownload: true,
+            isMainFrame: false,
+            parentFrameIsMainFrame: true,
+            webViewIdentifier: ObjectIdentifier(webView),
+            receivedAt: menuOpenedAt
+        )
+        let link = WebViewManager.recordedContextLink(recording: recording, menuOpenedAt: menuOpenedAt, for: webView)
+        XCTAssertEqual(link?.url, URL(string: "https://example.com/link"))
+        XCTAssertEqual(link?.target, "_blank")
+        XCTAssertEqual(link?.isDownload, true)
+        XCTAssertEqual(link?.isMainFrame, false)
+        XCTAssertEqual(link?.parentFrameIsMainFrame, true)
+    }
+
+    func testContextLinkFromPointEvaluationReadsTheFallbackDictionary() {
+        let link = WebViewManager.contextLink(fromPointEvaluation: [
+            "href": "https://example.com/page",
+            "target": "_blank",
+            "download": true
+        ])
+        XCTAssertEqual(link?.url, URL(string: "https://example.com/page"))
+        XCTAssertEqual(link?.target, "_blank")
+        XCTAssertEqual(link?.isDownload, true)
+        // The fallback runs in the main frame, so whatever it finds sits in
+        // the main frame with no parent above it.
+        XCTAssertEqual(link?.isMainFrame, true)
+        XCTAssertEqual(link?.parentFrameIsMainFrame, true)
+
+        // A non-http href, or a result that is not the dictionary the script
+        // returns, resolves to nothing rather than guessing.
+        XCTAssertNil(WebViewManager.contextLink(fromPointEvaluation: [
+            "href": "mailto:someone@example.com",
+            "target": "",
+            "download": false
+        ]))
+        XCTAssertNil(WebViewManager.contextLink(fromPointEvaluation: "not a dictionary"))
+        XCTAssertNil(WebViewManager.contextLink(fromPointEvaluation: nil))
+    }
+
+    func testPlainClickPredictionCompletesOnlyForItsOwnWebview() {
+        @MainActor
+        final class AnswerLog {
+            var answers: [ContextMenuLinkAction?] = []
+        }
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let manager = WebViewManager(containerView: container)
+        let webviewA = WKWebView()
+        let webviewB = WKWebView()
+        let answerLog = AnswerLog()
+        manager.webViewWillOpenContextMenu(webviewA)
+        manager.webView(webviewA, resolvePlainClickActionAt: .zero) { answerLog.answers.append($0) }
+
+        // A posting from another webview may take the shared slot, but it
+        // must never complete webview A's open menu: the gate compares the
+        // posting against the prediction's webview, not against the
+        // posting's own — which always matches itself.
+        manager.recordContextLinkPosting(
+            href: "https://example.com/b",
+            target: "",
+            isDownload: false,
+            isMainFrame: true,
+            parentFrameIsMainFrame: true,
+            webView: webviewB
+        )
+        XCTAssertTrue(answerLog.answers.isEmpty)
+
+        // The menu's own webview completing it — exactly once.
+        manager.recordContextLinkPosting(
+            href: "https://example.com/a",
+            target: "",
+            isDownload: false,
+            isMainFrame: true,
+            parentFrameIsMainFrame: true,
+            webView: webviewA
+        )
+        XCTAssertEqual(answerLog.answers.count, 1)
+    }
+
+    func testPlainClickPredictionNeverCommitsToAPostingThatPredatesTheMenu() {
+        @MainActor
+        final class AnswerLog {
+            var answers: [ContextMenuLinkAction?] = []
+        }
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let manager = WebViewManager(containerView: container)
+        let webview = WKWebView()
+        // A recording left in the slot by an earlier right-click must not
+        // answer the new menu the moment it opens: this request runs in the
+        // same turn that stamped the menu's open time, so everything in the
+        // slot predates the menu — and this menu's own posting, whose
+        // delivery trails the menu, may still be in flight. The slot answers
+        // only at the grace window, where a fresher posting supersedes it.
+        manager.recordContextLinkPosting(
+            href: "https://example.com/earlier",
+            target: "",
+            isDownload: false,
+            isMainFrame: true,
+            parentFrameIsMainFrame: true,
+            webView: webview
+        )
+        manager.webViewWillOpenContextMenu(webview)
+        let answerLog = AnswerLog()
+        manager.webView(webview, resolvePlainClickActionAt: .zero) { answerLog.answers.append($0) }
+        XCTAssertTrue(answerLog.answers.isEmpty)
     }
 
     func testWillOpenMenuNotifiesDelegate() throws {
@@ -562,5 +719,166 @@ final class WebViewContextMenuTests: XCTestCase {
         view.willOpenMenu(menu, with: event)
         let titles = menu.items.map { $0.isSeparatorItem ? "<separator>" : $0.title }
         XCTAssertEqual(titles, ["Reload Page", "Inspect Element", "Suggest Selector..."])
+    }
+
+    // MARK: - Plain-click indicator
+
+    private func predicted(
+        target: String = "",
+        isDownload: Bool = false,
+        isMainFrame: Bool = true,
+        parentFrameIsMainFrame: Bool = true,
+        decision: RoutingResolver.Decision
+    ) -> ContextMenuLinkAction? {
+        ContextMenuLinkAction.predictedByClick(
+            target: target,
+            isDownload: isDownload,
+            isMainFrame: isMainFrame,
+            parentFrameIsMainFrame: parentFrameIsMainFrame,
+            routingDecision: decision
+        )
+    }
+
+    func testPlainClickPredictionMirrorsRouting() {
+        // A plain main-frame click is exactly what routing decides, mapped
+        // onto the menu item that performs it.
+        XCTAssertEqual(predicted(decision: .openHere), .openHere)
+        XCTAssertEqual(predicted(decision: .openNewWindow), .openNewWindow)
+        XCTAssertEqual(predicted(decision: .openExternal), .openSystemBrowser)
+        // The prompt and a cancelled navigation are no single menu item, so
+        // nothing gets marked.
+        XCTAssertNil(predicted(decision: .showPrompt))
+        XCTAssertNil(predicted(decision: .cancel))
+    }
+
+    func testPlainClickPredictionHandlesTargetAndFrame() {
+        // target=_blank always opens a Quiper popup — createWebViewWith
+        // bypasses routing — in any frame, whatever routing would say.
+        XCTAssertEqual(predicted(target: "_blank", decision: .openExternal), .openNewWindow)
+        XCTAssertEqual(predicted(target: " _BLANK ", isMainFrame: false, decision: .openHere), .openNewWindow)
+        // A download attribute turns the click into a download before
+        // routing ever runs, so no menu item matches it.
+        XCTAssertNil(predicted(target: "_blank", isDownload: true, decision: .openHere))
+        XCTAssertNil(predicted(isDownload: true, decision: .openExternal))
+        // A click that stays inside a subframe navigates that subframe,
+        // which none of the menu's actions do.
+        XCTAssertNil(predicted(isMainFrame: false, decision: .openExternal))
+        XCTAssertNil(predicted(target: "_self", isMainFrame: false, decision: .openExternal))
+        // target=_parent from a subframe: a main-frame parent routes, a
+        // subframe parent keeps the click inside a frame.
+        XCTAssertEqual(
+            predicted(target: "_parent", isMainFrame: false, parentFrameIsMainFrame: true, decision: .openExternal),
+            .openSystemBrowser
+        )
+        XCTAssertNil(predicted(target: "_parent", isMainFrame: false, parentFrameIsMainFrame: false, decision: .openExternal))
+        // target=_top always reaches the main frame, so routing applies
+        // even from deep inside a subframe.
+        XCTAssertEqual(
+            predicted(target: "_top", isMainFrame: false, parentFrameIsMainFrame: false, decision: .openHere),
+            .openHere
+        )
+        // A named target frame may exist (navigating without routing) or
+        // not (a new window), so it answers nothing rather than guessing.
+        XCTAssertNil(predicted(target: "sidebar", decision: .openExternal))
+    }
+
+    /// Whether the item's title renders in bold — the plain-click emphasis.
+    /// A plain title, or an attributed one without the bold trait, reads as
+    /// unemphasized.
+    private func isBold(_ item: NSMenuItem?) -> Bool {
+        guard let title = item?.attributedTitle, title.length > 0 else { return false }
+        let font = title.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+        return font?.fontDescriptor.symbolicTraits.contains(.bold) ?? false
+    }
+
+    func testLinkMenuBoldsThePlainClickAction() throws {
+        @MainActor
+        final class IndicatorSpy: NSObject, WebViewContextMenuDelegate {
+            var answer: ContextMenuLinkAction?
+            func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {}
+            func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool { false }
+            func webView(_ webView: WKWebView, resolvePlainClickActionAt point: NSPoint, completion: @escaping @MainActor @Sendable (ContextMenuLinkAction?) -> Void) {
+                completion(answer)
+            }
+        }
+        let view = ContextMenuWebView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: WKWebViewConfiguration()
+        )
+        let spy = IndicatorSpy()
+        view.contextMenuDelegate = spy
+        spy.answer = .openSystemBrowser
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Open Link in New Window", action: nil, keyEquivalent: "")
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
+        view.willOpenMenu(menu, with: event)
+
+        let item = { (identifier: NSUserInterfaceItemIdentifier) in
+            menu.items.first { $0.identifier == identifier }
+        }
+        XCTAssertTrue(isBold(item(ContextMenuWebView.openLinkSystemBrowserIdentifier)))
+        XCTAssertFalse(isBold(item(ContextMenuWebView.openLinkHereIdentifier)))
+        XCTAssertFalse(isBold(item(ContextMenuWebView.openLinkNewWindowIdentifier)))
+        XCTAssertFalse(isBold(item(ContextMenuWebView.openLinkPrivateIdentifier)))
+        // Emphasis never rewrites the labels.
+        XCTAssertEqual(item(ContextMenuWebView.openLinkSystemBrowserIdentifier)?.title, "Open Link in System Browser")
+    }
+
+    func testLinkMenuIgnoresAnAnswerFromAnEarlierMenu() throws {
+        @MainActor
+        final class DelayedIndicatorSpy: NSObject, WebViewContextMenuDelegate {
+            var completions: [@MainActor @Sendable (ContextMenuLinkAction?) -> Void] = []
+            func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint) {}
+            func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool { false }
+            func webView(_ webView: WKWebView, resolvePlainClickActionAt point: NSPoint, completion: @escaping @MainActor @Sendable (ContextMenuLinkAction?) -> Void) {
+                completions.append(completion)
+            }
+        }
+        let view = ContextMenuWebView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: WKWebViewConfiguration()
+        )
+        let spy = DelayedIndicatorSpy()
+        view.contextMenuDelegate = spy
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
+        let firstMenu = NSMenu()
+        firstMenu.addItem(withTitle: "Open Link in New Window", action: nil, keyEquivalent: "")
+        view.willOpenMenu(firstMenu, with: event)
+        let secondMenu = NSMenu()
+        secondMenu.addItem(withTitle: "Open Link in New Window", action: nil, keyEquivalent: "")
+        view.willOpenMenu(secondMenu, with: event)
+        XCTAssertEqual(spy.completions.count, 2)
+
+        // The first menu's answer lands after a second menu opened; it must
+        // emphasize neither the replaced menu nor the current one.
+        spy.completions[0](.openHere)
+        XCTAssertTrue(firstMenu.items.allSatisfy { !isBold($0) })
+        XCTAssertTrue(secondMenu.items.allSatisfy { !isBold($0) })
+
+        // The current menu's own answer emphasizes exactly its matching
+        // item, and only there.
+        spy.completions[1](.openHere)
+        XCTAssertTrue(isBold(secondMenu.items.first { $0.identifier == ContextMenuWebView.openLinkHereIdentifier }))
+        XCTAssertFalse(isBold(secondMenu.items.first { $0.identifier == ContextMenuWebView.openLinkSystemBrowserIdentifier }))
     }
 }
