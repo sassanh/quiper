@@ -71,7 +71,7 @@ Quiper ships with one-click templates for the most popular AI chat services — 
 
 ## Installation
 
-**Requirements**: macOS 14.0+ (Sonoma), Apple silicon or Intel.
+**Requirements**: macOS 14.6+ (Sonoma), Apple silicon or Intel.
 
 ### Download a release
 

@@ -34,7 +34,7 @@ Pick the section that matches your situation and start there. You can skip anyth
 
 ## 1. Install Quiper
 
-**Requirements:** macOS 14.0 (Sonoma) or newer. No other hardware requirements.
+**Requirements:** macOS 14.6 (Sonoma) or newer. No other hardware requirements.
 
 1.  Download the latest disk image from the [releases page](https://github.com/sassanh/quiper/releases/latest) (`Quiper.dmg`).
 2.  Double-click the downloaded `.dmg` to mount it.
@@ -109,7 +109,7 @@ Once signed in, the Grok chat interface loads inside the overlay and stays signe
 - **Native notifications:** Background generations surface as macOS notifications (requires the permission you granted in [Step 2](#2-launch-quiper)).
 - **Persistent sessions:** Use `⌘ 1`–`⌘ 0` to keep up to ten separate Grok threads alive. See [Daily Workflow & Shortcuts](../daily-workflow).
 - **Native look:** Enable the transparent-background CSS in **Settings (`⌘ ⇧ ,`) → Engines → Grok → Custom CSS** and a matching vibrancy material under **Settings → Appearance**.
-- **Extra privacy:** Lock Grok's local data behind Touch ID under **Settings → Engines → Grok → Encrypt Local Storage**. See [Touch ID & Security](../security).
+- **Extra privacy:** Lock Grok's local data behind Touch ID under **Settings → Engines → Grok → Secure Storage** (the **Encrypt Local Storage** toggle). See [Touch ID & Security](../security).
 
 ---
 
@@ -118,7 +118,7 @@ Once signed in, the Grok chat interface loads inside the overlay and stays signe
 | Problem | Likely fix |
 | :--- | :--- |
 | `⌥ Space` doesn't open the overlay | Grant Quiper Accessibility permission in **System Settings → Privacy & Security → Accessibility**, then re-bind the hotkey in **Settings (`⌘ ⇧ ,`) → Shortcuts**. |
-| X or Google sign-in bounces to Safari | The `x.com` or `accounts.google.com` **Internal** routing rule is missing or reordered. Add it back in **Settings → Engines → Grok → Routing** (defaults: `^https?://([^/]*\.)?x\.com(/\|$)` and `^https?://([^/]*\.)?accounts\.google\.com(/\|$)` → **Internal**), or see [Keeping Sign-In Inside the Overlay](sign-in-routing.md) for right-click and ask-first alternatives. |
+| X or Google sign-in bounces to Safari | The `x.com` or `accounts.google.com` **Internal** routing rule is missing or reordered. Add it back in **Settings → Engines → Grok → Domain Routing** (defaults: `^https?://([^/]*\.)?x\.com(/\|$)` and `^https?://([^/]*\.)?accounts\.google\.com(/\|$)` → **Internal**), or see [Keeping Sign-In Inside the Overlay](sign-in-routing.md) for right-click and ask-first alternatives. |
 | No Grok tab in the selector | Re-add the engine manually (see [Step 4](#4-open-grok-in-quiper)). |
 | Focus doesn't land in the prompt field | The focus selector is stale. Reset it in **Settings → Engines → Grok → Prompt Input** (enable **Use Latest Default**) and reload with `⌘ R`. |
 | No notifications for finished replies | Check **System Settings → Notifications → Quiper** is set to **Banners** or **Alerts**. |

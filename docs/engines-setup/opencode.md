@@ -33,7 +33,7 @@ Pick the section that matches your situation and start there. You can skip anyth
 
 ## 1. Install Quiper
 
-**Requirements:** macOS 14.0 (Sonoma) or newer. No other hardware requirements.
+**Requirements:** macOS 14.6 (Sonoma) or newer. No other hardware requirements.
 
 1.  Download the latest disk image from the [releases page](https://github.com/sassanh/quiper/releases/latest) (`Quiper.dmg`).
 2.  Double-click the downloaded `.dmg` to mount it.
@@ -64,23 +64,23 @@ The overlay is now your home base: press `⌥ Space` from any app to summon it.
 
 Quiper embeds OpenCode's local web interface, so the OpenCode server must be installed and running on your Mac. If your server is already running, skip ahead to [Step 4](#4-open-opencode-in-quiper).
 
-1.  Install OpenCode with the install script (see [opencode.ai/docs](https://opencode.ai/docs/#install)):
+1.  Install OpenCode with the install script — this gives you the current **v2** (see [opencode.ai/v2/docs](https://opencode.ai/v2/docs)):
     ```bash
-    curl -fsSL https://opencode.ai/install | bash
+    curl -fsSL https://opencode.ai/v2/install | bash
     ```
-    Alternatives: `npm install -g opencode-ai`, or on macOS `brew install anomalyco/tap/opencode`.
-2.  OpenCode needs a configured model provider before it can answer. Run `opencode2` (v2) or `opencode` (v1) once in a terminal and use `/connect` to sign in and add a provider (see [opencode.ai/docs](https://opencode.ai/docs/#configure)). If you already use OpenCode in the terminal, skip this.
-3.  In a terminal, change to the project directory you want OpenCode to work in and start the server on the port Quiper expects:
+    Alternatives: v2 — `npm install -g @opencode/cli` or `brew install anomalyco/tap/opencode-v2`; legacy **v1** — `curl -fsSL https://opencode.ai/install | bash`, `npm install -g opencode-ai`, or `brew install anomalyco/tap/opencode` (see [opencode.ai/docs](https://opencode.ai/docs/#install)). Both majors install the same `opencode` command — `opencode --version` tells you which one you have.
+2.  OpenCode needs a configured model provider before it can answer. Run `opencode` once in a terminal and use `/connect` to sign in and add a provider (see [opencode.ai/docs](https://opencode.ai/docs/#configure)). If you already use OpenCode in the terminal, skip this.
+3.  In a terminal, change to the project directory you want OpenCode to work in and start the server on the port Quiper expects — run the line for the major you installed:
     ```bash
     cd /path/to/project
-    opencode2 serve --port 4096  # OpenCode v2
-    opencode web --port 4096     # OpenCode v1
+    opencode serve --port 4096  # v2
+    opencode web --port 4096    # v1
     ```
-    Quiper's template points at the fixed `http://127.0.0.1:4096` — v2 uses that port by default, while v1 picks a random port unless you pass `--port 4096`.
+    Quiper's template points at the fixed `http://127.0.0.1:4096` — v2's `serve` already uses that port (the flag is optional), while v1's `web` picks a random port unless you pass `--port 4096`.
 4.  Leave that terminal running. Quiper loads the engine from this server, so quitting the terminal (or sleeping the Mac) disconnects the OpenCode tab until you start it again.
 
 > [!TIP]
-> To protect the server with a password, prefix either start command with `OPENCODE_SERVER_PASSWORD=secret` (see [opencode.ai/docs/web](https://opencode.ai/docs/web/#authentication)). The user name defaults to `opencode` (override it with `OPENCODE_SERVER_USERNAME`). When you open the tab, Quiper shows a native sign-in sheet: enter your credentials, tick **Remember this password** to reuse them automatically, and click **Sign In** — one sign-in unlocks every OpenCode tab.
+> To pick the server password yourself, prefix either start command with `OPENCODE_SERVER_PASSWORD=secret` (see [opencode.ai/docs/web](https://opencode.ai/docs/web/#authentication)) — without it, v2's `serve` prints a generated `server password` line at startup and v1's `web` runs without one. The user name defaults to `opencode` (override it with `OPENCODE_SERVER_USERNAME`). When you open the tab, Quiper shows a native sign-in sheet: enter your credentials, tick **Remember this password** to reuse them automatically, and click **Sign In** — one sign-in unlocks every OpenCode tab.
 
 ---
 
@@ -110,7 +110,7 @@ OpenCode ships as a built-in engine template, so on a fresh install it's already
 - **Native notifications:** Background generations surface as macOS notifications (requires the permission you granted in [Step 2](#2-launch-quiper)).
 - **Persistent sessions:** Use `⌘ 1`–`⌘ 0` to keep up to ten separate OpenCode threads alive. See [Daily Workflow & Shortcuts](../daily-workflow).
 - **Native look:** Enable the transparent-background CSS in **Settings (`⌘ ⇧ ,`) → Engines → OpenCode → Custom CSS** and a matching vibrancy material under **Settings → Appearance**.
-- **Extra privacy:** Lock OpenCode's local data behind Touch ID under **Settings → Engines → OpenCode → Encrypt Local Storage**. See [Touch ID & Security](../security).
+- **Extra privacy:** Lock OpenCode's local data behind Touch ID under **Settings → Engines → OpenCode → Secure Storage** (the **Encrypt Local Storage** toggle). See [Touch ID & Security](../security).
 
 ---
 
@@ -119,10 +119,10 @@ OpenCode ships as a built-in engine template, so on a fresh install it's already
 | Problem | Likely fix |
 | :--- | :--- |
 | `⌥ Space` doesn't open the overlay | Grant Quiper Accessibility permission in **System Settings → Privacy & Security → Accessibility**, then re-bind the hotkey in **Settings (`⌘ ⇧ ,`) → Shortcuts**. |
-| OpenCode tab shows a connection error or blank page | The server isn't running. In a terminal, `cd` to your project and run `opencode2 serve --port 4096` (v2) or `opencode web --port 4096` (v1), then reload the tab with `⌘ R`. |
+| OpenCode tab shows a connection error or blank page | The server isn't running. In a terminal, `cd` to your project and run `opencode serve --port 4096` (v2) or `opencode web --port 4096` (v1), then reload the tab with `⌘ R`. |
 | The server says the port is in use | Another server already occupies 4096 — either stop it, or point the engine at its port in **Settings → Engines → OpenCode** (URL). |
 | Sign-in sheet keeps reappearing | Wrong user name or password. The user name defaults to `opencode`; check `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` in the terminal you launched the server from. |
-| Agent doesn't reply / asks for provider setup | No model provider is configured. Run `opencode2` (v2) or `opencode` (v1) in a terminal and use `/connect` to add one (see [opencode.ai/docs](https://opencode.ai/docs/#configure)), then reload the tab. |
+| Agent doesn't reply / asks for provider setup | No model provider is configured. Run `opencode` in a terminal and use `/connect` to add one (see [opencode.ai/docs](https://opencode.ai/docs/#configure)), then reload the tab. |
 | No OpenCode tab in the selector | Re-add the engine manually (see [Step 4](#4-open-opencode-in-quiper)). |
 | Focus doesn't land in the prompt field | The focus selector is stale. Reset it in **Settings → Engines → OpenCode → Prompt Input** (enable **Use Latest Default**) and reload with `⌘ R`. |
 | No notifications for finished replies | Check **System Settings → Notifications → Quiper** is set to **Banners** or **Alerts**. |

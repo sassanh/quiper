@@ -6,7 +6,7 @@ Sign-in is the most common reason a login step leaves Quiper: when a link points
 
 | Situation | What to use |
 | :--- | :--- |
-| An engine Quiper ships | Nothing — templates already keep Google and Apple sign-in inside the overlay |
+| An engine Quiper ships | Nothing — every template keeps Google sign-in inside the overlay, and the engines in these guides also ship rules for the providers they use (Apple, GitHub, or X) |
 | A sign-in link you can see and click | Right-click it → **Open Link Here** |
 | You want Quiper to ask first | Set the rule's action to **Prompt**, or hold **⌥** while clicking |
 | You want it to always stay | An **Internal** routing rule (or tick **Remember my choice for this domain**) |
@@ -15,7 +15,7 @@ Sign-in is the most common reason a login step leaves Quiper: when a link points
 
 - Links to the engine's own site always stay in the tab.
 - For every other link, Quiper checks the engine's routing rules top to bottom; a click that matches no rule opens in the default system browser.
-- Sign-in hops to the provider's auth domain (`accounts.google.com`, `appleid.apple.com`, `github.com`, `x.com`, …). Quiper's built-in templates ship **Internal** rules for those, so the engines in these guides sign in without help. This page is for when a domain's rule is missing or reordered, or a custom engine never had one. Full rule semantics: [Domain Routing Rules](../engines#domain-routing-rules).
+- Sign-in hops to the provider's auth domain (`accounts.google.com`, `appleid.apple.com`, `github.com`, `x.com`, …). Quiper's built-in templates ship **Internal** rules for whichever providers their sign-in uses, so the engines in these guides sign in without help. This page is for when a domain's rule is missing or reordered, or a custom engine never had one. Full rule semantics: [Domain Routing Rules](../engines#domain-routing-rules).
 
 ## Right-click the link (no rules needed)
 
@@ -32,7 +32,7 @@ These menu choices bypass routing rules entirely — no rule editing needed. The
 
 ## Ask first, remember the answer
 
-1.  Open **Settings (`⌘ ⇧ ,`) → Engines → [engine] → Routing** and set the login domain's **Action** to **Prompt**. Add the rule first if it isn't there — for Google, pattern `^https?://([^/]*\.)?accounts\.google\.com(/|$)`.
+1.  Open **Settings (`⌘ ⇧ ,`) → Engines → [engine] → Domain Routing** and set the login domain's **Action** to **Prompt**. Add the rule first if it isn't there — for Google, pattern `^https?://([^/]*\.)?accounts\.google\.com(/|$)`.
 2.  Trigger the login again. The **Security & Routing** dialog asks how to open the link: **Open Here**, **Open in New Window**, **Open Externally**, or **Cancel**.
 3.  Choose **Open Here** and tick **Remember my choice for this domain** — Quiper saves that host as an **Internal** rule at the top of the list, so the next sign-in goes straight through (see [Remembering Prompt Decisions](../engines#remembering-prompt-decisions)).
 
@@ -46,6 +46,6 @@ Two variants:
 
 ## Make it permanent: an Internal rule
 
-For a domain you sign in with regularly, one **Internal** rule is the fix that needs no attention later: **Settings (`⌘ ⇧ ,`) → Engines → [engine] → Routing → Add Routing Rule**, pattern `^https?://([^/]*\.)?accounts\.google\.com(/|$)` → **Internal**. Ready-to-paste patterns for the common providers: [Authentication Domains (OAuth Sign-In)](../engines#authentication-domains-oauth-sign-in).
+For a domain you sign in with regularly, one **Internal** rule is the fix that needs no attention later: **Settings (`⌘ ⇧ ,`) → Engines → [engine] → Domain Routing → Add Routing Rule**, pattern `^https?://([^/]*\.)?accounts\.google\.com(/|$)` → **Internal**. Ready-to-paste patterns for the common providers: [Authentication Domains (OAuth Sign-In)](../engines#authentication-domains-oauth-sign-in).
 
 For anything else, see [Troubleshooting & Diagnostics](../troubleshooting).

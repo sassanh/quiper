@@ -8,7 +8,7 @@ Follow this guide to download, install, configure, and launch Quiper on your Mac
 
 Quiper is compatible with:
 
-* **Operating System:** macOS 14.0 (Sonoma) or newer.
+* **Operating System:** macOS 14.6 (Sonoma) or newer.
 * **Hardware:** No special requirements.
 * **Dependencies:** None.
 

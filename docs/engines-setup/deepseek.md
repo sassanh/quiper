@@ -34,7 +34,7 @@ Pick the section that matches your situation and start there. You can skip anyth
 
 ## 1. Install Quiper
 
-**Requirements:** macOS 14.0 (Sonoma) or newer. No other hardware requirements.
+**Requirements:** macOS 14.6 (Sonoma) or newer. No other hardware requirements.
 
 1.  Download the latest disk image from the [releases page](https://github.com/sassanh/quiper/releases/latest) (`Quiper.dmg`).
 2.  Double-click the downloaded `.dmg` to mount it.
@@ -109,7 +109,7 @@ Once signed in, DeepSeek stays signed in across Quiper sessions.
 - **Native notifications:** Background generations surface as macOS notifications (requires the permission you granted in [Step 2](#2-launch-quiper)).
 - **Persistent sessions:** Use `⌘ 1`–`⌘ 0` to keep up to ten separate DeepSeek threads alive. See [Daily Workflow & Shortcuts](../daily-workflow).
 - **Native look:** Enable the transparent-background CSS in **Settings (`⌘ ⇧ ,`) → Engines → DeepSeek → Custom CSS** and a matching vibrancy material under **Settings → Appearance**.
-- **Extra privacy:** Lock DeepSeek's local data behind Touch ID under **Settings → Engines → DeepSeek → Encrypt Local Storage**. See [Touch ID & Security](../security).
+- **Extra privacy:** Lock DeepSeek's local data behind Touch ID under **Settings → Engines → DeepSeek → Secure Storage** (the **Encrypt Local Storage** toggle). See [Touch ID & Security](../security).
 
 ---
 
@@ -118,7 +118,7 @@ Once signed in, DeepSeek stays signed in across Quiper sessions.
 | Problem | Likely fix |
 | :--- | :--- |
 | `⌥ Space` doesn't open the overlay | Grant Quiper Accessibility permission in **System Settings → Privacy & Security → Accessibility**, then re-bind the hotkey in **Settings (`⌘ ⇧ ,`) → Shortcuts**. |
-| Google or Apple sign-in bounces to Safari | The `accounts.google.com` or `appleid.apple.com` **Internal** routing rule is missing or reordered. Add it back in **Settings → Engines → DeepSeek → Routing** (defaults: `^https?://([^/]*\.)?accounts\.google\.com(/\|$)` and `^https?://([^/]*\.)?appleid\.apple\.com(/\|$)` → **Internal**), or see [Keeping Sign-In Inside the Overlay](sign-in-routing.md) for right-click and ask-first alternatives. |
+| Google or Apple sign-in bounces to Safari | The `accounts.google.com` or `appleid.apple.com` **Internal** routing rule is missing or reordered. Add it back in **Settings → Engines → DeepSeek → Domain Routing** (defaults: `^https?://([^/]*\.)?accounts\.google\.com(/\|$)` and `^https?://([^/]*\.)?appleid\.apple\.com(/\|$)` → **Internal**), or see [Keeping Sign-In Inside the Overlay](sign-in-routing.md) for right-click and ask-first alternatives. |
 | No DeepSeek tab in the selector | Re-add the engine manually (see [Step 4](#4-open-deepseek-in-quiper)). |
 | Focus doesn't land in the prompt field | The focus selector is stale. Reset it in **Settings → Engines → DeepSeek → Prompt Input** (enable **Use Latest Default**) and reload with `⌘ R`. |
 | No verification code email/SMS | Wait 60 seconds, request again, check spam; some disposable-email domains are blocked — try a primary mailbox. Phone delivery can stall on some carriers — switching to email or Google usually works. |

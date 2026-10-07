@@ -199,7 +199,7 @@ You can easily point Quiper to local web applications running LLM interfaces:
 
 ## Domain Routing Rules
 
-Every engine has its own **Domain Routing** editor (**Settings ➔ Engines ➔ [Select Engine] ➔ Routing**) that decides what happens when a link inside that engine points somewhere other than the engine's own site — for example, an OAuth login redirect, a citation link, or an external documentation page.
+Every engine has its own **Domain Routing** editor (**Settings ➔ Engines ➔ [Select Engine] ➔ Domain Routing**) that decides what happens when a link inside that engine points somewhere other than the engine's own site — for example, an OAuth login redirect, a citation link, or an external documentation page.
 
 ### How a Link Is Routed
 
