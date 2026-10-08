@@ -508,8 +508,8 @@ final class WebViewManager: NSObject {
             for (idx, webView) in sessionMap {
                 // Temporary tabs never persist: no URL reaches disk.
                 guard !isTemporaryTab(serviceID: service.id, sessionIndex: idx) else { continue }
-                if let urlString = webView.url?.absoluteString, !urlString.isEmpty, urlString != "about:blank" {
-                    sessionURLs[idx] = urlString
+                if let committedURL = webView.url, Self.isLoadableAddress(committedURL) {
+                    sessionURLs[idx] = committedURL.absoluteString
                 } else if let previouslySavedURL = currentSavedState?[service.id]?[idx], !previouslySavedURL.isEmpty {
                     sessionURLs[idx] = previouslySavedURL
                 } else {
@@ -1132,17 +1132,15 @@ final class WebViewManager: NSObject {
                 : (targetURL ?? service.url)
         }
 
-        // Load initial URL with encryption check
+        // Load initial address through the load gate, so the address this
+        // session was meant to show is recorded before the request goes
+        // out and a failure stays retryable and refresh-recoverable.
         if service.isEncrypted {
             if EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
                 if loadImmediately {
                     let activeURLString = requestedURLString
                     if let url = URL(string: activeURLString) {
-                        if url.isFileURL {
-                            webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-                        } else {
-                            webview.load(URLRequest(url: url))
-                        }
+                        load(url, in: webview)
                     } else {
                         showLoadError(WebLoadError(kind: .invalidURL), for: webview)
                     }
@@ -1263,11 +1261,7 @@ final class WebViewManager: NSObject {
                             
                             if let url = URL(string: targetURLString) {
                                 NSLog("[LockOverlay] Loading URL: %@", targetURLString)
-                                if url.isFileURL {
-                                    realWebView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-                                } else {
-                                    realWebView.load(URLRequest(url: url))
-                                }
+                                self.load(url, in: realWebView)
                             } else {
                                 self.showLoadError(WebLoadError(kind: .invalidURL), for: realWebView)
                             }
@@ -1316,11 +1310,7 @@ final class WebViewManager: NSObject {
             if loadImmediately {
                 let activeURLString = requestedURLString
                 if let url = URL(string: activeURLString) {
-                    if url.isFileURL {
-                        webview.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-                    } else {
-                        webview.load(URLRequest(url: url))
-                    }
+                    load(url, in: webview)
                 } else {
                     showLoadError(WebLoadError(kind: .invalidURL), for: webview)
                 }
@@ -1452,16 +1442,34 @@ final class WebViewManager: NSObject {
         let errorHadFocus = wrapper?.isShowingError == true && wrapper?.isHidden == false
         failedRequestURLsByWebView.removeValue(forKey: token)
         wrapper?.showWebContent()
-        activeRequestURLsByWebView[token] = url
+        recordAddress(url, for: webView)
         if errorHadFocus {
             webView.window?.makeFirstResponder(webView)
         }
     }
 
+    /// The single writer of the address a page is recorded as showing.
+    /// Both stages write it — the request (`beginMainFrameNavigation`,
+    /// which every main-frame navigation passes through, including a plain
+    /// `webView.load(...)`) and the commit (`webView(_:didFinish)`) — and
+    /// both go through here, so a document with no address of its own (the
+    /// initial `about:blank`) can never become the address a refresh or a
+    /// retry targets, whichever stage reports it. The commit stage still
+    /// matters on its own: a real request can commit blank through a
+    /// redirect, and only the commit knows that.
+    private func recordAddress(_ url: URL?, for webView: WKWebView) {
+        guard let url, Self.isLoadableAddress(url) else { return }
+        activeRequestURLsByWebView[ObjectIdentifier(webView)] = url
+    }
+
     private func showLoadError(_ error: WebLoadError, for webView: WKWebView, fallbackURL: URL? = nil) {
         let token = ObjectIdentifier(webView)
-        if let url = error.url ?? fallbackURL ?? activeRequestURLsByWebView[token] {
-            failedRequestURLsByWebView[token] = url
+        // A retry must address a real page: the blank document never
+        // qualifies — retrying it "succeeds" without fetching anything —
+        // so the address the session was meant to show is the last resort.
+        let candidates = [error.url, fallbackURL, intendedAddress(for: webView)]
+        if let retryURL = candidates.compactMap({ $0 }).first(where: { Self.isLoadableAddress($0) }) {
+            failedRequestURLsByWebView[token] = retryURL
         }
         let wrapper = hostingWrapper(for: webView)
         wrapper?.showError(error, retryAvailable: failedRequestURLsByWebView[token] != nil)
@@ -1525,16 +1533,108 @@ final class WebViewManager: NSObject {
         webView.stopLoading()
     }
 
-    /// Stops a loading page or reloads a settled one. The single
-    /// implementation behind every refresh control — the main window's
-    /// toolbar and each popup toolbar delegate here, so reload semantics
-    /// cannot drift between the two.
+    /// Stops a loading page or refreshes a settled one — the behavior both
+    /// toolbars share. The refresh itself is `reload(_:)`, the single
+    /// implementation behind every refresh control (both toolbars, the
+    /// Reload menu items, ⌘R), so reload semantics cannot drift.
     func refreshOrStop(_ webView: WKWebView) {
         if webView.isLoading {
             stopLoading(webView)
         } else {
-            webView.reload()
+            reload(webView)
         }
+    }
+
+    /// The one refresh behind the Reload menu items, ⌘R, and the toolbars'
+    /// refresh button.
+    ///
+    /// A page whose document has no address of its own — the initial
+    /// `about:blank` left behind when a session's first load never landed,
+    /// typically after a failed initialization on a bad network — has
+    /// nothing to re-request: WebKit reports success on the blank document,
+    /// clears the load-error state, and leaves the session on an empty page
+    /// no number of ⌘R presses will leave. Such a page loads the address
+    /// the session was meant to show instead, so a plain refresh always
+    /// recovers it.
+    func reload(_ webView: WKWebView) {
+        refresh(webView, bypassingCache: false)
+    }
+
+    /// The cache-bypassing variant behind ⌥⌘R. A page with no address of
+    /// its own refreshes exactly like the plain one: a document that never
+    /// loaded has no cache to bypass.
+    func reloadFromOrigin(_ webView: WKWebView) {
+        refresh(webView, bypassingCache: true)
+    }
+
+    /// What a refresh does for `webView`, decided without touching the
+    /// webview. Internal rather than private so the addressless-recovery
+    /// rules can be asserted without a live network.
+    enum RefreshPlan: Equatable {
+        /// The document has no address of its own — the initial
+        /// `about:blank` — so refreshing means loading the address the
+        /// session was meant to show.
+        case loadSessionAddress(URL)
+        /// The document has an address; refreshing re-requests it.
+        case reloadDocument(URL)
+        /// Nothing real to act on: an addressless document and no session
+        /// address anywhere. A refresh must not pretend.
+        case nothing
+    }
+
+    func refreshPlan(for webView: WKWebView) -> RefreshPlan {
+        if let committedURL = webView.url, Self.isLoadableAddress(committedURL) {
+            return .reloadDocument(committedURL)
+        }
+        if let sessionAddress = intendedAddress(for: webView) {
+            return .loadSessionAddress(sessionAddress)
+        }
+        return .nothing
+    }
+
+    private func refresh(_ webView: WKWebView, bypassingCache: Bool) {
+        switch refreshPlan(for: webView) {
+        case .loadSessionAddress(let sessionAddress):
+            // What loads now supersedes any load still queued for this
+            // tab; keeping the queue would restart the page from scratch
+            // the next time the tab is shown.
+            pendingLazyLoadURLs.removeValue(forKey: ObjectIdentifier(webView))
+            load(sessionAddress, in: webView)
+        case .reloadDocument(let committedURL):
+            beginMainFrameNavigation(webView, to: committedURL)
+            if bypassingCache {
+                webView.reloadFromOrigin()
+            } else {
+                webView.reload()
+            }
+        case .nothing:
+            // Re-requesting the blank document would "succeed" without
+            // fetching anything and clear any load error showing over it,
+            // leaving the session stranded behind a green refresh.
+            break
+        }
+    }
+
+    /// The address this page is meant to show — the load queued for a tab
+    /// that never started one, else the last address it requested, else the
+    /// engine's own address — skipping candidates the blank document would
+    /// satisfy. Nil when nothing better than the blank document is known.
+    private func intendedAddress(for webView: WKWebView) -> URL? {
+        let token = ObjectIdentifier(webView)
+        let queued = pendingLazyLoadURLs[token].flatMap { URL(string: $0) }
+        let requested = activeRequestURLsByWebView[token]
+        return [queued, requested, serviceURL(for: webView)]
+            .compactMap { $0 }
+            .first { Self.isLoadableAddress($0) }
+    }
+
+    /// Whether `url` names an address a refresh can fetch. The initial
+    /// `about:blank` — and no address at all — do not: WebKit reports a
+    /// reload of them as success without fetching anything, which is how a
+    /// session stranded on a blank page stayed stranded.
+    private static func isLoadableAddress(_ url: URL?) -> Bool {
+        guard let urlString = url?.absoluteString else { return false }
+        return !urlString.isEmpty && urlString != "about:blank"
     }
 
     func hasVisibleLoadError(for webView: WKWebView) -> Bool {
@@ -1709,11 +1809,7 @@ final class WebViewManager: NSObject {
         if let targetURLString = pendingLazyLoadURLs.removeValue(forKey: token) {
             if let url = URL(string: targetURLString) {
                 NSLog("[WebViewManager] Lazy loading background session webview: %@", targetURLString)
-                if url.isFileURL {
-                    webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-                } else {
-                    webView.load(URLRequest(url: url))
-                }
+                load(url, in: webView)
             } else {
                 showLoadError(WebLoadError(kind: .invalidURL), for: webView)
             }
@@ -1923,7 +2019,7 @@ final class WebViewManager: NSObject {
     @MainActor
     private func openInPopup(url: URL, service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow, opener: WKWebView) {
         guard let popupWebView = makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow, opener: opener) else { return }
-        popupWebView.load(URLRequest(url: url))
+        load(url, in: popupWebView)
     }
 
     /// Single gate for every popup webview: resolves the owning tab, hands
@@ -2545,7 +2641,7 @@ final class WebViewManager: NSObject {
             restoredURL: key.url,
             startHidden: !shouldShow
         ) else { return nil }
-        popupWebView.load(URLRequest(url: url))
+        load(url, in: popupWebView)
         let restoredWindow = popupWebView.window
         // A saved-minimized popup comes back as its strip: the frame it
         // restored to is the expanded rectangle, so collapse it before
@@ -3847,10 +3943,15 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         var retryState = processTerminationRetryStates[token] ?? WebProcessTerminationRetryState()
         if retryState.shouldRetry() {
             processTerminationRetryStates[token] = retryState
-            if let url = webView.url ?? activeRequestURLsByWebView[token] {
-                beginMainFrameNavigation(webView, to: url)
-                webView.reload()
-            } else {
+            // The shared refresh recovers a page with no address of its
+            // own from its session's address. When nothing is known at
+            // all, the retry must surface the crash instead of ending in
+            // a silent no-op that would leave the tab dead, unexplained,
+            // with its retry spent.
+            switch refreshPlan(for: webView) {
+            case .loadSessionAddress, .reloadDocument:
+                reload(webView)
+            case .nothing:
                 showLoadError(WebLoadError(kind: .contentProcessTerminated), for: webView)
             }
         } else {
@@ -3870,7 +3971,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         let token = ObjectIdentifier(webView)
         processTerminationRetryStates[token]?.reset()
         clearLoadError(for: webView)
-        activeRequestURLsByWebView[token] = webView.url ?? activeRequestURLsByWebView[token]
+        recordAddress(webView.url, for: webView)
         // Loads re-run the creation-time stylesheet, so re-apply whatever is
         // current (covers lazy tabs and post-edit navigations).
         applyCurrentCustomCSS(to: webView)

@@ -675,11 +675,13 @@ extension MainWindowController {
     }
 
     @objc func reloadActiveWebView(_ sender: Any?) {
-        focusedPageWebView()?.reload()
+        guard let webView = focusedPageWebView() else { return }
+        webViewManager.reload(webView)
     }
 
     @objc func reloadActiveWebViewFromOrigin(_ sender: Any?) {
-        focusedPageWebView()?.reloadFromOrigin()
+        guard let webView = focusedPageWebView() else { return }
+        webViewManager.reloadFromOrigin(webView)
     }
 
     @objc func reinstantiateActiveWebView(_ sender: Any?) {
