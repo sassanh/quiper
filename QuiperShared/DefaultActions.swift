@@ -22,7 +22,7 @@ enum DefaultActions {
     private static let newSessionAction = CustomAction(
         id: DefaultEngineDefinitions.newSessionActionID,
         name: "New Session",
-        shortcut: HotkeyManager.Configuration(
+        shortcut: HotkeyConfiguration(
             keyCode: UInt32(kVK_ANSI_N),
             modifierFlags: NSEvent.ModifierFlags.command.rawValue
         )
@@ -30,7 +30,7 @@ enum DefaultActions {
     private static let newTemporarySessionAction = CustomAction(
         id: DefaultEngineDefinitions.newTemporarySessionActionID,
         name: "New Temporary Session",
-        shortcut: HotkeyManager.Configuration(
+        shortcut: HotkeyConfiguration(
             keyCode: UInt32(kVK_ANSI_N),
             modifierFlags: NSEvent.ModifierFlags([.command, .shift]).rawValue
         )
@@ -38,7 +38,7 @@ enum DefaultActions {
     private static let shareAction = CustomAction(
         id: DefaultEngineDefinitions.shareActionID,
         name: "Share",
-        shortcut: HotkeyManager.Configuration(
+        shortcut: HotkeyConfiguration(
             keyCode: UInt32(kVK_ANSI_S),
             modifierFlags: NSEvent.ModifierFlags([.command, .shift]).rawValue
         )
@@ -46,7 +46,7 @@ enum DefaultActions {
     private static let historyAction = CustomAction(
         id: DefaultEngineDefinitions.historyActionID,
         name: "History",
-        shortcut: HotkeyManager.Configuration(
+        shortcut: HotkeyConfiguration(
             keyCode: UInt32(kVK_ANSI_H),
             modifierFlags: NSEvent.ModifierFlags([.command, .shift]).rawValue
         )
@@ -54,7 +54,7 @@ enum DefaultActions {
     private static let settingsAction = CustomAction(
         id: DefaultEngineDefinitions.openSettingsActionID,
         name: "Settings",
-        shortcut: HotkeyManager.Configuration(
+        shortcut: HotkeyConfiguration(
             keyCode: UInt32(kVK_ANSI_Comma),
             modifierFlags: NSEvent.ModifierFlags.command.rawValue
         )

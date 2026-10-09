@@ -232,6 +232,28 @@ When a link triggers the **Security & Routing** prompt, you can check **"Remembe
 
 > **Migrating from older versions:** Settings from versions prior to the unified routing editor (which used separate "Friend Domains" and "Associated Domains" lists) are automatically converted into equivalent Routing Rules the first time Quiper loads them.
 
+### Open Links in Quiper (External Link Handling)
+
+Configured in the engine's **URL** editor (**Settings ➔ Engines ➔ [Select Engine] ➔ URL**), this section controls links that start *outside* Quiper: right-click any link in Safari, Mail, Finder, or another app and choose **Open Link With ➔ Quiper**. Quiper does not replace your default browser by itself — a plain open still goes to your default browser (or, if you make Quiper the default, see [Quiper as the Default Browser](#quiper-as-the-default-browser)); only links you hand to Quiper explicitly are affected.
+
+*   **Enabled / Disabled:** Turns the handler on for this engine. Enabling it seeds the domain list from the engine's own URL (query parameters dropped) if it is empty.
+*   **Domains:** Multiple entries, each a bare host (`chatgpt.com`) — a pasted URL works too, since the path, query, and port are stripped. A claim covers the domain and all of its subdomains (`share.chatgpt.com` matches `chatgpt.com`). When several engines claim the same domain, the first one in settings order wins; links claiming nothing open in your default browser as usual.
+*   **Where Links Open:**
+    *   **New Session** — the first of the engine's 10 session slots without an open page. If all 10 are open, Quiper asks which session the link should take over (its current page is replaced), defaulting to the least recently visited one.
+    *   **Last Visited Session** — the session you last used in this engine.
+    *   **Fixed Session** — one specific slot, picked from 1–9/0 (defaults to 0, the last slot).
+
+Pinned Tabs engines open incoming links only in slots that have a tab URL; a fixed slot whose URL was removed falls back to opening a new session. An encrypted engine claims links only while it is unlocked: its claimed domains live inside its encrypted storage, so while it is locked a link claiming them opens as an unclaimed link does — in your fallback browser — instead of waiting, and unlocking restores its claims.
+
+### Quiper as the Default Browser
+
+The **General** settings tab can make Quiper the system default web browser. Web links are then received by a small resident background helper installed with Quiper — it starts at login, has no window or Dock icon, and never appears in the app switcher:
+
+*   **Domains claimed by an engine** are handed to Quiper and open there per that engine's [Open Links in Quiper](#open-links-in-quiper-external-link-handling) settings. An encrypted engine is claimed only while unlocked — while its volume is locked, its domains are hidden even from the helper, and such a link opens in the fallback browser like any other unclaimed link.
+*   **Every other link** opens directly in your **fallback browser** — the browser that was default right before Quiper, chosen explicitly in the same settings row, or Safari when neither is available — without bringing Quiper forward, so an unclaimed link never disturbs your app switcher order.
+
+Choosing any other browser as the default (from Quiper's settings row or System Settings) returns links to that browser; Quiper then receives only links handed to it explicitly.
+
 ---
 
 ## Web Data Isolation & Management

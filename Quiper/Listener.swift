@@ -4,33 +4,9 @@ import Foundation
 
 @MainActor
 final class HotkeyManager {
-    struct Configuration: Codable, Equatable {
-        var keyCode: UInt32
-        var modifierFlags: UInt
-
-        var cocoaFlags: NSEvent.ModifierFlags {
-            NSEvent.ModifierFlags(rawValue: modifierFlags)
-        }
-
-        var isDisabled: Bool {
-            keyCode == 0 && modifierFlags == 0
-        }
-
-        init(keyCode: UInt32, modifierFlags: UInt) {
-            self.keyCode = keyCode
-            self.modifierFlags = modifierFlags
-        }
-
-        init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            keyCode = try container.decodeIfPresent(UInt32.self, forKey: .keyCode) ?? 0
-            modifierFlags = try container.decodeIfPresent(UInt.self, forKey: .modifierFlags) ?? 0
-        }
-
-        private enum CodingKeys: String, CodingKey {
-            case keyCode, modifierFlags
-        }
-    }
+    /// The shortcut payload lives with the settings it is stored in; the
+    /// manager keeps the name its call sites already use for it.
+    typealias Configuration = HotkeyConfiguration
 
     func updateConfiguration(_ configuration: Configuration) {
         applyNewConfiguration(configuration)

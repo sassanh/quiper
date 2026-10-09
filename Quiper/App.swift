@@ -1,7 +1,9 @@
 import AppKit
 import Carbon
+import CoreServices
 import Foundation
 import LocalAuthentication
+import ServiceManagement
 import SwiftUI
 import UserNotifications
 import WebKit
@@ -245,6 +247,95 @@ final class AppController: NSObject, NSWindowDelegate {
         guard pendingNotificationActivation else { return false }
         pendingNotificationActivation = false
         return true
+    }
+
+    /// Handles a URL another application handed Quiper: a link the resident
+    /// link helper routed in through a `quiper://` route, or a direct
+    /// handoff (`open -a Quiper <url>`). An enabled engine whose domains
+    /// claim the link opens it there — a locked secure engine claims
+    /// nothing, since its routing records live inside its encrypted
+    /// bundle. Anything else keeps the system default behavior.
+    func handleExternalURL(_ url: URL) {
+        guard let link = resolvedExternalLink(from: url) else { return }
+        guard let claimed = ExternalLinkRouting.claimedService(
+            for: link,
+            in: Settings.shared.services,
+            isEngineUnlocked: { EncryptedVolumeManager.shared.isUnlocked(for: $0) }
+        ) else {
+            forwardUnclaimedExternalURL(link)
+            return
+        }
+        // The reopen event macOS may deliver with this activation must show
+        // the overlay, not toggle it straight back off.
+        pendingNotificationActivation = true
+        showWindow(nil)
+        guard let mainWindowController = windowController as? MainWindowController else {
+            NSLog("[Quiper] External link could not open: main window controller unavailable")
+            return
+        }
+        mainWindowController.openExternalLink(link, for: claimed)
+    }
+
+    /// The web link a delivered URL carries: the payload of a `quiper://`
+    /// route from the link helper, or the URL itself when handed over
+    /// directly. Nil for anything that is not a web link.
+    private func resolvedExternalLink(from url: URL) -> URL? {
+        let link: URL
+        if url.scheme?.lowercased() == QuiperLinkRoute.scheme {
+            guard let routed = QuiperLinkRoute.link(in: url) else {
+                NSLog("[Quiper] Ignoring malformed link route: %@", url.absoluteString)
+                return nil
+            }
+            link = routed
+        } else {
+            link = url
+        }
+        guard link.scheme == "http" || link.scheme == "https" else {
+            NSLog("[Quiper] Ignoring external URL with unsupported scheme: %@", link.absoluteString)
+            return nil
+        }
+        return link
+    }
+
+    /// Keeps an unclaimed link behaving as it would without Quiper: it opens
+    /// in the system default browser — unless that browser is Quiper itself,
+    /// where forwarding would hand the link straight back, so it opens in
+    /// the user's chosen fallback browser instead.
+    private func forwardUnclaimedExternalURL(_ url: URL) {
+        if Self.isQuiperDefaultOpener(for: url) {
+            openInFallbackBrowser(url)
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Opens the link in the fallback browser: the one recorded when Quiper
+    /// became the default browser, or Safari when none is recorded or the
+    /// recorded app is gone. The explicit application target keeps the open
+    /// from routing back through the default — Quiper — in a loop.
+    private func openInFallbackBrowser(_ url: URL) {
+        let fallbackBundleIdentifier = DefaultBrowserRouting.fallbackBundleIdentifier(
+            recorded: Settings.shared.defaultBrowserFallbackBundleIdentifier,
+            quiperBundleIdentifier: Constants.BUNDLE_ID
+        ) { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil }
+        guard let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: fallbackBundleIdentifier) else {
+            NSLog("[Quiper] Unclaimed link could not open: no application for %@", fallbackBundleIdentifier)
+            return
+        }
+        NSWorkspace.shared.open([url], withApplicationAt: applicationURL, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+            if let error {
+                NSLog("[Quiper] Unclaimed link could not open in %@: %@", fallbackBundleIdentifier, error.localizedDescription)
+            }
+        }
+    }
+
+    /// Whether Launch Services would open `url` in Quiper itself —
+    /// forwarding such a link would bounce it straight back in a loop.
+    private static func isQuiperDefaultOpener(for url: URL) -> Bool {
+        DefaultBrowserRouting.isQuiperDefaultOpener(
+            applicationURL: NSWorkspace.shared.urlForApplication(toOpen: url),
+            quiperBundleIdentifier: Constants.BUNDLE_ID
+        )
     }
 
     @objc private func handleWindowDidShow(_ notification: Notification) {
@@ -818,6 +909,11 @@ extension AppController: NotificationDispatcherDelegate {
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarController: StatusBarController!
 
+    /// Links handed to Quiper before launch finished — a URL that starts the
+    /// app arrives while `statusBarController` is still nil. Held here and
+    /// routed once `completeLaunch` has built the app controller.
+    private var pendingExternalURLs: [URL] = []
+
     static var sharedSettingsWindow = SettingsWindow.shared
 
     /// Set once termination passes the point where the keep/discard
@@ -825,6 +921,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// from then on the saved tab state is final, and the teardown ahead
     /// must not feed a save a session that is coming apart.
     static var hasCommittedTermination = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Registered before launch completes: a link that starts the app is
+        // delivered as a launch-time kAEGetURL event, which goes unhandled
+        // unless the handler exists by then.
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:replyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+    }
+
+    /// Another application asked Quiper to open a URL — right-click → Open
+    /// Link With, `open -a Quiper <url>`, or a launch-time link.
+    @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, replyEvent: NSAppleEventDescriptor?) {
+        guard let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+              let url = URL(string: urlString) else { return }
+        pendingExternalURLs.append(url)
+        flushExternalURLsIfReady()
+    }
+
+    /// Routes queued links once the app controller exists.
+    private func flushExternalURLsIfReady() {
+        guard !pendingExternalURLs.isEmpty,
+              let appController = statusBarController?.appController else { return }
+        let urls = pendingExternalURLs
+        pendingExternalURLs.removeAll()
+        for url in urls {
+            appController.handleExternalURL(url)
+        }
+    }
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Clean up any stale mounts from previous crashed sessions
@@ -838,6 +966,73 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } else {
             completeLaunch()
+        }
+    }
+
+    /// The nested helper bundle inside this app; nil when the app was
+    /// assembled without it.
+    private var linkHelperBundleURL: URL? {
+        let url = LinkHelperRouting.helperBundleURL(hostBundleURL: Bundle.main.bundleURL)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// The helper's bundle identifier: this build's identifier with the
+    /// helper suffix, matching the helper target's product bundle identifier.
+    private static var linkHelperBundleIdentifier: String {
+        Constants.BUNDLE_ID + ".LinkHelper"
+    }
+
+    /// Keeps the link helper resident so an unclaimed link never pays its
+    /// cold start: registers it as a login item for the next boot, launches
+    /// it for this session, and inherits nothing the user chose — a default
+    /// assignment that still names a build of Quiper moves over too.
+    private func ensureLinkHelperResident() {
+        guard !AppController.isRunningTests, !Constants.LaunchMode.isUITesting,
+              let helperURL = linkHelperBundleURL else { return }
+        registerLinkHelperLoginItem()
+        repointLegacyDefaultBrowserToLinkHelper(helperURL: helperURL)
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        NSWorkspace.shared.openApplication(at: helperURL, configuration: configuration) { _, error in
+            if let error {
+                NSLog("[Quiper] Link helper could not start: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    /// Registers the helper as a login item so it runs from the next login
+    /// on, even when Quiper itself never opens.
+    private func registerLinkHelperLoginItem() {
+        let service = SMAppService.loginItem(identifier: Self.linkHelperBundleIdentifier)
+        guard service.status == .notRegistered else { return }
+        do {
+            try service.register()
+        } catch {
+            NSLog("[Quiper] Link helper login item could not register: %@", error.localizedDescription)
+        }
+    }
+
+    /// A default assignment that still names a build of Quiper — an app
+    /// updated before the helper existed — moves to the helper, preserving
+    /// the recorded fallback browser. Links resolve to Quiper either way;
+    /// only the receiving build changes.
+    private func repointLegacyDefaultBrowserToLinkHelper(helperURL: URL) {
+        let probeURL = URL(string: "https://example.com")!
+        guard let defaultApplicationURL = NSWorkspace.shared.urlForApplication(toOpen: probeURL),
+              let defaultBundleIdentifier = Bundle(url: defaultApplicationURL)?.bundleIdentifier,
+              defaultBundleIdentifier != Self.linkHelperBundleIdentifier,
+              DefaultBrowserRouting.isQuiperBundleIdentifier(
+                  defaultBundleIdentifier,
+                  quiperBundleIdentifier: Constants.BUNDLE_ID
+              ) else {
+            return
+        }
+        NSWorkspace.shared.setDefaultApplication(at: helperURL, toOpenURLsWithScheme: "http") { error in
+            if let error {
+                NSLog("[Quiper] Default browser could not move to the link helper: %@", error.localizedDescription)
+            } else {
+                NSLog("[Quiper] Default browser moved from %@ to the link helper", defaultBundleIdentifier)
+            }
         }
     }
 
@@ -866,6 +1061,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if !isAutoLaunch {
             statusBarController.appController.showWindow(nil)
         }
+
+        flushExternalURLsIfReady()
+
+        ensureLinkHelperResident()
     }
 
     @MainActor

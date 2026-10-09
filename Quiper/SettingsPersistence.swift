@@ -69,17 +69,9 @@ enum SettingsPersistence {
         let isRunningTests = NSClassFromString("XCTestCase") != nil
         let isUITesting = CommandLine.arguments.contains("--uitesting") || CommandLine.arguments.contains("--screenshot-mode")
         if let data = try? Data(contentsOf: file) {
-            if let payload = try? ConfigPortability.makeDecoder().decode(PersistedSettings.self, from: data) {
+            if let payload = SettingsCodec.decodePersistedSettings(from: data) {
                 corruptedState = nil
                 return (payload, true)
-            }
-            if let legacyServices = try? ConfigPortability.makeDecoder().decode([Service].self, from: data) {
-                corruptedState = nil
-                return (PersistedSettings(services: legacyServices,
-                                          hotkey: nil,
-                                          customActions: nil,
-                                          updatePreferences: nil,
-                                          serviceZoomLevels: nil), true)
             }
             // File exists but neither payload decodes — do not silently wipe.
             // Tests and UI tests use isolated temp directories and must not block.
@@ -230,7 +222,7 @@ enum SettingsPersistence {
     // MARK: - Secure metadata (only gate touches these files)
 
     static func metadataFileURL(for serviceID: UUID) -> URL {
-        EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_engine_metadata.json")
+        SecureEngineStorage.metadataFileURL(bundleIdentifier: Constants.BUNDLE_ID, serviceID: serviceID)
     }
 
     static func readSecureMetadata(for serviceID: UUID) throws -> SecuredEngineMetadata {

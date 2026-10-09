@@ -1,8 +1,9 @@
+#if os(macOS)
 import AppKit
 import Carbon
 
-// Models extracted to QuiperShared/SharedModels.swift and QuiperShared/SharedSettings.swift
-
+/// The per-app shortcut bindings persisted with the settings — the payload
+/// only; the listener machinery that registers them lives in the app.
 struct AppShortcutBindings: Codable, Equatable {
     enum Key: String, CaseIterable, Codable, Identifiable {
         case nextSession
@@ -20,16 +21,16 @@ struct AppShortcutBindings: Codable, Equatable {
         case serviceDigitsSecondary
     }
 
-    var nextSession: HotkeyManager.Configuration
-    var previousSession: HotkeyManager.Configuration
-    var nextService: HotkeyManager.Configuration
-    var previousService: HotkeyManager.Configuration
-    var lockCurrentEngine: HotkeyManager.Configuration
-    var alternateNextSession: HotkeyManager.Configuration?
-    var alternatePreviousSession: HotkeyManager.Configuration?
-    var alternateNextService: HotkeyManager.Configuration?
-    var alternatePreviousService: HotkeyManager.Configuration?
-    var alternateLockCurrentEngine: HotkeyManager.Configuration?
+    var nextSession: HotkeyConfiguration
+    var previousSession: HotkeyConfiguration
+    var nextService: HotkeyConfiguration
+    var previousService: HotkeyConfiguration
+    var lockCurrentEngine: HotkeyConfiguration
+    var alternateNextSession: HotkeyConfiguration?
+    var alternatePreviousSession: HotkeyConfiguration?
+    var alternateNextService: HotkeyConfiguration?
+    var alternatePreviousService: HotkeyConfiguration?
+    var alternateLockCurrentEngine: HotkeyConfiguration?
     var sessionDigitsModifiers: UInt
     var sessionDigitsAlternateModifiers: UInt?
     var serviceDigitsModifiers: UInt?
@@ -44,23 +45,23 @@ struct AppShortcutBindings: Codable, Equatable {
     }
 
     static let defaults = AppShortcutBindings(
-        nextSession: HotkeyManager.Configuration(
+        nextSession: HotkeyConfiguration(
             keyCode: UInt32(kVK_RightArrow),
             modifierFlags: NSEvent.ModifierFlags([.command, .shift]).rawValue
         ),
-        previousSession: HotkeyManager.Configuration(
+        previousSession: HotkeyConfiguration(
             keyCode: UInt32(kVK_LeftArrow),
             modifierFlags: NSEvent.ModifierFlags([.command, .shift]).rawValue
         ),
-        nextService: HotkeyManager.Configuration(
+        nextService: HotkeyConfiguration(
             keyCode: UInt32(kVK_RightArrow),
             modifierFlags: NSEvent.ModifierFlags([.command, .control]).rawValue
         ),
-        previousService: HotkeyManager.Configuration(
+        previousService: HotkeyConfiguration(
             keyCode: UInt32(kVK_LeftArrow),
             modifierFlags: NSEvent.ModifierFlags([.command, .control]).rawValue
         ),
-        lockCurrentEngine: HotkeyManager.Configuration(
+        lockCurrentEngine: HotkeyConfiguration(
             keyCode: UInt32(kVK_ANSI_L),
             modifierFlags: NSEvent.ModifierFlags([.command, .option]).rawValue
         ),
@@ -76,7 +77,7 @@ struct AppShortcutBindings: Codable, Equatable {
         serviceDigitsSecondaryModifiers: nil
     )
 
-    func configuration(for key: Key) -> HotkeyManager.Configuration {
+    func configuration(for key: Key) -> HotkeyConfiguration {
         switch key {
         case .nextSession: return nextSession
         case .previousSession: return previousSession
@@ -86,7 +87,7 @@ struct AppShortcutBindings: Codable, Equatable {
         }
     }
 
-    func alternateConfiguration(for key: Key) -> HotkeyManager.Configuration? {
+    func alternateConfiguration(for key: Key) -> HotkeyConfiguration? {
         switch key {
         case .nextSession: return alternateNextSession
         case .previousSession: return alternatePreviousSession
@@ -96,11 +97,11 @@ struct AppShortcutBindings: Codable, Equatable {
         }
     }
 
-    func defaultConfiguration(for key: Key) -> HotkeyManager.Configuration {
+    func defaultConfiguration(for key: Key) -> HotkeyConfiguration {
         AppShortcutBindings.defaults.configuration(for: key)
     }
 
-    mutating func setConfiguration(_ configuration: HotkeyManager.Configuration, for key: Key) {
+    mutating func setConfiguration(_ configuration: HotkeyConfiguration, for key: Key) {
         switch key {
         case .nextSession: nextSession = configuration
         case .previousSession: previousSession = configuration
@@ -110,7 +111,7 @@ struct AppShortcutBindings: Codable, Equatable {
         }
     }
 
-    mutating func setAlternateConfiguration(_ configuration: HotkeyManager.Configuration?, for key: Key) {
+    mutating func setAlternateConfiguration(_ configuration: HotkeyConfiguration?, for key: Key) {
         switch key {
         case .nextSession: alternateNextSession = configuration
         case .previousSession: alternatePreviousSession = configuration
@@ -124,16 +125,16 @@ struct AppShortcutBindings: Codable, Equatable {
 extension AppShortcutBindings {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        nextSession = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .nextSession) ?? AppShortcutBindings.defaults.nextSession
-        previousSession = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .previousSession) ?? AppShortcutBindings.defaults.previousSession
-        nextService = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .nextService) ?? AppShortcutBindings.defaults.nextService
-        previousService = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .previousService) ?? AppShortcutBindings.defaults.previousService
-        lockCurrentEngine = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .lockCurrentEngine) ?? AppShortcutBindings.defaults.lockCurrentEngine
-        alternateNextSession = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternateNextSession)
-        alternatePreviousSession = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternatePreviousSession)
-        alternateNextService = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternateNextService)
-        alternatePreviousService = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternatePreviousService)
-        alternateLockCurrentEngine = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .alternateLockCurrentEngine)
+        nextSession = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .nextSession) ?? AppShortcutBindings.defaults.nextSession
+        previousSession = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .previousSession) ?? AppShortcutBindings.defaults.previousSession
+        nextService = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .nextService) ?? AppShortcutBindings.defaults.nextService
+        previousService = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .previousService) ?? AppShortcutBindings.defaults.previousService
+        lockCurrentEngine = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .lockCurrentEngine) ?? AppShortcutBindings.defaults.lockCurrentEngine
+        alternateNextSession = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .alternateNextSession)
+        alternatePreviousSession = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .alternatePreviousSession)
+        alternateNextService = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .alternateNextService)
+        alternatePreviousService = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .alternatePreviousService)
+        alternateLockCurrentEngine = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .alternateLockCurrentEngine)
         sessionDigitsModifiers = try container.decodeIfPresent(UInt.self, forKey: .sessionDigitsModifiers) ?? AppShortcutBindings.defaults.sessionDigitsModifiers
         sessionDigitsAlternateModifiers = try container.decodeIfPresent(UInt.self, forKey: .sessionDigitsAlternateModifiers)
         serviceDigitsModifiers = try container.decodeIfPresent(UInt.self, forKey: .serviceDigitsModifiers)
@@ -141,3 +142,4 @@ extension AppShortcutBindings {
         serviceDigitsSecondaryModifiers = try container.decodeIfPresent(UInt.self, forKey: .serviceDigitsSecondaryModifiers)
     }
 }
+#endif

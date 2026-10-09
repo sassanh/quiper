@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		915537A02EDAEB700024996F /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 9155379F2EDAEB700024996F /* MarkdownUI */; };
+		915539032EDAE8C30024996F /* QuiperIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 915539022EDAE8C30024996F /* QuiperIcon.icns */; };
+		915539102EDAE8C30024996F /* QuiperLinkHelper.app in Embed Login Item */ = {isa = PBXBuildFile; fileRef = 915539012EDAE8C30024996F /* QuiperLinkHelper.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -39,7 +41,28 @@
 			remoteGlobalIDString = 915538132EDAE8C30024996F;
 			remoteInfo = QuiperiOS;
 		};
+		9155390D2EDAE8C30024996F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 915536922EDAE8C20024996F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 915539062EDAE8C30024996F;
+			remoteInfo = QuiperLinkHelper;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		9155390F2EDAE8C30024996F /* Embed Login Item */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "Contents/Library/LoginItems";
+			dstSubfolderSpec = 1;
+			files = (
+				915539102EDAE8C30024996F /* QuiperLinkHelper.app in Embed Login Item */,
+			);
+			name = "Embed Login Item";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		9155369A2EDAE8C30024996F /* Quiper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Quiper.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -48,7 +71,58 @@
 		915538122EDAE8C30024996F /* QuiperiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuiperiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9155381A2EDAE8C30024996F /* QuiperiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuiperiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		915538272EDAE8C30024996F /* QuiperiOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuiperiOSUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		915539012EDAE8C30024996F /* QuiperLinkHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuiperLinkHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		915539022EDAE8C30024996F /* QuiperIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Quiper/QuiperIcon.icns; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		915539052EDAE8C30024996F /* Exceptions for QuiperShared folder of "QuiperLinkHelper" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AddEngineSheet.swift,
+				CodeEditorLanguage.swift,
+				ConfigPortability.swift,
+				DefaultActions.swift,
+				EngineFileStorage.swift,
+				EngineIconService.swift,
+				EngineIconView.swift,
+				EngineTemplateIconStore.swift,
+				FaviconFetcher.swift,
+				InputStatePayload.swift,
+				LatestDefaultToggle.swift,
+				LinkRouting.swift,
+				MediaCapturePermission.swift,
+				NotificationMetadata.swift,
+				Notifications.swift,
+				PersistedSettingsMigration.swift,
+				QuiperSyncBrowser.swift,
+				QuiperSyncClient.swift,
+				QuiperSyncProtocol.swift,
+				QuiperSyncProvider.swift,
+				QuiperVersion.swift,
+				RoutingRuleEditor.swift,
+				SecureConfigHandling.swift,
+				ServerAuthentication.swift,
+				SyncPreparationState.swift,
+				TabRestoration.swift,
+				TextFileStorage.swift,
+				WebLoadError.swift,
+				WebNotificationBridge.swift,
+				WebScripts.swift,
+				Zoom.swift,
+				quiper-code-editor.html,
+				quiper-code-editor.js,
+			);
+			target = 915539062EDAE8C30024996F /* QuiperLinkHelper */;
+		};
+		915539112EDAE8C30024996F /* Exceptions for QuiperLinkHelper folder of "QuiperLinkHelper" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 915539062EDAE8C30024996F /* QuiperLinkHelper */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		9155369C2EDAE8C30024996F /* Quiper */ = {
@@ -68,6 +142,9 @@
 		};
 		915538102EDAE8C30024996F /* QuiperShared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				915539052EDAE8C30024996F /* Exceptions for QuiperShared folder of "QuiperLinkHelper" target */,
+			);
 			path = QuiperShared;
 			sourceTree = "<group>";
 		};
@@ -84,6 +161,14 @@
 		915538282EDAE8C30024996F /* QuiperiOSUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = QuiperiOSUITests;
+			sourceTree = "<group>";
+		};
+		915539042EDAE8C30024996F /* QuiperLinkHelper */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				915539112EDAE8C30024996F /* Exceptions for QuiperLinkHelper folder of "QuiperLinkHelper" target */,
+			);
+			path = QuiperLinkHelper;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -132,6 +217,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		915539082EDAE8C30024996F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -147,6 +239,7 @@
 				9155369B2EDAE8C30024996F /* Products */,
 				915538102EDAE8C30024996F /* QuiperShared */,
 				915538112EDAE8C30024996F /* QuiperiOS */,
+				915539042EDAE8C30024996F /* QuiperLinkHelper */,
 			);
 			sourceTree = "<group>";
 		};
@@ -159,6 +252,7 @@
 				915538122EDAE8C30024996F /* QuiperiOS.app */,
 				9155381A2EDAE8C30024996F /* QuiperiOSTests.xctest */,
 				915538272EDAE8C30024996F /* QuiperiOSUITests.xctest */,
+				915539012EDAE8C30024996F /* QuiperLinkHelper.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -180,10 +274,12 @@
 				915536962EDAE8C30024996F /* Sources */,
 				915536972EDAE8C30024996F /* Frameworks */,
 				915536982EDAE8C30024996F /* Resources */,
+				9155390F2EDAE8C30024996F /* Embed Login Item */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				9155390E2EDAE8C30024996F /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				9155369C2EDAE8C30024996F /* Quiper */,
@@ -312,6 +408,29 @@
 			productReference = 915538272EDAE8C30024996F /* QuiperiOSUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		915539062EDAE8C30024996F /* QuiperLinkHelper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9155390A2EDAE8C30024996F /* Build configuration list for PBXNativeTarget "QuiperLinkHelper" */;
+			buildPhases = (
+				915539072EDAE8C30024996F /* Sources */,
+				915539082EDAE8C30024996F /* Frameworks */,
+				915539092EDAE8C30024996F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				915539042EDAE8C30024996F /* QuiperLinkHelper */,
+				915538102EDAE8C30024996F /* QuiperShared */,
+			);
+			name = QuiperLinkHelper;
+			packageProductDependencies = (
+			);
+			productName = QuiperLinkHelper;
+			productReference = 915539012EDAE8C30024996F /* QuiperLinkHelper.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -344,6 +463,9 @@
 						CreatedOnToolsVersion = 26.1.1;
 						TestTargetID = 915538132EDAE8C30024996F;
 					};
+					915539062EDAE8C30024996F = {
+						CreatedOnToolsVersion = 26.1.1;
+					};
 				};
 			};
 			buildConfigurationList = 915536952EDAE8C20024996F /* Build configuration list for PBXProject "Quiper" */;
@@ -364,6 +486,7 @@
 			projectRoot = "";
 			targets = (
 				915536992EDAE8C30024996F /* Quiper */,
+				915539062EDAE8C30024996F /* QuiperLinkHelper */,
 				915536A82EDAE8C50024996F /* QuiperTests */,
 				915536B22EDAE8C50024996F /* QuiperUITests */,
 				915538132EDAE8C30024996F /* QuiperiOS */,
@@ -416,6 +539,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		915539092EDAE8C30024996F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				915539032EDAE8C30024996F /* QuiperIcon.icns in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -461,6 +592,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		915539072EDAE8C30024996F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -483,6 +621,11 @@
 			isa = PBXTargetDependency;
 			target = 915538132EDAE8C30024996F /* QuiperiOS */;
 			targetProxy = 915538262EDAE8C30024996F /* PBXContainerItemProxy */;
+		};
+		9155390E2EDAE8C30024996F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 915539062EDAE8C30024996F /* QuiperLinkHelper */;
+			targetProxy = 9155390D2EDAE8C30024996F /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -999,6 +1142,90 @@
 			};
 			name = Release;
 		};
+		9155390B2EDAE8C30024996F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				DEAD_CODE_STRIPPING = YES;
+				ENABLE_APPINTENTS_METADATA_GENERATION = NO;
+				DEVELOPMENT_TEAM = 37VHNGD6EP;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = QuiperLinkHelper/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Quiper;
+				INFOPLIST_KEY_CFBundleIconFile = QuiperIcon;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 7.0.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					AppIntents,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "app.sassanh.quiper.QuiperDev.LinkHelper";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		9155390C2EDAE8C30024996F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				DEAD_CODE_STRIPPING = YES;
+				ENABLE_APPINTENTS_METADATA_GENERATION = NO;
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = WZQY49K84N;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = QuiperLinkHelper/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Quiper;
+				INFOPLIST_KEY_CFBundleIconFile = QuiperIcon;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 7.0.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					AppIntents,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "app.sassanh.quiper.Quiper.LinkHelper";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1007,6 +1234,15 @@
 			buildConfigurations = (
 				915536BB2EDAE8C50024996F /* Debug */,
 				915536BC2EDAE8C50024996F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9155390A2EDAE8C30024996F /* Build configuration list for PBXNativeTarget "QuiperLinkHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9155390B2EDAE8C30024996F /* Debug */,
+				9155390C2EDAE8C30024996F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

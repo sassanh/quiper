@@ -77,7 +77,9 @@ if [ -z "$APP_PATH" ]; then
     exit 1
 fi
 
-# Copy to root for easy access
+# Copy to root for easy access. Replace, never merge: leftover files from
+# an earlier build would sit outside the code seal and invalidate it.
+rm -rf "./$APP_NAME.app"
 cp -R "$APP_PATH" .
 
 if [ "$SIGNING_IDENTITY" != "-" ] && command -v codesign >/dev/null 2>&1; then
@@ -85,7 +87,13 @@ if [ "$SIGNING_IDENTITY" != "-" ] && command -v codesign >/dev/null 2>&1; then
     if [ -n "${XCENT:-}" ] && [ -f "$XCENT" ]; then
         /usr/libexec/PlistBuddy -c "Delete :com.apple.security.get-task-allow" "$XCENT" 2>/dev/null || true
         echo "🔏 Re-signing for distribution (identity: $SIGNING_IDENTITY)..."
-        codesign --force --deep --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$XCENT" "$APP_NAME.app"
+        # Nested code first: the outer seal covers the helper, and --deep
+        # would push the main app's entitlements into it.
+        HELPER_PATH="$APP_NAME.app/Contents/Library/LoginItems/QuiperLinkHelper.app"
+        if [ -d "$HELPER_PATH" ]; then
+            codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$HELPER_PATH"
+        fi
+        codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$XCENT" "$APP_NAME.app"
     fi
 fi
 

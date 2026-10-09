@@ -353,7 +353,7 @@ struct CodableColor: Codable, Equatable {
 struct PersistedSettings: Codable {
     var services: [Service]
     #if os(macOS)
-    var hotkey: HotkeyManager.Configuration?
+    var hotkey: HotkeyConfiguration?
     #endif
     var customActions: [CustomAction]?
     var updatePreferences: UpdatePreferences?
@@ -397,6 +397,11 @@ struct PersistedSettings: Codable {
     var hasDismissedEngineSettingsShortcutNotice: Bool?
     var globalEngineDigitShortcutsEnabled: Bool?
     var askWhereToSaveDownloads: Bool?
+    #if os(macOS)
+    /// The browser unclaimed links open in while Quiper is the system
+    /// default browser; nil means Safari.
+    var defaultBrowserFallbackBundleIdentifier: String?
+    #endif
     var iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings?
     var quiperVersion: String?
     var version: Int? = 1
@@ -406,7 +411,7 @@ struct PersistedSettings: Codable {
     enum CodingKeys: String, CodingKey {
         case services, customActions, updatePreferences, serviceZoomLevels
         #if os(macOS)
-        case hotkey, appShortcuts
+        case hotkey, appShortcuts, defaultBrowserFallbackBundleIdentifier
         #endif
         case sessionDigitsAlternateModifiers, dockVisibility
         case engineSelectorDisplayMode, sessionSelectorDisplayMode, topBarVisibility
@@ -450,7 +455,7 @@ struct PersistedSettings: Codable {
 
     #if os(macOS)
     init(services: [Service],
-         hotkey: HotkeyManager.Configuration? = nil,
+         hotkey: HotkeyConfiguration? = nil,
          customActions: [CustomAction]? = nil,
          updatePreferences: UpdatePreferences? = nil,
          serviceZoomLevels: [UUID: Double]? = nil,
@@ -491,6 +496,7 @@ struct PersistedSettings: Codable {
          hasDismissedEngineSettingsShortcutNotice: Bool? = nil,
          globalEngineDigitShortcutsEnabled: Bool? = nil,
          askWhereToSaveDownloads: Bool? = nil,
+         defaultBrowserFallbackBundleIdentifier: String? = nil,
          iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings? = nil,
          quiperVersion: String? = nil,
          version: Int? = 1) {
@@ -536,6 +542,7 @@ struct PersistedSettings: Codable {
         self.hasDismissedEngineSettingsShortcutNotice = hasDismissedEngineSettingsShortcutNotice
         self.globalEngineDigitShortcutsEnabled = globalEngineDigitShortcutsEnabled
         self.askWhereToSaveDownloads = askWhereToSaveDownloads
+        self.defaultBrowserFallbackBundleIdentifier = defaultBrowserFallbackBundleIdentifier
         self.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
         self.quiperVersion = quiperVersion
         self.version = version
@@ -635,7 +642,7 @@ struct PersistedSettings: Codable {
         let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
         services = try container.decodeIfPresent([Service].self, forKey: .services) ?? []
         #if os(macOS)
-        hotkey = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .hotkey)
+        hotkey = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .hotkey)
         #endif
         customActions = try container.decodeIfPresent([CustomAction].self, forKey: .customActions)
         updatePreferences = try container.decodeIfPresent(UpdatePreferences.self, forKey: .updatePreferences)
@@ -736,6 +743,12 @@ struct PersistedSettings: Codable {
         hasDismissedEngineSettingsShortcutNotice = try container.decodeBoolIfPresent(forKey: .hasDismissedEngineSettingsShortcutNotice)
         globalEngineDigitShortcutsEnabled = try container.decodeBoolIfPresent(forKey: .globalEngineDigitShortcutsEnabled)
         askWhereToSaveDownloads = try container.decodeBoolIfPresent(forKey: .askWhereToSaveDownloads)
+        #if os(macOS)
+        defaultBrowserFallbackBundleIdentifier = try container.decodeIfPresent(
+            String.self,
+            forKey: .defaultBrowserFallbackBundleIdentifier
+        )
+        #endif
         iosHardwareKeyboardSettings = try container.decodeIfPresent(
             IOSHardwareKeyboardSettings.self,
             forKey: .iosHardwareKeyboardSettings

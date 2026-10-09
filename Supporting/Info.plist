@@ -14,5 +14,22 @@
     <array>
         <string>_quiper-sync._tcp</string>
     </array>
+    <key>NSUserActivityTypes</key>
+    <array>
+        <string>NSUserActivityTypeBrowsingWeb</string>
+    </array>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>CFBundleURLName</key>
+            <string>app.sassanh.quiper.route</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>quiper</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

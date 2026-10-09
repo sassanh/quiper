@@ -271,6 +271,10 @@ class Settings: ObservableObject {
     /// Whether downloads open the macOS save dialog instead of saving straight
     /// to their default folder (the engine's secure storage for secured engines).
     @Published var askWhereToSaveDownloads: Bool = false
+    /// The browser unclaimed links open in while Quiper is the system default
+    /// browser; the fallback recorded when Quiper became the default, or the
+    /// user's later choice. nil means Safari.
+    @Published var defaultBrowserFallbackBundleIdentifier: String? = nil
     /// iOS owns these bindings. macOS retains them so a shared settings file
     /// remains lossless without interpreting UIKit key equivalents as Carbon keys.
     private var preservedIOSHardwareKeyboardSettings: IOSHardwareKeyboardSettings?
@@ -366,6 +370,7 @@ class Settings: ObservableObject {
         hideQuiperWhenRetriggeringActiveEngineShortcut = true
         globalEngineDigitShortcutsEnabled = false
         askWhereToSaveDownloads = false
+        defaultBrowserFallbackBundleIdentifier = nil
         preservedIOSHardwareKeyboardSettings = nil
         showOnAllSpaces = false
         keepOverlayOnTop = true
@@ -578,6 +583,7 @@ class Settings: ObservableObject {
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
         askWhereToSaveDownloads = persisted.askWhereToSaveDownloads ?? false
+        defaultBrowserFallbackBundleIdentifier = persisted.defaultBrowserFallbackBundleIdentifier
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         keepOverlayOnTop = persisted.keepOverlayOnTop ?? true
         hideOnFocusLoss = persisted.hideOnFocusLoss ?? false
@@ -684,6 +690,7 @@ class Settings: ObservableObject {
                                             hasDismissedEngineSettingsShortcutNotice: hasDismissedEngineSettingsShortcutNotice,
                                             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
                                             askWhereToSaveDownloads: askWhereToSaveDownloads,
+                                            defaultBrowserFallbackBundleIdentifier: defaultBrowserFallbackBundleIdentifier,
                                             iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
                                             quiperVersion: persistedQuiperVersionForSave())
             try SettingsPersistence.write(payload)
@@ -821,6 +828,7 @@ class Settings: ObservableObject {
             hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
             askWhereToSaveDownloads: askWhereToSaveDownloads,
+            defaultBrowserFallbackBundleIdentifier: defaultBrowserFallbackBundleIdentifier,
             iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
             quiperVersion: persistedQuiperVersionForSave()
         )
@@ -1044,6 +1052,7 @@ class Settings: ObservableObject {
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
         askWhereToSaveDownloads = persisted.askWhereToSaveDownloads ?? false
+        defaultBrowserFallbackBundleIdentifier = persisted.defaultBrowserFallbackBundleIdentifier
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         keepOverlayOnTop = persisted.keepOverlayOnTop ?? true
         hideOnFocusLoss = persisted.hideOnFocusLoss ?? false
@@ -1328,6 +1337,11 @@ class Settings: ObservableObject {
         saveSettings()
     }
 
+    func setDefaultBrowserFallbackBundleIdentifier(_ bundleIdentifier: String?) {
+        defaultBrowserFallbackBundleIdentifier = bundleIdentifier
+        saveSettings()
+    }
+
     private func applyEngineShortcutToggleSetting(persistedValue: Bool?) {
         if !persistedSettingsMigrationContext.isExistingSettings {
             hideQuiperWhenRetriggeringActiveEngineShortcut = true
@@ -1475,6 +1489,7 @@ class Settings: ObservableObject {
         )
         hideQuiperWhenRetriggeringActiveEngineShortcut = true
         globalEngineDigitShortcutsEnabled = false
+        defaultBrowserFallbackBundleIdentifier = nil
         engineSelectorDisplayMode = .auto
         sessionSelectorDisplayMode = .auto
         try? FileManager.default.removeItem(at: settingsFile)
