@@ -51,10 +51,13 @@ struct Service: Codable, Identifiable {
     var focus_selector: String
     var actionScripts: [UUID: String] = [:]
     #if os(macOS)
-    var activationShortcut: HotkeyManager.Configuration?
+    var activationShortcut: HotkeyConfiguration?
     #endif
     var customCSS: String?
     var routingRules: [RoutingRule] = []
+    /// Where links handed to Quiper by other applications open when this
+    /// engine claims their domain.
+    var externalLinkHandler: ExternalLinkHandler = ExternalLinkHandler()
     var iconBase64: String?
     var iconManuallyUnset: Bool?
     var isEncrypted: Bool = false
@@ -84,6 +87,7 @@ struct Service: Codable, Identifiable {
         case actionScripts
         case activationShortcut
         case routingRules
+        case externalLinkHandler
         case associatedDomains // legacy
         case friendDomains // legacy
         case customCSS
@@ -110,7 +114,7 @@ struct Service: Codable, Identifiable {
          pinnedTabURLs: [String] = [],
          focus_selector: String,
          actionScripts: [UUID: String] = [:],
-         activationShortcut: HotkeyManager.Configuration? = nil,
+         activationShortcut: HotkeyConfiguration? = nil,
          routingRules: [RoutingRule] = [],
          customCSS: String? = nil,
          iconBase64: String? = nil,
@@ -209,7 +213,7 @@ struct Service: Codable, Identifiable {
         focus_selector = try container.decodeIfPresent(String.self, forKey: .focus_selector) ?? ""
         actionScripts = try container.decodeIfPresent([UUID: String].self, forKey: .actionScripts) ?? [:]
         #if os(macOS)
-        activationShortcut = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .activationShortcut)
+        activationShortcut = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .activationShortcut)
         #endif
 
         if let decodedRules = try container.decodeIfPresent([RoutingRule].self, forKey: .routingRules) {
@@ -272,6 +276,7 @@ struct Service: Codable, Identifiable {
         templateActionScriptSync = try container.decodeIfPresent([UUID: Bool].self, forKey: .templateActionScriptSync) ?? [:]
         templatePromptInputSelectorSync = try container.decodeBoolIfPresent(forKey: .templatePromptInputSelectorSync) ?? false
         templateCustomCSSSync = try container.decodeBoolIfPresent(forKey: .templateCustomCSSSync) ?? false
+        externalLinkHandler = try container.decodeIfPresent(ExternalLinkHandler.self, forKey: .externalLinkHandler) ?? ExternalLinkHandler()
     }
 
     func encode(to encoder: Encoder) throws {
@@ -322,6 +327,13 @@ struct Service: Codable, Identifiable {
             try container.encode(lockOnSwitchAway, forKey: .lockOnSwitchAway)
             try container.encode(lockAfterInactivity, forKey: .lockAfterInactivity)
             try container.encode(autoLockInactivityTimeout, forKey: .autoLockInactivityTimeout)
+            // With the rest of an engine's metadata: for a secure engine the
+            // claimed domains live inside the encrypted bundle, so while the
+            // volume is locked neither settings.json nor the router can see
+            // them — only the engine's name stays outside.
+            if externalLinkHandler.isConfigured {
+                try container.encode(externalLinkHandler, forKey: .externalLinkHandler)
+            }
         }
 
         try container.encode(isEncrypted, forKey: .isEncrypted)
@@ -383,6 +395,7 @@ extension Service {
             && focus_selector.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && actionScripts.isEmpty
             && routingRules.isEmpty
+            && !externalLinkHandler.isConfigured
     }
 
     mutating func convertToPinnedTabs() {
@@ -406,7 +419,7 @@ struct CustomAction: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String
     #if os(macOS)
-    var shortcut: HotkeyManager.Configuration?
+    var shortcut: HotkeyConfiguration?
     #endif
 
     enum CodingKeys: String, CodingKey {
@@ -417,7 +430,7 @@ struct CustomAction: Codable, Identifiable, Equatable {
     }
 
     #if os(macOS)
-    init(id: UUID = UUID(), name: String, shortcut: HotkeyManager.Configuration? = nil) {
+    init(id: UUID = UUID(), name: String, shortcut: HotkeyConfiguration? = nil) {
         self.id = id
         self.name = name
         self.shortcut = shortcut
@@ -436,7 +449,7 @@ extension CustomAction {
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         name = try container.decode(String.self, forKey: .name)
         #if os(macOS)
-        shortcut = try container.decodeIfPresent(HotkeyManager.Configuration.self, forKey: .shortcut)
+        shortcut = try container.decodeIfPresent(HotkeyConfiguration.self, forKey: .shortcut)
         #endif
     }
 

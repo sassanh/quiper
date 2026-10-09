@@ -9,33 +9,33 @@ CONFIGURATION=${CONFIGURATION:-"Release"}
 BUILD_DIR="build"
 
 detect_version() {
-    if [[ "${GITHUB_REF_TYPE:-}" == "tag" && "${GITHUB_REF_NAME:-}" == v* ]]; then
-        echo "${GITHUB_REF_NAME#v}"
-        return
-    fi
+	if [[ "${GITHUB_REF_TYPE:-}" == "tag" && "${GITHUB_REF_NAME:-}" == v* ]]; then
+		echo "${GITHUB_REF_NAME#v}"
+		return
+	fi
 
-    if git describe --tags --match "v*" --abbrev=0 >/dev/null 2>&1; then
-        git describe --tags --match "v*" --abbrev=0 | sed 's/^v//'
-        return
-    fi
+	if git describe --tags --match "v*" --abbrev=0 >/dev/null 2>&1; then
+		git describe --tags --match "v*" --abbrev=0 | sed 's/^v//'
+		return
+	fi
 
-    local latest_tag
-    latest_tag=$(git tag -l 'v*' --sort=-v:refname | head -1 | sed 's/^v//')
-    if [ -n "$latest_tag" ]; then
-        echo "$latest_tag"
-        return
-    fi
+	local latest_tag
+	latest_tag=$(git tag -l 'v*' --sort=-v:refname | head -1 | sed 's/^v//')
+	if [ -n "$latest_tag" ]; then
+		echo "$latest_tag"
+		return
+	fi
 
-    if [ -f Quiper.xcodeproj/project.pbxproj ]; then
-        local marketing_version
-        marketing_version=$(grep -m1 'MARKETING_VERSION = ' Quiper.xcodeproj/project.pbxproj | sed -E 's/.*MARKETING_VERSION = ([^;]+);/\1/' | tr -d ' ')
-        if [ -n "$marketing_version" ]; then
-            echo "$marketing_version"
-            return
-        fi
-    fi
+	if [ -f Quiper.xcodeproj/project.pbxproj ]; then
+		local marketing_version
+		marketing_version=$(grep -m1 'MARKETING_VERSION = ' Quiper.xcodeproj/project.pbxproj | sed -E 's/.*MARKETING_VERSION = ([^;]+);/\1/' | tr -d ' ')
+		if [ -n "$marketing_version" ]; then
+			echo "$marketing_version"
+			return
+		fi
+	fi
 
-    echo "0.0.0"
+	echo "0.0.0"
 }
 
 APP_VERSION=${APP_VERSION:-$(detect_version)}
@@ -50,21 +50,20 @@ rm -rf "$BUILD_DIR"
 SIGNING_IDENTITY=${SIGNING_IDENTITY:-"-"}
 
 XCODEBUILD_ARGS=(
-    -project "$PROJECT"
-    -scheme "$SCHEME"
-    -configuration "$CONFIGURATION"
-    -derivedDataPath "$BUILD_DIR"
-    MARKETING_VERSION="$APP_VERSION"
-    CURRENT_PROJECT_VERSION="$APP_BUILD"
-    CODE_SIGN_IDENTITY="$SIGNING_IDENTITY"
+	-project "$PROJECT"
+	-scheme "$SCHEME"
+	-configuration "$CONFIGURATION"
+	-derivedDataPath "$BUILD_DIR"
+	MARKETING_VERSION="$APP_VERSION"
+	CURRENT_PROJECT_VERSION="$APP_BUILD"
+	CODE_SIGN_IDENTITY="$SIGNING_IDENTITY"
 )
-
 
 # If an explicit DEVELOPMENT_TEAM env variable is provided, override the project settings
 if [ -n "${DEVELOPMENT_TEAM:-}" ]; then
-    XCODEBUILD_ARGS+=("DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM")
+	XCODEBUILD_ARGS+=("DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM")
 elif [ "$SIGNING_IDENTITY" = "-" ]; then
-    XCODEBUILD_ARGS+=("DEVELOPMENT_TEAM=")
+	XCODEBUILD_ARGS+=("DEVELOPMENT_TEAM=")
 fi
 
 xcodebuild "${XCODEBUILD_ARGS[@]}" clean build
@@ -73,20 +72,28 @@ xcodebuild "${XCODEBUILD_ARGS[@]}" clean build
 APP_PATH=$(find "$BUILD_DIR" -name "$APP_NAME.app" -type d | head -n 1)
 
 if [ -z "$APP_PATH" ]; then
-    echo "❌ Error: $APP_NAME.app not found in build directory"
-    exit 1
+	echo "❌ Error: $APP_NAME.app not found in build directory"
+	exit 1
 fi
 
-# Copy to root for easy access
+# Copy to root for easy access. Replace, never merge: leftover files from
+# an earlier build would sit outside the code seal and invalidate it.
+rm -rf "./$APP_NAME.app"
 cp -R "$APP_PATH" .
 
 if [ "$SIGNING_IDENTITY" != "-" ] && command -v codesign >/dev/null 2>&1; then
-    XCENT=$(find "$BUILD_DIR" -name "Quiper.app.xcent" | head -n 1)
-    if [ -n "${XCENT:-}" ] && [ -f "$XCENT" ]; then
-        /usr/libexec/PlistBuddy -c "Delete :com.apple.security.get-task-allow" "$XCENT" 2>/dev/null || true
-        echo "🔏 Re-signing for distribution (identity: $SIGNING_IDENTITY)..."
-        codesign --force --deep --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$XCENT" "$APP_NAME.app"
-    fi
+	XCENT=$(find "$BUILD_DIR" -name "Quiper.app.xcent" | head -n 1)
+	if [ -n "${XCENT:-}" ] && [ -f "$XCENT" ]; then
+		/usr/libexec/PlistBuddy -c "Delete :com.apple.security.get-task-allow" "$XCENT" 2>/dev/null || true
+		echo "🔏 Re-signing for distribution (identity: $SIGNING_IDENTITY)..."
+		# Nested code first: the outer seal covers the helper, and --deep
+		# would push the main app's entitlements into it.
+		HELPER_PATH="$APP_NAME.app/Contents/Library/LoginItems/Quiper.app"
+		if [ -d "$HELPER_PATH" ]; then
+			codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$HELPER_PATH"
+		fi
+		codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$XCENT" "$APP_NAME.app"
+	fi
 fi
 
 echo "✅ Successfully built $APP_NAME.app"

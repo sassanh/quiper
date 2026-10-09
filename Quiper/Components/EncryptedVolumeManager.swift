@@ -34,15 +34,7 @@ final class EncryptedVolumeManager {
     }
     
     func getMountPointURL(for serviceID: UUID) -> URL {
-        let fileManager = FileManager.default
-        let libraryURL = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        let bundleID = Constants.BUNDLE_ID
-        
-        return libraryURL
-            .appendingPathComponent("WebKit")
-            .appendingPathComponent(bundleID)
-            .appendingPathComponent("WebsiteDataStore")
-            .appendingPathComponent(serviceID.uuidString)
+        SecureEngineStorage.mountPointURL(bundleIdentifier: Constants.BUNDLE_ID, serviceID: serviceID)
     }
     
     func bundleExists(for serviceID: UUID) -> Bool {
@@ -63,22 +55,13 @@ final class EncryptedVolumeManager {
     func markLocked(_ serviceID: UUID) {
         unlockedServiceIDs.remove(serviceID)
         EngineMetadataMigrationManager.shared.clearCachedMetadata(for: serviceID)
+        if let index = Settings.shared.services.firstIndex(where: { $0.id == serviceID }) {
+            Settings.shared.services[index].forgetRoutingRecords()
+        }
     }
     
     func isMounted(for serviceID: UUID) -> Bool {
-        let mountPoint = getMountPointURL(for: serviceID).path
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: mountPoint, isDirectory: &isDir), isDir.boolValue else {
-            return false
-        }
-        
-        do {
-            let url = URL(fileURLWithPath: mountPoint)
-            let values = try url.resourceValues(forKeys: [.isVolumeKey])
-            return values.isVolume ?? false
-        } catch {
-            return false
-        }
+        SecureEngineStorage.isMounted(at: getMountPointURL(for: serviceID))
     }
     
     private func volumeName(for serviceID: UUID) -> String {

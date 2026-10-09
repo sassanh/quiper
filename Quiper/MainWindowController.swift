@@ -234,6 +234,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Tab History & MRU Navigation
     var tabHistory: [TabIdentifier] = []
     var lastActiveTab: TabIdentifier?
+
     var isCyclingHistory = false
     var cyclingHistoryIndex = 0
     var cyclingStartTab: TabIdentifier?
