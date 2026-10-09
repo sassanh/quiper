@@ -137,6 +137,8 @@ struct GeneralSettingsView: View {
     @State private var showingSyncProviderActive = false
     @State private var syncProviderData: Data?
     @State private var showingSyncBrowser = false
+    @State private var isQuiperDefaultBrowser = false
+    @State private var fallbackBrowserCandidates: [FallbackBrowserCandidate] = []
 
     
     var body: some View {
@@ -249,6 +251,17 @@ struct GeneralSettingsView: View {
                             .tint(Color.purple.settingsResolved)
                         }
                         .frame(width: 260)
+                    }
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Default Browser",
+                        message: defaultBrowserMessage,
+                        icon: "globe",
+                        iconColor: .purple.settingsResolved
+                    ) {
+                        defaultBrowserControl
                     }
                 }
                 
@@ -530,6 +543,10 @@ struct GeneralSettingsView: View {
         .onAppear {
             launchAtLogin = Launcher.isInstalledAtLogin()
             Task { await notificationDispatcher.refreshNotificationStatus() }
+            refreshDefaultBrowserState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshDefaultBrowserState()
         }
         .alert("Clear saved web data for all engines?", isPresented: $showClearWebConfirmation) {
             Button("Clear All", role: .destructive) {
@@ -819,6 +836,118 @@ struct GeneralSettingsView: View {
         default:
             return "Quiper needs notification access to show engine responses."
         }
+    }
+
+    // MARK: - Default Browser
+
+    private var defaultBrowserMessage: String {
+        if isQuiperDefaultBrowser {
+            return "Quiper opens every web link: your engines' claimed domains open in them, all other links open in the fallback browser below."
+        }
+        return "Make Quiper the app that opens web links: your engines' claimed domains open in them, everything else keeps opening in your default browser."
+    }
+
+    @ViewBuilder
+    private var defaultBrowserControl: some View {
+        if isQuiperDefaultBrowser {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(120), spacing: 8), count: 2),
+                      alignment: .leading, spacing: 12) {
+                ForEach(fallbackBrowserCandidates) { candidate in
+                    fallbackBrowserCard(candidate)
+                }
+            }
+            .frame(width: 260, alignment: .leading)
+        } else {
+            Button("Make Quiper Default Browser") {
+                makeQuiperDefaultBrowser()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.blue)
+            .frame(width: 260, alignment: .trailing)
+        }
+    }
+
+    private func fallbackBrowserCard(_ candidate: FallbackBrowserCandidate) -> some View {
+        let isSelected = selectedFallbackBrowserBundleIdentifier == candidate.bundleIdentifier
+        return Button {
+            guard !isSelected else { return }
+            settings.setDefaultBrowserFallbackBundleIdentifier(candidate.bundleIdentifier)
+        } label: {
+            VStack(spacing: 6) {
+                Image(nsImage: candidate.icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 32, height: 32)
+                    .pickerCardStyle(isSelected: isSelected, accentColor: .purple)
+                Text(candidate.name)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: 100)
+                    .foregroundColor(isSelected ? .primary : .secondary)
+                    .help(candidate.name)
+            }
+            .frame(width: 120)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("FallbackBrowser-\(candidate.bundleIdentifier)")
+    }
+
+    /// The browser unclaimed links open in: the recorded choice, or Safari
+    /// when nothing is recorded or the recorded app is no longer installed.
+    private var selectedFallbackBrowserBundleIdentifier: String {
+        if let recorded = settings.defaultBrowserFallbackBundleIdentifier,
+           fallbackBrowserCandidates.contains(where: { $0.bundleIdentifier == recorded }) {
+            return recorded
+        }
+        return DefaultBrowserRouting.safariBundleIdentifier
+    }
+
+    private func refreshDefaultBrowserState() {
+        let probeURL = URL(string: "https://example.com")!
+        isQuiperDefaultBrowser = DefaultBrowserRouting.isQuiperDefaultOpener(
+            applicationURL: NSWorkspace.shared.urlForApplication(toOpen: probeURL),
+            quiperBundleIdentifier: Constants.BUNDLE_ID
+        )
+        fallbackBrowserCandidates = NSWorkspace.shared.urlsForApplications(toOpen: probeURL)
+            .compactMap { applicationURL -> FallbackBrowserCandidate? in
+                guard let bundleIdentifier = Bundle(url: applicationURL)?.bundleIdentifier,
+                      !DefaultBrowserRouting.isQuiperBundleIdentifier(
+                          bundleIdentifier,
+                          quiperBundleIdentifier: Constants.BUNDLE_ID
+                      ) else { return nil }
+                return FallbackBrowserCandidate(
+                    bundleIdentifier: bundleIdentifier,
+                    name: FileManager.default.displayName(atPath: applicationURL.path),
+                    icon: NSWorkspace.shared.icon(forFile: applicationURL.path)
+                )
+            }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private func makeQuiperDefaultBrowser() {
+        let probeURL = URL(string: "https://example.com")!
+        if let currentDefaultApplication = NSWorkspace.shared.urlForApplication(toOpen: probeURL),
+           let currentBundleIdentifier = Bundle(url: currentDefaultApplication)?.bundleIdentifier,
+           !DefaultBrowserRouting.isQuiperBundleIdentifier(
+               currentBundleIdentifier,
+               quiperBundleIdentifier: Constants.BUNDLE_ID
+           ) {
+            settings.setDefaultBrowserFallbackBundleIdentifier(currentBundleIdentifier)
+        }
+        // Web links land in the resident link helper, which routes claimed
+        // ones into the engines and everything else into the fallback.
+        let helperURL = LinkHelperRouting.helperBundleURL(hostBundleURL: Bundle.main.bundleURL)
+        NSWorkspace.shared.setDefaultApplication(at: helperURL, toOpenURLsWithScheme: "http") { _ in
+            Task { @MainActor in refreshDefaultBrowserState() }
+        }
+    }
+
+    private struct FallbackBrowserCandidate: Identifiable {
+        let bundleIdentifier: String
+        let name: String
+        let icon: NSImage
+        var id: String { bundleIdentifier }
     }
 }
 
@@ -2449,6 +2578,54 @@ struct ServiceDetailView: View {
                         .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
                         .cornerRadius(8)
                     }
+                    // Links handed over by other applications
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "tray.and.arrow.down")
+                                .foregroundColor(.accentColor.settingsResolved)
+                            Text("Open Links in Quiper")
+                                .font(.headline)
+                            Spacer()
+                            externalLinkEnablePicker
+                        }
+
+                        Text("Right-click a link in any app and choose Open Link With → Quiper. Domains you claim here open in this engine; every other link keeps opening in your default browser.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if service.externalLinkHandler.isEnabled {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Domains")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                externalLinkDomainsList
+                            }
+
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Where Links Open")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                HStack(alignment: .top, spacing: 12) {
+                                    ForEach(ExternalLinkPlacement.allCases) { placement in
+                                        externalLinkPlacementCard(placement)
+                                    }
+                                }
+                                if service.externalLinkHandler.placement == .fixedSession {
+                                    externalLinkSlotPicker
+                                }
+                                if service.isPinnedTabs {
+                                    Text("Pinned Tabs engines open these links only in slots with a tab URL.")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                    .cornerRadius(8)
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
@@ -2462,6 +2639,176 @@ struct ServiceDetailView: View {
             }
         }
     }
+
+    // MARK: - Open Links in Quiper
+
+    private var externalLinkEnablePicker: some View {
+        HStack(spacing: 10) {
+            externalLinkEnableCard(label: "Enabled", isEnabled: true)
+            externalLinkEnableCard(label: "Disabled", isEnabled: false)
+        }
+    }
+
+    private func externalLinkEnableCard(label: String, isEnabled: Bool) -> some View {
+        let isSelected = service.externalLinkHandler.isEnabled == isEnabled
+        return Button {
+            setExternalLinkEnabled(isEnabled)
+        } label: {
+            VStack(spacing: 6) {
+                externalLinkEnablePreview(isEnabled: isEnabled)
+                    .frame(width: 96, height: 42)
+                    .pickerCardStyle(isSelected: isSelected, accentColor: .teal)
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(isSelected ? .primary : .secondary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// A mini window receiving a link while enabled, struck through when disabled.
+    private func externalLinkEnablePreview(isEnabled: Bool) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(Color.secondary.opacity(0.4), lineWidth: 1)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+            Image(systemName: "tray.and.arrow.down")
+                .font(.system(size: 15))
+                .foregroundColor(isEnabled ? .teal : .secondary)
+            if !isEnabled {
+                Capsule()
+                    .fill(Color.red.opacity(0.8))
+                    .frame(width: 2, height: 44)
+                    .rotationEffect(.degrees(45))
+            }
+        }
+        .opacity(isEnabled ? 1 : 0.65)
+    }
+
+    /// Enabling with no domains left seeds them from the engine URL, so a
+    /// freshly enabled handler claims the engine's own site right away.
+    private func setExternalLinkEnabled(_ enabled: Bool) {
+        if enabled, service.externalLinkHandler.domains.isEmpty,
+           let host = ExternalLinkRouting.normalizedDomain(from: service.url) {
+            service.externalLinkHandler.domains = [host]
+        }
+        service.externalLinkHandler.isEnabled = enabled
+        settings.saveSettings()
+    }
+
+    private var externalLinkDomainsList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if service.externalLinkHandler.domains.isEmpty {
+                Text("No domains yet. Add one to claim links for this engine.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 4)
+            }
+
+            ForEach(service.externalLinkHandler.domains.indices, id: \.self) { index in
+                HStack(spacing: 8) {
+                    TextField("example.com", text: Binding(
+                        get: { service.externalLinkHandler.domains[index] },
+                        set: { newValue in
+                            service.externalLinkHandler.domains[index] = newValue
+                            settings.saveSettings()
+                        }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    Button {
+                        service.externalLinkHandler.domains.remove(at: index)
+                        settings.saveSettings()
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Button {
+                service.externalLinkHandler.domains.append("")
+                settings.saveSettings()
+            } label: {
+                Label("Add Domain", systemImage: "plus")
+            }
+            .buttonStyle(.bordered)
+            .padding(.top, 2)
+        }
+    }
+
+    private func externalLinkPlacementCard(_ placement: ExternalLinkPlacement) -> some View {
+        let isSelected = service.externalLinkHandler.placement == placement
+        return Button {
+            service.externalLinkHandler.placement = placement
+            settings.saveSettings()
+        } label: {
+            VStack(spacing: 6) {
+                externalLinkPlacementPreview(placement, isSelected: isSelected)
+                    .frame(width: 104, height: 40)
+                    .pickerCardStyle(isSelected: isSelected, accentColor: .teal)
+                Text(placement.displayName)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(isSelected ? .primary : .secondary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// A schematic of the ten session slots plus a glyph for how the link
+    /// picks one: fresh slot, back to the recent slot, a fixed slot.
+    private func externalLinkPlacementPreview(_ placement: ExternalLinkPlacement, isSelected: Bool) -> some View {
+        let highlightedSlot: Int
+        let glyph: String
+        switch placement {
+        case .newSession:
+            highlightedSlot = 0
+            glyph = "plus"
+        case .lastVisitedSession:
+            highlightedSlot = 1
+            glyph = "arrow.counterclockwise"
+        case .fixedSession:
+            highlightedSlot = 5
+            glyph = "pin.fill"
+        }
+        return HStack(spacing: 3) {
+            ForEach(0..<SessionSlots.count, id: \.self) { slot in
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(slot == highlightedSlot && isSelected
+                          ? Color.teal
+                          : Color.secondary.opacity(0.3))
+                    .frame(width: 5, height: 22)
+            }
+            Image(systemName: glyph)
+                .font(.system(size: 10))
+                .foregroundColor(isSelected ? .teal : .secondary)
+                .padding(.leading, 3)
+        }
+    }
+
+    private var externalLinkSlotPicker: some View {
+        HStack(spacing: 6) {
+            Text("Session")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            ForEach(SessionSlots.range, id: \.self) { slot in
+                let isSelected = service.externalLinkHandler.fixedSessionIndex == slot
+                Button {
+                    service.externalLinkHandler.fixedSessionIndex = slot
+                    settings.saveSettings()
+                } label: {
+                    Text(SessionSlots.label(for: slot))
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .frame(width: 28, height: 26)
+                        .pickerCardStyle(isSelected: isSelected, accentColor: .teal)
+                }
+                .buttonStyle(.plain)
+                .help(SessionSlots.tooltipTitle(for: slot))
+            }
+        }
+    }
+
 
     private var friendDomainsForm: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -2589,7 +2936,6 @@ struct ServiceDetailView: View {
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-
 
     private var customCSSForm: some View {
         VStack(alignment: .leading, spacing: 16) {

@@ -1,8 +1,9 @@
+#if os(macOS)
 import AppKit
 import Carbon
 
 enum ShortcutFormatter {
-    static func string(for configuration: HotkeyManager.Configuration) -> String {
+    static func string(for configuration: HotkeyConfiguration) -> String {
         if configuration.isDisabled {
             return "Disabled"
         }
@@ -161,3 +162,4 @@ enum ShortcutFormatter {
         return keys
     }()
 }
+#endif

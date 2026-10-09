@@ -6,63 +6,28 @@ import UniformTypeIdentifiers
 /// Shared import/export helpers for Quiper configuration archives.
 /// The archive is a self-contained JSON representation of `PersistedSettings`
 /// with every per-engine text artifact inlined, suitable for backup/restore.
+///
+/// The pure codec lives in `SettingsCodec`; this type keeps the archive
+/// packaging, which is coupled to the running app. The codec entry points
+/// forward so archive call sites stay unchanged.
 enum ConfigPortability {
     static let fileExtension = "quiper"
     static let defaultExportFilename = "quiper-config.quiper"
 
     static func makeEncoder() -> JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        return encoder
+        SettingsCodec.makeEncoder()
     }
 
     static func makeDecoder() -> JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { decoder in
-            let container = try decoder.singleValueContainer()
-            // 1. Try Double (deferredToDate: timeIntervalSinceReferenceDate)
-            if let doubleValue = try? container.decode(Double.self) {
-                return Date(timeIntervalSinceReferenceDate: doubleValue)
-            }
-            // 2. Try Int (also reference date, for old files writing 806344477)
-            if let intValue = try? container.decode(Int.self) {
-                return Date(timeIntervalSinceReferenceDate: Double(intValue))
-            }
-            // 3. Try ISO8601 string (current encoder: .iso8601 -> "2026-08-29T16:34:36Z")
-            if let stringValue = try? container.decode(String.self) {
-                // With fractional seconds
-                let isoWithFractional = ISO8601DateFormatter()
-                isoWithFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                if let date = isoWithFractional.date(from: stringValue) {
-                    return date
-                }
-                let iso = ISO8601DateFormatter()
-                iso.formatOptions = [.withInternetDateTime]
-                if let date = iso.date(from: stringValue) {
-                    return date
-                }
-                // Fallback: try default ISO8601 without explicit options (handles Z)
-                let isoDefault = ISO8601DateFormatter()
-                if let date = isoDefault.date(from: stringValue) {
-                    return date
-                }
-            }
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode Date: expected Double, Int, or ISO8601 string")
-        }
-        return decoder
+        SettingsCodec.makeDecoder()
     }
 
     static func encode(_ persisted: PersistedSettings) throws -> Data {
-        try makeEncoder().encode(persisted)
+        try SettingsCodec.encode(persisted)
     }
 
     static func decode(from data: Data) throws -> PersistedSettings {
-        do {
-            return try makeDecoder().decode(PersistedSettings.self, from: data)
-        } catch let error as DecodingError {
-            throw ConfigPortError.decodingFailed(error)
-        }
+        try SettingsCodec.decode(from: data)
     }
 
     /// Inlines the latest file-backed script contents into the persisted copy.
@@ -146,36 +111,4 @@ enum ConfigPortability {
     #endif
 }
 
-enum ConfigPortError: LocalizedError {
-    case decodingFailed(DecodingError)
 
-    var errorDescription: String? {
-        switch self {
-        case .decodingFailed(let error):
-            return "Failed to read the config file: \(error.detailedDescription)"
-        }
-    }
-}
-
-extension DecodingError {
-    var detailedDescription: String {
-        switch self {
-        case .keyNotFound(let key, let context):
-            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
-            let location = path.isEmpty ? "" : " at '\(path)'"
-            return "Missing field '\(key.stringValue)'\(location)."
-        case .typeMismatch(let type, let context):
-            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
-            return "Incorrect type for field '\(path)': expected \(type). \(context.debugDescription)"
-        case .valueNotFound(let type, let context):
-            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
-            return "Value of type '\(type)' not found at '\(path)'."
-        case .dataCorrupted(let context):
-            let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
-            let location = path.isEmpty ? "" : " at '\(path)'"
-            return "Data corrupted\(location): \(context.debugDescription)"
-        @unknown default:
-            return self.localizedDescription
-        }
-    }
-}
