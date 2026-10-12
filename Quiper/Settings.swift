@@ -579,6 +579,7 @@ class Settings: ObservableObject {
         autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation ?? true
         shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData ?? true
         hasCompletedGhostOnboarding = persisted.hasCompletedGhostOnboarding ?? false
+        hasDismissedEngineSettingsShortcutNotice = persisted.hasDismissedEngineSettingsShortcutNotice ?? false
         enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false

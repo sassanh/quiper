@@ -178,6 +178,34 @@ struct SettingsServiceTests {
         #expect(Settings.shared.engineModifierHoldBehavior == .expand)
     }
 
+    @Test func engineSettingsShortcutNotice_SurvivesLoadSettingsReload() throws {
+        Settings.shared.wipeAllData()
+        _ = Settings.shared.loadSettings()
+        defer { Settings.shared.wipeAllData() }
+
+        // Dismissing the notice must persist across a cold loadSettings() reload,
+        // not just applyPersistedSettings. Otherwise the alert reappears on relaunch.
+        Settings.shared.hasDismissedEngineSettingsShortcutNotice = true
+        Settings.shared.saveSettings()
+
+        _ = Settings.shared.loadSettings()
+        #expect(Settings.shared.hasDismissedEngineSettingsShortcutNotice == true)
+
+        // A legacy payload that predates the flag defaults to showing the notice.
+        let legacyData = Data(
+            """
+            {
+              "services": [],
+              "version": 1
+            }
+            """.utf8
+        )
+        let legacy = try JSONDecoder().decode(PersistedSettings.self, from: legacyData)
+        #expect(legacy.hasDismissedEngineSettingsShortcutNotice == nil)
+        Settings.shared.applyPersistedSettings(legacy)
+        #expect(Settings.shared.hasDismissedEngineSettingsShortcutNotice == false)
+    }
+
     @Test func templateActionScriptSync_UsesBundledDefaultAndCustomEditsOptOut() throws {
         Settings.shared.wipeAllData()
         _ = Settings.shared.loadSettings()
