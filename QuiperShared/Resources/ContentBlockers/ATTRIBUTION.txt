@@ -1,0 +1,26 @@
+Quiper ships compiled WebKit content-blocker rule lists and two userscripts
+in this folder.
+
+  blocker-ads.json        derived from EasyList (https://easylist.to)
+  blocker-privacy.json    derived from EasyPrivacy (https://easylist.to)
+  adguard-extra.user.js   AdGuard Extra userscript v1.1.38 (https://github.com/AdguardTeam/AdGuardExtra)
+  block-youtube-ads.user.js  Block YouTube Ads userscript (https://github.com/AdguardTeam/BlockYouTubeAdsShortcut)
+
+Both filter lists are published by the EasyList and EasyPrivacy authors and
+are licensed under the Creative Commons Attribution-ShareAlike 3.0 Unported
+License (CC BY-SA 3.0) and the GNU General Public License v3.0 (GPL-3.0).
+See https://easylist.to/pages/licence.html for the full licence text.
+
+AdGuard Extra and Block YouTube Ads are published by AdGuard Software Ltd.
+and licensed under the GNU General Public License v3.0 (GPL-3.0); the full
+licence text ships alongside as GPL-3.0.txt. Both files are redistributed
+unmodified from their upstream release channels (see
+scripts/update-blocklists.sh for the exact URLs); Quiper wraps them in a
+gating prelude at runtime but does not alter the files themselves.
+
+The lists were converted to WebKit `WKContentRuleList` JSON with
+AdguardTeam/SafariConverterLib (GPL-3.0), used strictly as a build-time tool;
+see scripts/update-blocklists.sh for the pinned version and reproduction
+steps. Quiper itself is MIT-licensed and contains no GPL-covered code beyond
+the separately-licensed data and script files in this folder, which are
+aggregated with the application as independent works.

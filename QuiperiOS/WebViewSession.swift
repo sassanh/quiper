@@ -54,6 +54,9 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         configuration.mediaTypesRequiringUserActionForPlayback = []
         let userContentController = WKUserContentController()
         configuration.userContentController = userContentController
+        if !ContentBlockerManager.isRunningTests {
+            ContentBlockerManager.shared.register(userContentController)
+        }
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = false

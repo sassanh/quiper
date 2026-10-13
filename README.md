@@ -25,6 +25,7 @@ Quiper unifies all your AI chat services into a single, instant-access macOS ove
   > **Local Client-Side Protection Only**
   > Quiper's secure storage strictly protects your data *at rest on your local Mac*. If someone steals your unlocked laptop or snoops on your machine, they cannot access these locked engines without your biometrics. It does **not** encrypt your data on the AI provider's servers—conversations sent to the cloud are processed according to the respective provider's privacy policies.
   
+- **Built-In Ad & Tracker Blocking** – Pages load clean out of the box. EasyList and EasyPrivacy rules run natively in WebKit, with AdGuard's YouTube script stripping ad metadata and auto-skipping video ads. On by default, fully bundled with the app, one toggle in Settings to turn it off.
 - **Bring Your Own Engine** – Don't get locked into one ecosystem. Add ChatGPT, Claude, Gemini, or point it to local models like `llama.cpp` or Open WebUI.
 - **Verifiable Safety** – 100% open-source, telemetry-free, and cryptographically verified via GitHub attestations.
 - **Power User Tools** – Inject custom CSS, trigger Custom Actions via JavaScript, and receive native macOS notifications for background generations.

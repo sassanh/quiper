@@ -1,0 +1,61 @@
+name: Update bundled blocklists
+
+# Keeps the bundled ad-blocking resources current without waiting for a
+# release: regenerates the WebKit content-blocker rule lists from upstream
+# EasyList/EasyPrivacy and refreshes the AdGuard Extra and Block YouTube Ads
+# userscripts, verifies the app still builds with them, then lands the result
+# on main. (Commits pushed with the default GITHUB_TOKEN do not trigger the
+# CI/CD workflow, which is why the build check runs here.)
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-blocklists
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Regenerate content-blocker resources
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache converter build
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/quiper-blocklists
+          key: quiper-blocklists-${{ runner.os }}-v4.3.0
+
+      - name: Regenerate blocklists and AdGuard userscripts
+        run: ./scripts/update-blocklists.sh
+
+      - name: Verify the app builds with the refreshed resources
+        run: |
+          xcodebuild -project Quiper.xcodeproj -scheme Quiper \
+            -configuration Debug -destination "platform=macOS" build
+
+      - name: Commit updated resources
+        run: |
+          set -euo pipefail
+          git add QuiperShared/Resources/ContentBlockers
+          if git diff --cached --quiet; then
+            echo "Bundled resources are already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "$(cat <<'EOF'
+          chore: refresh bundled ad-blocking resources
+
+          - Regenerate the WebKit content-blocker rule lists from the latest upstream EasyList and EasyPrivacy.
+          - Refresh the AdGuard Extra and Block YouTube Ads userscripts to their latest upstream releases.
+          EOF
+          )"
+          git push

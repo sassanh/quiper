@@ -143,6 +143,9 @@ final class WebSessionCoordinator: NSObject {
                 )
             )
         }
+        // The wipe above also strips the injected ad-blocking userscripts;
+        // restore them so the reload keeps its ad layer.
+        ContentBlockerManager.shared.reinstallInjectedScripts(on: userContentController)
         webView.reload()
     }
 

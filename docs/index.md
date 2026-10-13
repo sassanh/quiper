@@ -33,6 +33,9 @@ features:
   - icon: 🔒
     title: Optional Local Protection
     details: Protect selected engines' local WebKit data with Touch ID, Keychain, and encrypted APFS storage when you need it.
+  - icon: 🚫
+    title: Built-In Ad & Tracker Blocking
+    details: Pages load clean by default — EasyList and EasyPrivacy rules plus AdGuard's YouTube script strip ads and trackers before they render, all bundled with the app.
   - icon: ✓
     title: Open and Verifiable
     details: Quiper is open source and telemetry-free, with stable release provenance verifiable through GitHub artifact attestations.

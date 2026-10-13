@@ -271,6 +271,14 @@ class Settings: ObservableObject {
     /// Whether downloads open the macOS save dialog instead of saving straight
     /// to their default folder (the engine's secure storage for secured engines).
     @Published var askWhereToSaveDownloads: Bool = false
+    /// Whether ads and trackers are blocked in every session tab and popup via
+    /// WebKit content rule lists compiled from EasyList/EasyPrivacy.
+    @Published var blockAdsAndTrackers: Bool = true {
+        didSet {
+            saveSettings()
+            ContentBlockerManager.shared.setEnabled(blockAdsAndTrackers)
+        }
+    }
     /// The browser unclaimed links open in while Quiper is the system default
     /// browser; the fallback recorded when Quiper became the default, or the
     /// user's later choice. nil means Safari.
@@ -370,6 +378,7 @@ class Settings: ObservableObject {
         hideQuiperWhenRetriggeringActiveEngineShortcut = true
         globalEngineDigitShortcutsEnabled = false
         askWhereToSaveDownloads = false
+        blockAdsAndTrackers = true
         defaultBrowserFallbackBundleIdentifier = nil
         preservedIOSHardwareKeyboardSettings = nil
         showOnAllSpaces = false
@@ -584,6 +593,7 @@ class Settings: ObservableObject {
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
         askWhereToSaveDownloads = persisted.askWhereToSaveDownloads ?? false
+        blockAdsAndTrackers = persisted.blockAdsAndTrackers ?? true
         defaultBrowserFallbackBundleIdentifier = persisted.defaultBrowserFallbackBundleIdentifier
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         keepOverlayOnTop = persisted.keepOverlayOnTop ?? true
@@ -691,6 +701,7 @@ class Settings: ObservableObject {
                                             hasDismissedEngineSettingsShortcutNotice: hasDismissedEngineSettingsShortcutNotice,
                                             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
                                             askWhereToSaveDownloads: askWhereToSaveDownloads,
+                                            blockAdsAndTrackers: blockAdsAndTrackers,
                                             defaultBrowserFallbackBundleIdentifier: defaultBrowserFallbackBundleIdentifier,
                                             iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
                                             quiperVersion: persistedQuiperVersionForSave())
@@ -829,6 +840,7 @@ class Settings: ObservableObject {
             hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
             globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
             askWhereToSaveDownloads: askWhereToSaveDownloads,
+            blockAdsAndTrackers: blockAdsAndTrackers,
             defaultBrowserFallbackBundleIdentifier: defaultBrowserFallbackBundleIdentifier,
             iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
             quiperVersion: persistedQuiperVersionForSave()
@@ -1053,6 +1065,7 @@ class Settings: ObservableObject {
         enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
         globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
         askWhereToSaveDownloads = persisted.askWhereToSaveDownloads ?? false
+        blockAdsAndTrackers = persisted.blockAdsAndTrackers ?? true
         defaultBrowserFallbackBundleIdentifier = persisted.defaultBrowserFallbackBundleIdentifier
         showOnAllSpaces = persisted.showOnAllSpaces ?? false
         keepOverlayOnTop = persisted.keepOverlayOnTop ?? true

@@ -1145,6 +1145,85 @@ struct PromptHistoryPicker: View {
     }
 }
 
+struct ContentBlockingPicker: View {
+    @ObservedObject private var settings = Settings.shared
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: { settings.blockAdsAndTrackers = true }) {
+                VStack(spacing: 8) {
+                    pagePreview(isBlocking: true)
+                        .padding(8)
+                        .pickerCardStyle(
+                            isSelected: settings.blockAdsAndTrackers,
+                            accentColor: .indigo
+                        )
+
+                    Text("Blocking On")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.blockAdsAndTrackers ? .primary : .secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { settings.blockAdsAndTrackers = false }) {
+                VStack(spacing: 8) {
+                    pagePreview(isBlocking: false)
+                        .padding(8)
+                        .pickerCardStyle(
+                            isSelected: !settings.blockAdsAndTrackers,
+                            accentColor: .indigo
+                        )
+
+                    Text("Blocking Off")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(settings.blockAdsAndTrackers ? .secondary : .primary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 260, alignment: .trailing)
+    }
+
+    /// A miniature page: two content lines with an ad slot between them. With
+    /// blocking on, the ad slot is struck through and dimmed.
+    private func pagePreview(isBlocking: Bool) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                .frame(width: 48, height: 32)
+
+            VStack(alignment: .leading, spacing: 3) {
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(Color.secondary.opacity(0.45))
+                    .frame(width: 30, height: 3)
+
+                ZStack {
+                    RoundedRectangle(cornerRadius: 1, style: .continuous)
+                        .fill(
+                            isBlocking
+                                ? Color.secondary.opacity(0.25)
+                                : Color.indigo.settingsResolved.opacity(0.75)
+                        )
+                        .frame(width: 34, height: 7)
+
+                    if isBlocking {
+                        Rectangle()
+                            .fill(Color.secondary.opacity(0.65))
+                            .frame(width: 36, height: 1)
+                            .rotationEffect(.degrees(-14))
+                    }
+                }
+
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(Color.secondary.opacity(0.45))
+                    .frame(width: 24, height: 3)
+            }
+        }
+        .frame(width: 56, height: 36)
+    }
+}
+
 struct PromptRecordingIndicatorPicker: View {
     @ObservedObject private var settings = Settings.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

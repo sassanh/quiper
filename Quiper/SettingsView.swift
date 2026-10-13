@@ -358,6 +358,16 @@ struct GeneralSettingsView: View {
                         }
                     }
                 }
+                SettingsSection(title: "Privacy", icon: "hand.raised.fill", iconColor: .indigo.settingsResolved) {
+                    SettingsRow(
+                        title: "Ads & Trackers",
+                        message: "Block ads and trackers on every page using the EasyList and EasyPrivacy filter lists, plus AdGuard Extra and AdGuard's YouTube script for ads that rules alone can't stop — including YouTube video ads. Everything ships with Quiper; nothing is downloaded in the background.",
+                        icon: "shield.lefthalf.filled",
+                        iconColor: .indigo.settingsResolved
+                    ) {
+                        ContentBlockingPicker()
+                    }
+                }
                 
                 SettingsSection(title: "Config", icon: "square.and.arrow.up.on.square.fill", iconColor: .green) {
                     SettingsRow(

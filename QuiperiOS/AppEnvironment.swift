@@ -37,6 +37,13 @@ final class AppEnvironment: ObservableObject {
     @Published var automaticallySwitchEngineOnLastSessionClose: Bool = true
     @Published var autoCreateSessionOnEmptyEngineActivation: Bool = true
     @Published var shouldPurgeDanglingWebData: Bool = true
+    /// Whether ads and trackers are blocked in every session via WebKit
+    /// content rule lists compiled from EasyList/EasyPrivacy.
+    @Published var blockAdsAndTrackers: Bool = true {
+        didSet {
+            ContentBlockerManager.shared.setEnabled(blockAdsAndTrackers)
+        }
+    }
     @Published var iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings = .defaults
     @Published private(set) var isHardwareKeyboardConnected = false
     @Published private(set) var startupState: StartupState = .loading
@@ -1289,7 +1296,7 @@ final class AppEnvironment: ObservableObject {
                         var dict = full
                         tabState.applying(to: &dict, serviceID: id)
                         full = dict
-                    } else if let existing = persistedTabState.openTabs[id] {
+                    } else if persistedTabState.openTabs[id] != nil {
                         // Already unlocked engine had its tabs in plaintext? No, unlocked engines' tabs are already in persistedTabState but filtered out by plaintextTabState.
                         // For already-unlocked engines, we need to take their current tabs from live persistedTabState
                         full.openTabs[id] = persistedTabState.openTabs[id]
@@ -1326,6 +1333,7 @@ final class AppEnvironment: ObservableObject {
         payload.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
         payload.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
         payload.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
+        payload.blockAdsAndTrackers = blockAdsAndTrackers
         payload.tabSurvivalPolicy = tabSurvivalPolicy
         payload.persistedTabState = activeTabState
         payload.enablePromptHistory = enablePromptHistory
@@ -1371,7 +1379,7 @@ final class AppEnvironment: ObservableObject {
         if !isServiceLocked(serviceID), let service = services.first(where: { $0.id == serviceID }) {
             let tabState: IOSSecuredTabState? = {
                 guard tabSurvivalPolicy != .never else { return nil }
-                var state = persistedTabState
+                let state = persistedTabState
                 // Already unlocked, its tabs are already in persistedTabState, but we capture them for export
                 return IOSSecuredTabState(serviceID: serviceID, state: state, excludingPinnedURLs: service.isPinnedTabs)
             }()
@@ -1515,6 +1523,7 @@ final class AppEnvironment: ObservableObject {
         if let automaticallySwitchEngineOnLastSessionClose = persisted.automaticallySwitchEngineOnLastSessionClose { self.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose }
         if let autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation { self.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation }
         if let shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData { self.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData }
+        if let blockAdsAndTrackers = persisted.blockAdsAndTrackers { self.blockAdsAndTrackers = blockAdsAndTrackers }
         if tabSurvivalPolicy == .never {
             persistedTabState = PersistedTabState()
             persistedTabState.activeServiceID = services.first?.id
@@ -1994,6 +2003,9 @@ final class AppEnvironment: ObservableObject {
         if let shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData {
             self.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
         }
+        if let blockAdsAndTrackers = persisted.blockAdsAndTrackers {
+            self.blockAdsAndTrackers = blockAdsAndTrackers
+        }
 
         if tabSurvivalPolicy == .never {
             // Mirror macOS `.never`: boot clean, never write or restore tab state.
@@ -2148,6 +2160,7 @@ final class AppEnvironment: ObservableObject {
         payload.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
         payload.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
         payload.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
+        payload.blockAdsAndTrackers = blockAdsAndTrackers
         payload.tabSurvivalPolicy = tabSurvivalPolicy
         payload.persistedTabState = tabSurvivalPolicy == .never ? nil : plaintextTabState()
         payload.enablePromptHistory = enablePromptHistory
@@ -2255,6 +2268,7 @@ final class AppEnvironment: ObservableObject {
         "automaticallySwitchEngineOnLastSessionClose",
         "autoCreateSessionOnEmptyEngineActivation",
         "shouldPurgeDanglingWebData",
+        "blockAdsAndTrackers",
         "tabSurvivalPolicy",
         "persistedTabState",
         "enablePromptHistory",

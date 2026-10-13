@@ -397,6 +397,10 @@ struct PersistedSettings: Codable {
     var hasDismissedEngineSettingsShortcutNotice: Bool?
     var globalEngineDigitShortcutsEnabled: Bool?
     var askWhereToSaveDownloads: Bool?
+    /// Whether ads and trackers are blocked via WebKit content rule lists.
+    /// Absent in files written before the setting existed; consumers default
+    /// it to `true`.
+    var blockAdsAndTrackers: Bool?
     #if os(macOS)
     /// The browser unclaimed links open in while Quiper is the system
     /// default browser; nil means Safari.
@@ -442,6 +446,7 @@ struct PersistedSettings: Codable {
         case hasDismissedEngineSettingsShortcutNotice
         case globalEngineDigitShortcutsEnabled
         case askWhereToSaveDownloads
+        case blockAdsAndTrackers
         case iosHardwareKeyboardSettings
         case quiperVersion
     }
@@ -496,6 +501,7 @@ struct PersistedSettings: Codable {
          hasDismissedEngineSettingsShortcutNotice: Bool? = nil,
          globalEngineDigitShortcutsEnabled: Bool? = nil,
          askWhereToSaveDownloads: Bool? = nil,
+         blockAdsAndTrackers: Bool? = nil,
          defaultBrowserFallbackBundleIdentifier: String? = nil,
          iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings? = nil,
          quiperVersion: String? = nil,
@@ -542,6 +548,7 @@ struct PersistedSettings: Codable {
         self.hasDismissedEngineSettingsShortcutNotice = hasDismissedEngineSettingsShortcutNotice
         self.globalEngineDigitShortcutsEnabled = globalEngineDigitShortcutsEnabled
         self.askWhereToSaveDownloads = askWhereToSaveDownloads
+        self.blockAdsAndTrackers = blockAdsAndTrackers
         self.defaultBrowserFallbackBundleIdentifier = defaultBrowserFallbackBundleIdentifier
         self.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
         self.quiperVersion = quiperVersion
@@ -588,6 +595,7 @@ struct PersistedSettings: Codable {
          hasDismissedEngineSettingsShortcutNotice: Bool? = nil,
          globalEngineDigitShortcutsEnabled: Bool? = nil,
          askWhereToSaveDownloads: Bool? = nil,
+         blockAdsAndTrackers: Bool? = nil,
          iosHardwareKeyboardSettings: IOSHardwareKeyboardSettings? = nil,
          quiperVersion: String? = nil,
          version: Int? = 1) {
@@ -631,6 +639,7 @@ struct PersistedSettings: Codable {
         self.hasDismissedEngineSettingsShortcutNotice = hasDismissedEngineSettingsShortcutNotice
         self.globalEngineDigitShortcutsEnabled = globalEngineDigitShortcutsEnabled
         self.askWhereToSaveDownloads = askWhereToSaveDownloads
+        self.blockAdsAndTrackers = blockAdsAndTrackers
         self.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
         self.quiperVersion = quiperVersion
         self.version = version
@@ -743,6 +752,7 @@ struct PersistedSettings: Codable {
         hasDismissedEngineSettingsShortcutNotice = try container.decodeBoolIfPresent(forKey: .hasDismissedEngineSettingsShortcutNotice)
         globalEngineDigitShortcutsEnabled = try container.decodeBoolIfPresent(forKey: .globalEngineDigitShortcutsEnabled)
         askWhereToSaveDownloads = try container.decodeBoolIfPresent(forKey: .askWhereToSaveDownloads)
+        blockAdsAndTrackers = try container.decodeBoolIfPresent(forKey: .blockAdsAndTrackers)
         #if os(macOS)
         defaultBrowserFallbackBundleIdentifier = try container.decodeIfPresent(
             String.self,

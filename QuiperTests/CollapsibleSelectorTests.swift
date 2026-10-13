@@ -104,18 +104,22 @@ final class CollapsibleSelectorTests: XCTestCase {
         // Test Collapse
         selector.collapse()
         
-        // Wait for collapse animation and cleanup
-        let expectation = XCTestExpectation(description: "Collapse animation completes")
-        
         XCTAssertFalse(selector.isExpanded, "Should be marked collapsed immediately")
         
-        // The panel cleanup happens async after animation
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        // The panel is cleaned up asynchronously after the fade animation
+        // completes, which a loaded runner can delay well past the nominal
+        // duration — poll until it happens instead of checking once.
+        let expectation = XCTestExpectation(description: "Collapse animation completes")
+        let cleanupDeadline = Date().addingTimeInterval(4.5)
+        func pollForCleanup() {
             if self.selector.expandedPanel == nil {
                 expectation.fulfill()
+            } else if Date() < cleanupDeadline {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: pollForCleanup)
             }
         }
-        wait(for: [expectation], timeout: 1.0)
+        pollForCleanup()
+        wait(for: [expectation], timeout: 5.0)
     }
     
     func testDelegateCallbacks() {

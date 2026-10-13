@@ -353,6 +353,9 @@ final class WebViewManager: NSObject {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
         Self.addEngineUserScripts(to: controller, service: service)
+        // The wipe above also strips the injected ad-blocking userscripts;
+        // restore them so later navigations keep their ad layer.
+        ContentBlockerManager.shared.reinstallInjectedScripts(on: controller)
         notificationBridges[ObjectIdentifier(webView)]?.reinstall()
     }
 
@@ -1393,6 +1396,14 @@ final class WebViewManager: NSObject {
                 ContextLinkScriptMessageHandler(manager: self),
                 name: WebScripts.contextLinkHandlerName
             )
+
+            // Ad and tracker blocking: every session tab and popup passes
+            // through here, so one registration covers both. Marker-free
+            // webviews stay unregistered so their content rule lists cannot
+            // betray them.
+            if !ContentBlockerManager.isRunningTests {
+                ContentBlockerManager.shared.register(userContentController)
+            }
         }
 
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true

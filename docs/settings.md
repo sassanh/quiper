@@ -1,6 +1,6 @@
 # Application Settings & Backups
 
-This page covers application-wide preferences under **Settings (`⌘ ⇧ ,`)** including runtime behavior, configuration backups, updates management, and the danger zone.
+This page covers application-wide preferences under **Settings (`⌘ ⇧ ,`)** including runtime behavior, privacy controls, configuration backups, updates management, and the danger zone.
 
 ---
 
@@ -31,6 +31,21 @@ Quiper can maintain a local history of your sent prompts on a per-session basis,
     *   **On Submit / Enter:** Records the prompt when you hit Enter to submit it to the AI.
     *   **On Cmd+Enter:** Records the prompt when you submit via Command + Enter.
     *   **On Clear / Overwrite:** Records the prior prompt when it is cleared (via `Cmd+X` or `Backspace` on empty) or overwritten (typing/pasting after `Cmd+A` select-all).
+
+---
+
+## Privacy Settings
+
+Quiper filters ads and trackers out of every page before it loads — in every session tab and popup alike — using two complementary layers, both bundled with the app:
+
+*   **Native WebKit rules:** The community-maintained **EasyList** and **EasyPrivacy** filter lists, compiled into native content rules that WebKit evaluates before any page content loads.
+*   **Bundled userscripts:** **AdGuard Extra** (defends against adblock-circumvention scripts) and **AdGuard's Block YouTube Ads** script (strips ad metadata from the player and auto-skips video ads), injected at document start to handle ads that declarative rules alone cannot reach.
+
+### Ads & Trackers
+*   **Location:** **Settings (`⌘ ⇧ ,`) → General → Privacy → Ads & Trackers** on macOS, or **Settings → Privacy** on iOS.
+*   **Default:** **Blocking On.** Choose **Blocking On** or **Blocking Off** with the card picker. Open tabs pick up the change at their next page load.
+*   **Fully offline:** Every list and script ships inside Quiper and refreshes with each release — nothing is downloaded in the background.
+*   **Private pages stay untouched:** Marker-free ("private") web views deliberately receive neither layer — blocking changes page behavior in observable ways, and Quiper keeps those pages completely unaltered.
 
 ---
 

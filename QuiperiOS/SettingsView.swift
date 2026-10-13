@@ -53,6 +53,7 @@ struct SettingsView: View {
                 actionsSection
                 promptHistorySection
                 behaviorSection
+                privacySection
                 appearanceSection
                 configSection
                 dangerZoneSection
@@ -476,6 +477,16 @@ struct SettingsView: View {
             Text("Behavior")
         } footer: {
             Text("Closing the last session of an engine switches to the nearest engine with sessions. Tabs reopen on launch unless Tab Survival is set to Never Restore.")
+        }
+    }
+
+    private var privacySection: some View {
+        Section {
+            Toggle("Block Ads & Trackers", isOn: $environment.blockAdsAndTrackers)
+        } header: {
+            Text("Privacy")
+        } footer: {
+            Text("Ads and trackers are filtered with the EasyList and EasyPrivacy lists, applied by WebKit before pages load, plus AdGuard Extra and AdGuard's YouTube script for ads that rules alone can't stop — including YouTube video ads. Everything ships with the app; changes take effect across all sessions at each tab's next page load.")
         }
     }
 
