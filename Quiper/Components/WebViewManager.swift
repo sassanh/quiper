@@ -13,8 +13,8 @@ protocol WebViewManagerDelegate: AnyObject {
     /// The user chose Suggest Selector in the webview context menu.
     /// `viewPoint` is in the webview's own coordinates at click time.
     func webViewDidRequestSelectorSuggest(_ webView: WKWebView, at viewPoint: NSPoint)
-    /// A link context menu item chose private open. The controller switches
-    /// the source tab into private mode and loads `url` in it.
+    /// A link context menu item chose private open. The controller opens
+    /// `url` in a private sub-window owned by the source tab.
     func webView(_ webView: WKWebView, didRequestPrivateLinkOpen url: URL)
     /// A popup title was right-clicked: build the shared page-title context
     /// menu for the popup's page — the same menu the main window's title
@@ -209,13 +209,15 @@ final class WebViewManager: NSObject {
     private var tabInputStates: [UUID: [Int: TabInputState]] = [:]
     private var tabPromptHistories: [UUID: [Int: [PromptHistoryEntry]]] = [:]
     private var tabPromptHistoryEnabledOverrides: [UUID: [Int: Bool]] = [:]
-    // MARK: - Temporary-state tracking
-    // Hard-temporary state is owned entirely by Quiper: a tab is temporary
-    // exactly when it runs on an isolated ephemeral store. Creation seeds the
-    // flag; removal clears it. Page scripts never participate, and ephemeral
-    // tabs receive no injected scripts or handlers, so websites cannot detect
-    // Quiper through them.
-    private var tabQuiperPrivateStores: [UUID: [Int: Bool]] = [:]
+    // MARK: - Private-webview tracking
+    // Private state is owned entirely by Quiper: a webview is private
+    // exactly when it runs on an isolated ephemeral store. Only private
+    // sub-windows and their descendant popups qualify — main-window tabs
+    // are always normal. Registration happens at creation; removal clears
+    // it. Page scripts never participate, and private webviews receive no
+    // injected scripts or handlers, so websites cannot detect Quiper
+    // through them.
+    private var privateWebviewTokens: Set<ObjectIdentifier> = []
     private var approvedURLs = Set<URL>()
     private var cancellables = Set<AnyCancellable>()
 
@@ -302,11 +304,6 @@ final class WebViewManager: NSObject {
                 tabPromptHistoryEnabledOverrides.removeValue(forKey: serviceID)
             }
         }
-        for serviceID in tabQuiperPrivateStores.keys {
-            if !incomingServiceIDs.contains(serviceID) {
-                tabQuiperPrivateStores.removeValue(forKey: serviceID)
-            }
-        }
     }
     
     func updateZoomLevels(_ levels: [UUID: CGFloat]) {
@@ -332,8 +329,8 @@ final class WebViewManager: NSObject {
     /// pushes it into every live session by updating the tagged style
     /// element. Callers never care why it changed (user edit, Hide, template
     /// sync toggle): persisting posts `.engineCustomCSSChanged`, which lands
-    /// here. Covers tabs and popups alike. Ephemeral tabs are skipped: their
-    /// pages stay marker-free.
+    /// here. Covers tabs and popups alike. Private webviews are skipped:
+    /// their pages stay marker-free.
     func refreshCustomCSS(for serviceID: UUID) {
         for (_, webView) in webViews(for: serviceID) {
             syncEngineUserScripts(to: webView)
@@ -346,8 +343,8 @@ final class WebViewManager: NSObject {
     /// so without this the next navigation replays stale CSS until `didFinish`
     /// patches the live page — the visible flash of unhidden elements.
     private func syncEngineUserScripts(to webView: WKWebView) {
-        guard let (snapshotService, sessionIndex) = findServiceAndSession(for: webView),
-              !isQuiperPrivateTab(serviceID: snapshotService.id, sessionIndex: sessionIndex),
+        guard !isPrivateWebView(webView),
+              let (snapshotService, _) = findServiceAndSession(for: webView),
               let service = Self.authoritativeService(for: snapshotService.id, snapshot: services)
         else { return }
         let controller = webView.configuration.userContentController
@@ -390,8 +387,8 @@ final class WebViewManager: NSObject {
     /// every finished navigation, since loads re-run the creation-time script
     /// with whatever CSS was current at webview creation.
     private func applyCurrentCustomCSS(to webView: WKWebView) {
-        guard let (snapshotService, sessionIndex) = findServiceAndSession(for: webView),
-              !isQuiperPrivateTab(serviceID: snapshotService.id, sessionIndex: sessionIndex),
+        guard !isPrivateWebView(webView),
+              let (snapshotService, _) = findServiceAndSession(for: webView),
               let service = Self.authoritativeService(for: snapshotService.id, snapshot: services)
         else { return }
         webView.evaluateJavaScript(
@@ -476,7 +473,6 @@ final class WebViewManager: NSObject {
         tabInputStates[serviceID]?.removeValue(forKey: sessionIndex)
         tabPromptHistories[serviceID]?.removeValue(forKey: sessionIndex)
         tabPromptHistoryEnabledOverrides[serviceID]?.removeValue(forKey: sessionIndex)
-        tabQuiperPrivateStores[serviceID]?.removeValue(forKey: sessionIndex)
     }
 
     func getOpenSessionTitlesState() -> [UUID: [Int: String]] {
@@ -485,8 +481,6 @@ final class WebViewManager: NSObject {
         for service in services {
             guard let sessionIndices = webviewsByID[service.id]?.keys else { continue }
             let titles = sessionIndices.reduce(into: [Int: String]()) { result, sessionIndex in
-                // Temporary tabs never persist, so their titles stay out of saved state.
-                guard !isTemporaryTab(serviceID: service.id, sessionIndex: sessionIndex) else { return }
                 if let title = sessionTitle(for: service, sessionIndex: sessionIndex) {
                     result[sessionIndex] = title
                 }
@@ -509,8 +503,6 @@ final class WebViewManager: NSObject {
             guard let sessionMap = webviewsByID[service.id] else { continue }
             var sessionURLs: [Int: String] = [:]
             for (idx, webView) in sessionMap {
-                // Temporary tabs never persist: no URL reaches disk.
-                guard !isTemporaryTab(serviceID: service.id, sessionIndex: idx) else { continue }
                 if let committedURL = webView.url, Self.isLoadableAddress(committedURL) {
                     sessionURLs[idx] = committedURL.absoluteString
                 } else if let previouslySavedURL = currentSavedState?[service.id]?[idx], !previouslySavedURL.isEmpty {
@@ -526,40 +518,25 @@ final class WebViewManager: NSObject {
         return state
     }
 
-    // MARK: - Temporary-state record
+    // MARK: - Private-state record
     //
-    // A tab is temporary exactly when it runs on an isolated ephemeral store.
-    // Creation seeds the flag; removal clears it. Nothing else writes it.
+    // A webview is private exactly when it runs on an isolated ephemeral
+    // store: a private sub-window or a popup descended from one. Creation
+    // registers the token; teardown clears it. Nothing else writes it.
 
-    /// Whether the tab is a hard-temporary ephemeral tab. Never persists.
-    func isTemporaryTab(serviceID: UUID, sessionIndex: Int) -> Bool {
-        isQuiperPrivateTab(serviceID: serviceID, sessionIndex: sessionIndex)
+    /// Whether the webview is private — a private sub-window or a popup of
+    /// one. Never persists.
+    func isPrivateWebView(_ webView: WKWebView) -> Bool {
+        privateWebviewTokens.contains(ObjectIdentifier(webView))
     }
 
-    /// Whether the tab runs on an isolated ephemeral store created for
-    /// hard-temporary use. Never flips in place by design.
-    func isQuiperPrivateTab(serviceID: UUID, sessionIndex: Int) -> Bool {
-        tabQuiperPrivateStores[serviceID]?[sessionIndex] ?? false
-    }
-
-    /// Seeds the creation flag. Normal tabs record false; ephemeral tabs true.
-    private func seedTemporaryState(isQuiperPrivate: Bool, for serviceID: UUID, sessionIndex: Int) {
-        if tabQuiperPrivateStores[serviceID] == nil {
-            tabQuiperPrivateStores[serviceID] = [:]
-        }
-        tabQuiperPrivateStores[serviceID]?[sessionIndex] = isQuiperPrivate
+    /// Registers the creation flag for a private webview.
+    private func registerPrivateWebView(_ webView: WKWebView) {
+        privateWebviewTokens.insert(ObjectIdentifier(webView))
     }
 
     func getOpenSessionsInputState() -> [UUID: [Int: TabInputState]] {
-        // Temporary tabs never persist; keep their live input out of saved state.
-        var filtered: [UUID: [Int: TabInputState]] = [:]
-        for (serviceID, sessions) in tabInputStates {
-            let kept = sessions.filter { !isTemporaryTab(serviceID: serviceID, sessionIndex: $0.key) }
-            if !kept.isEmpty {
-                filtered[serviceID] = kept
-            }
-        }
-        return filtered
+        tabInputStates
     }
 
     func getTabInputState(for serviceID: UUID, sessionIndex: Int) -> TabInputState? {
@@ -585,25 +562,11 @@ final class WebViewManager: NSObject {
     }
 
     func getOpenSessionsPromptHistories() -> [UUID: [Int: [PromptHistoryEntry]]] {
-        var filtered: [UUID: [Int: [PromptHistoryEntry]]] = [:]
-        for (serviceID, sessions) in tabPromptHistories {
-            let kept = sessions.filter { !isTemporaryTab(serviceID: serviceID, sessionIndex: $0.key) }
-            if !kept.isEmpty {
-                filtered[serviceID] = kept
-            }
-        }
-        return filtered
+        tabPromptHistories
     }
 
     func getOpenSessionsPromptHistoryOverrides() -> [UUID: [Int: Bool]] {
-        var filtered: [UUID: [Int: Bool]] = [:]
-        for (serviceID, sessions) in tabPromptHistoryEnabledOverrides {
-            let kept = sessions.filter { !isTemporaryTab(serviceID: serviceID, sessionIndex: $0.key) }
-            if !kept.isEmpty {
-                filtered[serviceID] = kept
-            }
-        }
-        return filtered
+        tabPromptHistoryEnabledOverrides
     }
 
     func restoreTabPromptHistories(_ states: [UUID: [Int: [PromptHistoryEntry]]]) {
@@ -709,13 +672,13 @@ final class WebViewManager: NSObject {
     }
 
     func pushRecordingIndicatorState(to webView: WKWebView) {
-        guard let (service, sessionIndex) = findServiceAndSession(for: webView),
-              !isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) else { return }
+        guard !isPrivateWebView(webView),
+              let (service, sessionIndex) = findServiceAndSession(for: webView) else { return }
         pushRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
     }
 
     func pushRecordingIndicatorState(to webView: WKWebView, service: Service, sessionIndex: Int) {
-        guard !isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) else { return }
+        guard !isPrivateWebView(webView) else { return }
         applyRecordingIndicatorState(to: webView, service: service, sessionIndex: sessionIndex)
         // Re-evaluate rather than replaying stale state if visibility/settings change during the delay.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, weak webView] in
@@ -801,8 +764,8 @@ final class WebViewManager: NSObject {
     /// indicator can hide its animations while Quiper as a whole is
     /// unfocused — any of the overlay's windows being key counts as focused,
     /// so a recording keeps showing while the user works in a popup.
-    /// Ephemeral tabs are skipped: they carry no Quiper markers and must stay
-    /// marker-free.
+    /// Private webviews are skipped: they carry no Quiper markers and must
+    /// stay marker-free.
     func setWindowHasFocus(_ focused: Bool) {
         guard windowHasFocus != focused else { return }
         windowHasFocus = focused
@@ -847,10 +810,9 @@ final class WebViewManager: NSObject {
 
     /// Syncs the page's input-tracker activation. Every
     /// `__quiperInputTrackerActive` write goes through here so marker-free
-    /// (ephemeral) pages are never touched, no matter the caller's context.
+    /// (private) pages are never touched, no matter the caller's context.
     func pushInputTrackerState(_ active: Bool, to webView: WKWebView) {
-        guard let (service, sessionIndex) = findServiceAndSession(for: webView),
-              !isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) else {
+        guard !isPrivateWebView(webView) else {
             return
         }
         webView.evaluateJavaScript(
@@ -1031,7 +993,7 @@ final class WebViewManager: NSObject {
         Settings.shared.services.first(where: { $0.id == service.id }) ?? service
     }
 
-    func getOrCreateWebView(for inputService: Service, sessionIndex: Int, dragArea: NSView?, targetURL: String? = nil, restoredTitle: String? = nil, loadImmediately: Bool = true, isQuiperPrivate: Bool = false) -> WKWebView {
+    func getOrCreateWebView(for inputService: Service, sessionIndex: Int, dragArea: NSView?, targetURL: String? = nil, restoredTitle: String? = nil, loadImmediately: Bool = true) -> WKWebView {
         let service = resolvedService(for: inputService)
         if let dragArea = dragArea {
             self.dragArea = dragArea
@@ -1075,15 +1037,12 @@ final class WebViewManager: NSObject {
         
         let isUnlocked = !service.isEncrypted || EncryptedVolumeManager.shared.isUnlocked(for: service.id)
         
-        // WebView inside Wrapper (ephemeral/non-persistent if locked, persistent if unlocked).
-        // Quiper-private temporary tabs always use an isolated ephemeral store
-        // and seed the temporary assumption; they never flip in place.
+        // WebView inside Wrapper (non-persistent while locked, persistent once unlocked).
         let webview = createWebViewInstance(
             for: service,
             sessionIndex: sessionIndex,
             bounds: wrapperView.bounds,
-            isPersistent: isUnlocked && !isQuiperPrivate,
-            isQuiperPrivate: isQuiperPrivate
+            isPersistent: isUnlocked
         )
         wrapperView.addSubview(webview)
         installErrorView(for: webview, in: wrapperView)
@@ -1106,7 +1065,6 @@ final class WebViewManager: NSObject {
         wrappersByID[service.id]?[sessionIndex] = wrapperView
         
         serviceIDsByWebView[ObjectIdentifier(webview)] = service.id
-        seedTemporaryState(isQuiperPrivate: isQuiperPrivate, for: service.id, sessionIndex: sessionIndex)
         
         let token = ObjectIdentifier(webview)
         retainTitle(restoredTitle, for: webview)
@@ -1119,20 +1077,13 @@ final class WebViewManager: NSObject {
             }
         }
         
-        // Ephemeral tabs must not identify Quiper: our referral never loads.
         // Pinned-tab engines always resolve the session's pinned URL from the
         // engine definition; saved or passed-in addresses are never trusted.
-        let pinnedURLString = service.pinnedURL(for: sessionIndex)
         let requestedURLString: String
         if service.isPinnedTabs {
-            let pinned = pinnedURLString ?? ""
-            requestedURLString = isQuiperPrivate
-                ? DefaultEngineDefinitions.urlStringWithoutQuiperReferral(pinned)
-                : pinned
+            requestedURLString = service.pinnedURL(for: sessionIndex) ?? ""
         } else {
-            requestedURLString = isQuiperPrivate
-                ? DefaultEngineDefinitions.urlStringWithoutQuiperReferral(targetURL ?? service.url)
-                : (targetURL ?? service.url)
+            requestedURLString = targetURL ?? service.url
         }
 
         // Load initial address through the load gate, so the address this
@@ -1232,7 +1183,6 @@ final class WebViewManager: NSObject {
                             // Update maps
                             self.webviewsByID[unlockedService.id]?[sessionIndex] = realWebView
                             self.serviceIDsByWebView[ObjectIdentifier(realWebView)] = unlockedService.id
-                            self.seedTemporaryState(isQuiperPrivate: false, for: unlockedService.id, sessionIndex: sessionIndex)
                             
                             // Load real URL
                             var targetURLString: String
@@ -1346,11 +1296,11 @@ final class WebViewManager: NSObject {
     }
 
     /// Builds a session webview's configuration. Storage policy is the only
-    /// session-specific input: persistent tabs get the engine's own data
-    /// store, locked and ephemeral ones an isolated store. Everything else —
-    /// injected content, handlers, dressing, observation — comes from
-    /// `makeManagedWebView`, the single creation gate shared with popups.
-    private func createWebViewInstance(for service: Service, sessionIndex: Int, bounds: NSRect, isPersistent: Bool, isQuiperPrivate: Bool = false) -> WKWebView {
+    /// session-specific input: locked tabs get an isolated store, unlocked
+    /// ones the engine's own data store. Everything else — injected content,
+    /// handlers, dressing, observation — comes from `makeManagedWebView`, the
+    /// single creation gate shared with popups.
+    private func createWebViewInstance(for service: Service, sessionIndex: Int, bounds: NSRect, isPersistent: Bool) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.userContentController = WKUserContentController()
         let isRunningTests = NSClassFromString("XCTestCase") != nil || ProcessInfo.processInfo.environment["XCInjectBundleInto"] != nil
@@ -1365,7 +1315,7 @@ final class WebViewManager: NSObject {
             frame: bounds,
             service: service,
             sessionIndex: sessionIndex,
-            isQuiperPrivate: isQuiperPrivate
+            isQuiperPrivate: false
         )
     }
 
@@ -1376,7 +1326,7 @@ final class WebViewManager: NSObject {
     /// message handlers on the webview's own content controller, page
     /// preferences, the `ContextMenuWebView` class, user agent, background
     /// drawing, zoom, delegates, the notification bridge, and key-value
-    /// observation. Marker-free (ephemeral) webviews get none of the injected
+    /// observation. Marker-free (private) webviews get none of the injected
     /// content, so websites cannot detect Quiper through them.
     private func makeManagedWebView(
         configuration: WKWebViewConfiguration,
@@ -1419,7 +1369,7 @@ final class WebViewManager: NSObject {
         webview.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         webview.pageZoom = zoomLevels[service.id] ?? 1.0
 
-        // Ephemeral webviews get no notification bridge either: any
+        // Private webviews get no notification bridge either: any
         // page-visible handler name lets websites detect Quiper.
         if !isQuiperPrivate {
             attachNotificationBridge(to: webview, service: service, sessionIndex: sessionIndex)
@@ -1530,7 +1480,7 @@ final class WebViewManager: NSObject {
 
     /// Explicit "show it here" instructions — the address bar, the routing
     /// prompt's Open Here, an ⌥-click on a new-window link, an Open Private
-    /// choice on a tab that already is private — load in place, bypassing
+    /// choice inside a private sub-window — load in place, bypassing
     /// link routing (popup/external/prompt); typed addresses do so even
     /// against pinned-tab pinning: each is an explicit instruction to show
     /// the address here. One-shot: only this URL is approved; redirects
@@ -1969,6 +1919,7 @@ final class WebViewManager: NSObject {
         }
         initialLoadAwaitingFocus.remove(token)
         serviceIDsByWebView.removeValue(forKey: token)
+        privateWebviewTokens.remove(token)
         pendingLazyLoadURLs.removeValue(forKey: token)
         lastKnownTitlesByWebView.removeValue(forKey: token)
         // A destroyed webview's recording can never answer a menu again;
@@ -2052,11 +2003,78 @@ final class WebViewManager: NSObject {
             NSLog("[Quiper] Dropped popup for %@: could not resolve the owning tab", service.name)
             return nil
         }
+        let popupWindow = makePopupWindow(parentWindow: parentWindow, restoredFrame: restoredFrame)
+
+        // WebKit hands us a copy of the opener's configuration and requires
+        // the popup be created with it: data store, process pool, and opener
+        // relationship must stay opener-derived. Only the app-owned content
+        // controller is replaced, so each managed webview exclusively owns
+        // its scripts and handlers — one install path, one teardown, and
+        // popup close can never reach back into the opener's controller.
+        configuration.userContentController = WKUserContentController()
+        // A popup descended from a private window inherits its whole private
+        // identity: marker-free creation AND the token every privacy gate
+        // reads — persistence exclusion, script/CSS skips, menu rules. The
+        // restore path passes no opener, so restored popups are never
+        // private.
+        let inheritsPrivacy = opener.map { isPrivateWebView($0) } ?? false
+        let popupWebView = makeManagedWebView(
+            configuration: configuration,
+            frame: popupWindow.webContentFrame,
+            service: service,
+            sessionIndex: owner.sessionIndex,
+            isQuiperPrivate: inheritsPrivacy
+        )
+        if inheritsPrivacy {
+            registerPrivateWebView(popupWebView)
+        }
+
+        registerAndHostPopup(popupWebView, in: popupWindow, service: service, owner: owner, restoredURL: restoredURL, startHidden: startHidden)
+        return popupWebView
+    }
+
+    /// Single gate for a private sub-window — the marker-free counterpart of
+    /// `makePopupWebView`. The window and hosting are the shared popup
+    /// machinery; the webview runs on a fresh isolated store with none of the
+    /// injected scripts or handlers, and the window carries the private
+    /// signature: a dashed, spinning border. Every call creates a new
+    /// sub-window owned by `owner`, so it hides and returns with that tab
+    /// exactly like any other sub-window.
+    @MainActor
+    func openPrivateWindow(url: URL, owner: TabIdentifier, parentWindow: NSWindow) {
+        guard let service = services.first(where: { $0.id == owner.serviceID }) else { return }
+        let popupWindow = makePopupWindow(parentWindow: parentWindow, restoredFrame: nil)
+
+        // A private sub-window never inherits an opener's configuration: an
+        // opener-derived data store could carry persistent state, and this
+        // window is not WebKit-initiated, so there is no opener relationship
+        // to preserve.
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = WKUserContentController()
+        configuration.websiteDataStore = WKWebsiteDataStore.nonPersistent()
+        let popupWebView = makeManagedWebView(
+            configuration: configuration,
+            frame: popupWindow.webContentFrame,
+            service: service,
+            sessionIndex: owner.sessionIndex,
+            isQuiperPrivate: true
+        )
+        registerPrivateWebView(popupWebView)
+        popupWindow.setEphemeral(true)
+
+        registerAndHostPopup(popupWebView, in: popupWindow, service: service, owner: owner, restoredURL: nil, startHidden: false)
+        loadExplicitUserURL(url, in: popupWebView)
+    }
+
+    /// Builds a popup window under `parentWindow` — the shared sub-window
+    /// chrome, freshly framed and cascaded, or restored to its saved frame.
+    @MainActor
+    private func makePopupWindow(parentWindow: NSWindow, restoredFrame: NSRect?) -> PopupWindow {
         // Nest under the opener's window: AppKit pins a child above its
         // parent, so a popup opened from another popup stays above its
         // opener even when the opener is clicked.
         let popupWindow = PopupWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
+            contentRect: NSRect(origin: .zero, size: Self.defaultPopupContentSize(for: parentWindow)),
             parentWindow: parentWindow
         )
         if let restoredFrame {
@@ -2069,22 +2087,33 @@ final class WebViewManager: NSObject {
                 cascadedPopupOrigin(centeredFrame: popupWindow.frame, siblingCount: popupWindowsByToken.count)
             )
         }
+        return popupWindow
+    }
 
-        // WebKit hands us a copy of the opener's configuration and requires
-        // the popup be created with it: data store, process pool, and opener
-        // relationship must stay opener-derived. Only the app-owned content
-        // controller is replaced, so each managed webview exclusively owns
-        // its scripts and handlers — one install path, one teardown, and
-        // popup close can never reach back into the opener's controller.
-        configuration.userContentController = WKUserContentController()
-        let popupWebView = makeManagedWebView(
-            configuration: configuration,
-            frame: popupWindow.webContentFrame,
-            service: service,
-            sessionIndex: owner.sessionIndex,
-            isQuiperPrivate: isQuiperPrivateTab(serviceID: owner.serviceID, sessionIndex: owner.sessionIndex)
+    /// The default size new sub-windows open at: a 3:2 landscape window —
+    /// web content reads landscape, and the proportion suits popups and
+    /// private windows alike — clamped down to fit the screen the opener
+    /// lives on, with room to spare, and never below the window minimum so
+    /// it stays usable on the smallest displays. Restored windows keep
+    /// their saved frames; only fresh ones use this.
+    @MainActor
+    private static func defaultPopupContentSize(for parentWindow: NSWindow) -> NSSize {
+        let preferred = NSSize(width: 900, height: 600)
+        let visible = (parentWindow.screen ?? NSScreen.main)?.visibleFrame.size
+            ?? NSSize(width: 1440, height: 900)
+        return NSSize(
+            width: min(preferred.width, max(visible.width - 80, Constants.WINDOW_MIN_WIDTH)),
+            height: min(preferred.height, max(visible.height - 80, Constants.WINDOW_MIN_HEIGHT))
         )
+    }
 
+    /// Registers a new popup window's webview with the shared popup
+    /// bookkeeping and hosts it in the window's chrome. Single home for
+    /// registration, callbacks, wrapper hosting, and the initial focus or
+    /// hide decision, so managed popups and private sub-windows behave
+    /// identically from the outside.
+    @MainActor
+    private func registerAndHostPopup(_ popupWebView: WKWebView, in popupWindow: PopupWindow, service: Service, owner: TabIdentifier, restoredURL: String?, startHidden: Bool) {
         let token = ObjectIdentifier(popupWebView)
         serviceIDsByWebView[token] = service.id
         popupOwnerByToken[token] = owner
@@ -2147,8 +2176,6 @@ final class WebViewManager: NSObject {
             // parents even when the whole tree shows at once.
             popupWindow.display()
         }
-
-        return popupWebView
     }
 
     /// Resolves the owning session for a new popup opened from `opener`.
@@ -2486,8 +2513,9 @@ final class WebViewManager: NSObject {
     /// order the focus descriptor indexes — with each entry's opener link
     /// recorded, so restores rebuild the saved opener tree instead of
     /// inventing one. Only popups with a known owner, a live owning
-    /// session, and a real http(s) URL persist; ownerless popups, temporary
-    /// tabs' popups, and blank pages stay in-memory only. URLs are stored
+    /// session, and a real http(s) URL persist; ownerless popups, private
+    /// windows and their descendants, and blank pages stay in-memory only.
+    /// URLs are stored
     /// normalized (lowercased host, no trailing slash or fragment) so
     /// redirect-canonicalized addresses dedup stably. A still-loading
     /// restored popup contributes its pending URL until the load commits.
@@ -2539,7 +2567,8 @@ final class WebViewManager: NSObject {
     private func popupSnapshotState(forToken token: ObjectIdentifier) -> PersistedPopupState? {
         guard let popupWindow = popupWindowsByToken[token],
               let owner = popupOwnerByToken[token],
-              !isTemporaryTab(serviceID: owner.serviceID, sessionIndex: owner.sessionIndex),
+              // Private sub-windows never persist: their tokens stay in-memory only.
+              !privateWebviewTokens.contains(token),
               webviewsByID[owner.serviceID]?[owner.sessionIndex] != nil,
               let urlString = persistablePopupURLString(forToken: token),
               !urlString.isEmpty
@@ -2629,7 +2658,6 @@ final class WebViewManager: NSObject {
     private func restoreOnePopup(_ popup: PersistedPopupState, key: PopupOwnerURL, occurrence: Int, baseline: [PopupOwnerURL: Int], openerWindow: NSWindow?) -> NSWindow? {
         guard let service = services.first(where: { $0.id == popup.serviceID }),
               let sessionWebView = webviewsByID[service.id]?[popup.sessionIndex],
-              !isTemporaryTab(serviceID: service.id, sessionIndex: popup.sessionIndex),
               !isLockedPlaceholder(sessionWebView),
               let overlayWindow = containerView?.window ?? sessionWebView.window
         else { return nil }
@@ -3190,6 +3218,31 @@ final class PopupWindow: NSWindow, NSWindowDelegate {
         toolbarView.setTitleText(title)
     }
 
+    /// Whether this window carries the private signature. Read by the
+    /// loading sync to decide whether the outline spins with the page.
+    private(set) var isEphemeral = false
+
+    /// The private window signature: the dashed border that spins while
+    /// the page loads and settles back to static dashes. The outline path
+    /// is inset from the window edge because the container clips to its
+    /// rounded bounds — the outline view expands its path outward, so
+    /// without an inset the whole stroke is cut away.
+    func setEphemeral(_ ephemeral: Bool) {
+        isEphemeral = ephemeral
+        outlineView.contentInset = ephemeral ? Self.privateOutlineInset : 0
+        outlineView.setEphemeral(ephemeral)
+        // A load already in flight when the flag lands still needs its ring.
+        if let hostedWebView {
+            outlineView.setLoading(hostedWebView.isLoading)
+        }
+    }
+
+    /// Inset for the dashed private border, so the whole stroke renders
+    /// inside the clipped container instead of outside the window: the
+    /// dashed stroke is 3pt wide at the default appearance width and sits
+    /// flush with the window edge.
+    private static let privateOutlineInset: CGFloat = 3
+
     /// The frame this window persists for relaunch: the expanded rectangle
     /// it returns to whenever it is not settled and expanded — minimized
     /// or mid-transition — so relaunch never stores the toolbar strip or a
@@ -3378,6 +3431,12 @@ final class PopupWindow: NSWindow, NSWindowDelegate {
     private func syncLoadingState(for webView: WKWebView) {
         guard webView === hostedWebView else { return }
         toolbarView.setLoading(webView.isLoading)
+        // The private window's signature spins: while its page loads the
+        // dashed border becomes a rotating dashed ring, then settles back
+        // to static dashes. Ordinary popups keep the toolbar spinner only.
+        if isEphemeral {
+            outlineView.setLoading(webView.isLoading)
+        }
     }
 
     /// Session-scoped hide/show. Hiding orders the window out (preserving its
@@ -3630,7 +3689,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         // gesture to Safari here before the popup is created.
         if navigationAction.targetFrame == nil {
             // Held ⌘/⌥/⇧ act on the link even on this path: ⌘⇧ opens it in
-            // a private tab, ⌥ opens the new-window request right here,
+            // a private sub-window, ⌥ opens the new-window request right here,
             // ⌘⌥ sends it to the system browser, and ⌘ — like no modifier
             // at all — keeps the popup below. Only http(s) link clicks are
             // redirected: other schemes and JS-issued window.open keep the
@@ -3686,7 +3745,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         // (targetFrame == nil) are handled above by the popup path.
         if !targetFrameIsMain {
             // Held ⌘/⌥/⇧ act on the link, not just the frame it sits in:
-            // ⌘⇧ opens it in a private tab, ⌘ in a Quiper popup, and ⌘⌥ in
+            // ⌘⇧ opens it in a private sub-window, ⌘ in a Quiper popup, and ⌘⌥ in
             // the system browser. ⌥ changes nothing — a subframe click
             // already stays right here — so nothing is forced and the frame
             // navigation stands.
@@ -4344,8 +4403,8 @@ extension WebViewManager: WebViewContextMenuDelegate {
     }
 
     func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool {
-        guard let (service, sessionIndex) = findServiceAndSession(for: webView) else { return false }
-        return !isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex)
+        guard findServiceAndSession(for: webView) != nil else { return false }
+        return !isPrivateWebView(webView)
     }
 
     /// Predicts which menu item a click on the link at `point` performs for
@@ -4479,12 +4538,11 @@ extension WebViewManager: WebViewContextMenuDelegate {
     }
 
     /// Single gate for "Open Private" — the context-menu item and
-    /// ⌘⇧-clicks alike: a tab that already is private loads the link in
-    /// place, anything else asks the delegate to open a private tab, so
-    /// both entry points open exactly the same way.
+    /// ⌘⇧-clicks alike: a webview that already is private loads the link
+    /// in place, anything else asks the delegate to open a private
+    /// sub-window, so both entry points open exactly the same way.
     private func openLinkPrivately(_ url: URL, from webView: WKWebView) {
-        if let (service, sessionIndex) = findServiceAndSession(for: webView),
-           isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) {
+        if isPrivateWebView(webView) {
             loadExplicitUserURL(url, in: webView)
         } else {
             delegate?.webView(webView, didRequestPrivateLinkOpen: url)

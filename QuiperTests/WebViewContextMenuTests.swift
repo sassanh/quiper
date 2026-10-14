@@ -5,6 +5,38 @@ import WebKit
 
 @MainActor
 final class WebViewContextMenuTests: XCTestCase {
+    private func makeHostWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 100, y: 100, width: 800, height: 600),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        return window
+    }
+
+    /// Opens a private sub-window owned by `service`'s session 0 and
+    /// returns it, picking the new popup out of the population by its
+    /// absence before the call.
+    private func openPrivateSubWindow(
+        with manager: WebViewManager,
+        service: Service,
+        parentWindow: NSWindow
+    ) throws -> (window: NSWindow, webView: WKWebView) {
+        let before = Set(manager.popupWindows.map(ObjectIdentifier.init))
+        manager.openPrivateWindow(
+            url: URL(string: "about:blank")!,
+            owner: TabIdentifier(serviceID: service.id, sessionIndex: 0),
+            parentWindow: parentWindow
+        )
+        let popupWindow = try XCTUnwrap(
+            manager.popupWindows.first(where: { !before.contains(ObjectIdentifier($0)) })
+        )
+        let webView = try XCTUnwrap(manager.popupWebView(for: popupWindow))
+        return (popupWindow, webView)
+    }
+
     func testClientPointFlipsYAndDividesZoom() {
         let point = MainWindowController.clientPoint(
             forViewPoint: NSPoint(x: 100, y: 450),
@@ -178,7 +210,7 @@ final class WebViewContextMenuTests: XCTestCase {
         XCTAssertEqual(menu.items.map(\.title), ["Reload Page"])
     }
 
-    func testEphemeralTabsDisallowSuggest() throws {
+    func testPrivateWebviewsDisallowSuggest() throws {
         let service = Service(
             id: UUID(),
             name: "Test Engine",
@@ -195,19 +227,19 @@ final class WebViewContextMenuTests: XCTestCase {
             dragArea: nil,
             loadImmediately: false
         )
-        let ephemeral = manager.getOrCreateWebView(
-            for: service,
-            sessionIndex: 1,
-            dragArea: nil,
-            loadImmediately: false,
-            isQuiperPrivate: true
+        let hostWindow = makeHostWindow()
+        let (privateWindow, privateWebView) = try openPrivateSubWindow(
+            with: manager,
+            service: service,
+            parentWindow: hostWindow
         )
         defer {
+            privateWindow.close()
+            hostWindow.close()
             manager.removeWebView(for: service, sessionIndex: 0)
-            manager.removeWebView(for: service, sessionIndex: 1)
         }
         XCTAssertTrue(manager.webViewAllowsPageSelectorSuggest(normal))
-        XCTAssertFalse(manager.webViewAllowsPageSelectorSuggest(ephemeral))
+        XCTAssertFalse(manager.webViewAllowsPageSelectorSuggest(privateWebView))
         XCTAssertFalse(manager.webViewAllowsPageSelectorSuggest(WKWebView()))
     }
 
@@ -476,7 +508,7 @@ final class WebViewContextMenuTests: XCTestCase {
         XCTAssertEqual(menuOpenSpy.openedCount, 1)
     }
 
-    func testContextMenuRecorderInjectedOnlyForEngineTabs() {
+    func testContextMenuRecorderInjectedOnlyForEngineTabs() throws {
         let service = Service(
             id: UUID(),
             name: "Test Engine",
@@ -493,24 +525,24 @@ final class WebViewContextMenuTests: XCTestCase {
             dragArea: nil,
             loadImmediately: false
         )
-        let privateTab = manager.getOrCreateWebView(
-            for: service,
-            sessionIndex: 1,
-            dragArea: nil,
-            loadImmediately: false,
-            isQuiperPrivate: true
+        let hostWindow = makeHostWindow()
+        let (privateWindow, privateWebView) = try openPrivateSubWindow(
+            with: manager,
+            service: service,
+            parentWindow: hostWindow
         )
         defer {
+            privateWindow.close()
+            hostWindow.close()
             manager.removeWebView(for: service, sessionIndex: 0)
-            manager.removeWebView(for: service, sessionIndex: 1)
         }
         let engineScripts = engineTab.configuration.userContentController.userScripts.map(\.source)
         XCTAssertTrue(engineScripts.contains { $0.contains(WebScripts.contextLinkHandlerName) })
-        // Private tabs stay marker-free: no recorder, so their link actions
+        // Private webviews stay marker-free: no recorder, so their link actions
         // keep resolving at the point in the main frame. Only the script half
         // is observable here — WKUserContentController exposes no way to list
         // registered message handlers.
-        let privateScripts = privateTab.configuration.userContentController.userScripts.map(\.source)
+        let privateScripts = privateWebView.configuration.userContentController.userScripts.map(\.source)
         XCTAssertFalse(privateScripts.contains { $0.contains(WebScripts.contextLinkHandlerName) })
     }
 

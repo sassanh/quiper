@@ -52,8 +52,6 @@ enum TabCloseReason: Sendable {
     case lockAllServices
     case switchService(serviceName: String)
     case autoLock
-    case replaceWithEphemeral
-    case replaceWithNormal
     case quit
 
     func alertTitle(tabCount: Int) -> String {
@@ -70,10 +68,6 @@ enum TabCloseReason: Sendable {
             return "Switch away from \(serviceName)?"
         case .autoLock:
             return "Lock inactive engines?"
-        case .replaceWithEphemeral:
-            return "Discard this session?"
-        case .replaceWithNormal:
-            return "Discard this session?"
         case .quit:
             return tabCount == 1 ? "Quit with unsaved changes?" : "Quit with unsaved changes in \(tabCount) sessions?"
         }
@@ -89,10 +83,6 @@ enum TabCloseReason: Sendable {
             return "Lock"
         case .switchService:
             return "Switch"
-        case .replaceWithEphemeral:
-            return "Discard"
-        case .replaceWithNormal:
-            return "Discard"
         case .quit:
             return "Quit"
         }

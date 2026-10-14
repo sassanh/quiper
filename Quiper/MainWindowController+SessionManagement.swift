@@ -181,148 +181,58 @@ extension MainWindowController {
         refreshModifierHUDContents()
     }
 
-    // MARK: - Temporary sessions
+    // MARK: - Private sub-windows
     //
-    // Ephemeral hard-temporary tabs run on an isolated non-persistent store and
-    // are temporary by construction. Cmd+P toggles the current tab in place
-    // (teardown plus fresh recreation, never morphing a webview); leaving a
-    // private tab by any other path means opening a normal tab or closing the
-    // private one. No page script runs in them, so websites cannot detect
-    // Quiper through injection.
+    // Private browsing lives in sub-windows, never in main-window tabs. A
+    // private sub-window runs on an isolated non-persistent store, carries
+    // no Quiper markers (no page script runs in it, so websites cannot
+    // detect Quiper through injection), and is owned by the tab that opened
+    // it, so it hides and returns with that session like any sub-window.
+    // Every trigger creates a new sub-window; nothing toggles in place.
 
-    /// Toggles the current tab's ephemeral state in place. Going private gates
-    /// the current page through `requestCloseTabs`, then recreates the slot
-    /// ephemeral with the session's URL (the engine home or pinned address),
-    /// never the current page address. Going back recreates it normal the
-    /// same way; the private page is discarded, never carried over.
-    func createQuiperPrivateTemporarySession() {
-        guard let service = currentService() else { return }
-        let sessionIndex = activeIndicesByID[service.id] ?? 0
-        if webViewManager.isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) {
-            replaceEphemeralWithNormal(serviceID: service.id, sessionIndex: sessionIndex)
-        } else {
-            replaceSessionWithEphemeral(serviceID: service.id, sessionIndex: sessionIndex)
+    /// Opens a new private sub-window owned by the current tab, loading the
+    /// engine home without Quiper's referral. The current tab is never
+    /// touched. An empty engine gets its session tab created first — the
+    /// force-create path empty-engine activation uses — so the sub-window
+    /// always has a live owner. Inert while the engine is locked: the
+    /// overlay shows only the lock placeholder there and the home address
+    /// lives inside the encrypted bundle.
+    func openPrivateWindow() {
+        guard let service = currentService(), let window,
+              !service.isEncrypted || EncryptedVolumeManager.shared.isUnlocked(for: service.id)
+        else { return }
+        var sessionIndex = activeIndicesByID[service.id] ?? 0
+        if webViewManager.getWebView(for: service, sessionIndex: sessionIndex) == nil {
+            updateActiveWebview(focusWebView: false, forceCreate: true)
+            sessionIndex = activeIndicesByID[service.id] ?? sessionIndex
         }
+        guard webViewManager.getWebView(for: service, sessionIndex: sessionIndex) != nil,
+              let url = URL(string: Self.privateWindowHomeURLString(for: service, sessionIndex: sessionIndex))
+        else { return }
+        let owner = TabIdentifier(serviceID: service.id, sessionIndex: sessionIndex)
+        webViewManager.openPrivateWindow(url: url, owner: owner, parentWindow: window)
     }
 
-    /// Replaces a session with an ephemeral tab in the same slot. Used by
-    /// action fallback: the website would have transformed this tab in place,
-    /// so the anonymous tab takes its slot instead of opening beside it. The
-    /// previous page (typically logged-out with nothing to keep) is discarded.
-    /// Never morphs a webview: the old page is torn down and a fresh
-    /// ephemeral one is created at the same index.
-    func replaceSessionWithEphemeral(serviceID: UUID, sessionIndex: Int) {
-        guard let service = services.first(where: { $0.id == serviceID }) else { return }
-        let replacedTab = TabIdentifier(serviceID: serviceID, sessionIndex: sessionIndex)
-        guard webViewManager.webView(for: replacedTab) != nil else {
-            createEphemeralReplacement(service: service, sessionIndex: sessionIndex)
-            return
-        }
-        Task {
-            guard await self.requestCloseTabs([replacedTab], reason: .replaceWithEphemeral) else { return }
-            guard let service = self.services.first(where: { $0.id == serviceID }) else { return }
-            self.createEphemeralReplacement(service: service, sessionIndex: sessionIndex)
-        }
-    }
-
-    /// Replaces a private tab with a normal persistent tab in the same slot.
-    /// Mirror of `replaceSessionWithEphemeral`: gates through
-    /// `requestCloseTabs`, then recreates the slot normal with the session's
-    /// URL. The private page is discarded, never carried over. Never morphs
-    /// a webview: the old page is torn down and a fresh one is created at
-    /// the same index.
-    func replaceEphemeralWithNormal(serviceID: UUID, sessionIndex: Int) {
-        guard let service = services.first(where: { $0.id == serviceID }) else { return }
-        let replacedTab = TabIdentifier(serviceID: serviceID, sessionIndex: sessionIndex)
-        guard webViewManager.webView(for: replacedTab) != nil else {
-            createNormalReplacement(service: service, sessionIndex: sessionIndex)
-            return
-        }
-        Task {
-            guard await self.requestCloseTabs([replacedTab], reason: .replaceWithNormal) else { return }
-            guard let service = self.services.first(where: { $0.id == serviceID }) else { return }
-            self.createNormalReplacement(service: service, sessionIndex: sessionIndex)
-        }
-    }
-
-    private func createNormalReplacement(service: Service, sessionIndex: Int) {
-        let webView = webViewManager.getOrCreateWebView(
-            for: service,
-            sessionIndex: sessionIndex,
-            dragArea: dragArea,
-            isQuiperPrivate: false
+    /// The engine home a private sub-window opens at, never carrying
+    /// Quiper's referral: the session's pinned address for pinned-tab
+    /// engines, the engine address otherwise.
+    private static func privateWindowHomeURLString(for service: Service, sessionIndex: Int) -> String {
+        DefaultEngineDefinitions.urlStringWithoutQuiperReferral(
+            service.isPinnedTabs
+                ? (service.pinnedURL(for: sessionIndex) ?? service.url)
+                : service.url
         )
-        setupSessionTitleObserver(for: service, sessionIndex: sessionIndex, webView: webView)
-        refreshInstantiationState()
-        if currentService()?.id == service.id {
-            switchSession(to: sessionIndex)
-        }
     }
 
-    private func createEphemeralReplacement(service: Service, sessionIndex: Int) {
-        let webView = webViewManager.getOrCreateWebView(
-            for: service,
-            sessionIndex: sessionIndex,
-            dragArea: dragArea,
-            isQuiperPrivate: true
-        )
-        setupSessionTitleObserver(for: service, sessionIndex: sessionIndex, webView: webView)
-        refreshInstantiationState()
-        if currentService()?.id == service.id {
-            switchSession(to: sessionIndex)
-        }
-    }
-
-    /// Opens a link in a private tab replacing the source tab: the current
-    /// page is gated through `requestCloseTabs`, then the slot is recreated
-    /// ephemeral and the link loads explicitly in place, bypassing routing.
-    /// Already-private tabs just load in place.
+    /// Opens a link in a new private sub-window owned by the source tab. A
+    /// webview that already is private loads the link in place (routed in
+    /// `WebViewManager.openLinkPrivately`); this path never touches any
+    /// main-window tab.
     func webView(_ webView: WKWebView, didRequestPrivateLinkOpen url: URL) {
-        guard let (service, sessionIndex) = webViewManager.findServiceAndSession(for: webView) else { return }
-        if webViewManager.isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) {
-            webViewManager.loadExplicitUserURL(url, in: webView)
-            return
-        }
-        let replacedTab = TabIdentifier(serviceID: service.id, sessionIndex: sessionIndex)
-        Task {
-            guard await self.requestCloseTabs([replacedTab], reason: .replaceWithEphemeral) else { return }
-            guard let freshService = self.services.first(where: { $0.id == service.id }) else { return }
-            let replacement = self.webViewManager.getOrCreateWebView(
-                for: freshService,
-                sessionIndex: sessionIndex,
-                dragArea: self.dragArea,
-                isQuiperPrivate: true
-            )
-            self.setupSessionTitleObserver(for: freshService, sessionIndex: sessionIndex, webView: replacement)
-            self.refreshInstantiationState()
-            if self.currentService()?.id == freshService.id {
-                self.switchSession(to: sessionIndex)
-            }
-            self.webViewManager.loadExplicitUserURL(url, in: replacement)
-        }
-    }
-
-    /// Opens a normal persistent tab when leaving an ephemeral one. Used by
-    /// "New Session" from inside a Quiper-private tab.
-    func createNormalSessionAfterPrivate() {
-        guard let service = currentService() else { return }
-        let candidates = service.isPinnedTabs ? service.visibleSessionIndices : Array(SessionSlots.range)
-        guard let freeIndex = candidates.first(where: {
-            webViewManager.getWebView(for: service, sessionIndex: $0) == nil
-        }) else {
-            playErrorSound()
-            NSLog("[Quiper] No free session slot for new session")
-            return
-        }
-        let webView = webViewManager.getOrCreateWebView(
-            for: service,
-            sessionIndex: freeIndex,
-            dragArea: dragArea,
-            isQuiperPrivate: false
-        )
-        setupSessionTitleObserver(for: service, sessionIndex: freeIndex, webView: webView)
-        refreshInstantiationState()
-        switchSession(to: freeIndex)
+        guard let window,
+              let (service, sessionIndex) = webViewManager.findServiceAndSession(for: webView) else { return }
+        let owner = TabIdentifier(serviceID: service.id, sessionIndex: sessionIndex)
+        webViewManager.openPrivateWindow(url: url, owner: owner, parentWindow: window)
     }
 
     func currentService() -> Service? {

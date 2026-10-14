@@ -142,9 +142,10 @@ Quiper comes pre-configured with four powerful custom scripts triggered by defau
 | **Share** | `⌘ ⇧ S` | Generates a shareable URL link for the active thread. |
 | **History** | `⌘ ⇧ H` | Toggles or opens the conversation history list of the engine. |
 
-> **Hard temporary tabs:** `⌘ P` is a Quiper-level shortcut (not an action).
-> It opens an isolated ephemeral tab that never persists, regardless of engine.
-> Engine shortcuts don't run inside ephemeral tabs; the sheet offers a normal tab.
+> **Private windows:** `⌘ P` is a Quiper-level shortcut (not an action).
+> It opens a private sub-window at the engine home that never persists,
+> regardless of engine. Engine actions always run on the main window's
+> active tab; the main window is focused first.
 
 ---
 

@@ -836,18 +836,18 @@ extension MainWindowController {
             return true
         }
         
-        // Hard temporary tab: Quiper-level shortcut, not an action. Toggles
-        // the current tab's ephemeral state in place. Checked
-        // before custom actions so it wins over any persisted soft-action
-        // shortcut.
+        // Hard private browsing: Quiper-level shortcut, not an action.
+        // Opens a new private sub-window at the engine home; the current
+        // tab is never touched. Checked before custom actions so it wins
+        // over any persisted soft-action shortcut.
         if matches(config, ephemeralTemporaryShortcut) {
-            // A locked engine shows only its placeholder behind the overlay:
-            // there is no real tab here to take private, so the shortcut is
-            // inert until the engine unlocks.
+            // A locked engine shows only its placeholder behind the overlay
+            // and its home address lives inside the encrypted bundle, so the
+            // shortcut is inert until the engine unlocks.
             if currentLockedEngineOverlay() != nil {
                 return true
             }
-            createQuiperPrivateTemporarySession()
+            openPrivateWindow()
             return true
         }
 
@@ -1062,8 +1062,8 @@ extension MainWindowController {
         return lhs.keyCode == rhs.keyCode && lhs.modifierFlags == rhs.modifierFlags
     }
 
-    /// Quiper-level hard-temporary shortcut: Cmd+P. Not a custom action;
-    /// it toggles the current tab's ephemeral state in place.
+    /// Quiper-level hard private-browsing shortcut: Cmd+P. Not a custom
+    /// action; it opens a new private sub-window at the engine home.
     private var ephemeralTemporaryShortcut: HotkeyManager.Configuration {
         HotkeyManager.Configuration(
             keyCode: UInt32(kVK_ANSI_P),

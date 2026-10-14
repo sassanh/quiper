@@ -29,7 +29,6 @@ struct TabCloseGateTests {
             .lockAllServices,
             .switchService(serviceName: "Gemini"),
             .autoLock,
-            .replaceWithEphemeral,
             .quit,
         ]
         for reason in reasons {

@@ -46,8 +46,7 @@ final class PopupCollapseTests: XCTestCase {
             for: service,
             sessionIndex: 0,
             dragArea: nil,
-            loadImmediately: false,
-            isQuiperPrivate: false
+            loadImmediately: false
         )
         return manager
     }

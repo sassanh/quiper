@@ -47,16 +47,14 @@ final class WebViewCreationGateTests: XCTestCase {
 
     private func makeSession(
         with service: Service,
-        in window: NSWindow,
-        isQuiperPrivate: Bool = false
+        in window: NSWindow
     ) -> (manager: WebViewManager, sessionWebView: WKWebView) {
         let manager = makeManager(with: service, in: window)
         let sessionWebView = manager.getOrCreateWebView(
             for: service,
             sessionIndex: 0,
             dragArea: nil,
-            loadImmediately: false,
-            isQuiperPrivate: isQuiperPrivate
+            loadImmediately: false
         )
         return (manager, sessionWebView)
     }
@@ -66,6 +64,26 @@ final class WebViewCreationGateTests: XCTestCase {
         manager.openLinkInNewWindow(URL(string: "about:blank")!, from: session)
         guard let popupWindow = NSApp.windows.first(where: { manager.isPopupWindow($0) }),
               let popupWebView = manager.popupWebView(for: popupWindow) else { return nil }
+        return (popupWindow, popupWebView)
+    }
+
+    /// Opens a private sub-window owned by `owner` and returns it, picking
+    /// it out of the popup population by its absence before the call.
+    private func openPrivateSubWindow(
+        from manager: WebViewManager,
+        owner: TabIdentifier,
+        in window: NSWindow
+    ) -> (window: NSWindow, webView: WKWebView)? {
+        let before = Set(NSApp.windows.filter { manager.isPopupWindow($0) }.map(ObjectIdentifier.init))
+        manager.openPrivateWindow(
+            url: URL(string: "about:blank")!,
+            owner: owner,
+            parentWindow: window
+        )
+        guard let popupWindow = NSApp.windows.first(where: {
+            manager.isPopupWindow($0) && !before.contains(ObjectIdentifier($0))
+        }),
+        let popupWebView = manager.popupWebView(for: popupWindow) else { return nil }
         return (popupWindow, popupWebView)
     }
 
@@ -97,7 +115,7 @@ final class WebViewCreationGateTests: XCTestCase {
 
         let sessionScripts = sessionWebView.configuration.userContentController.userScripts.map(\.source)
         let popupScripts = popupWebView.configuration.userContentController.userScripts.map(\.source)
-        XCTAssertFalse(popupScripts.isEmpty, "Non-ephemeral popups receive the engine scripts")
+        XCTAssertFalse(popupScripts.isEmpty, "Managed popups receive the engine scripts")
         XCTAssertEqual(
             popupScripts.count,
             sessionScripts.count,
@@ -147,28 +165,54 @@ final class WebViewCreationGateTests: XCTestCase {
         )
     }
 
-    func testPopupOfEphemeralTabStaysMarkerFree() {
+    func testPopupOfPrivateWindowStaysMarkerFree() {
         let service = makeService()
         let window = makeHostWindow()
-        let (manager, sessionWebView) = makeSession(with: service, in: window, isQuiperPrivate: true)
+        let (manager, _) = makeSession(with: service, in: window)
         defer {
             manager.removeWebView(for: service, sessionIndex: 0)
             window.close()
         }
 
+        guard let (privateWindow, privateWebView) = openPrivateSubWindow(
+            from: manager,
+            owner: TabIdentifier(serviceID: service.id, sessionIndex: 0),
+            in: window
+        ) else {
+            XCTFail("A private sub-window must be openable from a live session")
+            return
+        }
+        defer { privateWindow.close() }
+
         XCTAssertTrue(
-            sessionWebView.configuration.userContentController.userScripts.isEmpty,
-            "Precondition: the ephemeral session itself carries no scripts"
+            manager.isPrivateWebView(privateWebView),
+            "A private sub-window registers its private identity with the manager"
         )
-        guard let (popupWindow, popupWebView) = openPopup(from: manager) else {
-            XCTFail("An ephemeral tab must still be able to open a managed popup")
+        XCTAssertTrue(
+            privateWebView.configuration.userContentController.userScripts.isEmpty,
+            "Precondition: the private sub-window itself carries no scripts"
+        )
+        XCTAssertEqual(
+            privateWebView.configuration.websiteDataStore.isPersistent,
+            false,
+            "The private sub-window runs on an isolated non-persistent store"
+        )
+
+        manager.openLinkInNewWindow(URL(string: "about:blank")!, from: privateWebView)
+        guard let popupWindow = NSApp.windows.first(where: { manager.isPopupWindow($0) && $0 !== privateWindow }),
+              let popupWebView = manager.popupWebView(for: popupWindow) else {
+            XCTFail("A private sub-window must still be able to open a managed popup")
             return
         }
         defer { popupWindow.close() }
 
         XCTAssertTrue(
             popupWebView.configuration.userContentController.userScripts.isEmpty,
-            "A popup owned by an ephemeral tab stays marker-free through the same gate branch"
+            "A popup descended from a private sub-window stays marker-free"
+        )
+        XCTAssertTrue(
+            manager.isPrivateWebView(popupWebView),
+            "A popup descended from a private sub-window inherits the private identity"
         )
     }
 

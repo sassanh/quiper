@@ -144,9 +144,9 @@ class WindowOutlineView: NSView {
         }
     }
 
-    /// Dashes the window outline while an ephemeral tab is active, implying
-    /// "temporary": longer, thicker, widely spaced dashes in the accent
-    /// color. The loading arc goes dashed too. Solid otherwise.
+    /// Dashes the window outline while the window holds a private page,
+    /// implying "temporary": longer, thicker, widely spaced dashes in the
+    /// accent color. The loading arc goes dashed too. Solid otherwise.
     /// Survives color/width updates.
     func setEphemeral(_ ephemeral: Bool) {
         guard isEphemeralOutline != ephemeral else { return }

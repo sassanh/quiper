@@ -6,8 +6,8 @@ extension MainWindowController {
     // MARK: - Tab close gate
     //
     // Every path that destroys live tabs funnels through `requestCloseTabs`:
-    // explicit closes, middle-click closes, close-all, ephemeral replacement,
-    // and every encrypted-engine lock (manual, all, switch-away, inactivity).
+    // explicit closes, middle-click closes, close-all, and every
+    // encrypted-engine lock (manual, all, switch-away, inactivity).
     // Settings-driven destroys (engine delete, erase-all, secure-storage
     // migration, web data reset) probe through
     // `unloadInfosNeedingConfirmation(for:)` before mutating settings, and

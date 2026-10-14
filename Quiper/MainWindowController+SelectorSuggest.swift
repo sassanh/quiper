@@ -204,14 +204,14 @@ extension MainWindowController {
 
     /// Appends `display: none` for the current selector to the engine
     /// stylesheet. The CSS gate pushes it into live sessions immediately;
-    /// future loads pick it up from disk. Ephemeral tabs save nothing.
+    /// future loads pick it up from disk. Private sub-windows save nothing.
     private func hideSelectorSuggestSelector() {
         let selector = selectorSuggestWindowController?.currentSelector ?? ""
         guard !selector.isEmpty,
               let webView = selectorSuggestWebView,
-              let (service, sessionIndex) = webViewManager.findServiceAndSession(for: webView)
+              let (service, _) = webViewManager.findServiceAndSession(for: webView)
         else { return }
-        if !webViewManager.isQuiperPrivateTab(serviceID: service.id, sessionIndex: sessionIndex) {
+        if !webViewManager.isPrivateWebView(webView) {
             let existing = Settings.shared.customCSS(for: service).trimmingCharacters(in: .whitespacesAndNewlines)
             let rule = SelectorSuggest.hideRule(for: selector)
             let updated = (existing.isEmpty ? "" : existing + "\n\n")

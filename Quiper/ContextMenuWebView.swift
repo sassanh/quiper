@@ -40,8 +40,8 @@ struct PlainClickEmphasis {
 @MainActor
 protocol WebViewContextMenuDelegate: AnyObject {
     func webView(_ webView: WKWebView, didRequestPageSelectorSuggestAt point: NSPoint)
-    /// Whether the webview's tab may offer Suggest Selector. Ephemeral tabs
-    /// answer false, leaving the native menu pristine.
+    /// Whether the webview's tab may offer Suggest Selector. Private
+    /// webviews answer false, leaving the native menu pristine.
     func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool
     /// A link menu item was chosen. The manager resolves the href at `point`
     /// and performs the navigation, so the view never touches page content.
@@ -336,7 +336,7 @@ extension ContextMenuLinkAction {
     /// exactly what the click performs; `target="_blank"` always opens a
     /// Quiper popup because `createWebViewWith` bypasses routing, with held
     /// modifiers forcing against that bare outcome instead — ⌘⇧ opening the
-    /// link in a private tab wherever it would have gone. A click that
+    /// link in a private sub-window wherever it would have gone. A click that
     /// stays inside a subframe, a download, and a named target frame that
     /// may or may not exist answer nil when no modifier names a definite
     /// action; a routing prompt answers nil for a bare click and yields to

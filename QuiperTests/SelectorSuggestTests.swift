@@ -55,7 +55,7 @@ final class SelectorSuggestTests: XCTestCase {
         )
     }
 
-    func testSuggestTitleItemDisabledForEphemeral() throws {
+    func testSuggestTitleItemStaysEnabledWhenPrivateWindowOpens() throws {
         let service = Service(
             id: UUID(),
             name: "Test Engine",
@@ -76,39 +76,26 @@ final class SelectorSuggestTests: XCTestCase {
             return try XCTUnwrap(menu.items.first(where: { $0.title == "Suggest Selector..." }))
         }
         XCTAssertTrue(try suggestItem().isEnabled)
-        controller.createQuiperPrivateTemporarySession()
-        // In-place conversion gates through `requestCloseTabs`, so it lands
-        // asynchronously: wait until session 0 itself turns private.
-        let converted = XCTestExpectation(description: "current tab converts to private in place")
-        Task { @MainActor in
-            for _ in 0..<200 {
-                if let tab = controller.currentTabIdentifier(),
-                   tab.sessionIndex == 0,
-                   controller.webViewManager.isQuiperPrivateTab(serviceID: tab.serviceID, sessionIndex: tab.sessionIndex) {
-                    converted.fulfill()
-                    break
-                }
-                try? await Task.sleep(nanoseconds: 25_000_000)
-            }
+        let before = Set(controller.webViewManager.popupWindows.map(ObjectIdentifier.init))
+        controller.openPrivateWindow()
+        guard let privateWindow = controller.webViewManager.popupWindows.first(where: { !before.contains(ObjectIdentifier($0)) }),
+              let privateWebView = controller.webViewManager.popupWebView(for: privateWindow) else {
+            XCTFail("Opening a private window must create a managed sub-window")
+            return
         }
-        wait(for: [converted], timeout: 10.0)
-        XCTAssertFalse(try suggestItem().isEnabled)
-        // Toggling again restores the same slot to a normal tab.
-        controller.createQuiperPrivateTemporarySession()
-        let restored = XCTestExpectation(description: "current tab toggles back to normal in place")
-        Task { @MainActor in
-            for _ in 0..<200 {
-                if let tab = controller.currentTabIdentifier(),
-                   tab.sessionIndex == 0,
-                   !controller.webViewManager.isQuiperPrivateTab(serviceID: tab.serviceID, sessionIndex: tab.sessionIndex) {
-                    restored.fulfill()
-                    break
-                }
-                try? await Task.sleep(nanoseconds: 25_000_000)
-            }
-        }
-        wait(for: [restored], timeout: 10.0)
-        XCTAssertTrue(try suggestItem().isEnabled)
+        defer { privateWindow.close() }
+        XCTAssertTrue(
+            controller.webViewManager.isPrivateWebView(privateWebView),
+            "Precondition: the sub-window carries the private identity"
+        )
+        XCTAssertFalse(
+            controller.webViewManager.webViewAllowsPageSelectorSuggest(privateWebView),
+            "The private sub-window itself refuses selector suggest"
+        )
+        XCTAssertTrue(
+            try suggestItem().isEnabled,
+            "Private browsing never touches the main tab, so its menu stays intact"
+        )
     }
 
     func testDialogHugsContent() throws {
