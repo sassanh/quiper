@@ -1253,16 +1253,44 @@ struct PromptRecordingIndicatorPicker: View {
             }
         }
         .frame(width: 260, alignment: .trailing)
-        .onAppear {
-            guard !reduceMotion else { return }
+        .onAppear { startPreviewAnimations() }
+        .onDisappear { stopPreviewAnimations() }
+        .onReceive(NotificationCenter.default.publisher(for: .settingsWindowDidOpen)) { _ in
+            startPreviewAnimations()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .settingsWindowDidClose)) { _ in
+            stopPreviewAnimations()
+        }
+    }
+
+    /// The marching-dash previews animate only while they can actually be
+    /// seen. A `repeatForever` animation is not cancelled by leaving the
+    /// tab or closing the Settings window: it keeps ticking the SwiftUI
+    /// view graph, and every tick drives a display-cycle layout pass of
+    /// the hosting view — which the window retains for the app's whole
+    /// lifetime. An unscoped preview therefore keeps the CPU spinning
+    /// long after the window it lives in is gone.
+    private func startPreviewAnimations() {
+        guard !reduceMotion else { return }
+        previewDashPhase = 0
+        withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
+            previewDashPhase = -14
+        }
+        previewGlowPhase = 0
+        withAnimation(.linear(duration: 5).repeatForever(autoreverses: false)) {
+            previewGlowPhase = -143
+        }
+    }
+
+    /// A fresh transaction with animations disabled is what actually ends
+    /// a running `repeatForever`; it replaces the animation and lands the
+    /// phase values on their resting state.
+    private func stopPreviewAnimations() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
             previewDashPhase = 0
-            withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
-                previewDashPhase = -14
-            }
             previewGlowPhase = 0
-            withAnimation(.linear(duration: 5).repeatForever(autoreverses: false)) {
-                previewGlowPhase = -143
-            }
         }
     }
 

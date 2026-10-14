@@ -623,7 +623,20 @@ final class AppController: NSObject, NSWindowDelegate {
         settingsWindow.appController = self
         guard let mainWindow = windowController.window else {
             if settingsWindow.isVisible == true {
+                // Every other dismissal path vetoes on a pending migration
+                // before any focus or visibility work; this one must too,
+                // or the gate hands focus off and the close signal fires
+                // for a window the veto leaves on screen.
+                if SecureDataMigrationManager.shared.isMigrationPending {
+                    NSSound.beep()
+                    return
+                }
                 KeyFocusGate.shared.orderOut(settingsWindow)
+                // A dismissal is a dismissal however it happens: without
+                // the close signal here, the window's visibility-scoped
+                // consumers — the General tab's preview animations — would
+                // keep running behind an invisible window.
+                NotificationCenter.default.post(name: .settingsWindowDidClose, object: nil)
             } else {
                 let visibility = Settings.shared.dockVisibility
                 if visibility == .always || visibility == .whenVisible {
@@ -863,6 +876,11 @@ final class AppController: NSObject, NSWindowDelegate {
                windowController.isActiveSpaceWebFullscreen {
                 windowController.showWebFullScreenBanner()
             }
+            // Closing with the window's own close button is the same
+            // dismissal as the toggle path and must be as observable:
+            // visibility-scoped consumers of this window key off the
+            // signal to stop working once it is gone.
+            NotificationCenter.default.post(name: .settingsWindowDidClose, object: nil)
         }
     }
 

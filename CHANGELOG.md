@@ -24,6 +24,8 @@
 
 - **A Blank Session Reloads Back to Life**: A session that comes up on a blank page — usually its first load failing on a bad network — now recovers with plain ⌘R, Reload from Origin, or the toolbar's refresh, which load the session's own address instead of re-reading the blank page. Before, those keys reloaded the blank page and left it stuck; only the lesser-known ⇧⌘R force reload would get it back.
 - **Previous-Tab Shortcuts Reach Popups**: ⌘\` and ⇧⌘\` now switch tabs while a popup holds focus, instead of going dead the moment focus moved from the overlay to a popup.
+- **Settings Stops Burning CPU Once It's Closed**: The animated recording-indicator previews in the General tab now animate only while Settings is actually on screen. Before, they started the first time the tab was visited and kept running forever — through tab switches, after the window was closed, and with Quiper hidden — leaving a CPU core spinning for the rest of the session. Closing Settings now really returns the app to idle.
+- **Closing Settings With Its Close Button Restores the Overlay**: Closing the window with ✕ now behaves exactly like the toggle shortcut: the overlay's header state and the lock button's tooltip are restored right away instead of waiting for the next interaction.
 
 ## [7.0.0] - 2026-10-06
 
