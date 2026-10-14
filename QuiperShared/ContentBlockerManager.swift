@@ -211,9 +211,10 @@ final class ContentBlockerManager {
     ///
     /// 1. At `.atDocumentStart` WebKit has not parsed `<head>` yet, while the
     ///    script unconditionally does `document.head.appendChild(...)` — so
-    ///    the body is deferred until the parser creates `<head>` (a
-    ///    MutationObserver fires before the page's own head scripts run, so
-    ///    ad stripping still lands first).
+    ///    the body is deferred until the parser creates `<head>`. The body's
+    ///    layers are all reactive (DOM hiding, auto-skip) or need only to
+    ///    precede the player's API calls (the `JSON.parse`/`Response.json`
+    ///    interception), both of which hold at `<head>`-time.
     /// 2. YouTube enforces `require-trusted-types-for 'script'`, which
     ///    rejects plain-string `innerHTML` assignments — an identity
     ///    Trusted Types policy is installed and used to convert them. The
@@ -229,8 +230,12 @@ final class ContentBlockerManager {
     ///    not the page's initial inline player response, which arrives via a
     ///    plain `var ytInitialPlayerResponse = …` assignment — the first
     ///    video of a page load still started an ad break. The prelude
-    ///    intercepts that assignment too (the declaration is var-style, so a
-    ///    pre-installed window accessor catches it) and strips
+    ///    installs a window accessor for that assignment itself, and does so
+    ///    at document start rather than in the deferred body: the body's
+    ///    head-observed install ran as a microtask the parser's first inline
+    ///    script could precede, letting the ads-laden object be stored before
+    ///    the accessor replaced it. The declaration is var-style, so the
+    ///    pre-installed accessor's setter catches it and strips
     ///    `adPlacements`/`playerAds` before the page reads them.
     ///
     /// Failures are reported through the flag handler so they reach the log.
@@ -247,12 +252,38 @@ final class ContentBlockerManager {
             var inWindow = false;
             var policy = null;
             var done = false;
+            var observer = null;
+            var initialHost = location.hostname;
+            var isYouTubeHost = function () {
+                return initialHost === "www.youtube.com" || initialHost === "m.youtube.com"
+                    || initialHost === "music.youtube.com" || initialHost === "www.youtube-nocookie.com";
+            };
+            var stripInitialPlayerResponse = function (obj) {
+                if (!obj || typeof obj !== "object") { return obj; }
+                try {
+                    if (Array.isArray(obj.adPlacements)) { obj.adPlacements = []; }
+                    if (Array.isArray(obj.playerAds)) { obj.playerAds = []; }
+                } catch (e) {}
+                return obj;
+            };
+            var installInitialResponseInterceptor = function () {
+                if (!isYouTubeHost()) { return; }
+                var initialStored;
+                try {
+                    Object.defineProperty(window, "ytInitialPlayerResponse", {
+                        configurable: true,
+                        get: function () { return initialStored; },
+                        set: function (value) { initialStored = stripInitialPlayerResponse(value); }
+                    });
+                } catch (e) {
+                    try { handlers.\(scriptGateHandlerName).postMessage("youtube-ads initial: " + String(e)); } catch (ignored) {}
+                }
+            };
             var runPayload = function () {
                 if (done) { return; }
                 done = true;
-                var initialHost = location.hostname;
-                if (initialHost === "www.youtube.com" || initialHost === "m.youtube.com"
-                    || initialHost === "music.youtube.com" || initialHost === "www.youtube-nocookie.com") {
+                if (observer) { observer.disconnect(); observer = null; }
+                if (isYouTubeHost()) {
                     if (window.trustedTypes && trustedTypes.createPolicy) {
                         try {
                             policy = trustedTypes.createPolicy("quiper-content-blocking", {
@@ -284,24 +315,6 @@ final class ContentBlockerManager {
                             });
                         }
                     }
-                    var stripInitialPlayerResponse = function (obj) {
-                        if (!obj || typeof obj !== "object") { return obj; }
-                        try {
-                            if (Array.isArray(obj.adPlacements)) { obj.adPlacements = []; }
-                            if (Array.isArray(obj.playerAds)) { obj.playerAds = []; }
-                        } catch (e) {}
-                        return obj;
-                    };
-                    var initialStored;
-                    try {
-                        Object.defineProperty(window, "ytInitialPlayerResponse", {
-                            configurable: true,
-                            get: function () { return initialStored; },
-                            set: function (value) { initialStored = stripInitialPlayerResponse(value); }
-                        });
-                    } catch (e) {
-                        try { handlers.\(scriptGateHandlerName).postMessage("youtube-ads initial: " + String(e)); } catch (ignored) {}
-                    }
                 }
                 inWindow = true;
                 try {
@@ -310,16 +323,19 @@ final class ContentBlockerManager {
                     try { handlers.\(scriptGateHandlerName).postMessage("youtube-ads: " + String(e)); } catch (ignored) {}
                 }
                 inWindow = false;
-                if (initialHost === "www.youtube.com" || initialHost === "m.youtube.com"
-                    || initialHost === "music.youtube.com" || initialHost === "www.youtube-nocookie.com") {
+                if (isYouTubeHost()) {
                     try { handlers.\(scriptGateHandlerName).postMessage("youtube-ads: active"); } catch (ignored) {}
                 }
             };
             var boot = function () {
                 handlers = window.webkit && window.webkit.messageHandlers;
                 if (!handlers || !handlers.\(scriptGateHandlerName)) { return false; }
+                installInitialResponseInterceptor();
                 if (document.head) { runPayload(); }
-                else { new MutationObserver(runPayload).observe(document.documentElement, { childList: true }); }
+                else {
+                    observer = new MutationObserver(runPayload);
+                    observer.observe(document.documentElement, { childList: true });
+                }
                 return true;
             };
             boot();

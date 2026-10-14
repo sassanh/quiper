@@ -155,6 +155,16 @@ struct ContentBlockerTests {
         #expect(gated.contains("Object.defineProperty(window, \"ytInitialPlayerResponse\""))
         #expect(gated.contains("Array.isArray(obj.adPlacements)"))
         #expect(gated.contains("Array.isArray(obj.playerAds)"))
+        // The interceptor installs at document start, ahead of the deferred
+        // payload: the head-observed microtask could land after the parser
+        // ran the page's inline response assignment, which then stored the
+        // ads-laden object before the accessor replaced it.
+        let interceptorInstall = try #require(gated.range(of: "installInitialResponseInterceptor();"))
+        let payloadDeferral = try #require(gated.range(of: "new MutationObserver(runPayload)"))
+        #expect(interceptorInstall.lowerBound < payloadDeferral.lowerBound)
+        // The deferral observer disconnects once the payload runs, so it
+        // stops allocating mutation records for every later DOM change.
+        #expect(gated.contains("observer.disconnect()"))
         // The layer posts an activation heartbeat to the log on YouTube hosts
         // so liveness is verifiable in Console.app.
         #expect(gated.contains("youtube-ads: active"))
