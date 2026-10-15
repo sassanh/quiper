@@ -886,6 +886,12 @@
 				ENABLE_APPINTENTS_METADATA_GENERATION = NO;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+					"$(BUILT_PRODUCTS_DIR)/Quiper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0.1;
 				MARKETING_VERSION = 7.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.sassanh.quiper.QuiperTests;
@@ -913,6 +919,12 @@
 				ENABLE_APPINTENTS_METADATA_GENERATION = NO;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+					"$(BUILT_PRODUCTS_DIR)/Quiper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0.1;
 				MARKETING_VERSION = 7.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.sassanh.quiper.QuiperTests;
