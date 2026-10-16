@@ -124,6 +124,59 @@ final class KeyFocusGate: NSObject {
         focus(NSApp.keyWindow, ordering: .orderFront)
     }
 
+    // MARK: - Context menu restitution
+
+    /// AppKit restores the interrupted window when an open menu closes.
+    /// macOS 27's context menu — with its system-provided items for
+    /// editable text ("Ask Siri") — can leave that restore undone: the menu
+    /// window stays the app's recorded key window after it leaves the
+    /// screen, no window of ours ever becomes key again, and the overlay
+    /// keeps its focus-loss dim and click shield no matter how often the
+    /// user clicks. When the menu session is over, hand key status back to
+    /// the recorded content window the menu interrupted, or the overlay —
+    /// standing down for everything the show restore stands down for: a
+    /// live, visible key window, a reserved show (sheet, onboarding,
+    /// precedence), an open HUD. The menu itself is never fought; this runs
+    /// from the view's `didCloseMenu`.
+    func reassertKeyAfterContextMenu() {
+        // First pass one turn after the dismissal, so AppKit's own hand-back
+        // reports first; second pass catches a hand-back that lands late.
+        DispatchQueue.main.async { [weak self] in
+            self?.rekeyOrStandDown(allowActivation: true)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.rekeyOrStandDown(allowActivation: false)
+        }
+    }
+
+    private func rekeyOrStandDown(allowActivation: Bool) {
+        guard let controller = activeController,
+              let overlay = controller.window,
+              overlay.isVisible else { return }
+        guard !isFocusReservedElsewhere(),
+              controller.openHUDs.isEmpty else { return }
+        if NSApp.keyWindow === overlay { return }
+        // A live, visible window of ours holds key status — the menu
+        // interrupted that window and the hand-back reached it. Not ours to
+        // move: only a key window that survived its own screen life
+        // (invisible) or nothing at all means the restore never landed.
+        if let keyWindow = NSApp.keyWindow, keyWindow.isVisible { return }
+        // The late pass never has a background app take key status — by then
+        // anything the user moved to wins. The fresh pass activates, since
+        // the menu the user was working with owns this moment.
+        guard allowActivation || NSApp.isActive else { return }
+        if let recorded = lastKeyWindow, recorded !== overlay, recorded.isVisible,
+           controller.webViewManager?.isPopupWindow(recorded) == true, focusPopup(recorded) {
+            NSLog("[Quiper][ContextMenu] Menu dismissal left no key window — re-keyed the popup")
+            controller.updateFocusAppearance()
+            return
+        }
+        focus(overlay, ordering: .keyOnly)
+        if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+        NSLog("[Quiper][ContextMenu] Menu dismissal left no key window — re-keyed the overlay")
+        controller.updateFocusAppearance()
+    }
+
     /// Orders a Quiper window out after deciding who takes focus. If the
     /// window holds key status the successor is keyed first, so AppKit has
     /// no hand-off to choose: a hidden overlay leaves nothing of ours on

@@ -109,10 +109,18 @@ extension MainWindowController {
     /// window the tree spans takes the deep tier while it holds key
     /// status: focus is elsewhere and the tree reads as background.
     /// Windows never judge their own dim.
+    ///
+    /// The key record is read defensively: a window's own key status
+    /// outranks the app-wide pointer, and a key window that has left the
+    /// screen holds nothing. macOS 27's context menus can leave the
+    /// dismissed menu window entered as the app's key window after it
+    /// departs — judged by that record alone, a genuinely focused window
+    /// would shade forever behind a gatekeeper no longer on screen.
     func focusLossLevel(for target: NSWindow?) -> FocusLossLevel {
         guard Settings.shared.focusLossEffectEnabled else { return .clear }
         guard let target, isOverlayInteractable else { return .dimmed }
-        guard let active = NSApp.keyWindow else { return .dimmed }
+        if target.isKeyWindow { return .clear }
+        guard let active = NSApp.keyWindow, active.isVisible else { return .dimmed }
         if target === active { return .clear }
         return isAncestorOrDescendant(target, of: active) ? .dimmed : .deeplyDimmed
     }

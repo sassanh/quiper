@@ -4402,6 +4402,15 @@ extension WebViewManager: WebViewContextMenuDelegate {
         contextMenuOpenedAt = Date()
     }
 
+    func webViewDidCloseContextMenu(_ webView: WKWebView) {
+        // AppKit restores the interrupted window when the menu closes; when
+        // that restore is left undone the overlay sits dim behind a menu
+        // window no longer on screen. The gate re-keys the interrupted
+        // window itself — and only when no live window of ours holds key
+        // status, so restore-driven cases are untouched.
+        KeyFocusGate.shared.reassertKeyAfterContextMenu()
+    }
+
     func webViewAllowsPageSelectorSuggest(_ webView: WKWebView) -> Bool {
         guard findServiceAndSession(for: webView) != nil else { return false }
         return !isPrivateWebView(webView)

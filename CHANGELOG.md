@@ -22,6 +22,7 @@
 
 ### Fixed
 
+- **Right-Clicking Text Can't Leave the Overlay Dimmed**: On macOS 27 the context menu's system-provided items ("Ask Siri") take key status when the menu opens and may never give it back on dismiss — the overlay stayed dimmed afterwards, and clicking the window couldn't lift it because no window of Quiper's ever re-took focus. Quiper now restores the interrupted window itself once the menu session ends, and the focus-loss dim no longer shades a window that genuinely holds focus behind a stale key record.
 - **A Blank Session Reloads Back to Life**: A session that comes up on a blank page — usually its first load failing on a bad network — now recovers with plain ⌘R, Reload from Origin, or the toolbar's refresh, which load the session's own address instead of re-reading the blank page. Before, those keys reloaded the blank page and left it stuck; only the lesser-known ⇧⌘R force reload would get it back.
 - **Previous-Tab Shortcuts Reach Popups**: ⌘\` and ⇧⌘\` now switch tabs while a popup holds focus, instead of going dead the moment focus moved from the overlay to a popup.
 - **Settings Stops Burning CPU Once It's Closed**: The animated recording-indicator previews in the General tab now animate only while Settings is actually on screen. Before, they started the first time the tab was visited and kept running forever — through tab switches, after the window was closed, and with Quiper hidden — leaving a CPU core spinning for the rest of the session. Closing Settings now really returns the app to idle.

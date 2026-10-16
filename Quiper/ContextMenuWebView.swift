@@ -55,6 +55,12 @@ protocol WebViewContextMenuDelegate: AnyObject {
     /// The native menu is about to open. The manager records the moment so a
     /// context-link posting can be tied to the menu that follows it.
     func webViewWillOpenContextMenu(_ webView: WKWebView)
+    /// The native menu has closed — an item was chosen, the point was
+    /// clicked away, or the menu was dismissed. AppKit normally restores the
+    /// key window the menu interrupted here; the manager backs that restore
+    /// up when macOS leaves it undone, so the focus-loss dim cannot survive
+    /// a menu that never gave focus back.
+    func webViewDidCloseContextMenu(_ webView: WKWebView)
 }
 
 extension WebViewContextMenuDelegate {
@@ -63,6 +69,7 @@ extension WebViewContextMenuDelegate {
         completion(nil)
     }
     func webViewWillOpenContextMenu(_ webView: WKWebView) {}
+    func webViewDidCloseContextMenu(_ webView: WKWebView) {}
 }
 
 /// Session webview that edits WebKit's native context menu. WebKit exposes
@@ -129,6 +136,7 @@ final class ContextMenuWebView: WKWebView {
         stopModifierWatch()
         plainClickEmphasis = nil
         lastIndicatedItem = nil
+        contextMenuDelegate?.webViewDidCloseContextMenu(self)
     }
 
     /// When WebKit builds a link menu it includes default Open-Link items.
