@@ -34,7 +34,7 @@ struct DockVisibilityPicker: View {
                     }
                     .frame(width: 44, height: 36)
                     .padding(8)
-                    .pickerCardStyle(isSelected: selection == .never, accentColor: .teal)
+                    .pickerCardStyle(isSelected: selection == .never, accentColor: .purple)
 
                     Text(DockVisibility.never.rawValue)
                         .font(.system(size: 11, weight: .medium))
@@ -73,7 +73,7 @@ struct DockVisibilityPicker: View {
                     }
                     .frame(width: 44, height: 36)
                     .padding(8)
-                    .pickerCardStyle(isSelected: selection == .whenVisible, accentColor: .teal)
+                    .pickerCardStyle(isSelected: selection == .whenVisible, accentColor: .purple)
 
                     Text(DockVisibility.whenVisible.rawValue)
                         .font(.system(size: 11, weight: .medium))
@@ -106,7 +106,7 @@ struct DockVisibilityPicker: View {
                     }
                     .frame(width: 44, height: 36)
                     .padding(8)
-                    .pickerCardStyle(isSelected: selection == .always, accentColor: .teal)
+                    .pickerCardStyle(isSelected: selection == .always, accentColor: .purple)
 
                     Text(DockVisibility.always.rawValue)
                         .font(.system(size: 11, weight: .medium))
@@ -1579,7 +1579,7 @@ struct FocusLossBehaviorPicker: View {
                     .padding(8)
                     .pickerCardStyle(
                         isSelected: settings.focusLossBehavior == behavior,
-                        accentColor: .blue
+                        accentColor: .indigo
                     )
 
                 Text(title)

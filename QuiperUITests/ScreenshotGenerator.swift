@@ -216,6 +216,7 @@ final class ScreenshotGenerator: BaseUITest {
         let tabs = [
             ("General", "settings_general"),
             ("Engines", "settings_engines"),
+            ("Data & Privacy", "settings_data_privacy"),
             ("Appearance", "settings_appearance"),
             ("Shortcuts", "settings_shortcuts"),
             ("Updates", "settings_updates")

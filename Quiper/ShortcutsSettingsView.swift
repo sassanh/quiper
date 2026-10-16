@@ -96,6 +96,28 @@ struct KeyBindingsSettingsView: View {
                     }
                 }
 
+                Section("Modifier Hold") {
+                    SettingsLabeledControlRow(
+                        title: "Session Modifier Hold",
+                        detail: "What holding the Go to session modifier shows. The HUD lists open sessions."
+                    ) {
+                        ModifierHoldBehaviorPicker(selection: $settings.sessionModifierHoldBehavior)
+                    }
+                    .onChange(of: settings.sessionModifierHoldBehavior) { _, _ in
+                        settings.saveSettings()
+                    }
+
+                    SettingsLabeledControlRow(
+                        title: "Engine Modifier Hold",
+                        detail: "What holding the Go to engine modifier shows. The HUD lists all engines."
+                    ) {
+                        ModifierHoldBehaviorPicker(selection: $settings.engineModifierHoldBehavior)
+                    }
+                    .onChange(of: settings.engineModifierHoldBehavior) { _, _ in
+                        settings.saveSettings()
+                    }
+                }
+
                 Section("App Shortcuts") {
                     ForEach(AppShortcutBindings.Key.allCases) { key in
                         let primary = settings.appShortcutBindings.configuration(for: key)

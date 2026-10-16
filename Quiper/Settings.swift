@@ -24,7 +24,7 @@ class SettingsWindow: NSWindow {
     private init() {
         hostingController = NSHostingController(rootView: SettingsView(appController: nil, initialServiceID: nil))
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 880, height: 500),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false

@@ -11,8 +11,8 @@ final class TemplateManagementUITests: BaseUITest {
         // --- Setup ---
         openSettings()
         
-        // --- Step 1: Delete All (General Tab) ---
-        switchToSettingsTab("General")
+        // --- Step 1: Delete All (Data & Privacy Tab) ---
+        switchToSettingsTab("Data & Privacy")
         
         // Erase Engines
         let eraseEnginesBtn = app.buttons["Erase Engines"]
@@ -142,7 +142,8 @@ final class TemplateManagementUITests: BaseUITest {
         }
         
         // --- Step 3: Delete All Again ---
-        switchToSettingsTab("General")
+        // The erase buttons live in the Data & Privacy tab (moved out of General).
+        switchToSettingsTab("Data & Privacy")
         
         eraseEnginesBtn.click()
         let secondEngineAlert = app.sheets.firstMatch

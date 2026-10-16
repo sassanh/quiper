@@ -20,23 +20,6 @@ struct AppearanceSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                SettingsSection(title: "Dock", icon: "dock.rectangle", iconColor: .teal) {
-                    SettingsRow(
-                        title: "Dock Icon Visibility",
-                        message: "Controls when the app appears in the Dock. Note: Native menus are only available when the Dock icon is visible.",
-                        icon: "eye.fill",
-                        iconColor: .teal
-                    ) {
-                        DockVisibilityPicker(selection: $settings.dockVisibility)
-                    }
-                    .onChange(of: settings.dockVisibility) { _, _ in
-                        // The visibility-aware activation policy is applied
-                        // by AppController's handler for the
-                        // .dockVisibilityChanged notification, posted by the
-                        // setting's didSet — a single gate for every change.
-                        settings.saveSettings()
-                    }
-                }
                 SettingsSection(title: "Toolbar", icon: "menubar.rectangle", iconColor: .blue) {
                     SettingsRow(
                         title: "Toolbar Visibility",
@@ -104,34 +87,6 @@ struct AppearanceSettingsView: View {
                     .onChange(of: settings.sessionSelectorDisplayMode) { _, _ in
                         settings.saveSettings()
                     }
-
-                    SettingsDivider()
-
-                    SettingsRow(
-                        title: "Session Modifier Hold",
-                        message: "What holding the Go to session modifier shows. HUD lists open sessions.",
-                        icon: "square.grid.3x2.fill",
-                        iconColor: .purple
-                    ) {
-                        ModifierHoldBehaviorPicker(selection: $settings.sessionModifierHoldBehavior)
-                    }
-                    .onChange(of: settings.sessionModifierHoldBehavior) { _, _ in
-                        settings.saveSettings()
-                    }
-
-                    SettingsDivider()
-
-                    SettingsRow(
-                        title: "Engine Modifier Hold",
-                        message: "What holding the Go to engine modifier shows. HUD lists all engines.",
-                        icon: "rectangle.grid.1x2.fill",
-                        iconColor: .purple
-                    ) {
-                        ModifierHoldBehaviorPicker(selection: $settings.engineModifierHoldBehavior)
-                    }
-                    .onChange(of: settings.engineModifierHoldBehavior) { _, _ in
-                        settings.saveSettings()
-                    }
                 }
                 
                 SettingsSection(title: "Color Scheme", icon: "paintpalette.fill", iconColor: .orange) {
@@ -175,27 +130,7 @@ struct AppearanceSettingsView: View {
     
     @ViewBuilder
     private func dualThemeWindowSection() -> some View {
-        SettingsSection(title: "Window", icon: "macwindow", iconColor: .indigo) {
-            SettingsToggleRow(
-                title: "Show on all spaces",
-                message: "Keep the Quiper window visible when switching Spaces.",
-                icon: "square.on.square.fill",
-                iconColor: .indigo,
-                isOn: $settings.showOnAllSpaces
-            )
-            
-            SettingsDivider()
-
-            SettingsToggleRow(
-                title: "Keep overlay on top",
-                message: "Keep Quiper above other apps. When off, the hotkey brings it forward before hiding it. Spaces and focus-loss behavior are unchanged.",
-                icon: "square.3.layers.3d.top.filled",
-                iconColor: .indigo,
-                isOn: $settings.keepOverlayOnTop
-            )
-
-            SettingsDivider()
-            
+        SettingsSection(title: "Window Style", icon: "macwindow", iconColor: .indigo) {
             // Background Style row with Light and Dark pickers
             DualThemeRow(
                 title: "Background Style",

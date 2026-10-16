@@ -42,7 +42,7 @@ Quiper filters ads and trackers out of every page before it loads — in every s
 *   **Bundled userscripts:** **AdGuard Extra** (defends against adblock-circumvention scripts) and **AdGuard's Block YouTube Ads** script (strips ad metadata from the player and auto-skips video ads), injected at document start to handle ads that declarative rules alone cannot reach.
 
 ### Ads & Trackers
-*   **Location:** **Settings (`⌘ ⇧ ,`) → General → Privacy → Ads & Trackers** on macOS, or **Settings → Privacy** on iOS.
+*   **Location:** **Settings (`⌘ ⇧ ,`) → Data & Privacy → Privacy → Ads & Trackers** on macOS, or **Settings → Privacy** on iOS.
 *   **Default:** **Blocking On.** Choose **Blocking On** or **Blocking Off** with the card picker. Open tabs pick up the change at their next page load.
 *   **Fully offline:** Every list and script ships inside Quiper and refreshes with each release — nothing is downloaded in the background.
 *   **Private pages stay untouched:** Marker-free ("private") web views deliberately receive neither layer — blocking changes page behavior in observable ways, and Quiper keeps those pages completely unaltered.
