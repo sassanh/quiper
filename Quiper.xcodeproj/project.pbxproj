@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		915537A02EDAEB700024996F /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 9155379F2EDAEB700024996F /* MarkdownUI */; };
 		915539032EDAE8C30024996F /* QuiperIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 915539022EDAE8C30024996F /* QuiperIcon.icns */; };
-		915539102EDAE8C30024996F /* Quiper.app in Embed Login Item */ = {isa = PBXBuildFile; fileRef = 915539012EDAE8C30024996F /* Quiper.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -50,19 +49,25 @@
 		};
 /* End PBXContainerItemProxy section */
 
-/* Begin PBXCopyFilesBuildPhase section */
+/* Begin PBXShellScriptBuildPhase section */
 		9155390F2EDAE8C30024996F /* Embed Login Item */ = {
-			isa = PBXCopyFilesBuildPhase;
+			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
-			dstPath = "Contents/Library/LoginItems";
-			dstSubfolderSpec = 1;
 			files = (
-				915539102EDAE8C30024996F /* Quiper.app in Embed Login Item */,
+			);
+			inputPaths = (
+				"$(BUILD_DIR)/../LinkHelperProducts/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/QuiperLinkHelper.app",
 			);
 			name = "Embed Login Item";
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/Contents/Library/LoginItems/Quiper.app",
+			);
 			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ ! -d \"$SCRIPT_INPUT_FILE_0\" ]; then\n\techo \"error: QuiperLinkHelper product not found at $SCRIPT_INPUT_FILE_0\" >&2\n\texit 1\nfi\nmkdir -p \"$(dirname \"$SCRIPT_OUTPUT_FILE_0\")\"\nrm -rf \"$SCRIPT_OUTPUT_FILE_0\"\ncp -R \"$SCRIPT_INPUT_FILE_0\" \"$SCRIPT_OUTPUT_FILE_0\"\n";
+			showEnvVarsInLog = 0;
 		};
-/* End PBXCopyFilesBuildPhase section */
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXFileReference section */
 		9155369A2EDAE8C30024996F /* Quiper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Quiper.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -71,7 +76,7 @@
 		915538122EDAE8C30024996F /* QuiperiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuiperiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9155381A2EDAE8C30024996F /* QuiperiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuiperiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		915538272EDAE8C30024996F /* QuiperiOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = QuiperiOSUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		915539012EDAE8C30024996F /* Quiper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Quiper.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		915539012EDAE8C30024996F /* QuiperLinkHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuiperLinkHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		915539022EDAE8C30024996F /* QuiperIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Quiper/QuiperIcon.icns; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -782,6 +787,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
 				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Supporting/Info.plist;
@@ -838,6 +844,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
 				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Supporting/Info.plist;
@@ -1191,7 +1198,7 @@
 					AppIntents,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "app.sassanh.quiper.QuiperDev.LinkHelper";
-				PRODUCT_NAME = Quiper;
+				PRODUCT_NAME = QuiperLinkHelper;
 				CONFIGURATION_BUILD_DIR = "$(BUILD_DIR)/../LinkHelperProducts/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1234,7 +1241,7 @@
 					AppIntents,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "app.sassanh.quiper.Quiper.LinkHelper";
-				PRODUCT_NAME = Quiper;
+				PRODUCT_NAME = QuiperLinkHelper;
 				CONFIGURATION_BUILD_DIR = "$(BUILD_DIR)/../LinkHelperProducts/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "";

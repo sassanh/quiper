@@ -48,10 +48,14 @@ nonisolated enum LinkHelperDecision: Equatable {
 /// arrives as a parameter, so the whole matrix is unit-testable and the
 /// helper and main app share one implementation.
 enum LinkHelperRouting {
-    /// The helper's app bundle name inside the host's LoginItems folder. It is
-    /// named `Quiper.app` — not after the target — because macOS renders an
-    /// app's name in System Settings (e.g. the Default Web Browser menu) from
-    /// the on-disk folder name, never the bundle's plist keys.
+    /// The helper's bundle name in the shipped host app's LoginItems folder.
+    /// The helper builds under its distinct product name `QuiperLinkHelper`,
+    /// so no second bundle named `Quiper.app` ever exists in build products
+    /// (two same-named bundles make xcodebuild's test-target app resolution
+    /// race-prone); the Embed Login Item build phase then copies it into the
+    /// host as `Quiper.app` — macOS renders an app's name in System Settings
+    /// (e.g. the Default Web Browser menu) from the on-disk folder name,
+    /// never the bundle's plist keys.
     static let helperAppName = "Quiper.app"
 
     /// - Parameters:
