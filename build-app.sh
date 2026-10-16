@@ -68,11 +68,15 @@ fi
 
 xcodebuild "${XCODEBUILD_ARGS[@]}" clean build
 
-# Find the built app
-APP_PATH=$(find "$BUILD_DIR" -name "$APP_NAME.app" -type d | head -n 1)
+# Find the built app. Keep this lookup deterministic: the helper's
+# standalone staging bundle is outside the products directory by design
+# (test sessions resolve app launches ambiguously when a second app named
+# Quiper.app lives in the products tree), so never "search" for app bundles
+# by name here — name order alone must not decide what ships.
+APP_PATH="$BUILD_DIR/Build/Products/$CONFIGURATION/$APP_NAME.app"
 
-if [ -z "$APP_PATH" ]; then
-	echo "❌ Error: $APP_NAME.app not found in build directory"
+if [ ! -d "$APP_PATH" ]; then
+	echo "❌ Error: $APP_NAME.app not found at $APP_PATH"
 	exit 1
 fi
 
@@ -82,8 +86,11 @@ rm -rf "./$APP_NAME.app"
 cp -R "$APP_PATH" .
 
 if [ "$SIGNING_IDENTITY" != "-" ] && command -v codesign >/dev/null 2>&1; then
-	XCENT=$(find "$BUILD_DIR" -name "Quiper.app.xcent" | head -n 1)
-	if [ -n "${XCENT:-}" ] && [ -f "$XCENT" ]; then
+	# The host app's entitlements file only: the helper is re-signed below
+	# with its own identity, and both products are named Quiper.app, so a
+	# name-based search can pick the wrong one.
+	XCENT="$BUILD_DIR/Build/Intermediates.noindex/Quiper.build/$CONFIGURATION/Quiper.build/$APP_NAME.app.xcent"
+	if [ -f "$XCENT" ]; then
 		/usr/libexec/PlistBuddy -c "Delete :com.apple.security.get-task-allow" "$XCENT" 2>/dev/null || true
 		echo "🔏 Re-signing for distribution (identity: $SIGNING_IDENTITY)..."
 		# Nested code first: the outer seal covers the helper, and --deep
