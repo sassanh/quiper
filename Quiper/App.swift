@@ -8,30 +8,6 @@ import SwiftUI
 import UserNotifications
 import WebKit
 
-extension Notification.Name {
-    static let inspectorVisibilityChanged = Notification.Name("InspectorVisibilityChanged")
-    static let showSettings = Notification.Name("QuiperShowSettings")
-    static let startGlobalHotkeyCapture = Notification.Name("QuiperStartGlobalHotkeyCapture")
-    static let appVisibilityChanged = Notification.Name("QuiperAppVisibilityChanged")
-    static let hotkeyConfigurationChanged = Notification.Name("QuiperHotkeyConfigurationChanged")
-    static let notificationPermissionChanged = Notification.Name("QuiperNotificationPermissionChanged")
-    static let dockVisibilityChanged = Notification.Name("QuiperDockVisibilityChanged")
-    static let selectorDisplayModeChanged = Notification.Name("QuiperSelectorDisplayModeChanged")
-    static let topBarVisibilityChanged = Notification.Name("QuiperTopBarVisibilityChanged")
-    static let dragAreaPositionChanged = Notification.Name("QuiperDragAreaPositionChanged")
-    static let windowAppearanceChanged = Notification.Name("QuiperWindowAppearanceChanged")
-    static let colorSchemeChanged = Notification.Name("QuiperColorSchemeChanged")
-    static let showOnAllSpacesChanged = Notification.Name("QuiperShowOnAllSpacesChanged")
-    static let keepOverlayOnTopChanged = Notification.Name("QuiperKeepOverlayOnTopChanged")
-    static let focusLossEffectChanged = Notification.Name("QuiperFocusLossEffectChanged")
-    static let windowDidShow = Notification.Name("QuiperWindowDidShow")
-    static let windowDidHide = Notification.Name("QuiperWindowDidHide")
-    static let settingsWindowDidOpen = Notification.Name("QuiperSettingsWindowDidOpen")
-    static let settingsWindowDidClose = Notification.Name("QuiperSettingsWindowDidClose")
-    static let servicesIconsUpdated = Notification.Name("QuiperServicesIconsUpdated")
-    static let servicesOrderUpdated = Notification.Name("QuiperServicesOrderUpdated")
-}
-
 @objc protocol StandardEditActions {
     func undo(_ sender: Any?)
     func redo(_ sender: Any?)

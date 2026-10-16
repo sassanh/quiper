@@ -696,7 +696,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func playErrorSound() {
         NSSound.beep()
         if Constants.LaunchMode.isUITesting {
-            DistributedNotificationCenter.default().postNotificationName(NSNotification.Name("QuiperTestBeep"), object: nil, userInfo: nil, deliverImmediately: true)
+            DistributedNotificationCenter.default().postNotificationName(Notification.Name.distributedTestBeep, object: nil, userInfo: nil, deliverImmediately: true)
         }
     }
 

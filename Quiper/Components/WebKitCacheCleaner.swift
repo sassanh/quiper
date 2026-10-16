@@ -186,7 +186,3 @@ final class WebKitCacheCleaner {
         return true
     }
 }
-
-extension Notification.Name {
-    static let orphanedEncryptedStoresFound = Notification.Name("QuiperOrphanedEncryptedStoresFound")
-}

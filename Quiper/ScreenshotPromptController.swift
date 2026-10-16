@@ -29,7 +29,7 @@ final class ScreenshotPromptController: NSWindowController {
         DistributedNotificationCenter.default().addObserver(
             self,
             selector: #selector(handleShowPrompt(_:)),
-            name: NSNotification.Name("app.sassanh.quiper.ShowCapturePrompt"),
+            name: Notification.Name.showCapturePrompt,
             object: nil
         )
     }

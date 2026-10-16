@@ -1,14 +1,5 @@
 import AppKit
 
-extension Notification.Name {
-    /// Posted by `KeyFocusGate` after it handled AppKit's key-status
-    /// notification. The gate is the app's only listener of AppKit's key
-    /// notifications; windows that react to focus changes subscribe here
-    /// instead of opening a second observer of their own.
-    static let quiperKeyWindowDidBecomeKey = Notification.Name("QuiperKeyWindowDidBecomeKey")
-    static let quiperKeyWindowDidResignKey = Notification.Name("QuiperKeyWindowDidResignKey")
-}
-
 /// A weak handle to a recorded focus window; popup entries use it so a
 /// closed popup never keeps history alive.
 struct WeakWindowReference {
