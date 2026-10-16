@@ -140,7 +140,7 @@ enum RoutingResolver {
             return .openHere
         } else if url.isFileURL {
             #if os(macOS)
-            if ProcessInfo.processInfo.arguments.contains("--uitesting") {
+            if Constants.LaunchMode.isUITesting {
                 return .openHere
             }
             #endif

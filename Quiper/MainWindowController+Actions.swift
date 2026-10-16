@@ -1036,7 +1036,7 @@ extension MainWindowController: WebViewManagerDelegate {
         
         if Settings.shared.tabSurvivalPolicy != .never,
            let service = services.first(where: { $0.id == serviceID }) {
-            let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
+            let stateURL = EncryptedVolumeManager.shared.tabStateURL(for: serviceID)
             if let data = try? Data(contentsOf: stateURL),
                let state = try? JSONDecoder().decode(SecureTabState.self, from: data) {
                 

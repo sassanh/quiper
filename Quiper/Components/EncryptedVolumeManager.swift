@@ -10,8 +10,8 @@ final class EncryptedVolumeManager {
     
     private let baseStorageDir: URL = {
         let isRunningTests = NSClassFromString("XCTestCase") != nil
-        let isUITesting = CommandLine.arguments.contains("--uitesting")
-        
+        let isUITesting = Constants.LaunchMode.isUITesting
+
         let baseDir: URL
         if isRunningTests || isUITesting {
             let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -35,6 +35,12 @@ final class EncryptedVolumeManager {
     
     func getMountPointURL(for serviceID: UUID) -> URL {
         SecureEngineStorage.mountPointURL(bundleIdentifier: Constants.BUNDLE_ID, serviceID: serviceID)
+    }
+
+    /// Location of a service's persisted open-tab state (`quiper_tabs.json`)
+    /// inside its encrypted-volume mount point.
+    func tabStateURL(for serviceID: UUID) -> URL {
+        getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
     }
     
     func bundleExists(for serviceID: UUID) -> Bool {

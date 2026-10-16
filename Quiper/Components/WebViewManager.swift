@@ -1192,7 +1192,7 @@ final class WebViewManager: NSObject {
                                 targetURLString = requestedURL ?? unlockedService.url
                             }
                             if Settings.shared.tabSurvivalPolicy != .never {
-                                let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceId).appendingPathComponent("quiper_tabs.json")
+                                let stateURL = EncryptedVolumeManager.shared.tabStateURL(for: serviceId)
                                 if let data = try? Data(contentsOf: stateURL),
                                    let state = try? JSONDecoder().decode(SecureTabState.self, from: data) {
                                     // Pinned-tab URLs come from the engine
@@ -3615,7 +3615,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
     
     @MainActor
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        let isUITesting = ProcessInfo.processInfo.arguments.contains("--uitesting")
+        let isUITesting = Constants.LaunchMode.isUITesting
         let allowedSchemes = isUITesting ? ["http", "https", "file"] : ["http", "https"]
         
         guard let url = navigationAction.request.url,
@@ -4159,7 +4159,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
     /// cannot resurrect pre-clear popup URLs over fresh sessions.
     private func stripSecurePopups(for serviceID: UUID) {
         guard EncryptedVolumeManager.shared.isUnlocked(for: serviceID) else { return }
-        let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
+        let stateURL = EncryptedVolumeManager.shared.tabStateURL(for: serviceID)
         guard let data = try? Data(contentsOf: stateURL),
               var secureState = try? JSONDecoder().decode(SecureTabState.self, from: data),
               secureState.popups != nil else { return }

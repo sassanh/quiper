@@ -413,8 +413,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
     
     init(services: [Service]? = nil) {
-        let isUITesting = ProcessInfo.processInfo.arguments.contains("--uitesting")
-        let isScreenshotMode = ProcessInfo.processInfo.arguments.contains("--screenshot-mode")
+        let isUITesting = Constants.LaunchMode.isUITesting
+        let isScreenshotMode = Constants.LaunchMode.isScreenshotMode
         let windowWidth: CGFloat = isScreenshotMode ? 640 : (isUITesting ? 900 : 550)
         let windowHeight: CGFloat = isScreenshotMode ? 480 : 620
         
@@ -695,7 +695,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     
     func playErrorSound() {
         NSSound.beep()
-        if ProcessInfo.processInfo.arguments.contains("--uitesting") {
+        if Constants.LaunchMode.isUITesting {
             DistributedNotificationCenter.default().postNotificationName(NSNotification.Name("QuiperTestBeep"), object: nil, userInfo: nil, deliverImmediately: true)
         }
     }
@@ -1073,8 +1073,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
         
-        let isUITesting = ProcessInfo.processInfo.arguments.contains("--uitesting")
-        let isScreenshotMode = ProcessInfo.processInfo.arguments.contains("--screenshot-mode")
+        let isUITesting = Constants.LaunchMode.isUITesting
+        let isScreenshotMode = Constants.LaunchMode.isScreenshotMode
         if !isUITesting && !isScreenshotMode {
             window.setFrameAutosaveName(Constants.WINDOW_FRAME_AUTOSAVE_NAME)
         } else {
@@ -1233,7 +1233,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                             tabPromptHistoryEnabledOverrides: secureOverrides,
                             popups: securePopups.isEmpty ? nil : securePopups
                         )
-                        let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: svc.id).appendingPathComponent("quiper_tabs.json")
+                        let stateURL = EncryptedVolumeManager.shared.tabStateURL(for: svc.id)
                         if let data = try? JSONEncoder().encode(secureState) {
                             try? data.write(to: stateURL)
                         }
@@ -1343,7 +1343,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             var secureSessions = sessions
             var restoredTitles = savedState.tabTitles[svcID] ?? [:]
             if service.isEncrypted && EncryptedVolumeManager.shared.isUnlocked(for: service.id) {
-                let stateURL = EncryptedVolumeManager.shared.getMountPointURL(for: service.id).appendingPathComponent("quiper_tabs.json")
+                let stateURL = EncryptedVolumeManager.shared.tabStateURL(for: service.id)
                 if let data = try? Data(contentsOf: stateURL),
                    let secureState = try? JSONDecoder().decode(SecureTabState.self, from: data) {
                     secureSessions = secureState.openTabs

@@ -1003,7 +1003,7 @@ class Settings: ObservableObject {
     private static func readSecureTabStateAsync(for serviceID: UUID) async -> SecureTabState? {
         guard Settings.shared.tabSurvivalPolicy != .never else { return nil }
         guard EncryptedVolumeManager.shared.isUnlocked(for: serviceID) else { return nil }
-        let url = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
+        let url = EncryptedVolumeManager.shared.tabStateURL(for: serviceID)
         return await Task.detached(priority: .userInitiated) {
             guard let data = try? Data(contentsOf: url) else { return nil }
             return try? JSONDecoder().decode(SecureTabState.self, from: data)
@@ -1134,7 +1134,7 @@ class Settings: ObservableObject {
                         tabPromptHistoryEnabledOverrides: state.tabPromptHistoryEnabledOverrides[serviceID],
                         popups: state.popups?.filter { $0.serviceID == serviceID }
                     )
-                    let url = EncryptedVolumeManager.shared.getMountPointURL(for: serviceID).appendingPathComponent("quiper_tabs.json")
+                    let url = EncryptedVolumeManager.shared.tabStateURL(for: serviceID)
                     if let data = try? JSONEncoder().encode(secureState) {
                         try? data.write(to: url, options: .atomic)
                     }

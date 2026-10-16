@@ -40,6 +40,7 @@ struct Constants {
     /// Launch flags and mode checks shared across app entry points.
     struct LaunchMode {
         nonisolated static let uiTestingFlag = "--uitesting"
+        nonisolated static let screenshotModeFlag = "--screenshot-mode"
         nonisolated static let templateValidationServerFlag = "--template-validation-server"
 
         nonisolated static var arguments: [String] {
@@ -48,6 +49,10 @@ struct Constants {
 
         nonisolated static var isUITesting: Bool {
             arguments.contains(uiTestingFlag)
+        }
+
+        nonisolated static var isScreenshotMode: Bool {
+            arguments.contains(screenshotModeFlag)
         }
 
         nonisolated static var isTemplateValidationServer: Bool {

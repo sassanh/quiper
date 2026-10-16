@@ -27,8 +27,7 @@ enum SettingsPersistence {
 
     static var settingsFile: URL {
         let isRunningTests = NSClassFromString("XCTestCase") != nil
-        let isUITesting = CommandLine.arguments.contains("--uitesting")
-            || CommandLine.arguments.contains("--screenshot-mode")
+        let isUITesting = Constants.LaunchMode.isUITesting || Constants.LaunchMode.isScreenshotMode
         let baseDirectory: URL
         if isRunningTests || isUITesting {
             let temporaryDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -67,7 +66,7 @@ enum SettingsPersistence {
     static func readPersistedSettings() -> (PersistedSettings, Bool) {
         let file = settingsFile
         let isRunningTests = NSClassFromString("XCTestCase") != nil
-        let isUITesting = CommandLine.arguments.contains("--uitesting") || CommandLine.arguments.contains("--screenshot-mode")
+        let isUITesting = Constants.LaunchMode.isUITesting || Constants.LaunchMode.isScreenshotMode
         if let data = try? Data(contentsOf: file) {
             if let payload = SettingsCodec.decodePersistedSettings(from: data) {
                 corruptedState = nil

@@ -93,7 +93,7 @@ final class WebKitCacheCleaner {
     
     private static var baseAppSupportDirectory: URL? {
         let isRunningTests = NSClassFromString("XCTestCase") != nil
-        let isUITesting = CommandLine.arguments.contains("--uitesting")
+        let isUITesting = Constants.LaunchMode.isUITesting
         
         let appDir: URL
         if isRunningTests || isUITesting {
