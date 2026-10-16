@@ -26,12 +26,11 @@ enum SettingsPersistence {
     // MARK: - File locations (mirrors Settings.settingsFile)
 
     static var settingsFile: URL {
-        let isRunningTests = NSClassFromString("XCTestCase") != nil
+        let isRunningTests = RuntimeEnvironment.areXCTestClassesLoaded
         let isUITesting = Constants.LaunchMode.isUITesting || Constants.LaunchMode.isScreenshotMode
         let baseDirectory: URL
         if isRunningTests || isUITesting {
-            let temporaryDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
-            baseDirectory = temporaryDirectory.appendingPathComponent("QuiperTests-\(ProcessInfo.processInfo.processIdentifier)")
+            baseDirectory = RuntimeEnvironment.quiperTestsStorageDirectory
         } else {
             baseDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                 .appendingPathComponent(Constants.APP_FOLDER_NAME, isDirectory: true)
@@ -65,7 +64,7 @@ enum SettingsPersistence {
     /// and a `CorruptedError` is stored in `corruptedState` — the caller must ask the user, never silently reset.
     static func readPersistedSettings() -> (PersistedSettings, Bool) {
         let file = settingsFile
-        let isRunningTests = NSClassFromString("XCTestCase") != nil
+        let isRunningTests = RuntimeEnvironment.areXCTestClassesLoaded
         let isUITesting = Constants.LaunchMode.isUITesting || Constants.LaunchMode.isScreenshotMode
         if let data = try? Data(contentsOf: file) {
             if let payload = SettingsCodec.decodePersistedSettings(from: data) {

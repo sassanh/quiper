@@ -92,13 +92,12 @@ final class WebKitCacheCleaner {
     }
     
     private static var baseAppSupportDirectory: URL? {
-        let isRunningTests = NSClassFromString("XCTestCase") != nil
+        let isRunningTests = RuntimeEnvironment.areXCTestClassesLoaded
         let isUITesting = Constants.LaunchMode.isUITesting
-        
+
         let appDir: URL
         if isRunningTests || isUITesting {
-            let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
-            appDir = tempDir.appendingPathComponent("QuiperTests-\(ProcessInfo.processInfo.processIdentifier)")
+            appDir = RuntimeEnvironment.quiperTestsStorageDirectory
         } else {
             guard let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
                 return nil

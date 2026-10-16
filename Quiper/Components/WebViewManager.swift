@@ -1303,7 +1303,7 @@ final class WebViewManager: NSObject {
     private func createWebViewInstance(for service: Service, sessionIndex: Int, bounds: NSRect, isPersistent: Bool) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.userContentController = WKUserContentController()
-        let isRunningTests = NSClassFromString("XCTestCase") != nil || ProcessInfo.processInfo.environment["XCInjectBundleInto"] != nil
+        let isRunningTests = RuntimeEnvironment.areXCTestClassesLoaded || RuntimeEnvironment.isXCTestInjected
         if isPersistent && !isRunningTests {
             config.websiteDataStore = WKWebsiteDataStore(forIdentifier: service.id)
         } else {

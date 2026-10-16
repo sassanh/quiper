@@ -472,20 +472,7 @@ final class PreviousTabHotkeyManager {
 
 #if DEBUG
 private enum DevEnvironment {
-    static let isRunningInXcode: Bool = {
-        if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] != nil {
-            return true
-        }
-        let bundlePath = Bundle.main.bundlePath
-        if bundlePath.contains("/DerivedData/") {
-            return true
-        }
-        if let serviceName = ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"],
-           serviceName.contains("com.apple.dt.Xcode") {
-            return true
-        }
-        return false
-    }()
+    static let isRunningInXcode = RuntimeEnvironment.isXcodeDevelopmentSession
 }
 #else
 private enum DevEnvironment {

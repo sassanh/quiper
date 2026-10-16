@@ -136,7 +136,7 @@ enum MenuFactory {
     
     static func createQuitItem() -> NSMenuItem {
         let item = createMenuItem(title: "Quit Quiper", iconName: "power", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        if AppController.isRunningInXcode {
+        if RuntimeEnvironment.isXcodeDevelopmentSession {
             item.keyEquivalentModifierMask = [.command]
         } else {
             item.keyEquivalentModifierMask = [.command, .control, .shift]

@@ -15,7 +15,7 @@ final class GhostOnboardingManager {
     private init() {}
     
     func start(in windowController: MainWindowController) {
-        let isRunningTests = NSClassFromString("XCTestCase") != nil
+        let isRunningTests = RuntimeEnvironment.areXCTestClassesLoaded
         let shouldForceOnboarding = CommandLine.arguments.contains("--test-onboarding")
         
         guard (!isRunningTests && !Constants.LaunchMode.shouldSuppressInterferenceUI) || shouldForceOnboarding else {

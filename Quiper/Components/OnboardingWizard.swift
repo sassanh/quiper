@@ -47,7 +47,7 @@ public struct OnboardingWizard {
     @MainActor private static var activeWindow: OnboardingWizardWindow?
     
     private static var isTesting: Bool {
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        RuntimeEnvironment.isUnitTestRunner
             || Constants.LaunchMode.shouldSuppressInterferenceUI
     }
     

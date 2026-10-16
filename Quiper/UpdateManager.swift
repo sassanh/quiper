@@ -94,8 +94,8 @@ final class UpdateManager: NSObject, ObservableObject {
     var shouldDisableAutomaticChecksInTests = true
     
     func handleLaunchIfNeeded() {
-        let isRunningTests = NSClassFromString("XCTestCase") != nil
-        
+        let isRunningTests = RuntimeEnvironment.areXCTestClassesLoaded
+
         // If testing / template-validation and disabled, return
         if (isRunningTests || Constants.LaunchMode.shouldSuppressInterferenceUI) && shouldDisableAutomaticChecksInTests {
             return
@@ -449,7 +449,7 @@ final class UpdateManager: NSObject, ObservableObject {
         if !shouldDisableAutomaticChecksInTests { return true }
 
         // If running checks in tests / template-validation (and not explicitly enabled above), BLOCK prompt
-        let isRunningTests = NSClassFromString("XCTestCase") != nil
+        let isRunningTests = RuntimeEnvironment.areXCTestClassesLoaded
         if isRunningTests || Constants.LaunchMode.shouldSuppressInterferenceUI {
             return false
         }

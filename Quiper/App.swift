@@ -745,7 +745,7 @@ final class AppController: NSObject, NSWindowDelegate {
     private func registerEngineHotkeys() {
         let overlayHotkey = Settings.shared.hotkeyConfiguration
         var blockedHotkeys: [HotkeyManager.Configuration] = [overlayHotkey]
-        if (AppController.isRunningInXcode || Constants.LaunchMode.isTemplateValidationServer),
+        if (RuntimeEnvironment.isXcodeDevelopmentSession || Constants.LaunchMode.isTemplateValidationServer),
            HotkeyManager.defaultConfiguration == overlayHotkey {
             // Dev / template-validation fallback registers Ctrl+Space; keep engine hotkeys off it.
             blockedHotkeys.append(
@@ -823,25 +823,7 @@ final class AppController: NSObject, NSWindowDelegate {
     }
 
     static var isRunningTests: Bool {
-        return ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-    }
-
-    static var isRunningInXcode: Bool {
-        if (AppController.isRunningTests) {
-            return false
-        }
-        if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] != nil {
-            return true
-        }
-        if let serviceName = ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"],
-           serviceName.contains("com.apple.dt.Xcode") {
-            return true
-        }
-        let bundlePath = Bundle.main.bundlePath
-        if bundlePath.contains("/DerivedData/") {
-            return true
-        }
-        return false
+        return RuntimeEnvironment.isUnitTestRunner
     }
 
     @objc private func handleShowSettingsNotification() {

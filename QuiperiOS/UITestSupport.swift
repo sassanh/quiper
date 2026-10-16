@@ -20,10 +20,7 @@ enum UITestSupport {
     static var isUnitTestHost: Bool {
         #if DEBUG
         guard !isEnabled else { return false }
-        let environment = ProcessInfo.processInfo.environment
-        return environment["XCTestConfigurationFilePath"] != nil
-            || environment["XCTestBundlePath"] != nil
-            || NSClassFromString("XCTestCase") != nil
+        return RuntimeEnvironment.isRunningUnderXCTest
         #else
         false
         #endif

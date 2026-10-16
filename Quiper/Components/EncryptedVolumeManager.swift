@@ -9,13 +9,12 @@ final class EncryptedVolumeManager {
     private var activeVolumeOperations: [UUID: Task<Void, Error>] = [:]
     
     private let baseStorageDir: URL = {
-        let isRunningTests = NSClassFromString("XCTestCase") != nil
+        let isRunningTests = RuntimeEnvironment.areXCTestClassesLoaded
         let isUITesting = Constants.LaunchMode.isUITesting
 
         let baseDir: URL
         if isRunningTests || isUITesting {
-            let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
-            baseDir = tempDir.appendingPathComponent("QuiperTests-\(ProcessInfo.processInfo.processIdentifier)")
+            baseDir = RuntimeEnvironment.quiperTestsStorageDirectory
         } else {
             baseDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                 .appendingPathComponent(Constants.APP_FOLDER_NAME)

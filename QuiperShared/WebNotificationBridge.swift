@@ -165,9 +165,7 @@ final class WebNotificationBridge: NSObject {
     }
 
     private static var isRunningTests: Bool {
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
-        ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil ||
-        NSClassFromString("XCTestCase") != nil
+        RuntimeEnvironment.isRunningUnderXCTest
     }
 
     private func pushPermissionState(_ state: String, requestId: Int?) {

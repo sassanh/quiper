@@ -68,12 +68,11 @@ enum EngineFileStorage {
 
     private static var baseDirectory: URL {
         #if os(macOS)
-        let isRunningTests = NSClassFromString("XCTestCase") != nil
+        let isRunningTests = RuntimeEnvironment.areXCTestClassesLoaded
         let isUITesting = CommandLine.arguments.contains(Constants.LaunchMode.uiTestingFlag)
         let appDir: URL
         if isRunningTests || isUITesting {
-            let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
-            appDir = tempDir.appendingPathComponent("QuiperTests-\(ProcessInfo.processInfo.processIdentifier)")
+            appDir = RuntimeEnvironment.quiperTestsStorageDirectory
         } else {
             appDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                 .appendingPathComponent(Constants.APP_FOLDER_NAME, isDirectory: true)

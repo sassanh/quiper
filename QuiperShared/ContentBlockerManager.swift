@@ -133,8 +133,7 @@ final class ContentBlockerManager {
     /// True while running under XCTest, so app startup paths can skip
     /// registration and test runs never compile the full bundled lists.
     static var isRunningTests: Bool {
-        NSClassFromString("XCTestCase") != nil
-            && ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        RuntimeEnvironment.areXCTestClassesLoaded && RuntimeEnvironment.isUnitTestRunner
     }
 
     /// Loads a bundled rule JSON. Synchronized Xcode groups may copy

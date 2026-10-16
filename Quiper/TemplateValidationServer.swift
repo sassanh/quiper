@@ -156,7 +156,7 @@ final class TemplateValidationServer {
             "ready": true,
             "bundleIdentifier": Constants.BUNDLE_ID,
             "isDev": Constants.IS_DEV,
-            "isRunningTests": NSClassFromString("XCTestCase") != nil || ProcessInfo.processInfo.environment["XCInjectBundleInto"] != nil,
+            "isRunningTests": RuntimeEnvironment.areXCTestClassesLoaded || RuntimeEnvironment.isXCTestInjected,
             "currentService": jsonOrNull(service?.name),
             "currentServiceURL": jsonOrNull(service?.url),
             "currentServiceID": jsonOrNull(service?.id.uuidString),
