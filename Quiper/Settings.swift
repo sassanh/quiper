@@ -347,10 +347,7 @@ class Settings: ObservableObject {
             saveSettings()
         }
     }
-    /// Single source of truth for what the current share/export preparation is busy with right now.
-    /// Set by preparation code, observed by fallback/status UI to show the particular job.
-    @Published var syncPreparationDetail: String? = nil
-    
+
     func reset() {
         isPerformingWipe = true
         defer { isPerformingWipe = false }

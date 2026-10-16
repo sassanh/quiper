@@ -279,18 +279,18 @@ struct SecureExportProgressSheet: View {
 
     private func runDecryption() async {
         isWorking = true
-        environment.syncPreparationDetail = "Unlocking protected engines…"
+        SyncPreparationState.shared.set(.unlockingEngines, "Unlocking protected engines…")
         var decrypted: [AppEnvironment.DecryptedEngineForExport] = []
         for index in progressItems.indices {
             if Task.isCancelled {
                 isWorking = false
-                environment.syncPreparationDetail = nil
+                SyncPreparationState.shared.clear()
                 return
             }
             let serviceID = progressItems[index].id
             let name = progressItems[index].name
             progressItems[index].status = .unlocking
-            environment.syncPreparationDetail = "Unlocking \(name) (\(index + 1)/\(progressItems.count))…"
+            SyncPreparationState.shared.set(.unlockingEngines, "Unlocking \(name) (\(index + 1)/\(progressItems.count))…")
             // Per-engine timeout so a hidden biometrics prompt or stalled profile read never freezes share forever.
             let result: Result<AppEnvironment.DecryptedEngineForExport?, Error> = await withTaskGroup(of: Result<AppEnvironment.DecryptedEngineForExport?, Error>.self) { group in
                 group.addTask {
@@ -321,28 +321,28 @@ struct SecureExportProgressSheet: View {
             case .success(let engine):
                 if let engine { decrypted.append(engine) }
                 progressItems[index].status = engine == nil ? .skipped : .done
-                environment.syncPreparationDetail = "Unlocked \(name)…"
+                SyncPreparationState.shared.set(.unlockingEngines, "Unlocked \(name)…")
             case .failure(let error):
                 let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 if message.lowercased().contains("cancel") {
                     progressItems[index].status = .failed("Cancelled")
                     errorMessage = "Cancelled. No data was shared."
                     isWorking = false
-                    environment.syncPreparationDetail = nil
+                    SyncPreparationState.shared.clear()
                     return
                 }
                 progressItems[index].status = .failed("Failed")
                 errorMessage = "Couldn’t decrypt \(progressItems[index].name): \(message)"
                 isWorking = false
-                environment.syncPreparationDetail = nil
+                SyncPreparationState.shared.clear()
                 return
             }
             try? await Task.sleep(nanoseconds: 300_000_000)
         }
         isWorking = false
-        environment.syncPreparationDetail = "Packaging unlocked engines…"
+        SyncPreparationState.shared.set(.packagingSnapshot, "Packaging unlocked engines…")
         try? await Task.sleep(nanoseconds: 400_000_000)
-        environment.syncPreparationDetail = nil
+        SyncPreparationState.shared.clear()
         onComplete(decrypted)
     }
 }

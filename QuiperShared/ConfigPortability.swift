@@ -38,7 +38,7 @@ enum ConfigPortability {
         // Nothing to inline – report packaging quickly.
         let total = persisted.services.reduce(0) { $0 + $1.actionScripts.count }
         if total == 0 {
-            SyncPreparationState.shared.detail = "Packaging snapshot — inlining scripts (none)…"
+            SyncPreparationState.shared.set(.packagingSnapshot, "inlining scripts (none)…")
         }
         var diskScripts: [String: String] = [:]
         var processed = 0
@@ -46,11 +46,7 @@ enum ConfigPortability {
             for actionID in service.actionScripts.keys {
                 processed += 1
                 // Particular job right now inside packaging – single line, no list.
-                SyncPreparationState.shared.detail = "Packaging snapshot — loading script \(processed)/\(total) for \(service.name)…"
-                // Keep Settings/AppEnvironment mirrors for existing observers (will be phased out)
-                #if os(macOS)
-                Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
-                #endif
+                SyncPreparationState.shared.set(.packagingSnapshot, "loading script \(processed)/\(total) for \(service.name)…")
                 let script = EngineFileStorage.loadActionScript(
                     serviceID: service.id,
                     actionID: actionID,
@@ -61,10 +57,7 @@ enum ConfigPortability {
                 diskScripts["\(service.id.uuidString)/\(actionID.uuidString)"] = trimmed
             }
         }
-        SyncPreparationState.shared.detail = "Packaging snapshot — merging \(diskScripts.count) scripts…"
-        #if os(macOS)
-        Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
-        #endif
+        SyncPreparationState.shared.set(.packagingSnapshot, "merging \(diskScripts.count) scripts…")
         for index in persisted.services.indices {
             let serviceID = persisted.services[index].id
             for actionID in persisted.services[index].actionScripts.keys {
@@ -74,10 +67,7 @@ enum ConfigPortability {
                 }
             }
         }
-        SyncPreparationState.shared.detail = "Packaging snapshot — encoding \(persisted.services.count) engines…"
-        #if os(macOS)
-        Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
-        #endif
+        SyncPreparationState.shared.set(.packagingSnapshot, "encoding \(persisted.services.count) engines…")
     }
 
     /// Persists the inlined scripts and custom CSS from a decoded archive back

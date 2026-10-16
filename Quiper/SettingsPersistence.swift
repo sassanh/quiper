@@ -264,8 +264,7 @@ enum SettingsPersistence {
         for service in snapshot.services {
             for actionID in service.actionScripts.keys {
                 processed += 1
-                SyncPreparationState.shared.detail = "Packaging snapshot — loading script \(processed)/\(total) for \(service.name)…"
-                Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
+                SyncPreparationState.shared.set(.packagingSnapshot, "loading script \(processed)/\(total) for \(service.name)…")
                 let script = EngineFileStorage.loadActionScript(serviceID: service.id, actionID: actionID, fallback: service.actionScripts[actionID] ?? "")
                 let trimmed = script.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { continue }

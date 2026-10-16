@@ -297,32 +297,32 @@ struct QuiperSyncProviderSetupSheet: View {
             return
         }
         isWorking = true
-        environment.syncPreparationDetail = "Reading engines…"
+        SyncPreparationState.shared.set(.readingEngines, "Reading engines…")
         defer {
             isWorking = false
-            if errorMessage != nil { environment.syncPreparationDetail = nil }
+            if errorMessage != nil { SyncPreparationState.shared.clear() }
         }
         do {
             let data: Data
             if encryptedServices.isEmpty {
-                environment.syncPreparationDetail = "Inlining scripts…"
+                SyncPreparationState.shared.set(.packagingSnapshot, "Inlining scripts…")
                 data = try environment.exportConfiguration()
-                environment.syncPreparationDetail = "Encoding snapshot…"
+                SyncPreparationState.shared.set(.packagingSnapshot, "Encoding snapshot…")
             } else {
-                environment.syncPreparationDetail = "Inlining scripts…"
+                SyncPreparationState.shared.set(.packagingSnapshot, "Inlining scripts…")
                 data = try await environment.exportConfiguration(secureChoice: .exclude)
-                environment.syncPreparationDetail = "Encoding snapshot…"
+                SyncPreparationState.shared.set(.packagingSnapshot, "Encoding snapshot…")
             }
-            environment.syncPreparationDetail = "Starting local network…"
+            SyncPreparationState.shared.set(.startingLocalNetwork, "Starting local network…")
             onReady(data)
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
-                if environment.syncPreparationDetail == "Starting local network…" {
-                    environment.syncPreparationDetail = nil
+                if SyncPreparationState.shared.status?.stage == .startingLocalNetwork {
+                    SyncPreparationState.shared.clear()
                 }
             }
         } catch {
-            environment.syncPreparationDetail = nil
+            SyncPreparationState.shared.clear()
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }

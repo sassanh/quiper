@@ -301,28 +301,24 @@ struct SecureExportProgressSheet: View {
 
     private func run() async {
         isWorking = true
-        SyncPreparationState.shared.detail = "Unlocking protected engines…"
-        Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
+        SyncPreparationState.shared.set(.unlockingEngines, "Unlocking protected engines…")
         var decrypted: [Settings.DecryptedEngineForExport] = []
         for index in items.indices {
             if Task.isCancelled {
                 isWorking = false
-                SyncPreparationState.shared.detail = nil
-                Settings.shared.syncPreparationDetail = nil
+                SyncPreparationState.shared.clear()
                 return
             }
             let id = items[index].id
             let service = services[index]
             guard service.isEncrypted else {
                 items[index].status = .skipped
-                SyncPreparationState.shared.detail = "Skipping \(service.name)…"
-                Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
+                SyncPreparationState.shared.set(.unlockingEngines, "Skipping \(service.name)…")
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 continue
             }
             items[index].status = .unlocking
-            SyncPreparationState.shared.detail = "Unlocking \(service.name) (\(index + 1)/\(services.count))…"
-            Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
+            SyncPreparationState.shared.set(.unlockingEngines, "Unlocking \(service.name) (\(index + 1)/\(services.count))…")
             // Per-engine timeout: LA prompt hidden / hdiutil stuck must not freeze the whole share forever.
             let engineResult: Result<Settings.DecryptedEngineForExport, Error> = await withTaskGroup(of: Result<Settings.DecryptedEngineForExport, Error>.self) { group in
                 group.addTask {
@@ -345,34 +341,29 @@ struct SecureExportProgressSheet: View {
             case .success(let engine):
                 decrypted.append(engine)
                 items[index].status = .done
-                SyncPreparationState.shared.detail = "Unlocked \(service.name)…"
-                Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
+                SyncPreparationState.shared.set(.unlockingEngines, "Unlocked \(service.name)…")
             case .failure(let error):
                 let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 if msg.lowercased().contains("cancel") {
                     items[index].status = .failed("Cancelled")
                     errorMessage = "Cancelled. No data was shared."
                     isWorking = false
-                    SyncPreparationState.shared.detail = nil
-                    Settings.shared.syncPreparationDetail = nil
+                    SyncPreparationState.shared.clear()
                     return
                 }
                 // Timeout vs normal failure – both surfaced, but we keep sheet open for retry/cancel
                 items[index].status = .failed("Failed")
                 errorMessage = "Couldn’t decrypt \(items[index].name): \(msg)"
                 isWorking = false
-                SyncPreparationState.shared.detail = nil
-                Settings.shared.syncPreparationDetail = nil
+                SyncPreparationState.shared.clear()
                 return
             }
             try? await Task.sleep(nanoseconds: 250_000_000)
         }
         isWorking = false
-        SyncPreparationState.shared.detail = "Packaging unlocked engines…"
-        Settings.shared.syncPreparationDetail = SyncPreparationState.shared.detail
+        SyncPreparationState.shared.set(.packagingSnapshot, "Packaging unlocked engines…")
         try? await Task.sleep(nanoseconds: 300_000_000)
-        SyncPreparationState.shared.detail = nil
-        Settings.shared.syncPreparationDetail = nil
+        SyncPreparationState.shared.clear()
         onComplete(decrypted)
     }
 }

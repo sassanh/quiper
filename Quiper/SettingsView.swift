@@ -732,19 +732,15 @@ struct GeneralSettingsView: View {
         } else {
             Task { @MainActor in
                 do {
-                    SyncPreparationState.shared.detail = "Reading engines…"
-                    settings.syncPreparationDetail = SyncPreparationState.shared.detail
+                    SyncPreparationState.shared.set(.readingEngines, "Reading engines…")
                     let data = try SettingsPersistence.prepareSnapshotForCurrentSettings()
-                    SyncPreparationState.shared.detail = "Snapshot encoded (\(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))) — starting share…"
-                    settings.syncPreparationDetail = SyncPreparationState.shared.detail
+                    SyncPreparationState.shared.set(.startingShare, "Snapshot encoded (\(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))) — starting share…")
                     syncProviderData = data
                     showingSyncProviderActive = true
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
-                    SyncPreparationState.shared.detail = nil
-                    settings.syncPreparationDetail = nil
+                    SyncPreparationState.shared.clear()
                 } catch {
-                    SyncPreparationState.shared.detail = nil
-                    settings.syncPreparationDetail = nil
+                    SyncPreparationState.shared.clear()
                     importError = error.localizedDescription
                 }
             }
@@ -964,7 +960,6 @@ struct GeneralSettingsView: View {
 private struct SyncProviderPreparationFallbackView: View {
     var onClose: () -> Void
 
-    @ObservedObject private var settings = Settings.shared
     @ObservedObject private var prep = SyncPreparationState.shared
     @State private var longWait = false
     @State private var timedOut = false
@@ -978,7 +973,7 @@ private struct SyncProviderPreparationFallbackView: View {
                         .foregroundStyle(.orange)
                     Text("Sharing preparation timed out")
                         .font(.callout.weight(.semibold))
-                    if let detail = settings.syncPreparationDetail ?? prep.detail {
+                    if let detail = prep.status?.detail {
                         Text(detail)
                             .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
@@ -995,16 +990,21 @@ private struct SyncProviderPreparationFallbackView: View {
                     Text("Still preparing…")
                         .font(.callout.weight(.medium))
                     // One particular job right now — not a list
-                    if let detail = settings.syncPreparationDetail ?? prep.detail {
-                        VStack(spacing: 4) {
-                            Text("Packaging snapshot —")
-                                .font(.caption2).foregroundStyle(.secondary)
-                            Text(detail.replacingOccurrences(of: "Packaging snapshot — ", with: ""))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.horizontal, 8)
+                    if let status = prep.status, let detail = status.detail {
+                        if let headline = status.stage.headline {
+                            VStack(spacing: 4) {
+                                Text(headline)
+                                    .font(.caption2).foregroundStyle(.secondary)
+                                Text(detail)
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.horizontal, 8)
+                            }
+                        } else {
+                            Text(detail)
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     } else {
                         Text("Packaging snapshot…")
@@ -1019,7 +1019,7 @@ private struct SyncProviderPreparationFallbackView: View {
                     Text("Preparing sharing…")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                    if let detail = settings.syncPreparationDetail ?? prep.detail {
+                    if let detail = prep.status?.detail {
                         Text(detail)
                             .font(.caption2).foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)

@@ -547,15 +547,15 @@ struct SettingsView: View {
         } else {
             Task { @MainActor in
                 do {
-                    environment.syncPreparationDetail = "Reading engines…"
-                    environment.syncPreparationDetail = "Inlining scripts…"
-                    environment.syncPreparationDetail = "Encoding snapshot…"
+                    SyncPreparationState.shared.set(.readingEngines, "Reading engines…")
+                    SyncPreparationState.shared.set(.packagingSnapshot, "Inlining scripts…")
+                    SyncPreparationState.shared.set(.packagingSnapshot, "Encoding snapshot…")
                     let data = try environment.exportConfiguration()
-                    environment.syncPreparationDetail = nil
+                    SyncPreparationState.shared.clear()
                     syncProviderData = data
                     showingSyncProviderActive = true
                 } catch {
-                    environment.syncPreparationDetail = nil
+                    SyncPreparationState.shared.clear()
                     exportErrorMessage = error.localizedDescription
                 }
             }
@@ -1568,7 +1568,6 @@ struct QuiperConfigDocument: FileDocument {
 
 private struct SyncProviderPreparationFallbackView: View {
     var onClose: () -> Void
-    @EnvironmentObject private var environment: AppEnvironment
     @ObservedObject private var prep = SyncPreparationState.shared
     @State private var longWait = false
     @State private var timedOut = false
@@ -1579,7 +1578,7 @@ private struct SyncProviderPreparationFallbackView: View {
                 VStack(spacing: 14) {
                     Image(systemName: "exclamationmark.circle.fill").font(.system(size: 32)).foregroundStyle(.orange)
                     Text("Sharing preparation timed out").font(.callout.weight(.semibold))
-                    if let detail = environment.syncPreparationDetail ?? prep.detail {
+                    if let detail = prep.status?.detail {
                         Text(detail).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }
                     Text("Close and try again.").font(.caption2).foregroundStyle(.secondary)
@@ -1589,10 +1588,14 @@ private struct SyncProviderPreparationFallbackView: View {
                 VStack(spacing: 14) {
                     ProgressView()
                     Text("Still preparing…").font(.callout.weight(.medium))
-                    if let detail = environment.syncPreparationDetail ?? prep.detail {
-                        VStack(spacing: 4) {
-                            Text("Packaging snapshot —").font(.caption2).foregroundStyle(.secondary)
-                            Text(detail.replacingOccurrences(of: "Packaging snapshot — ", with: "")).font(.caption.weight(.medium)).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 16)
+                    if let status = prep.status, let detail = status.detail {
+                        if let headline = status.stage.headline {
+                            VStack(spacing: 4) {
+                                Text(headline).font(.caption2).foregroundStyle(.secondary)
+                                Text(detail).font(.caption.weight(.medium)).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 16)
+                            }
+                        } else {
+                            Text(detail).font(.caption).foregroundStyle(.secondary)
                         }
                     } else {
                         Text("Packaging snapshot…").font(.caption).foregroundStyle(.secondary)
@@ -1603,7 +1606,7 @@ private struct SyncProviderPreparationFallbackView: View {
                 VStack(spacing: 16) {
                     ProgressView()
                     Text("Preparing sharing…").font(.callout).foregroundStyle(.secondary)
-                    if let detail = environment.syncPreparationDetail ?? prep.detail {
+                    if let detail = prep.status?.detail {
                         Text(detail).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }
                 }

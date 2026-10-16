@@ -413,41 +413,34 @@ struct QuiperSyncProviderSetupSheet: View {
         }
 
         isWorking = true
-        SyncPreparationState.shared.detail = "Reading engines…"
-        settings.syncPreparationDetail = SyncPreparationState.shared.detail
+        SyncPreparationState.shared.set(.readingEngines, "Reading engines…")
         defer {
             isWorking = false
             if errorMessage != nil {
-                SyncPreparationState.shared.detail = nil
-                settings.syncPreparationDetail = nil
+                SyncPreparationState.shared.clear()
             }
         }
         do {
             let data: Data
             if encryptedServices.isEmpty {
-                SyncPreparationState.shared.detail = "Packaging snapshot — preparing \(settings.services.count) engines…"
-                settings.syncPreparationDetail = SyncPreparationState.shared.detail
+                SyncPreparationState.shared.set(.packagingSnapshot, "preparing \(settings.services.count) engines…")
                 data = try SettingsPersistence.prepareSnapshotForCurrentSettings()
             } else {
                 // Only Exclude remains (Keep Locked treated as Exclude)
-                SyncPreparationState.shared.detail = "Packaging snapshot — preparing \(settings.services.filter { !$0.isEncrypted }.count) engines…"
-                settings.syncPreparationDetail = SyncPreparationState.shared.detail
+                SyncPreparationState.shared.set(.packagingSnapshot, "preparing \(settings.services.filter { !$0.isEncrypted }.count) engines…")
                 data = try SettingsPersistence.prepareSnapshot(secureChoice: .exclude, decryptedEngines: [])
             }
-            SyncPreparationState.shared.detail = "Starting local network…"
-            settings.syncPreparationDetail = SyncPreparationState.shared.detail
+            SyncPreparationState.shared.set(.startingLocalNetwork, "Starting local network…")
             onReady(data)
             // Clear after handoff; provider sheet will show its own status
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
-                if SyncPreparationState.shared.detail == "Starting local network…" {
-                    SyncPreparationState.shared.detail = nil
-                    settings.syncPreparationDetail = nil
+                if SyncPreparationState.shared.status?.stage == .startingLocalNetwork {
+                    SyncPreparationState.shared.clear()
                 }
             }
         } catch {
-            SyncPreparationState.shared.detail = nil
-            settings.syncPreparationDetail = nil
+            SyncPreparationState.shared.clear()
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
