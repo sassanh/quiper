@@ -111,7 +111,6 @@
 				SecureConfigHandling.swift,
 				ServerAuthentication.swift,
 				SyncPreparationState.swift,
-				TabRestoration.swift,
 				TextFileStorage.swift,
 				WebLoadError.swift,
 				WebNotificationBridge.swift,

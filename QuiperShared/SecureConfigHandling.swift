@@ -10,14 +10,6 @@ enum SecureExportChoice: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-// MARK: - Import choices
-
-enum SecureImportChoice {
-    case keepPlaceholders
-    case dropOrphans
-    case cancel
-}
-
 // MARK: - Helpers
 
 extension PersistedSettings {
@@ -45,10 +37,6 @@ extension Service {
         copy.hasMigratedMetadata = false
         copy.originatedFromSecureStorage = true
         return copy
-    }
-
-    var isMinimalStub: Bool {
-        isEncrypted && hasMigratedMetadata
     }
 }
 

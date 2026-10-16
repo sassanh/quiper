@@ -165,30 +165,6 @@ final class BiometricDiskConsoleView: NSView {
     }
 }
 
-/// A premium, interactive link-style button that handles the pointing hand cursor natively
-/// and renders its text directly to avoid buggy AppKit HUD button cell color overrides.
-final class InteractiveLinkButton: NSButton {
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
-
-    override var intrinsicContentSize: NSSize {
-        return attributedTitle.size()
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let title = attributedTitle
-        let titleSize = title.size()
-        let rect = NSRect(
-            x: (bounds.width - titleSize.width) / 2,
-            y: (bounds.height - titleSize.height) / 2,
-            width: titleSize.width,
-            height: titleSize.height
-        )
-        title.draw(in: rect)
-    }
-}
-
 @MainActor
 final class LockOverlayView: NSView {
     var onUnlock: ((LAContext) -> Void)?

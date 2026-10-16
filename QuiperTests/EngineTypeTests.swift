@@ -213,18 +213,6 @@ final class EngineTypeTests: XCTestCase {
         )
     }
 
-    func testRestoredTabsSkipPinnedEngines() {
-        let pinned = pinnedService(urls: ["https://one.example.com"])
-        let single = Service(name: "Single", url: "https://single.example.com", focus_selector: "")
-        let state = PersistedTabState(
-            activeIndicesByID: [pinned.id: 0, single.id: 0],
-            openTabs: [pinned.id: [0: "https://stale.example.com"], single.id: [0: "https://single.example.com/page"]]
-        )
-        let restored = state.restoredTabs(services: [pinned, single], activeIndexProvider: { _ in 0 })
-        XCTAssertEqual(restored.count, 1)
-        XCTAssertEqual(restored.first?.serviceID, single.id)
-    }
-
     func testHasEmptyMetadataAccountsForPinnedURLs() {
         var service = Service(name: "Test", url: "", focus_selector: "")
         XCTAssertTrue(service.hasEmptyMetadata)
