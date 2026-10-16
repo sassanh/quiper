@@ -1326,25 +1326,10 @@ final class AppEnvironment: ObservableObject {
         if case let .loaded(snapshot, _) = settingsDocumentState {
             payload.keepOverlayOnTop = snapshot?.keepOverlayOnTop
         }
-        payload.customActions = customActions
-        payload.colorScheme = colorScheme
-        payload.dragAreaPosition = dragAreaPosition
-        payload.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
-        payload.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
-        payload.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
-        payload.blockAdsAndTrackers = blockAdsAndTrackers
-        payload.tabSurvivalPolicy = tabSurvivalPolicy
         payload.persistedTabState = activeTabState
-        payload.enablePromptHistory = enablePromptHistory
-        payload.promptHistoryRecordOnSubmit = promptHistoryRecordOnSubmit
-        payload.promptHistoryRecordOnCmdBackspace = promptHistoryRecordOnCmdBackspace
-        payload.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear
-        payload.promptHistoryLimit = promptHistoryLimit
-        payload.tabNavigationRingSize = tabNavigationRingSize
-        payload.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
-        payload.version = 1
-        payload.quiperVersion = persistedQuiperVersionForSave
-        payload.hasCompletedIOSOnboarding = needsIOSOnboarding ? nil : true
+        for row in Self.iosOwnedSettingRows {
+            row.assign(self, &payload)
+        }
         return payload
     }
 
@@ -2153,26 +2138,11 @@ final class AppEnvironment: ObservableObject {
         payload.services = services.map { service in
             service.isEncrypted ? securedStub(from: service) : service
         }
-        payload.customActions = customActions
-        payload.colorScheme = colorScheme
-        payload.dragAreaPosition = dragAreaPosition
-        payload.automaticallySwitchEngineOnLastSessionClose = automaticallySwitchEngineOnLastSessionClose
-        payload.autoCreateSessionOnEmptyEngineActivation = autoCreateSessionOnEmptyEngineActivation
-        payload.shouldPurgeDanglingWebData = shouldPurgeDanglingWebData
-        payload.blockAdsAndTrackers = blockAdsAndTrackers
-        payload.tabSurvivalPolicy = tabSurvivalPolicy
         payload.persistedTabState = tabSurvivalPolicy == .never ? nil : plaintextTabState()
-        payload.enablePromptHistory = enablePromptHistory
-        payload.promptHistoryRecordOnSubmit = promptHistoryRecordOnSubmit
-        payload.promptHistoryRecordOnCmdBackspace = promptHistoryRecordOnCmdBackspace
-        payload.promptHistoryRecordOnSelectionClear = promptHistoryRecordOnSelectionClear
-        payload.promptHistoryLimit = promptHistoryLimit
-        payload.tabNavigationRingSize = tabNavigationRingSize
         pruneHardwareKeyboardBindings()
-        payload.iosHardwareKeyboardSettings = iosHardwareKeyboardSettings
-        payload.version = 1
-        payload.quiperVersion = persistedQuiperVersionForSave
-        payload.hasCompletedIOSOnboarding = needsIOSOnboarding ? nil : true
+        for row in Self.iosOwnedSettingRows {
+            row.assign(self, &payload)
+        }
         guard let encodedPayload = try? JSONEncoder().encode(payload),
               let encodedObject = try? JSONSerialization.jsonObject(with: encodedPayload) as? [String: Any]
         else { return false }
@@ -2259,29 +2229,77 @@ final class AppEnvironment: ObservableObject {
         return state
     }
 
-    private static let iosOwnedSettingKeys: Set<String> = [
-        "services",
-        "customActions",
-        "colorScheme",
-        "dragAreaPosition",
-        "automaticallySwitchEngineOnLastSessionClose",
-        "autoCreateSessionOnEmptyEngineActivation",
-        "shouldPurgeDanglingWebData",
-        "blockAdsAndTrackers",
-        "tabSurvivalPolicy",
-        "persistedTabState",
-        "enablePromptHistory",
-        "promptHistoryRecordOnSubmit",
-        "promptHistoryRecordOnCmdBackspace",
-        "promptHistoryRecordOnSelectionClear",
-        "promptHistoryLimit",
-        "tabNavigationRingSize",
-        "iosHardwareKeyboardSettings",
-        websiteDataStoreVersionKey,
-        "version",
-        "quiperVersion",
-        "hasCompletedIOSOnboarding"
+    // MARK: - iOS-owned settings rows
+
+    /// One row per iOS-owned plain setting: the coding key it owns plus the
+    /// assignment shared by save()'s snapshot-merge and the export payload
+    /// builder. save() derives its strip-and-replace key set from these rows,
+    /// so adding an owned setting cannot drift between the assigned key and
+    /// the ownership set.
+    private struct OwnedSettingRow {
+        let key: PersistedSettings.CodingKeys
+        let assign: (AppEnvironment, inout PersistedSettings) -> Void
+
+        /// Factory for rows whose live property round-trips the persisted
+        /// field of the same type.
+        static func sameName<T>(
+            codingKey: PersistedSettings.CodingKeys,
+            live: ReferenceWritableKeyPath<AppEnvironment, T>,
+            persisted: WritableKeyPath<PersistedSettings, T?>
+        ) -> OwnedSettingRow {
+            OwnedSettingRow(key: codingKey) { env, payload in
+                payload[keyPath: persisted] = env[keyPath: live]
+            }
+        }
+    }
+
+    private static let compositeOwnedSettingKeys: [PersistedSettings.CodingKeys] = [
+        // Composite fields whose iOS writes differ per call site: save()
+        // merges services through secured stubs and strips secret tab state,
+        // while export branches per SecureExportChoice.
+        .services,
+        .persistedTabState,
     ]
+
+    private static let iosOwnedSettingRows: [OwnedSettingRow] = [
+        .sameName(codingKey: .customActions, live: \.customActions, persisted: \.customActions),
+        .sameName(codingKey: .colorScheme, live: \.colorScheme, persisted: \.colorScheme),
+        .sameName(codingKey: .dragAreaPosition, live: \.dragAreaPosition, persisted: \.dragAreaPosition),
+        .sameName(codingKey: .automaticallySwitchEngineOnLastSessionClose, live: \.automaticallySwitchEngineOnLastSessionClose, persisted: \.automaticallySwitchEngineOnLastSessionClose),
+        .sameName(codingKey: .autoCreateSessionOnEmptyEngineActivation, live: \.autoCreateSessionOnEmptyEngineActivation, persisted: \.autoCreateSessionOnEmptyEngineActivation),
+        .sameName(codingKey: .shouldPurgeDanglingWebData, live: \.shouldPurgeDanglingWebData, persisted: \.shouldPurgeDanglingWebData),
+        .sameName(codingKey: .blockAdsAndTrackers, live: \.blockAdsAndTrackers, persisted: \.blockAdsAndTrackers),
+        .sameName(codingKey: .tabSurvivalPolicy, live: \.tabSurvivalPolicy, persisted: \.tabSurvivalPolicy),
+        .sameName(codingKey: .enablePromptHistory, live: \.enablePromptHistory, persisted: \.enablePromptHistory),
+        .sameName(codingKey: .promptHistoryRecordOnSubmit, live: \.promptHistoryRecordOnSubmit, persisted: \.promptHistoryRecordOnSubmit),
+        .sameName(codingKey: .promptHistoryRecordOnCmdBackspace, live: \.promptHistoryRecordOnCmdBackspace, persisted: \.promptHistoryRecordOnCmdBackspace),
+        .sameName(codingKey: .promptHistoryRecordOnSelectionClear, live: \.promptHistoryRecordOnSelectionClear, persisted: \.promptHistoryRecordOnSelectionClear),
+        .sameName(codingKey: .promptHistoryLimit, live: \.promptHistoryLimit, persisted: \.promptHistoryLimit),
+        .sameName(codingKey: .tabNavigationRingSize, live: \.tabNavigationRingSize, persisted: \.tabNavigationRingSize),
+        // save() prunes hardware keyboard bindings before this row runs, so
+        // the row always reads the pruned live state.
+        .sameName(codingKey: .iosHardwareKeyboardSettings, live: \.iosHardwareKeyboardSettings, persisted: \.iosHardwareKeyboardSettings),
+        .init(key: .version) { _, payload in
+            payload.version = 1
+        },
+        .init(key: .quiperVersion) { env, payload in
+            payload.quiperVersion = env.persistedQuiperVersionForSave
+        },
+        .init(key: .hasCompletedIOSOnboarding) { env, payload in
+            payload.hasCompletedIOSOnboarding = env.needsIOSOnboarding ? nil : true
+        },
+    ]
+
+    /// Keys that iOS owns outright and that save() strips from the stored
+    /// object before re-adding them from the freshly encoded payload. Derived
+    /// from the rows above plus the composite fields and the website
+    /// data-store version, which comes from live memory rather than a payload
+    /// assignment.
+    private static var iosOwnedSettingKeys: Set<String> {
+        Set(iosOwnedSettingRows.map { $0.key.rawValue })
+            .union(compositeOwnedSettingKeys.map { $0.rawValue })
+            .union([websiteDataStoreVersionKey])
+    }
 
     private static let websiteDataStoreVersionKey = "iosWebsiteDataStoreVersion"
 
