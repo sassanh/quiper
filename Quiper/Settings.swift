@@ -354,44 +354,16 @@ class Settings: ObservableObject {
         services = []
         hotkeyConfiguration = HotkeyManager.defaultConfiguration
         customActions = []
-        updatePreferences = UpdatePreferences()
         serviceZoomLevels = [:]
-        appShortcutBindings = .defaults
-        engineSelectorDisplayMode = .auto
-        sessionSelectorDisplayMode = .auto
-        topBarVisibility = .visible
-        dragAreaPosition = .top
-        showHiddenBarOnModifiers = true
-        sessionModifierHoldBehavior = .expand
-        engineModifierHoldBehavior = .expand
-        windowAppearance = .default
-        colorScheme = .system
-        automaticallySwitchEngineOnLastSessionClose = true
-        autoCreateSessionOnEmptyEngineActivation = true
-        shouldPurgeDanglingWebData = true
-        hasCompletedGhostOnboarding = false
-        enableHUDDoubleTapCmd = true
-        enableHUDCmdEscape = true
-        hideQuiperWhenRetriggeringActiveEngineShortcut = true
-        globalEngineDigitShortcutsEnabled = false
-        askWhereToSaveDownloads = false
-        blockAdsAndTrackers = true
-        defaultBrowserFallbackBundleIdentifier = nil
         preservedIOSHardwareKeyboardSettings = nil
-        showOnAllSpaces = false
-        keepOverlayOnTop = true
-        hideOnFocusLoss = false
-        focusLossEffectEnabled = true
-        settingsColorStyle = .colorful
-        tabSurvivalPolicy = .always
-        tabNavigationRingSize = 2
-        enablePromptHistory = true
-        promptRecordingIndicatorStyle = .dashed
-        promptHistoryRecordOnSubmit = true
-        promptHistoryRecordOnCmdBackspace = true
-        promptHistoryRecordOnSelectionClear = false
-        promptHistoryLimit = Self.defaultPromptHistoryLimit
         persistedTabState = nil
+        hideQuiperWhenRetriggeringActiveEngineShortcut = true
+        promptHistoryLimit = Self.defaultPromptHistoryLimit
+        // Simple fields restore through the shared binding rows. This keeps
+        // hasDismissedEngineSettingsShortcutNotice untouched, exactly like
+        // the historic reset(): a wipe never makes the engine-shortcut
+        // notice reappear.
+        resetSimplePersistedFields()
         beginPersistedSettingsMigrationEvaluation(
             loadedFromDisk: false,
             persistedVersion: nil
@@ -541,67 +513,9 @@ class Settings: ObservableObject {
         }
         let useDefaultActions = !CommandLine.arguments.contains("--no-default-actions")
         customActions = loadedFromDisk ? (persisted.customActions ?? []) : (useDefaultActions ? DefaultActions.defaults : [])
-        updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
-        serviceZoomLevels = (persisted.serviceZoomLevels ?? [:]).mapValues { CGFloat($0) }
-        appShortcutBindings = persisted.appShortcuts ?? .defaults
         preservedIOSHardwareKeyboardSettings = persisted.iosHardwareKeyboardSettings
-        if let altSessionDigits = persisted.sessionDigitsAlternateModifiers {
-            appShortcutBindings.sessionDigitsAlternateModifiers = altSessionDigits
-        }
-        if dockVisibility != (persisted.dockVisibility ?? .whenVisible) {
-            dockVisibility = persisted.dockVisibility ?? .whenVisible
-        }
-        if engineSelectorDisplayMode != (persisted.engineSelectorDisplayMode ?? .auto) {
-            engineSelectorDisplayMode = persisted.engineSelectorDisplayMode ?? .auto
-        }
-        if sessionSelectorDisplayMode != (persisted.sessionSelectorDisplayMode ?? .auto) {
-            sessionSelectorDisplayMode = persisted.sessionSelectorDisplayMode ?? .auto
-        }
-        if topBarVisibility != (persisted.topBarVisibility ?? .visible) {
-            topBarVisibility = persisted.topBarVisibility ?? .visible
-        }
-        if dragAreaPosition != (persisted.dragAreaPosition ?? .top) {
-            dragAreaPosition = persisted.dragAreaPosition ?? .top
-        }
-        if showHiddenBarOnModifiers != (persisted.showHiddenBarOnModifiers ?? true) {
-            showHiddenBarOnModifiers = persisted.showHiddenBarOnModifiers ?? true
-        }
-        if sessionModifierHoldBehavior != (persisted.sessionModifierHoldBehavior ?? .expand) {
-            sessionModifierHoldBehavior = persisted.sessionModifierHoldBehavior ?? .expand
-        }
-        if engineModifierHoldBehavior != (persisted.engineModifierHoldBehavior ?? .expand) {
-            engineModifierHoldBehavior = persisted.engineModifierHoldBehavior ?? .expand
-        }
-        if windowAppearance != (persisted.windowAppearance ?? .default) {
-            windowAppearance = persisted.windowAppearance ?? .default
-        }
-        if colorScheme != (persisted.colorScheme ?? .system) {
-            colorScheme = persisted.colorScheme ?? .system
-        }
-        if settingsColorStyle != (persisted.settingsColorStyle ?? .colorful) {
-            settingsColorStyle = persisted.settingsColorStyle ?? .colorful
-        }
-        automaticallySwitchEngineOnLastSessionClose = persisted.automaticallySwitchEngineOnLastSessionClose ?? true
-        autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation ?? true
-        shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData ?? true
-        hasCompletedGhostOnboarding = persisted.hasCompletedGhostOnboarding ?? false
-        hasDismissedEngineSettingsShortcutNotice = persisted.hasDismissedEngineSettingsShortcutNotice ?? false
-        enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
-        enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
-        globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
-        askWhereToSaveDownloads = persisted.askWhereToSaveDownloads ?? false
-        blockAdsAndTrackers = persisted.blockAdsAndTrackers ?? true
-        defaultBrowserFallbackBundleIdentifier = persisted.defaultBrowserFallbackBundleIdentifier
-        showOnAllSpaces = persisted.showOnAllSpaces ?? false
-        keepOverlayOnTop = persisted.keepOverlayOnTop ?? true
-        hideOnFocusLoss = persisted.hideOnFocusLoss ?? false
-        focusLossEffectEnabled = persisted.focusLossEffectEnabled ?? true
-        tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
-        enablePromptHistory = persisted.enablePromptHistory ?? true
-        promptRecordingIndicatorStyle = persisted.promptRecordingIndicatorStyle ?? .dashed
-        promptHistoryRecordOnSubmit = persisted.promptHistoryRecordOnSubmit ?? true
-        promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace ?? true
-        promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear ?? false
+        serviceZoomLevels = (persisted.serviceZoomLevels ?? [:]).mapValues { CGFloat($0) }
+        applySimplePersistedFieldsForLoad(from: persisted)
         promptHistoryLimit = Self.clampedPromptHistoryLimit(persisted.promptHistoryLimit ?? Self.defaultPromptHistoryLimit)
         if var importedTabState = persisted.persistedTabState {
             for service in persisted.services where service.isPinnedTabs {
@@ -611,7 +525,6 @@ class Settings: ObservableObject {
         } else {
             persistedTabState = nil
         }
-        tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2
         configureTemplateActionSyncMigration()
         var shouldSaveAfterLoad = false
         if loadedFromDisk, let storedHotkey = persisted.hotkey {
@@ -657,51 +570,16 @@ class Settings: ObservableObject {
             return
         }
         do {
-            let payload = PersistedSettings(services: services,
-                                            hotkey: hotkeyConfiguration,
-                                            customActions: customActions,
-                                            updatePreferences: updatePreferences,
-                                            serviceZoomLevels: serviceZoomLevels.mapValues { Double($0) },
-                                            appShortcuts: appShortcutBindings,
-                                            sessionDigitsAlternateModifiers: appShortcutBindings.sessionDigitsAlternateModifiers,
-                                            dockVisibility: dockVisibility,
-                                            engineSelectorDisplayMode: engineSelectorDisplayMode,
-                                            sessionSelectorDisplayMode: sessionSelectorDisplayMode,
-                                            topBarVisibility: topBarVisibility,
-                                            dragAreaPosition: dragAreaPosition,
-                                            showHiddenBarOnModifiers: showHiddenBarOnModifiers,
-                                            sessionModifierHoldBehavior: sessionModifierHoldBehavior,
-                                            engineModifierHoldBehavior: engineModifierHoldBehavior,
-                                            windowAppearance: windowAppearance,
-                                            colorScheme: colorScheme,
-                                            automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
-                                            autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation,
-                                            shouldPurgeDanglingWebData: shouldPurgeDanglingWebData,
-                                            hasCompletedGhostOnboarding: hasCompletedGhostOnboarding,
-                                            enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
-                                            enableHUDCmdEscape: enableHUDCmdEscape,
-                                            showOnAllSpaces: showOnAllSpaces,
-                                            keepOverlayOnTop: keepOverlayOnTop,
-                                            hideOnFocusLoss: hideOnFocusLoss,
-                                            focusLossEffectEnabled: focusLossEffectEnabled,
-                                            settingsColorStyle: settingsColorStyle,
-                                            tabSurvivalPolicy: tabSurvivalPolicy,
-                                            persistedTabState: persistedTabState,
-                                            enablePromptHistory: enablePromptHistory,
-                                            promptRecordingIndicatorStyle: promptRecordingIndicatorStyle,
-                                            promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
-                                            promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
-                                            promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
-                                            promptHistoryLimit: promptHistoryLimit,
-                                            tabNavigationRingSize: tabNavigationRingSize,
-                                            hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
-                                            hasDismissedEngineSettingsShortcutNotice: hasDismissedEngineSettingsShortcutNotice,
-                                            globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
-                                            askWhereToSaveDownloads: askWhereToSaveDownloads,
-                                            blockAdsAndTrackers: blockAdsAndTrackers,
-                                            defaultBrowserFallbackBundleIdentifier: defaultBrowserFallbackBundleIdentifier,
-                                            iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
-                                            quiperVersion: persistedQuiperVersionForSave())
+            var payload = PersistedSettings(services: services)
+            payload.customActions = customActions
+            payload.hotkey = hotkeyConfiguration
+            payload.serviceZoomLevels = serviceZoomLevels.mapValues { Double($0) }
+            payload.persistedTabState = persistedTabState
+            payload.iosHardwareKeyboardSettings = preservedIOSHardwareKeyboardSettings
+            payload.hideQuiperWhenRetriggeringActiveEngineShortcut = persistedEngineShortcutToggleForSave()
+            payload.quiperVersion = persistedQuiperVersionForSave()
+            payload.promptHistoryLimit = promptHistoryLimit
+            populateSimplePersistedFields(into: &payload, forExport: false)
             try SettingsPersistence.write(payload)
         } catch {
             NSLog("[Settings] Failed to persist settings: %@", error.localizedDescription)
@@ -797,51 +675,17 @@ class Settings: ObservableObject {
             }
         }()
 
-        return PersistedSettings(
-            services: servicesForExport,
-            hotkey: hotkeyConfiguration,
-            customActions: customActions,
-            updatePreferences: updatePreferences,
-            serviceZoomLevels: serviceZoomLevels.mapValues { Double($0) },
-            appShortcuts: appShortcutBindings,
-            sessionDigitsAlternateModifiers: appShortcutBindings.sessionDigitsAlternateModifiers,
-            dockVisibility: dockVisibility,
-            engineSelectorDisplayMode: engineSelectorDisplayMode,
-            sessionSelectorDisplayMode: sessionSelectorDisplayMode,
-            topBarVisibility: topBarVisibility,
-            showHiddenBarOnModifiers: showHiddenBarOnModifiers,
-            sessionModifierHoldBehavior: sessionModifierHoldBehavior,
-            engineModifierHoldBehavior: engineModifierHoldBehavior,
-            windowAppearance: windowAppearance,
-            colorScheme: colorScheme,
-            automaticallySwitchEngineOnLastSessionClose: automaticallySwitchEngineOnLastSessionClose,
-            autoCreateSessionOnEmptyEngineActivation: autoCreateSessionOnEmptyEngineActivation,
-            shouldPurgeDanglingWebData: shouldPurgeDanglingWebData,
-            hasCompletedGhostOnboarding: hasCompletedGhostOnboarding,
-            enableHUDDoubleTapCmd: enableHUDDoubleTapCmd,
-            enableHUDCmdEscape: enableHUDCmdEscape,
-            showOnAllSpaces: showOnAllSpaces,
-            keepOverlayOnTop: keepOverlayOnTop,
-            hideOnFocusLoss: hideOnFocusLoss,
-            focusLossEffectEnabled: focusLossEffectEnabled,
-            settingsColorStyle: settingsColorStyle,
-            tabSurvivalPolicy: tabSurvivalPolicy,
-            persistedTabState: tabStateForExport,
-            enablePromptHistory: enablePromptHistory,
-            promptRecordingIndicatorStyle: promptRecordingIndicatorStyle,
-            promptHistoryRecordOnSubmit: promptHistoryRecordOnSubmit,
-            promptHistoryRecordOnCmdBackspace: promptHistoryRecordOnCmdBackspace,
-            promptHistoryRecordOnSelectionClear: promptHistoryRecordOnSelectionClear,
-            promptHistoryLimit: promptHistoryLimit,
-            tabNavigationRingSize: tabNavigationRingSize,
-            hideQuiperWhenRetriggeringActiveEngineShortcut: persistedEngineShortcutToggleForSave(),
-            globalEngineDigitShortcutsEnabled: globalEngineDigitShortcutsEnabled,
-            askWhereToSaveDownloads: askWhereToSaveDownloads,
-            blockAdsAndTrackers: blockAdsAndTrackers,
-            defaultBrowserFallbackBundleIdentifier: defaultBrowserFallbackBundleIdentifier,
-            iosHardwareKeyboardSettings: preservedIOSHardwareKeyboardSettings,
-            quiperVersion: persistedQuiperVersionForSave()
-        )
+        var payload = PersistedSettings(services: servicesForExport)
+        payload.customActions = customActions
+        payload.hotkey = hotkeyConfiguration
+        payload.serviceZoomLevels = serviceZoomLevels.mapValues { Double($0) }
+        payload.persistedTabState = tabStateForExport
+        payload.iosHardwareKeyboardSettings = preservedIOSHardwareKeyboardSettings
+        payload.hideQuiperWhenRetriggeringActiveEngineShortcut = persistedEngineShortcutToggleForSave()
+        payload.quiperVersion = persistedQuiperVersionForSave()
+        payload.promptHistoryLimit = promptHistoryLimit
+        populateSimplePersistedFields(into: &payload, forExport: true)
+        return payload
     }
 
     private func securedStub(from service: Service) -> Service {
@@ -1036,46 +880,9 @@ class Settings: ObservableObject {
         services = persisted.services
         customActions = persisted.customActions ?? []
         configureTemplateActionSyncMigration()
-        hasDismissedEngineSettingsShortcutNotice = persisted.hasDismissedEngineSettingsShortcutNotice ?? false
-        updatePreferences = persisted.updatePreferences ?? UpdatePreferences()
-        serviceZoomLevels = (persisted.serviceZoomLevels ?? [:]).mapValues { CGFloat($0) }
-        appShortcutBindings = persisted.appShortcuts ?? .defaults
         preservedIOSHardwareKeyboardSettings = persisted.iosHardwareKeyboardSettings
-        if let altSessionDigits = persisted.sessionDigitsAlternateModifiers {
-            appShortcutBindings.sessionDigitsAlternateModifiers = altSessionDigits
-        }
-        dockVisibility = persisted.dockVisibility ?? .whenVisible
-        engineSelectorDisplayMode = persisted.engineSelectorDisplayMode ?? .auto
-        sessionSelectorDisplayMode = persisted.sessionSelectorDisplayMode ?? .auto
-        topBarVisibility = persisted.topBarVisibility ?? .visible
-        dragAreaPosition = persisted.dragAreaPosition ?? .top
-        showHiddenBarOnModifiers = persisted.showHiddenBarOnModifiers ?? true
-        sessionModifierHoldBehavior = persisted.sessionModifierHoldBehavior ?? .expand
-        engineModifierHoldBehavior = persisted.engineModifierHoldBehavior ?? .expand
-        windowAppearance = persisted.windowAppearance ?? .default
-        colorScheme = persisted.colorScheme ?? .system
-        automaticallySwitchEngineOnLastSessionClose = persisted.automaticallySwitchEngineOnLastSessionClose ?? true
-        autoCreateSessionOnEmptyEngineActivation = persisted.autoCreateSessionOnEmptyEngineActivation ?? true
-        shouldPurgeDanglingWebData = persisted.shouldPurgeDanglingWebData ?? true
-        hasCompletedGhostOnboarding = persisted.hasCompletedGhostOnboarding ?? false
-        enableHUDDoubleTapCmd = persisted.enableHUDDoubleTapCmd ?? true
-        enableHUDCmdEscape = persisted.enableHUDCmdEscape ?? true
-        globalEngineDigitShortcutsEnabled = persisted.globalEngineDigitShortcutsEnabled ?? false
-        askWhereToSaveDownloads = persisted.askWhereToSaveDownloads ?? false
-        blockAdsAndTrackers = persisted.blockAdsAndTrackers ?? true
-        defaultBrowserFallbackBundleIdentifier = persisted.defaultBrowserFallbackBundleIdentifier
-        showOnAllSpaces = persisted.showOnAllSpaces ?? false
-        keepOverlayOnTop = persisted.keepOverlayOnTop ?? true
-        hideOnFocusLoss = persisted.hideOnFocusLoss ?? false
-        focusLossEffectEnabled = persisted.focusLossEffectEnabled ?? true
-        settingsColorStyle = persisted.settingsColorStyle ?? .colorful
-        tabSurvivalPolicy = persisted.tabSurvivalPolicy ?? .always
-        tabNavigationRingSize = persisted.tabNavigationRingSize ?? 2
-        enablePromptHistory = persisted.enablePromptHistory ?? true
-        promptRecordingIndicatorStyle = persisted.promptRecordingIndicatorStyle ?? .dashed
-        promptHistoryRecordOnSubmit = persisted.promptHistoryRecordOnSubmit ?? true
-        promptHistoryRecordOnCmdBackspace = persisted.promptHistoryRecordOnCmdBackspace ?? true
-        promptHistoryRecordOnSelectionClear = persisted.promptHistoryRecordOnSelectionClear ?? false
+        serviceZoomLevels = (persisted.serviceZoomLevels ?? [:]).mapValues { CGFloat($0) }
+        applySimplePersistedFields(from: persisted)
         promptHistoryLimit = Self.clampedPromptHistoryLimit(persisted.promptHistoryLimit ?? Self.defaultPromptHistoryLimit)
         if var importedTabState = persisted.persistedTabState {
             for service in persisted.services where service.isPinnedTabs {
