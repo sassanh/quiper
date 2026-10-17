@@ -219,6 +219,18 @@ final class WebViewManager: NSObject {
     // through them.
     private var privateWebviewTokens: Set<ObjectIdentifier> = []
     private var approvedURLs = Set<URL>()
+    /// Webviews whose in-flight main-frame navigation is allowed to stay
+    /// where it is. Armed whenever a main-frame navigation is allowed in
+    /// place and consulted while it is still provisional: a request that
+    /// continues that navigation — a redirect, which arrives as a `.other`
+    /// request — is followed, so it opens where the navigation was going
+    /// instead of being routed again. `.other` is also the type script
+    /// navigations and meta refreshes carry, so one arriving while the
+    /// navigation is still provisional follows it too; WebKit offers no
+    /// way to tell them apart at this decision point. Disarmed by the
+    /// next decision that is not a follow, by a programmatic load, and by
+    /// every end of navigation: commit, failure, download, stop, teardown.
+    private var inPlaceNavigations: Set<ObjectIdentifier> = []
     private var cancellables = Set<AnyCancellable>()
 
     init(containerView: NSView) {
@@ -1470,6 +1482,9 @@ final class WebViewManager: NSObject {
     /// visible load-error state first. All programmatic navigations must go
     /// through here so the error-view bookkeeping stays in one place.
     func load(_ url: URL, in webView: WKWebView) {
+        // A fresh load supersedes whatever navigation was in flight; its
+        // redirect chain no longer continues anything.
+        endInPlaceNavigation(webView)
         beginMainFrameNavigation(webView, to: url)
         if url.isFileURL {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -1478,19 +1493,34 @@ final class WebViewManager: NSObject {
         }
     }
 
-    /// Explicit "show it here" instructions — the address bar, the routing
-    /// prompt's Open Here, an ⌥-click on a new-window link, an Open Private
-    /// choice inside a private sub-window — load in place, bypassing
-    /// link routing (popup/external/prompt); typed addresses do so even
-    /// against pinned-tab pinning: each is an explicit instruction to show
-    /// the address here. One-shot: only this URL is approved; redirects
-    /// re-route normally.
+    /// Explicit "show it here" instructions — the address bar, a private
+    /// window's initial load, "Open Private" inside a private sub-window —
+    /// load in place, bypassing link routing (popup/external/prompt); typed
+    /// addresses do so even against pinned-tab pinning: each is an explicit
+    /// instruction to show the address here. One-shot: only this URL needs
+    /// approval; the navigation's redirects then follow it (see the
+    /// in-place navigation rule in `decidePolicyFor`). Link actions have
+    /// their own gates: `openLinkHere`, `openLinkInNewWindow`,
+    /// `openLinkPrivately`.
     func loadExplicitUserURL(_ url: URL, in webView: WKWebView) {
         approvedURLs.insert(url)
         load(url, in: webView)
     }
 
+    /// Single gate for the "Open Link Here" action — the context-menu
+    /// item, ⌥-clicks, the routing prompt's Open Here, and any future
+    /// trigger alike: show `url` in `webView` right now, as an explicit
+    /// instruction. Link routing rules and (in pinned engines) the pinned
+    /// address are bypassed, so the tab may show the link until its slot
+    /// is rebuilt — the drift is transient. Every trigger must come
+    /// through here, so the action is defined in exactly one place.
+    func openLinkHere(_ url: URL, in webView: WKWebView) {
+        loadExplicitUserURL(url, in: webView)
+    }
+
     func stopLoading(_ webView: WKWebView) {
+        // A stopped navigation has no redirects left to follow.
+        endInPlaceNavigation(webView)
         webView.stopLoading()
     }
 
@@ -1956,6 +1986,19 @@ final class WebViewManager: NSObject {
         activeRequestURLsByWebView.removeValue(forKey: token)
         failedRequestURLsByWebView.removeValue(forKey: token)
         processTerminationRetryStates.removeValue(forKey: token)
+        inPlaceNavigations.remove(token)
+    }
+
+    /// Arms the in-place navigation rule for `webView`: the main-frame
+    /// navigation at hand is allowed to stay here, so its redirects follow it.
+    private func beginInPlaceNavigation(_ webView: WKWebView) {
+        inPlaceNavigations.insert(ObjectIdentifier(webView))
+    }
+
+    /// Disarms the in-place navigation rule for `webView`: the next
+    /// main-frame request either starts a fresh decision or never comes.
+    private func endInPlaceNavigation(_ webView: WKWebView) {
+        inPlaceNavigations.remove(ObjectIdentifier(webView))
     }
 
     private func attachNotificationBridge(to webView: WKWebView, service: Service, sessionIndex: Int) {
@@ -1981,7 +2024,11 @@ final class WebViewManager: NSObject {
     @MainActor
     private func openInPopup(url: URL, service: Service, configuration: WKWebViewConfiguration, parentWindow: NSWindow, opener: WKWebView) {
         guard let popupWebView = makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow, opener: opener) else { return }
-        load(url, in: popupWebView)
+        // The popup exists to show this URL: approve the initial load the
+        // same way `createWebViewWith` does, so the decision that opened
+        // the popup is not second-guessed by the popup's own policy pass —
+        // and the page's redirects stay in the popup.
+        loadExplicitUserURL(url, in: popupWebView)
     }
 
     /// Single gate for every popup webview: resolves the owning tab, hands
@@ -2680,7 +2727,9 @@ final class WebViewManager: NSObject {
             restoredURL: key.url,
             startHidden: !shouldShow
         ) else { return nil }
-        load(url, in: popupWebView)
+        // The restored popup shows its saved address: approve the load so
+        // routing does not second-guess where the popup was.
+        loadExplicitUserURL(url, in: popupWebView)
         let restoredWindow = popupWebView.window
         // A saved-minimized popup comes back as its strip: the frame it
         // restored to is the expanded rectangle, so collapse it before
@@ -2887,12 +2936,11 @@ final class WebViewManager: NSObject {
         alert.messageText = "Security & Routing"
         alert.informativeText = "How would you like to open this link?\n\(url.absoluteString)"
 
-        // Pinned tabs never navigate in place, so the prompt offers only
-        // new-window or external choices.
-        let offersOpenHere = !service.isPinnedTabs
-        if offersOpenHere {
-            alert.addButton(withTitle: "Open Here")
-        }
+        // Open Here is the explicit instruction the context-menu item
+        // performs, so the prompt offers it in every engine — in a pinned
+        // tab the pinned address steps aside for it, and the drift is
+        // transient.
+        alert.addButton(withTitle: "Open Here")
         alert.addButton(withTitle: "Open in New Window")
         alert.addButton(withTitle: "Open Externally")
         let cancelBtn = alert.addButton(withTitle: "Cancel")
@@ -2904,26 +2952,15 @@ final class WebViewManager: NSObject {
 
         alert.beginSheetModal(for: window) { response in
             let action: RoutingResolver.Decision
-            if offersOpenHere {
-                switch response {
-                case .alertFirstButtonReturn:
-                    action = .openHere
-                case .alertSecondButtonReturn:
-                    action = .openNewWindow
-                case .alertThirdButtonReturn:
-                    action = .openExternal
-                default:
-                    action = .cancel
-                }
-            } else {
-                switch response {
-                case .alertFirstButtonReturn:
-                    action = .openNewWindow
-                case .alertSecondButtonReturn:
-                    action = .openExternal
-                default:
-                    action = .cancel
-                }
+            switch response {
+            case .alertFirstButtonReturn:
+                action = .openHere
+            case .alertSecondButtonReturn:
+                action = .openNewWindow
+            case .alertThirdButtonReturn:
+                action = .openExternal
+            default:
+                action = .cancel
             }
             let remember = checkbox.state == .on
             completion(action, remember)
@@ -2939,7 +2976,7 @@ final class WebViewManager: NSObject {
         let routingAction: RoutingAction
         switch action {
         case .openHere:
-            // Pinned tabs never navigate in place; remember the popup form.
+            // Pinned tabs never stay by rule; remember the popup form.
             routingAction = Settings.shared.services[index].isPinnedTabs ? .popup : .internalStay
         case .openNewWindow:
             routingAction = .popup
@@ -3675,8 +3712,12 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
 
     @MainActor
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+        let allowWithoutAppLink = WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow
         if #available(macOS 11.3, *) {
             if navigationAction.shouldPerformDownload {
+                // A download supersedes the page navigation in flight; its
+                // redirect chain no longer continues anything.
+                endInPlaceNavigation(webView)
                 decisionHandler(.download)
                 return
             }
@@ -3688,39 +3729,24 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         // gestures. Let them through so routing cannot divert the same
         // gesture to Safari here before the popup is created.
         if navigationAction.targetFrame == nil {
-            // Held ⌘/⌥/⇧ act on the link even on this path: ⌘⇧ opens it in
-            // a private sub-window, ⌥ opens the new-window request right here,
-            // ⌘⌥ sends it to the system browser, and ⌘ — like no modifier
-            // at all — keeps the popup below. Only http(s) link clicks are
-            // redirected: other schemes and JS-issued window.open keep the
-            // popup path.
+            // Held ⌘/⌥/⇧ act on the link even on this path, through the
+            // same execution point as every other frame: ⌘⇧ opens it in a
+            // private sub-window, ⌥ performs the explicit Open Link Here
+            // action right here, and ⌘⌥ sends it to the system browser.
+            // ⌘ — like no modifier at all — keeps the popup below: a
+            // new-window request's popup stays WebKit's to make. Only
+            // http(s) link clicks are redirected: other schemes and
+            // JS-issued window.open keep the popup path.
             if navigationAction.navigationType == .linkActivated,
                let url = navigationAction.request.url,
                let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
-               let service = service(for: webView) {
-                let (_, pinnedURL) = routingContext(for: webView, service: service)
-                let forced = RoutingResolver.modifierDecision(
-                    modifiers: ClickModifiers(navigationAction.modifierFlags),
-                    bareDecision: .openNewWindow,
-                    isPinnedTabs: pinnedURL != nil && service.isPinnedTabs
-                )
-                if forced == .openPrivate {
-                    decisionHandler(.cancel)
-                    openLinkPrivately(url, from: webView)
-                    return
-                }
-                if forced == .openHere {
-                    decisionHandler(.cancel)
-                    loadExplicitUserURL(url, in: webView)
-                    return
-                }
-                if forced == .openExternal {
-                    decisionHandler(.cancel)
-                    NSWorkspace.shared.open(url)
-                    return
-                }
+               let service = service(for: webView),
+               let forced = RoutingResolver.modifierDecision(modifiers: ClickModifiers(navigationAction.modifierFlags)),
+               forced != .openNewWindow {
+                decisionHandler(.cancel)
+                performForcedClickAction(forced, for: url, service: service, in: webView)
+                return
             }
-            let allowWithoutAppLink = WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow
             decisionHandler(allowWithoutAppLink)
             return
         }
@@ -3741,38 +3767,22 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             return
         }
 
+        // Held modifiers act on the link wherever the click goes — a
+        // subframe and a main-frame destination alike — and settle through
+        // one execution point, so a modifier can only ever mean one thing:
+        // ⌥ performs the explicit Open Link Here action itself, exactly
+        // what the context-menu item does.
+        if navigationAction.navigationType == .linkActivated,
+           let forced = RoutingResolver.modifierDecision(modifiers: ClickModifiers(navigationAction.modifierFlags)) {
+            decisionHandler(.cancel)
+            performForcedClickAction(forced, for: url, service: service, in: webView)
+            return
+        }
+
         // Only route in-place main-frame navigations. New windows
-        // (targetFrame == nil) are handled above by the popup path.
+        // (targetFrame == nil) are handled above by the popup path; bare
+        // subframe clicks keep their frame-local outcome.
         if !targetFrameIsMain {
-            // Held ⌘/⌥/⇧ act on the link, not just the frame it sits in:
-            // ⌘⇧ opens it in a private sub-window, ⌘ in a Quiper popup, and ⌘⌥ in
-            // the system browser. ⌥ changes nothing — a subframe click
-            // already stays right here — so nothing is forced and the frame
-            // navigation stands.
-            if navigationAction.navigationType == .linkActivated,
-               let forced = RoutingResolver.modifierDecision(
-                   modifiers: ClickModifiers(navigationAction.modifierFlags),
-                   bareDecision: nil,
-                   isPinnedTabs: pinnedURL != nil && service.isPinnedTabs
-               ) {
-                if forced == .openPrivate {
-                    decisionHandler(.cancel)
-                    openLinkPrivately(url, from: webView)
-                    return
-                }
-                if forced == .openNewWindow {
-                    if let parentWindow = webView.window {
-                        openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow, opener: webView)
-                    }
-                    decisionHandler(.cancel)
-                    return
-                }
-                if forced == .openExternal {
-                    NSWorkspace.shared.open(url)
-                    decisionHandler(.cancel)
-                    return
-                }
-            }
             decisionHandler(.allow)
             return
         }
@@ -3780,27 +3790,36 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         // Loop prevention check
         if approvedURLs.contains(url) {
             approvedURLs.remove(url)
-            let allowWithoutAppLink = WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow
+            beginInPlaceNavigation(webView)
             decisionHandler(allowWithoutAppLink)
             return
         }
 
-        // Modifiers belong to a link click: form submits, redirects, and JS
-        // navigations route bare, however the keyboard happens to sit.
-        let clickModifiers = navigationAction.navigationType == .linkActivated
-            ? ClickModifiers(navigationAction.modifierFlags)
-            : .none
+        // A redirect continues the navigation that was already allowed to
+        // stay here: it opens where that navigation was going instead of
+        // being routed again. Redirects arrive as `.other` requests; that
+        // type also carries script navigations and meta refreshes, so one
+        // landing while this navigation is still provisional follows it
+        // too — WebKit offers no way to tell them apart here. A click or
+        // form submit below starts a fresh decision.
+        if inPlaceNavigations.contains(ObjectIdentifier(webView)),
+           navigationAction.navigationType == .other {
+            decisionHandler(allowWithoutAppLink)
+            return
+        }
+        // Any other decision starts a fresh outcome for this webview.
+        endInPlaceNavigation(webView)
+
         let action = RoutingResolver.route(
             for: url,
             service: service,
             serviceURL: serviceURL,
             pinnedURL: pinnedURL,
-            currentURL: webView.url,
-            modifiers: clickModifiers
+            currentURL: webView.url
         )
         switch action {
         case .openHere:
-            let allowWithoutAppLink = WKNavigationActionPolicy(rawValue: WKNavigationActionPolicy.allow.rawValue + 2) ?? .allow
+            beginInPlaceNavigation(webView)
             decisionHandler(allowWithoutAppLink)
             
         case .openNewWindow:
@@ -3811,10 +3830,10 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             
         case .openExternal:
             if service.isPinnedTabs, navigationAction.navigationType != .linkActivated {
-                // Pinned tabs never navigate in place, even for form submits
-                // and redirects. The popup shares the engine's store, so
-                // sessions set during auth bounces survive; Safari would
-                // strand them outside Quiper.
+                // Pinned tabs never navigate in place on their own, even
+                // for form submits and redirects. The popup shares the
+                // engine's store, so sessions set during auth bounces
+                // survive; Safari would strand them outside Quiper.
                 if let parentWindow = webView.window {
                     openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow, opener: webView)
                 } else {
@@ -3823,14 +3842,15 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
                 decisionHandler(.cancel)
                 return
             }
+            // A clicked link leaves for the system browser; a page-initiated
+            // navigation (a form submit, a JS navigation) stays in place —
+            // and its redirects then follow it.
             if navigationAction.navigationType == .linkActivated {
-                let targetFrameIsMain = navigationAction.targetFrame?.isMainFrame ?? true
-                if targetFrameIsMain {
-                    NSWorkspace.shared.open(url)
-                    decisionHandler(.cancel)
-                    return
-                }
+                NSWorkspace.shared.open(url)
+                decisionHandler(.cancel)
+                return
             }
+            beginInPlaceNavigation(webView)
             decisionHandler(.allow)
             
         case .openPrivate:
@@ -3848,7 +3868,7 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
                 
                 switch chosenAction {
                 case .openHere:
-                    self.loadExplicitUserURL(url, in: webView)
+                    self.openLinkHere(url, in: webView)
                 case .openNewWindow:
                     if let parentWindow = webView.window {
                         self.openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow, opener: webView)
@@ -3987,11 +4007,16 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
 
     @available(macOS 11.3, *)
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        // The navigation ended as a download: no commit or failure callback
+        // follows it, so this is the only place its in-place state ends.
+        endInPlaceNavigation(webView)
         startTracking(download, in: webView)
     }
 
     @available(macOS 11.3, *)
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        // The navigation ended as a download: nothing is left to follow.
+        endInPlaceNavigation(webView)
         startTracking(download, in: webView)
     }
 
@@ -4009,6 +4034,8 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        // The process died mid-navigation; nothing is left to follow.
+        endInPlaceNavigation(webView)
         let token = ObjectIdentifier(webView)
         var retryState = processTerminationRetryStates[token] ?? WebProcessTerminationRetryState()
         if retryState.shouldRetry() {
@@ -4035,6 +4062,11 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         // We handle loading state via KVO and delegates, so mostly nothing needed here
         // Except explicit reset calls if needed
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        // The page committed: the navigation's redirect chain is over.
+        endInPlaceNavigation(webView)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -4073,10 +4105,12 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         // Clearing it would leave the popup permanently URL-less, and every
         // later snapshot — and with it the focus descriptor — would write
         // nil for a popup that is still alive.
+        endInPlaceNavigation(webView)
         handleNavigationFailure(error, for: webView)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        endInPlaceNavigation(webView)
         handleNavigationFailure(error, for: webView)
     }
     
@@ -4493,7 +4527,6 @@ extension WebViewManager: WebViewContextMenuDelegate {
             completion(nil)
             return
         }
-        let isPinnedTabs = pinnedURL != nil && service.isPinnedTabs
         let currentURL = webView.url
         func emphasis(_ modifiers: ClickModifiers) -> ContextMenuLinkAction? {
             ContextMenuLinkAction.predictedByClick(
@@ -4509,8 +4542,7 @@ extension WebViewManager: WebViewContextMenuDelegate {
                     currentURL: currentURL,
                     modifiers: modifiers
                 ),
-                modifiers: modifiers,
-                isPinnedTabs: isPinnedTabs
+                modifiers: modifiers
             )
         }
         completion(PlainClickEmphasis(
@@ -4527,7 +4559,7 @@ extension WebViewManager: WebViewContextMenuDelegate {
             guard let self, let url else { return }
             switch action {
             case .openHere:
-                self.loadExplicitUserURL(url, in: webView)
+                self.openLinkHere(url, in: webView)
             case .openNewWindow:
                 self.openLinkInNewWindow(url, from: webView)
             case .openSystemBrowser:
@@ -4544,6 +4576,29 @@ extension WebViewManager: WebViewContextMenuDelegate {
         guard let service = service(for: opener),
               let parentWindow = opener.window else { return }
         openInPopup(url: url, service: service, configuration: opener.configuration, parentWindow: parentWindow, opener: opener)
+    }
+
+    /// Performs what a held ⌘/⌥/⇧ forces on a link click — the single
+    /// execution point shared by every frame path, so a modifier can only
+    /// ever mean one thing. ⌥ performs the explicit Open Link Here action
+    /// itself, exactly what its context-menu item does. The caller has
+    /// already cancelled the click.
+    private func performForcedClickAction(_ action: RoutingResolver.Decision, for url: URL, service: Service, in webView: WKWebView) {
+        switch action {
+        case .openHere:
+            openLinkHere(url, in: webView)
+        case .openNewWindow:
+            if let parentWindow = webView.window {
+                openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow, opener: webView)
+            }
+        case .openExternal:
+            NSWorkspace.shared.open(url)
+        case .openPrivate:
+            openLinkPrivately(url, from: webView)
+        case .showPrompt, .cancel:
+            // Click modifiers never force these.
+            break
+        }
     }
 
     /// Single gate for "Open Private" — the context-menu item and

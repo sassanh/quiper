@@ -800,7 +800,7 @@ final class AppEnvironment: ObservableObject {
 
     /// Persists a remembered routing choice for a host at the top of the engine's
     /// routing rules, mirroring macOS `rememberDecision`. Pinned tabs never
-    /// navigate in place, so remembered stays become popups.
+    /// stay by rule, so remembered stays become popups.
     func rememberRoutingDecision(host: String, action: RoutingAction, serviceID: UUID) {
         guard !host.isEmpty,
               !isServiceLocked(serviceID),

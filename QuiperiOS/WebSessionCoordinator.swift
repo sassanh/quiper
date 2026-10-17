@@ -9,6 +9,14 @@ final class WebSessionCoordinator: NSObject {
     private let sessionIndex: Int
     private var notificationBridge: WebNotificationBridge?
     private var userApprovedURLs = Set<URL>()
+    /// Whether the webview's in-flight main-frame navigation was allowed to
+    /// stay where it is, so a request that continues it — a redirect, which
+    /// arrives as a `.other` request — is followed instead of being routed
+    /// again. `.other` is also the type script navigations and meta
+    /// refreshes carry, so one arriving while the navigation is still
+    /// provisional follows it too; WebKit offers no way to tell them apart
+    /// at this decision point. Mirrors macOS `WebViewManager.inPlaceNavigations`.
+    private var inPlaceNavigationInFlight = false
     private(set) var keyboardSuppressed = false
     private var activeDownloads: [ObjectIdentifier: WKDownload] = [:]
 
@@ -75,6 +83,7 @@ final class WebSessionCoordinator: NSObject {
     func invalidate() {
         notificationBridge?.invalidate()
         notificationBridge = nil
+        endInPlaceNavigation()
         guard let webView else { return }
         let userContentController = webView.configuration.userContentController
         userContentController.removeScriptMessageHandler(forName: "quiperInputState")
@@ -186,6 +195,31 @@ final class WebSessionCoordinator: NSObject {
         UIApplication.shared.open(url)
     }
 
+    /// Single gate for the "Open Link Here" action — the routing prompt's
+    /// Open Here, and any future trigger alike: show `url` in the webview
+    /// right now, as an explicit instruction. Link routing rules and (in
+    /// pinned engines) the pinned address are bypassed; the navigation's
+    /// redirects then follow it. Mirrors macOS `WebViewManager.openLinkHere`.
+    private func openLinkHere(_ url: URL, in webView: WKWebView) {
+        userApprovedURLs.insert(url)
+        // A fresh load supersedes whatever navigation was in flight; its
+        // redirect chain no longer continues anything.
+        endInPlaceNavigation()
+        webView.load(URLRequest(url: url))
+    }
+
+    /// Arms the in-place navigation rule: the main-frame navigation at hand
+    /// is allowed to stay here, so its redirects follow it.
+    private func beginInPlaceNavigation() {
+        inPlaceNavigationInFlight = true
+    }
+
+    /// Disarms the in-place navigation rule: the next main-frame request
+    /// either starts a fresh decision or never comes.
+    private func endInPlaceNavigation() {
+        inPlaceNavigationInFlight = false
+    }
+
     private func presentRoutingPrompt(for url: URL, webView: WKWebView) {
         let alert = UIAlertController(
             title: "Security & Routing",
@@ -193,20 +227,19 @@ final class WebSessionCoordinator: NSObject {
             preferredStyle: .alert
         )
         let host = url.host ?? ""
-        // Pinned tabs never navigate in place: offer only external choices.
-        if !service.isPinnedTabs {
-            let openHere = UIAlertAction(title: "Open Here", style: .default) { [weak self] _ in
-                self?.userApprovedURLs.insert(url)
-                webView.load(URLRequest(url: url))
-            }
-            let openHereAlways = UIAlertAction(title: "Always Open Here", style: .default) { [weak self] _ in
-                self?.onRememberRoutingDecision?(host, .internalStay)
-                self?.userApprovedURLs.insert(url)
-                webView.load(URLRequest(url: url))
-            }
-            alert.addAction(openHere)
-            alert.addAction(openHereAlways)
+        // Open Here shows the link in the tab right away, as the explicit
+        // instruction it is, so the prompt offers it in every engine — in a
+        // pinned tab the pinned address steps aside for it, and the drift
+        // is transient.
+        let openHere = UIAlertAction(title: "Open Here", style: .default) { [weak self] _ in
+            self?.openLinkHere(url, in: webView)
         }
+        let openHereAlways = UIAlertAction(title: "Always Open Here", style: .default) { [weak self] _ in
+            self?.onRememberRoutingDecision?(host, .internalStay)
+            self?.openLinkHere(url, in: webView)
+        }
+        alert.addAction(openHere)
+        alert.addAction(openHereAlways)
         let openExternally = UIAlertAction(title: "Open Externally", style: .default) { [weak self] _ in
             self?.openExternally(url)
         }
@@ -227,6 +260,9 @@ extension WebSessionCoordinator: WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         if navigationAction.shouldPerformDownload {
+            // A download supersedes the page navigation in flight; its
+            // redirect chain no longer continues anything.
+            endInPlaceNavigation()
             decisionHandler(.download)
             return
         }
@@ -269,20 +305,36 @@ extension WebSessionCoordinator: WKNavigationDelegate {
 
         if userApprovedURLs.contains(url) {
             userApprovedURLs.remove(url)
+            beginInPlaceNavigation()
             decisionHandler(allowWithoutAppLink)
             return
         }
 
+        // A redirect continues the navigation that was already allowed to
+        // stay here: it opens where that navigation was going instead of
+        // being routed again. Redirects arrive as `.other` requests; that
+        // type also carries script navigations and meta refreshes, so one
+        // landing while this navigation is still provisional follows it
+        // too — WebKit offers no way to tell them apart here. A click or
+        // form submit below starts a fresh decision.
+        if inPlaceNavigationInFlight, navigationAction.navigationType == .other {
+            decisionHandler(allowWithoutAppLink)
+            return
+        }
+        // Any other decision starts a fresh outcome for this webview.
+        endInPlaceNavigation()
+
         switch RoutingResolver.route(for: url, service: service, serviceURL: serviceURL, pinnedURL: pinnedURL, currentURL: webView.url) {
         case .openHere:
+            beginInPlaceNavigation()
             decisionHandler(allowWithoutAppLink)
         case .openNewWindow:
             decisionHandler(.cancel)
             openExternally(url)
         case .openExternal:
-            // Pinned tabs never navigate in place, even for form submits and
-            // redirects. iOS has no popup windows, so non-link navigations
-            // leave for the system browser.
+            // Pinned tabs never navigate in place on their own, even for
+            // form submits and redirects. iOS has no popup windows, so
+            // non-link navigations leave for the system browser.
             if service.isPinnedTabs, navigationAction.navigationType != .linkActivated {
                 decisionHandler(.cancel)
                 openExternally(url)
@@ -292,6 +344,10 @@ extension WebSessionCoordinator: WKNavigationDelegate {
                 decisionHandler(.cancel)
                 openExternally(url)
             } else {
+                // A page-initiated navigation (a form submit, a JS
+                // navigation) stays in place — and its redirects then
+                // follow it.
+                beginInPlaceNavigation()
                 decisionHandler(.allow)
             }
         case .showPrompt:
@@ -312,6 +368,8 @@ extension WebSessionCoordinator: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation?) {
+        // The page committed: the navigation's redirect chain is over.
+        endInPlaceNavigation()
         notifyNavigationState(for: webView)
     }
 
@@ -326,6 +384,7 @@ extension WebSessionCoordinator: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation?, withError error: Error) {
+        endInPlaceNavigation()
         onLoading?(false)
         notifyNavigationState(for: webView)
         onLoadFailure?(error)
@@ -333,6 +392,7 @@ extension WebSessionCoordinator: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation?, withError error: Error) {
+        endInPlaceNavigation()
         onLoading?(false)
         notifyNavigationState(for: webView)
         onLoadFailure?(error)
@@ -443,14 +503,21 @@ extension WebSessionCoordinator: WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        // The process died mid-navigation; nothing is left to follow.
+        endInPlaceNavigation()
         onWebContentProcessTerminated?()
     }
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        // The navigation ended as a download: nothing is left to follow.
+        endInPlaceNavigation()
         retain(download)
     }
 
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        // The navigation ended as a download: no commit or failure callback
+        // follows it, so this is the only place its in-place state ends.
+        endInPlaceNavigation()
         retain(download)
     }
 
@@ -562,6 +629,9 @@ extension WebSessionCoordinator: WKUIDelegate {
         // approvedURLs.
         if navigationAction.targetFrame == nil, let url = navigationAction.request.url {
             userApprovedURLs.insert(url)
+            // A fresh load supersedes whatever navigation was in flight;
+            // its redirect chain no longer continues anything.
+            endInPlaceNavigation()
             webView.load(navigationAction.request)
         }
         return nil

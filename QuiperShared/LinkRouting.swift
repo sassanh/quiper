@@ -50,7 +50,8 @@ enum RoutingResolver {
     /// navigations (target matches the page ignoring `#fragment`) always stay
     /// in place, even when the page host has drifted from the service root
     /// through redirects or routing rules. Held click modifiers then force
-    /// their own destination through `modifierDecision`, so the outcome is
+    /// their own destination through `modifierDecision` — ⌥ opens the link
+    /// right here, in every frame and every engine — so the outcome is
     /// exactly what the click performs.
     static func route(
         for url: URL,
@@ -60,56 +61,36 @@ enum RoutingResolver {
         currentURL: URL?,
         modifiers: ClickModifiers = .none
     ) -> Decision {
-        let bareDecision = routeWithoutModifiers(
+        modifierDecision(modifiers: modifiers) ?? routeWithoutModifiers(
             for: url,
             service: service,
             serviceURL: serviceURL,
             pinnedURL: pinnedURL,
             currentURL: currentURL
         )
-        return modifierDecision(
-            modifiers: modifiers,
-            bareDecision: bareDecision,
-            isPinnedTabs: pinnedURL != nil && service.isPinnedTabs
-        ) ?? bareDecision
     }
 
     /// The single gate for what held ⌘/⌥/⇧ force on a link click. ⌘⇧
     /// always opens the link in a private tab (alone or with ⌥ held too),
-    /// ⌘⌥ always sends it to the system browser, and ⌘ always sends it to
-    /// a new window, wherever the bare click would have gone. ⌥ always
-    /// opens here — except where "here" cannot exist: a bare click that
-    /// already stays keeps its outcome (a same-document scroll, a subframe
-    /// navigation, an undecided named target pass nil here), and pinned
-    /// tabs, which never navigate in place, divert the intent to a popup
-    /// exactly as an internal rule does. Shift without ⌘ means nothing and
-    /// leaves the bare outcome standing. `bareDecision` is what the bare
-    /// click decides; nil when the bare outcome is frame-local or undecided.
+    /// ⌘⌥ always sends it to the system browser, and ⌘ always sends it to a
+    /// new window, wherever the bare click would have gone. ⌥ performs the
+    /// explicit Open Link Here action — the very thing its context-menu
+    /// item does — in every frame and every engine, pinned tabs included,
+    /// so however the action is triggered it is the same thing. Shift
+    /// without ⌘ means nothing and leaves the bare outcome standing.
     /// Returns nil when nothing is forced, so the bare outcome stands.
-    static func modifierDecision(
-        modifiers: ClickModifiers,
-        bareDecision: Decision?,
-        isPinnedTabs: Bool
-    ) -> Decision? {
+    static func modifierDecision(modifiers: ClickModifiers) -> Decision? {
         guard !modifiers.isEmpty else { return nil }
         if modifiers.commandPressed {
             if modifiers.shiftPressed { return .openPrivate }
             if modifiers.optionPressed { return .openExternal }
             return .openNewWindow
         }
-        guard modifiers.optionPressed else { return nil }
-        // Option only: force "here" only where here exists.
-        guard let bareDecision, bareDecision != .openHere else { return nil }
-        guard !isPinnedTabs else {
-            // A popup already stands; anything else that would leave the tab
-            // answers the open-here intent as a popup instead.
-            return bareDecision == .openNewWindow ? nil : .openNewWindow
-        }
-        return .openHere
+        return modifiers.optionPressed ? .openHere : nil
     }
 
     /// The routing rules without click modifiers: the bare click's decision,
-    /// which `route` then hands to `modifierDecision`.
+    /// which `route` falls back to when no modifier forces its own.
     private static func routeWithoutModifiers(
         for url: URL,
         service: Service,
@@ -168,9 +149,10 @@ enum RoutingResolver {
     }
 
     /// Pinned-tab routing: no same-origin fast path, and in-place stays are
-    /// diverted to popups so the tab address never changes. Prompts and
-    /// external targets keep their meaning; the prompt UI offers only
-    /// popup or external choices.
+    /// diverted to popups so a bare click never changes the tab address.
+    /// Prompts and external targets keep their meaning. The explicit Open
+    /// Link Here action — the menu item, ⌥, or the prompt's Open Here —
+    /// bypasses routing entirely, so it is not decided here.
     private static func routeForPinnedTabs(url: URL, service: Service) -> Decision {
         let targetString = url.absoluteString
         for rule in service.routingRules {

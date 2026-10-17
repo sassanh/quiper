@@ -341,66 +341,46 @@ extension ContextMenuLinkAction {
     /// decision a main-frame destination takes, and the modifiers held for
     /// this click. `routingDecision` comes from `RoutingResolver.route`
     /// already run with these same modifiers, so a main-frame destination is
-    /// exactly what the click performs; `target="_blank"` always opens a
-    /// Quiper popup because `createWebViewWith` bypasses routing, with held
-    /// modifiers forcing against that bare outcome instead — ⌘⇧ opening the
-    /// link in a private sub-window wherever it would have gone. A click that
-    /// stays inside a subframe, a download, and a named target frame that
-    /// may or may not exist answer nil when no modifier names a definite
-    /// action; a routing prompt answers nil for a bare click and yields to
-    /// ⌥. Downloads win over every modifier combination, because
-    /// `shouldPerformDownload` runs before routing sees the click.
+    /// exactly what the click performs. Held modifiers force their own
+    /// destination wherever the click would have gone — ⌥ performs the
+    /// context menu's Open Link Here itself, in every frame and every
+    /// engine — and `target="_blank"` always opens a Quiper popup because
+    /// `createWebViewWith` bypasses routing. A click that stays inside a
+    /// subframe, a download, and a named target frame that may or may not
+    /// exist answer nil when no modifier names a definite action. Downloads
+    /// win over every modifier combination, because `shouldPerformDownload`
+    /// runs before routing sees the click.
     static func predictedByClick(
         target: String,
         isDownload: Bool,
         isMainFrame: Bool,
         parentFrameIsMainFrame: Bool,
         routingDecision: RoutingResolver.Decision,
-        modifiers: ClickModifiers = .none,
-        isPinnedTabs: Bool = false
+        modifiers: ClickModifiers = .none
     ) -> ContextMenuLinkAction? {
         if isDownload { return nil }
+        // A held modifier names its action wherever the click sits: ⌥'s
+        // Open Link Here performs the very item, so a subframe and a named
+        // target reach it too.
+        if let forced = RoutingResolver.modifierDecision(modifiers: modifiers) {
+            return menuAction(for: forced)
+        }
         switch target.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "_blank":
             // createWebViewWith makes the bare outcome a popup whatever
             // routing says about the destination.
-            let decision = RoutingResolver.modifierDecision(
-                modifiers: modifiers,
-                bareDecision: .openNewWindow,
-                isPinnedTabs: isPinnedTabs
-            ) ?? .openNewWindow
-            return menuAction(for: decision)
+            return .openNewWindow
         case "_top":
             break
         case "_parent":
-            if !parentFrameIsMainFrame { return forcedAction(modifiers: modifiers, bareDecision: nil, isPinnedTabs: isPinnedTabs) }
+            if !parentFrameIsMainFrame { return nil }
         case "_self", "":
-            if !isMainFrame { return forcedAction(modifiers: modifiers, bareDecision: nil, isPinnedTabs: isPinnedTabs) }
+            if !isMainFrame { return nil }
         default:
             // A named frame may exist (navigating it) or not (a new window).
-            return forcedAction(modifiers: modifiers, bareDecision: nil, isPinnedTabs: isPinnedTabs)
+            return nil
         }
         return menuAction(for: routingDecision)
-    }
-
-    /// The item modifiers force on an outcome the bare click leaves
-    /// undecided — a click that stays inside its frame, a named target that
-    /// may not exist. ⌘, ⌘⇧, and ⌘⌥ always name a definite action. ⌥
-    /// answers nothing: exact for a frame that exists, where the click
-    /// keeps its frame-local outcome; deliberately silent for a named frame
-    /// that may not exist, where the click really would open in place — the
-    /// preview cannot know whether the frame is there, so it claims nothing.
-    private static func forcedAction(
-        modifiers: ClickModifiers,
-        bareDecision: RoutingResolver.Decision?,
-        isPinnedTabs: Bool
-    ) -> ContextMenuLinkAction? {
-        guard let decision = RoutingResolver.modifierDecision(
-            modifiers: modifiers,
-            bareDecision: bareDecision,
-            isPinnedTabs: isPinnedTabs
-        ) else { return nil }
-        return menuAction(for: decision)
     }
 
     /// Maps a routing decision onto the menu item that performs it; the

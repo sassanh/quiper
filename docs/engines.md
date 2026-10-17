@@ -38,11 +38,12 @@ To switch types, open **Settings (`⌘ ⇧ ,`) ➔ Engines ➔ [Select Engine] �
 
 ### Link Behavior
 
-Pinned tabs never navigate in place, so the tab address stays fixed:
+A pinned tab changes its address only when you ask it to:
 
-*   Reloading the pinned address itself (ignoring `#fragment` and a trailing `/`) stays in the tab.
-*   Every other navigation leaves the tab: link clicks open in a popup or the system browser, and form submits/redirects open in a popup sharing the engine's storage (so auth bounces keep their sessions).
-*   Routing rules offer only **Popup** and **Safari** for new rules. Existing **Internal** rules open in a popup instead, **Prompt** rules still prompt (with only popup/browser choices), and remembered "Always Open Here" choices are stored as popups.
+*   Reloading the pinned address itself (ignoring `#fragment` and a trailing `/`) stays in the tab — along with any redirect the server answers it with, which is the reload's own continuation.
+*   **Open Link Here** — the context-menu item, an **⌥**-click, or the routing prompt's **Open Here** choice — shows the link in the tab right away, as the explicit instruction it is; the pinned address steps aside for it, and the drift is transient.
+*   Everything else leaves the tab: link clicks open in a popup or the system browser, and form submits/script navigations open in a popup sharing the engine's storage (so auth bounces keep their sessions).
+*   Routing rules offer only **Popup** and **Safari** for new rules. Existing **Internal** rules open in a popup instead, and **Prompt** rules still prompt — with **Open Here** as a one-off explicit instruction alongside the popup and browser choices. Remembered Open Here choices are stored as popups: a pinned tab never stays by rule.
 
 ---
 
@@ -206,7 +207,9 @@ Every engine has its own **Domain Routing** editor (**Settings ➔ Engines ➔ [
 1.  **Same-Origin Priority:** Links to the engine's own domain (or its subdomains) always open inline, regardless of any rule — this guarantees normal in-app navigation is never intercepted. Exception: `Pinned Tabs` engines have no same-origin fast path — only the pinned address itself stays; everything else leaves the tab (see Pinned-Tab Engines).
 2.  **Ordered Rule Matching:** For every other link, Quiper walks the **Routing Rules** list from top to bottom and applies the action of the **first rule whose regex pattern matches** the URL. Reorder rules with the chevrons next to each row to control priority.
 3.  **Default Fallback:** If no rule matches, the link opens externally in your default system browser.
-4.  **Modifier Overrides:** The modifiers you hold at the moment of the click pick the destination directly, overriding whatever the rules decided: **⌘** opens the link in a new Quiper window, **⌥** opens it right in the current tab, **⌘⌥** sends it to the system browser, **⌘⇧** opens it in a private window. The link's context menu shows these as right-aligned shortcuts on its items, and its bold follows the modifiers you hold, so the highlighted item is the one your click will perform. Two outcomes still stand over every modifier: a link with a `download` attribute downloads, and Pinned Tabs engines never navigate in place — there **⌥** opens a popup instead.
+4.  **Modifier Overrides:** The modifiers you hold at the moment of the click pick the destination directly, overriding whatever the rules decided: **⌘** opens the link in a new Quiper window, **⌥** opens it right in the current tab — the same **Open Link Here** action as the context menu, in every engine — **⌘⌥** sends it to the system browser, **⌘⇧** opens it in a private window. The link's context menu shows these as right-aligned shortcuts on its items, and its bold follows the modifiers you hold, so the highlighted item is the one your click will perform. One outcome still stands over every modifier: a link with a `download` attribute downloads.
+
+These rules decide where a navigation starts. Once a navigation is allowed to continue in Quiper — in the tab or in a popup — its redirects continue with it, so a redirected page lands where its navigation was going instead of the redirect being routed again.
 
 ### Routing Actions
 

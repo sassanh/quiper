@@ -761,8 +761,7 @@ final class WebViewContextMenuTests: XCTestCase {
         isMainFrame: Bool = true,
         parentFrameIsMainFrame: Bool = true,
         decision: RoutingResolver.Decision,
-        modifiers: ClickModifiers = .none,
-        isPinnedTabs: Bool = false
+        modifiers: ClickModifiers = .none
     ) -> ContextMenuLinkAction? {
         ContextMenuLinkAction.predictedByClick(
             target: target,
@@ -770,8 +769,7 @@ final class WebViewContextMenuTests: XCTestCase {
             isMainFrame: isMainFrame,
             parentFrameIsMainFrame: parentFrameIsMainFrame,
             routingDecision: decision,
-            modifiers: modifiers,
-            isPinnedTabs: isPinnedTabs
+            modifiers: modifiers
         )
     }
 
@@ -881,23 +879,20 @@ final class WebViewContextMenuTests: XCTestCase {
 
         // A subframe click or a named target the bare click leaves
         // undecided still answer modifiers that name a definite action;
-        // ⌥ changes nothing about a click that does not leave.
+        // ⌥ performs Open Link Here in every frame, so it reaches even a
+        // click that does not leave.
         XCTAssertEqual(predicted(isMainFrame: false, decision: .openExternal, modifiers: commandShift), .openPrivate)
         XCTAssertEqual(predicted(isMainFrame: false, decision: .openExternal, modifiers: commandOption), .openSystemBrowser)
         XCTAssertEqual(predicted(target: "sidebar", decision: .openExternal, modifiers: command), .openNewWindow)
-        XCTAssertNil(predicted(isMainFrame: false, decision: .openExternal, modifiers: option))
-        XCTAssertNil(predicted(target: "sidebar", decision: .openExternal, modifiers: option))
+        XCTAssertEqual(predicted(isMainFrame: false, decision: .openExternal, modifiers: option), .openHere)
+        XCTAssertEqual(predicted(target: "sidebar", decision: .openExternal, modifiers: option), .openHere)
 
-        // Pinned tabs: ⌥'s open-here intent diverts to a popup — the tab
-        // address never changes — while ⌘⇧ still reaches a private tab.
-        XCTAssertEqual(
-            predicted(target: "_blank", decision: .openExternal, modifiers: option, isPinnedTabs: true),
-            .openNewWindow
-        )
-        XCTAssertEqual(
-            predicted(target: "_blank", decision: .openExternal, modifiers: commandShift, isPinnedTabs: true),
-            .openPrivate
-        )
+        // A pinned engine's bare decision — already a popup from its
+        // routing gate, or a prompt under a pinned rule — yields to the
+        // held modifiers the same way: ⌥ still performs Open Link Here
+        // itself, ⌘⇧ still reaches a private tab.
+        XCTAssertEqual(predicted(decision: .openNewWindow, modifiers: option), .openHere)
+        XCTAssertEqual(predicted(decision: .showPrompt, modifiers: commandShift), .openPrivate)
 
         // Downloads win over every combination: shouldPerformDownload runs
         // before routing ever sees the click.
@@ -952,8 +947,7 @@ final class WebViewContextMenuTests: XCTestCase {
                 isMainFrame: isMainFrame,
                 parentFrameIsMainFrame: true,
                 routingDecision: decision,
-                modifiers: modifiers,
-                isPinnedTabs: pinnedURL != nil
+                modifiers: modifiers
             )
         }
 
@@ -971,27 +965,28 @@ final class WebViewContextMenuTests: XCTestCase {
         XCTAssertEqual(bold(service: promptService, serviceURL: serviceURL, url: elsewhere, modifiers: option), .openHere)
         XCTAssertEqual(bold(service: service, serviceURL: serviceURL, url: sameOrigin, modifiers: option), .openHere)
 
-        // target="_blank": the popup path yields to the held modifiers,
-        // and a pinned engine's popup stands under ⌥.
+        // target="_blank": the popup path yields to the held modifiers, ⌥
+        // included.
         XCTAssertEqual(bold(target: "_blank", service: service, serviceURL: serviceURL, url: elsewhere, modifiers: .none), .openNewWindow)
         XCTAssertEqual(bold(target: "_blank", service: service, serviceURL: serviceURL, url: elsewhere, modifiers: command), .openNewWindow)
         XCTAssertEqual(bold(target: "_blank", service: service, serviceURL: serviceURL, url: elsewhere, modifiers: commandShift), .openPrivate)
         XCTAssertEqual(bold(target: "_blank", service: service, serviceURL: serviceURL, url: elsewhere, modifiers: commandOption), .openSystemBrowser)
         XCTAssertEqual(bold(target: "_blank", service: service, serviceURL: serviceURL, url: elsewhere, modifiers: option), .openHere)
-        XCTAssertEqual(bold(target: "_blank", service: pinned, serviceURL: pinnedURL, pinnedURL: pinnedURL, url: elsewhere, modifiers: option), .openNewWindow)
+        XCTAssertEqual(bold(target: "_blank", service: pinned, serviceURL: pinnedURL, pinnedURL: pinnedURL, url: elsewhere, modifiers: option), .openHere)
 
-        // A subframe click stays: ⌘/⌘⇧/⌘⌥ name definite actions, ⌥ leaves
-        // the frame navigation alone.
+        // A subframe click: ⌘/⌘⇧/⌘⌥ name definite actions, and ⌥ performs
+        // Open Link Here itself wherever the click sits.
         XCTAssertEqual(bold(isMainFrame: false, service: service, serviceURL: serviceURL, url: elsewhere, modifiers: command), .openNewWindow)
         XCTAssertEqual(bold(isMainFrame: false, service: service, serviceURL: serviceURL, url: elsewhere, modifiers: commandShift), .openPrivate)
         XCTAssertEqual(bold(isMainFrame: false, service: service, serviceURL: serviceURL, url: elsewhere, modifiers: commandOption), .openSystemBrowser)
-        XCTAssertNil(bold(isMainFrame: false, service: service, serviceURL: serviceURL, url: elsewhere, modifiers: option))
+        XCTAssertEqual(bold(isMainFrame: false, service: service, serviceURL: serviceURL, url: elsewhere, modifiers: option), .openHere)
 
-        // Pinned engine, main frame: the gate's popup answer for ⌥ is what
-        // both sides see; ⌘⇧ still reaches a private tab; the pinned
+        // Pinned engine, main frame: the popup answer its routing gate
+        // gives a bare click is the bare row's own; ⌥ still performs Open
+        // Link Here itself, ⌘⇧ still reaches a private tab, and the pinned
         // address itself still reloads in place.
         XCTAssertEqual(bold(service: pinned, serviceURL: pinnedURL, pinnedURL: pinnedURL, url: elsewhere, modifiers: .none), .openSystemBrowser)
-        XCTAssertEqual(bold(service: pinned, serviceURL: pinnedURL, pinnedURL: pinnedURL, url: elsewhere, modifiers: option), .openNewWindow)
+        XCTAssertEqual(bold(service: pinned, serviceURL: pinnedURL, pinnedURL: pinnedURL, url: elsewhere, modifiers: option), .openHere)
         XCTAssertEqual(bold(service: pinned, serviceURL: pinnedURL, pinnedURL: pinnedURL, url: elsewhere, modifiers: commandShift), .openPrivate)
         XCTAssertEqual(bold(service: pinned, serviceURL: pinnedURL, pinnedURL: pinnedURL, url: pinnedURL, modifiers: option), .openHere)
     }

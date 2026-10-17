@@ -28,7 +28,7 @@ Right-click the login link in the overlay and choose:
 | **Open Link in System Browser** | Opens it outside Quiper |
 | **Open Private** | Opens it in a private tab |
 
-These menu choices bypass routing rules entirely — no rule editing needed. They cover links you can click; they can't intercept a redirect the page performs on its own, so for a bounce in the middle of a login flow use **Prompt** or an **Internal** rule below.
+These menu choices bypass routing rules entirely — no rule editing needed. The redirects the opened link performs follow it, so a server-side bounce stays in the tab instead of leaving mid-flow; a navigation the sign-in page starts on its own once it has loaded (a form submit, a script navigation) is still routed by the rules, so for those use **Prompt** or an **Internal** rule below.
 
 ## Ask first, remember the answer
 
@@ -41,7 +41,7 @@ The remaining way to widen the ask:
 - **Ask about every off-site link:** append a rule with pattern `^https?://` and action **Prompt** at the bottom of the list. The engine's own site stays regardless of rules, and remembered domains keep their place above it. Heads-up: every external link — citations, docs pages — now asks too.
 
 > [!NOTE]
-> Pinned Tabs engines never navigate in place, so their choices are **Open in New Window** or **Open Externally** only (see [Pinned-Tab Engines](../engines#pinned-tab-engines)).
+> In a Pinned Tabs engine, ticking **Remember my choice for this domain** with **Open Here** stores a popup rule, not an Internal one — a pinned tab never stays by rule (see [Pinned-Tab Engines](../engines#pinned-tab-engines)).
 
 ## Make it permanent: an Internal rule
 
