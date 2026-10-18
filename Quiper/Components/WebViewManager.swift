@@ -946,6 +946,19 @@ final class WebViewManager: NSObject {
         }
         return nil
     }
+
+    /// Whether this webview is a session's own pinned tab rather than a popup
+    /// opened from that session. Pinned-tab semantics — an address that never
+    /// navigates in place on its own — belong to the tab itself; a popup lives
+    /// under the same engine but browses like any other window, so a landing
+    /// page it carries may redirect itself in place instead of being diverted
+    /// into yet another window and stranded behind it.
+    func isPinnedTabSurface(_ webView: WKWebView) -> Bool {
+        guard let service = service(for: webView),
+              service.isPinnedTabs,
+              let (_, sessionIndex) = findServiceAndSession(for: webView) else { return false }
+        return webviewsByID[service.id]?[sessionIndex] === webView
+    }
     
     #if DEBUG
     func mockReceiveInputStateMessage(payload: [String: Any], service: Service, sessionIndex: Int) {
@@ -3829,11 +3842,21 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             decisionHandler(.cancel)
             
         case .openExternal:
-            if service.isPinnedTabs, navigationAction.navigationType != .linkActivated {
-                // Pinned tabs never navigate in place on their own, even
-                // for form submits and redirects. The popup shares the
-                // engine's store, so sessions set during auth bounces
-                // survive; Safari would strand them outside Quiper.
+            if isPinnedTabSurface(webView),
+               RoutingResolver.holdsPinnedAddress(currentURL: webView.url, pinnedURL: pinnedURL),
+               navigationAction.navigationType != .linkActivated {
+                // The divert protects the tab's pinned address: while the
+                // tab still holds it, it never navigates in place on its
+                // own, even for form submits and redirects. The popup
+                // shares the engine's store, so sessions set during auth
+                // bounces survive; Safari would strand them outside
+                // Quiper. A popup opened from that engine is not the
+                // pinned tab, and neither is a tab an explicit instruction
+                // (Open Link Here, ⌥, the prompt's Open Here) has already
+                // sent elsewhere: with no pinned address left to protect,
+                // the instruction's chain — a landing page's own redirect —
+                // follows in place instead of leaving the tab on the stub
+                // while the destination opens in a second window.
                 if let parentWindow = webView.window {
                     openInPopup(url: url, service: service, configuration: webView.configuration, parentWindow: parentWindow, opener: webView)
                 } else {

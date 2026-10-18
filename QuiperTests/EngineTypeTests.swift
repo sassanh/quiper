@@ -213,6 +213,21 @@ final class EngineTypeTests: XCTestCase {
         )
     }
 
+    func testPinnedAddressIsHeldOnlyWhileTheTabStillShowsIt() {
+        // The pinned-tab divert has an address to protect only while the tab
+        // holds it. A tab that has not committed an address yet is still
+        // holding it; a tab an explicit instruction (Open Link Here) sent
+        // elsewhere has stepped aside, so its chain finishes there.
+        let pinned = URL(string: "https://one.example.com/")!
+        XCTAssertTrue(RoutingResolver.holdsPinnedAddress(currentURL: nil, pinnedURL: pinned))
+        XCTAssertTrue(RoutingResolver.holdsPinnedAddress(currentURL: URL(string: "https://one.example.com")!, pinnedURL: pinned))
+        XCTAssertTrue(RoutingResolver.holdsPinnedAddress(currentURL: URL(string: "https://one.example.com/#live")!, pinnedURL: pinned))
+        XCTAssertFalse(RoutingResolver.holdsPinnedAddress(currentURL: URL(string: "https://one.example.com/other-page")!, pinnedURL: pinned))
+        XCTAssertFalse(RoutingResolver.holdsPinnedAddress(currentURL: URL(string: "https://app.example.net/landing")!, pinnedURL: pinned))
+        // No pinned address at all: nothing to protect.
+        XCTAssertFalse(RoutingResolver.holdsPinnedAddress(currentURL: URL(string: "https://one.example.com")!, pinnedURL: nil))
+    }
+
     func testHasEmptyMetadataAccountsForPinnedURLs() {
         var service = Service(name: "Test", url: "", focus_selector: "")
         XCTAssertTrue(service.hasEmptyMetadata)

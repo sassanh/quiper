@@ -135,6 +135,49 @@ final class WebViewCreationGateTests: XCTestCase {
         )
     }
 
+    func testPinnedEnginePopupsAreNotThePinnedTabSurface() {
+        let service = Service(
+            name: "Pinned Creation Gate",
+            url: "",
+            engineType: .pinnedTabs,
+            pinnedTabURLs: Service.normalizedPinnedTabURLs(["https://one.example.com"]),
+            focus_selector: "input"
+        )
+        let window = makeHostWindow()
+        let manager = makeManager(with: service, in: window)
+        let sessionWebView = manager.getOrCreateWebView(
+            for: service,
+            sessionIndex: 0,
+            dragArea: nil,
+            loadImmediately: false
+        )
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            window.close()
+        }
+
+        XCTAssertTrue(
+            manager.isPinnedTabSurface(sessionWebView),
+            "The pinned session's own tab is its pinned surface"
+        )
+
+        guard let (popupWindow, popupWebView) = openPopup(from: manager) else {
+            XCTFail("Opening a link in a new window must create a managed popup")
+            return
+        }
+        defer { popupWindow.close() }
+
+        XCTAssertEqual(
+            manager.findServiceAndSession(for: popupWebView)?.1,
+            0,
+            "A popup still resolves to the session that owns it"
+        )
+        XCTAssertFalse(
+            manager.isPinnedTabSurface(popupWebView),
+            "A popup opened from a pinned engine is not the pinned tab, so its own navigations stay in the popup"
+        )
+    }
+
     func testClosingPopupUnregistersItAndLeavesOpenerScriptsIntact() {
         let service = makeService()
         let window = makeHostWindow()

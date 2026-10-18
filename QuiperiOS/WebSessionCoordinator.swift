@@ -332,10 +332,17 @@ extension WebSessionCoordinator: WKNavigationDelegate {
             decisionHandler(.cancel)
             openExternally(url)
         case .openExternal:
-            // Pinned tabs never navigate in place on their own, even for
-            // form submits and redirects. iOS has no popup windows, so
-            // non-link navigations leave for the system browser.
-            if service.isPinnedTabs, navigationAction.navigationType != .linkActivated {
+            // The divert protects the tab's pinned address: while the tab
+            // still holds it, it never navigates in place on its own, even
+            // for form submits and redirects. iOS has no popup windows, so
+            // non-link navigations leave for the system browser. A tab the
+            // explicit Open Here instruction has already sent elsewhere
+            // has no pinned address left to protect: the instruction's
+            // chain — a landing page's own redirect — follows in place
+            // instead of stranding the tab on the stub.
+            if service.isPinnedTabs,
+               RoutingResolver.holdsPinnedAddress(currentURL: webView.url, pinnedURL: pinnedURL),
+               navigationAction.navigationType != .linkActivated {
                 decisionHandler(.cancel)
                 openExternally(url)
                 return

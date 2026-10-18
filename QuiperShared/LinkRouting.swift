@@ -206,6 +206,20 @@ enum RoutingResolver {
         return URL(string: pinnedString)
     }
 
+    /// Whether a pinned tab still holds the address its slot pins. The
+    /// pinned-tab divert — engine-initiated navigations open in a popup
+    /// instead of moving the tab — exists to protect that address; a tab an
+    /// explicit instruction (Open Link Here, ⌥, the prompt's Open Here) has
+    /// already sent elsewhere has stepped aside, so the instruction's chain
+    /// follows in place. A tab that has not committed an address yet is
+    /// still holding it; an engine without a pinned address has nothing to
+    /// hold.
+    static func holdsPinnedAddress(currentURL: URL?, pinnedURL: URL?) -> Bool {
+        guard let pinnedURL else { return false }
+        guard let currentURL else { return true }
+        return urlsMatchIgnoringFragment(currentURL, pinnedURL)
+    }
+
     /// Applies a remembered routing choice by inserting a host rule at the top of
     /// the list, mirroring macOS `rememberDecision`.
     static func applyingRememberedRule(host: String, action: RoutingAction, to service: Service) -> Service {
