@@ -60,11 +60,11 @@
 			);
 			name = "Embed Login Item";
 			outputPaths = (
-				"$(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/Contents/Library/LoginItems/Quiper.app",
+				"$(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/Contents/Library/LoginItems/$(QUIPER_LINK_HELPER_NAME)",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ ! -d \"$SCRIPT_INPUT_FILE_0\" ]; then\n\techo \"error: QuiperLinkHelper product not found at $SCRIPT_INPUT_FILE_0\" >&2\n\texit 1\nfi\nmkdir -p \"$(dirname \"$SCRIPT_OUTPUT_FILE_0\")\"\nrm -rf \"$SCRIPT_OUTPUT_FILE_0\"\ncp -R \"$SCRIPT_INPUT_FILE_0\" \"$SCRIPT_OUTPUT_FILE_0\"\n";
+			shellScript = "set -e\n# The helper builds under its distinct product name QuiperLinkHelper, so the\n# products tree never holds a second bundle named Quiper.app (two same-named\n# bundles make xcodebuild's test-target app resolution race-prone). This\n# phase renames it into the host, under the name macOS shows for the helper\n# in System Settings' Default web browser menu.\nif [ ! -d \"$SCRIPT_INPUT_FILE_0\" ]; then\n\techo \"error: QuiperLinkHelper product not found at $SCRIPT_INPUT_FILE_0\" >&2\n\texit 1\nfi\n# The declared output name comes from QUIPER_LINK_HELPER_NAME. If that\n# setting were ever unset, the path would collapse to the LoginItems\n# directory itself and the copy would land inside it; refuse instead.\ncase \"$SCRIPT_OUTPUT_FILE_0\" in\n\t*.app) ;;\n\t*)\n\t\techo \"error: QUIPER_LINK_HELPER_NAME is unset; refusing to write $SCRIPT_OUTPUT_FILE_0\" >&2\n\t\texit 1\n\t\t;;\nesac\nLOGIN_ITEMS_DIR=\"$(dirname \"$SCRIPT_OUTPUT_FILE_0\")\"\nmkdir -p \"$LOGIN_ITEMS_DIR\"\n# Both known names: a rebuild must never leave the other configuration's\n# helper behind, still claiming web links under an entry of its own.\nrm -rf \"$LOGIN_ITEMS_DIR/Quiper.app\" \"$LOGIN_ITEMS_DIR/QuiperDev.app\"\ncp -R \"$SCRIPT_INPUT_FILE_0\" \"$SCRIPT_OUTPUT_FILE_0\"\n# Only the nested copy - the one macOS points web links at - may claim the web\n# schemes. The standalone product registers with Launch Services on machines\n# that build or run it, and a web-scheme claim there would add an entry to\n# System Settings' Default web browser menu. Document types stay as built:\n# they open HTML files and never list a browser.\nplutil -insert CFBundleURLTypes -json '[{\"CFBundleTypeRole\":\"Editor\",\"CFBundleURLName\":\"app.sassanh.quiper.web\",\"CFBundleURLSchemes\":[\"http\",\"https\"]}]' \"$SCRIPT_OUTPUT_FILE_0/Contents/Info.plist\"\n# Re-sign the copy: the injected claim invalidates the signature the helper\n# target produced, and the host signs its nested code before this phase runs.\n# Entitlements come from the helper target's own signature (get-task-allow\n# in Debug) because the host seals this copy afterwards; nothing else\n# re-signs the nesting. A Developer ID identity gets a secure timestamp\n# so notarization sees a distribution-grade signature, while development\n# identities keep Xcode's timestamp=none and never call the timestamp\n# service.\ncase \"${CODE_SIGN_IDENTITY:-}\" in\n\t\"Developer ID Application\"*) TIMESTAMP_OPTION=\"--timestamp\" ;;\n\t*) TIMESTAMP_OPTION=\"--timestamp=none\" ;;\nesac\ncodesign --force --preserve-metadata=entitlements --options runtime \"$TIMESTAMP_OPTION\" --sign \"${EXPANDED_CODE_SIGN_IDENTITY:--}\" \"$SCRIPT_OUTPUT_FILE_0\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -812,6 +812,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = app.sassanh.quiper.QuiperDev;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				QUIPER_LINK_HELPER_NAME = QuiperDev.app;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -870,6 +871,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "";
+				QUIPER_LINK_HELPER_NAME = Quiper.app;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -1183,7 +1185,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = QuiperLinkHelper/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Quiper;
+				INFOPLIST_KEY_CFBundleDisplayName = QuiperDev;
 				INFOPLIST_KEY_CFBundleIconFile = QuiperIcon;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";

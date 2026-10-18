@@ -533,7 +533,13 @@ struct GeneralSettingsView: View {
         // Web links land in the resident link helper, which routes claimed
         // ones into the engines and everything else into the fallback.
         let helperURL = LinkHelperRouting.helperBundleURL(hostBundleURL: Bundle.main.bundleURL)
-        NSWorkspace.shared.setDefaultApplication(at: helperURL, toOpenURLsWithScheme: "http") { _ in
+        NSWorkspace.shared.setDefaultApplication(at: helperURL, toOpenURLsWithScheme: "http") { error in
+            if let error {
+                NSLog(
+                    "[Quiper] Could not set the link helper as the default browser: %@",
+                    error.localizedDescription
+                )
+            }
             Task { @MainActor in refreshDefaultBrowserState() }
         }
     }

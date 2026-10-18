@@ -33,19 +33,14 @@
             </array>
         </dict>
     </array>
-    <key>CFBundleURLTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeRole</key>
-            <string>Editor</string>
-            <key>CFBundleURLName</key>
-            <string>app.sassanh.quiper.web</string>
-            <key>CFBundleURLSchemes</key>
-            <array>
-                <string>http</string>
-                <string>https</string>
-            </array>
-        </dict>
-    </array>
+    <!--
+    No CFBundleURLTypes here on purpose. This plist belongs to the
+    standalone QuiperLinkHelper.app product, which machines that build or
+    run the project register with Launch Services; a web-scheme claim on it
+    would appear in System Settings' Default web browser menu as an entry
+    of its own, next to the Quiper that ships. The Embed Login Item phase
+    gives the nested copy inside the host app its http/https claim, and
+    only that copy receives web links.
+    -->
 </dict>
 </plist>

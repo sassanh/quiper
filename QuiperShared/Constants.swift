@@ -12,8 +12,12 @@ struct Constants {
         return BUNDLE_ID
     }()
 
+    /// The suffix every development identifier carries, on the app and on
+    /// anything it installs. Production identifiers never end with it.
+    static let DEV_IDENTIFIER_SUFFIX = "QuiperDev"
+
     nonisolated static let IS_DEV: Bool = {
-        return BUNDLE_ID.hasSuffix("QuiperDev")
+        return BUNDLE_ID.hasSuffix(DEV_IDENTIFIER_SUFFIX)
     }()
 
     static let LOGO_PATH = "logo/logo.png"

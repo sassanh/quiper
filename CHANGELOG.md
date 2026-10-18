@@ -23,6 +23,7 @@
 
 ### Fixed
 
+- **One Quiper in the Default Web Browser Menu**: Only the helper bundled inside the app claims web links now, so the menu shows a single **Quiper** entry instead of one per build lying around — the stray "QuiperLinkHelper" entries are gone. A development build installs its helper as **QuiperDev** and reads as an entry of its own. Two installed copies of the same name still show their versions to tell them apart.
 - **Right-Clicking Text Can't Leave the Overlay Dimmed**: On macOS 27 the context menu's system-provided items ("Ask Siri") take key status when the menu opens and may never give it back on dismiss — the overlay stayed dimmed afterwards, and clicking the window couldn't lift it because no window of Quiper's ever re-took focus. Quiper now restores the interrupted window itself once the menu session ends, and the focus-loss dim no longer shades a window that genuinely holds focus behind a stale key record.
 - **A Blank Session Reloads Back to Life**: A session that comes up on a blank page — usually its first load failing on a bad network — now recovers with plain ⌘R, Reload from Origin, or the toolbar's refresh, which load the session's own address instead of re-reading the blank page. Before, those keys reloaded the blank page and left it stuck; only the lesser-known ⇧⌘R force reload would get it back.
 - **Previous-Tab Shortcuts Reach Popups**: ⌘\` and ⇧⌘\` now switch tabs while a popup holds focus, instead of going dead the moment focus moved from the overlay to a popup.

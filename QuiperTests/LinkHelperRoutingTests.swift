@@ -146,11 +146,10 @@ final class LinkHelperRoutingTests: XCTestCase {
 
     // MARK: - Host and settings locations
 
-    func testHostBundleIdentifierComesFromTheNestedLocation() throws {
+    /// A host app bundle on disk, with just the identifier it is known by.
+    private func makeHostBundle(identifier: String) throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
         let hostBundle = root.appendingPathComponent("Quiper.app", isDirectory: true)
         let contentsDirectory = hostBundle.appendingPathComponent("Contents", isDirectory: true)
         try FileManager.default.createDirectory(at: contentsDirectory, withIntermediateDirectories: true)
@@ -160,7 +159,7 @@ final class LinkHelperRoutingTests: XCTestCase {
         <plist version="1.0">
         <dict>
             <key>CFBundleIdentifier</key>
-            <string>\(hostIdentifier)</string>
+            <string>\(identifier)</string>
         </dict>
         </plist>
         """
@@ -169,9 +168,14 @@ final class LinkHelperRoutingTests: XCTestCase {
             atomically: true,
             encoding: .utf8
         )
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return hostBundle
+    }
 
+    func testHostBundleIdentifierComesFromTheNestedLocation() throws {
+        let hostBundle = try makeHostBundle(identifier: hostIdentifier)
         let helperBundle = hostBundle.appendingPathComponent(
-            "Contents/Library/LoginItems/\(LinkHelperRouting.helperAppName)"
+            "Contents/Library/LoginItems/\(LinkHelperRouting.helperAppName(hostBundleIdentifier: hostIdentifier))"
         )
         XCTAssertEqual(
             LinkHelperRouting.hostBundleIdentifier(helperBundleURL: helperBundle),
@@ -182,7 +186,7 @@ final class LinkHelperRoutingTests: XCTestCase {
     func testHostBundleIdentifierIsNilOutsideAHost() {
         XCTAssertNil(
             LinkHelperRouting.hostBundleIdentifier(
-                helperBundleURL: URL(fileURLWithPath: "/usr/local/bin/\(LinkHelperRouting.helperAppName)")
+                helperBundleURL: URL(fileURLWithPath: "/usr/local/bin/Quiper.app")
             )
         )
     }
@@ -193,13 +197,38 @@ final class LinkHelperRoutingTests: XCTestCase {
         XCTAssertEqual(settingsFile.deletingLastPathComponent().lastPathComponent, hostIdentifier)
     }
 
-    func testHelperBundleNestsUnderTheHostLoginItems() {
-        let helperBundle = LinkHelperRouting.helperBundleURL(
-            hostBundleURL: URL(fileURLWithPath: "/Applications/Quiper.app")
-        )
+    // MARK: - The helper's folder name
+
+    func testProductionBuildsNestTheHelperAsQuiper() {
+        // The folder name is the label macOS shows for the handler in System
+        // Settings' Default web browser menu: a production install must read
+        // as plain Quiper, the way every other browser does.
         XCTAssertEqual(
-            helperBundle.path,
-            "/Applications/Quiper.app/Contents/Library/LoginItems/\(LinkHelperRouting.helperAppName)"
+            LinkHelperRouting.helperAppName(hostBundleIdentifier: hostIdentifier),
+            "Quiper.app"
+        )
+        XCTAssertEqual(LinkHelperRouting.helperAppName(hostBundleIdentifier: nil), "Quiper.app")
+    }
+
+    func testDevelopmentBuildsNestTheHelperAsQuiperDev() {
+        // A development build must not join the production entry: its helper
+        // nests as QuiperDev.app and reads as a handler of its own.
+        XCTAssertEqual(
+            LinkHelperRouting.helperAppName(hostBundleIdentifier: "app.sassanh.quiper.QuiperDev"),
+            "QuiperDev.app"
+        )
+    }
+
+    func testHelperBundleNestsUnderTheHostLoginItems() throws {
+        let productionHost = try makeHostBundle(identifier: hostIdentifier)
+        let developmentHost = try makeHostBundle(identifier: "app.sassanh.quiper.QuiperDev")
+
+        let productionHelper = LinkHelperRouting.helperBundleURL(hostBundleURL: productionHost)
+        XCTAssertEqual(productionHelper.deletingLastPathComponent().lastPathComponent, "LoginItems")
+        XCTAssertEqual(productionHelper.lastPathComponent, "Quiper.app")
+        XCTAssertEqual(
+            LinkHelperRouting.helperBundleURL(hostBundleURL: developmentHost).lastPathComponent,
+            "QuiperDev.app"
         )
     }
 }

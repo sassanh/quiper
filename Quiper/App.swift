@@ -966,8 +966,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// app runs and leaves with it, so a quit never leaves the helper
     /// behind.
     private func ensureLinkHelperResident() {
-        guard !AppController.isRunningTests, !Constants.LaunchMode.isUITesting,
-              let helperURL = linkHelperBundleURL else { return }
+        guard !AppController.isRunningTests, !Constants.LaunchMode.isUITesting else { return }
+        guard let helperURL = linkHelperBundleURL else {
+            NSLog(
+                "[Quiper] Link helper missing from %@; skipping helper residency and login item.",
+                Bundle.main.bundlePath
+            )
+            return
+        }
         registerLinkHelperLoginItem()
         repointLegacyDefaultBrowserToLinkHelper(helperURL: helperURL)
         let configuration = NSWorkspace.OpenConfiguration()

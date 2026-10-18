@@ -48,15 +48,25 @@ nonisolated enum LinkHelperDecision: Equatable {
 /// arrives as a parameter, so the whole matrix is unit-testable and the
 /// helper and main app share one implementation.
 enum LinkHelperRouting {
-    /// The helper's bundle name in the shipped host app's LoginItems folder.
-    /// The helper builds under its distinct product name `QuiperLinkHelper`,
-    /// so no second bundle named `Quiper.app` ever exists in build products
-    /// (two same-named bundles make xcodebuild's test-target app resolution
-    /// race-prone); the Embed Login Item build phase then copies it into the
-    /// host as `Quiper.app` — macOS renders an app's name in System Settings
-    /// (e.g. the Default Web Browser menu) from the on-disk folder name,
-    /// never the bundle's plist keys.
-    static let helperAppName = "Quiper.app"
+    /// The helper's bundle name in the host app's LoginItems folder.
+    ///
+    /// This name is what users see: macOS labels the handler in System
+    /// Settings' Default web browser menu with the on-disk folder name,
+    /// never with the bundle's plist keys. A production host nests
+    /// `Quiper.app`, so it lists as plain Quiper; a development host nests
+    /// `QuiperDev.app`, which lists as its own QuiperDev instead of joining
+    /// the production entry as a second Quiper.
+    ///
+    /// The name follows the host's identifier and must match the host
+    /// target's `QUIPER_LINK_HELPER_NAME` build setting, the name the Embed
+    /// Login Item phase places the bundle under.
+    static func helperAppName(hostBundleIdentifier: String?) -> String {
+        guard let hostBundleIdentifier,
+              hostBundleIdentifier.hasSuffix(Constants.DEV_IDENTIFIER_SUFFIX) else {
+            return "Quiper.app"
+        }
+        return "QuiperDev.app"
+    }
 
     /// - Parameters:
     ///   - link: the URL Launch Services delivered to the helper.
@@ -114,11 +124,13 @@ enum LinkHelperRouting {
 
     /// The nested helper bundle inside the host app: the app URL the main
     /// app opens to start the helper for this session, and the app
-    /// `setDefaultApplication` points web links at.
+    /// `setDefaultApplication` points web links at. The bundle's name is
+    /// read from the host at that URL, so a copy of the app assembles the
+    /// path for exactly the build it is.
     static func helperBundleURL(hostBundleURL: URL) -> URL {
         hostBundleURL
             .appendingPathComponent("Contents/Library/LoginItems", isDirectory: true)
-            .appendingPathComponent(helperAppName)
+            .appendingPathComponent(helperAppName(hostBundleIdentifier: Bundle(url: hostBundleURL)?.bundleIdentifier))
     }
 
     /// The host app's bundle identifier, derived from the helper's own

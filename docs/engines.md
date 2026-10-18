@@ -257,6 +257,8 @@ The **General** settings tab can make Quiper the system default web browser. Web
 
 Choosing any other browser as the default (from Quiper's settings row or System Settings) returns links to that browser; Quiper then receives only links handed to it explicitly.
 
+System Settings' **Default web browser** menu lists Quiper once; when two copies of Quiper are installed side by side — say a release and a nightly — the menu adds each one's version so they can be told apart. A development build appears as its own **QuiperDev** entry.
+
 ---
 
 ## Web Data Isolation & Management

@@ -87,18 +87,22 @@ cp -R "$APP_PATH" .
 
 if [ "$SIGNING_IDENTITY" != "-" ] && command -v codesign >/dev/null 2>&1; then
 	# The host app's entitlements file only: the helper is re-signed below
-	# with its own identity, and both products are named Quiper.app, so a
-	# name-based search can pick the wrong one.
+	# with its own identity and its own entitlements, so only the host's
+	# exact path may be used here.
 	XCENT="$BUILD_DIR/Build/Intermediates.noindex/Quiper.build/$CONFIGURATION/Quiper.build/$APP_NAME.app.xcent"
 	if [ -f "$XCENT" ]; then
 		/usr/libexec/PlistBuddy -c "Delete :com.apple.security.get-task-allow" "$XCENT" 2>/dev/null || true
 		echo "🔏 Re-signing for distribution (identity: $SIGNING_IDENTITY)..."
 		# Nested code first: the outer seal covers the helper, and --deep
 		# would push the main app's entitlements into it.
-		HELPER_PATH="$APP_NAME.app/Contents/Library/LoginItems/Quiper.app"
-		if [ -d "$HELPER_PATH" ]; then
-			codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$HELPER_PATH"
-		fi
+		# Every nested login-item helper: a release build nests Quiper.app and
+		# a development build QuiperDev.app, so signing by one hard-coded name
+		# could skip the helper silently. The glob stays inside the app bundle.
+		for helper in "$APP_NAME.app/Contents/Library/LoginItems/"*.app; do
+			if [ -d "$helper" ]; then
+				codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$helper"
+			fi
+		done
 		codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$XCENT" "$APP_NAME.app"
 	fi
 fi
