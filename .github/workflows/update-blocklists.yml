@@ -38,8 +38,11 @@ jobs:
 
       - name: Verify the app builds with the refreshed resources
         run: |
+          # This is a compile check only; hosted runners have no
+          # development signing certificate or private key.
           xcodebuild -project Quiper.xcodeproj -scheme Quiper \
-            -configuration Debug -destination "platform=macOS" build
+            -configuration Debug -destination "platform=macOS" \
+            CODE_SIGNING_ALLOWED=NO build
 
       - name: Commit updated resources
         run: |
