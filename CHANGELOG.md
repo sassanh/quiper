@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [8.0.0] - 2026-10-19
+
+This release blocks ads and trackers before every page loads, routes links from other apps, the default browser, and modifier- or menu-driven clicks to the destination you meant, and lets popups minimize to a toolbar strip while private browsing runs in its own window.
+
 ### Added
 
 - **Built-In Ad & Tracker Blocking**: Quiper now filters ads and trackers out of every page before they load, in both session tabs and popups, using the community-maintained EasyList and EasyPrivacy filter lists compiled into native WebKit rules — plus two injected AdGuard userscripts for what rules can't reach: AdGuard Extra for adblock-circumvention cases, and AdGuard's YouTube script, which strips ad metadata from the player and auto-skips video ads so YouTube plays clean. A new **Privacy** section in the General tab (macOS) and Settings (iOS) switches blocking on or off, on by default; changes take effect on open tabs at their next page load. Marker-free ("private") pages are deliberately left untouched so their content cannot betray them. Everything ships with the app and updates with each release; nothing is downloaded in the background.
