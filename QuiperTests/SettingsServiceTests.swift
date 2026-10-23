@@ -372,23 +372,6 @@ struct SettingsServiceTests {
         #expect(runner.contains("return \"ok\";"))
     }
 
-    @Test func quiperReferral_StrippedOnlyWhenOurs() {
-        let referral = "referrer=https://github.io/sassanh/quiper"
-        #expect(DefaultEngineDefinitions.urlStringWithoutQuiperReferral(
-            "https://gemini.google.com?" + referral
-        ) == "https://gemini.google.com")
-        #expect(DefaultEngineDefinitions.urlStringWithoutQuiperReferral(
-            "https://example.com?foo=1&" + referral + "&bar=2#frag"
-        ) == "https://example.com?foo=1&bar=2#frag")
-        #expect(DefaultEngineDefinitions.urlStringWithoutQuiperReferral(
-            "https://example.com?referrer=https://other.example"
-        ) == "https://example.com?referrer=https://other.example")
-        #expect(DefaultEngineDefinitions.urlStringWithoutQuiperReferral(
-            "https://example.com?noref=1"
-        ) == "https://example.com?noref=1")
-        #expect(DefaultEngineDefinitions.urlStringWithoutQuiperReferral("not a url") == "not a url")
-    }
-
     @Test func engineShortcutToggle_NewUserDefaultsEnabledWithoutMigrationPrompt() {
         Settings.shared.wipeAllData()
         _ = Settings.shared.loadSettings()

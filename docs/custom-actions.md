@@ -43,11 +43,9 @@ Quiper distinguishes two temporary modes with separate owners.
   sub-window; nothing toggles in place. The window is private by
   construction: it runs on a separate non-persistent store that is never
   saved, and it carries no injected scripts or message handlers, so websites
-  cannot detect Quiper through it. Private loads drop Quiper's referral
-  query item while keeping every other parameter. The sub-window hides when
-  you switch tabs or engines and returns when you come back, exactly like
-  any other sub-window, and its dashed, spinning border marks it as
-  private. Engine shortcuts and actions always run on the main window's
+  cannot detect Quiper through it. The sub-window hides when you switch
+  tabs or engines and returns when you come back, exactly like any other
+  sub-window, and its dashed, spinning border marks it as private. Engine shortcuts and actions always run on the main window's
   active tab — the main window is focused first so the action visibly
   happens there.
 * **Soft temporary (website-level).** The `New Temporary Session` action

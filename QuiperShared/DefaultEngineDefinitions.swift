@@ -10,32 +10,6 @@ enum DefaultEngineDefinitions {
     static let historyActionID = UUID()
     static let openSettingsActionID = UUID()
 
-    /// The referral we attach to bundled template URLs. Ephemeral loads drop
-    /// exactly this query item so sites can't identify Quiper; everything
-    /// else in the URL stays untouched.
-    static let quiperReferralQueryItemName = "referrer"
-    static let quiperReferralValue = "https://github.io/sassanh/quiper"
-
-    /// Returns the URL without our referral query item. Non-matching
-    /// referrers, other parameters, and fragments are preserved; unparseable
-    /// input comes back unchanged.
-    static func urlStringWithoutQuiperReferral(_ urlString: String) -> String {
-        guard var components = URLComponents(string: urlString),
-              let items = components.queryItems,
-              items.contains(where: {
-                  $0.name == quiperReferralQueryItemName && $0.value == quiperReferralValue
-              }) else {
-            return urlString
-        }
-        components.queryItems = items.filter {
-            !($0.name == quiperReferralQueryItemName && $0.value == quiperReferralValue)
-        }
-        if components.queryItems?.isEmpty == true {
-            components.queryItems = nil
-        }
-        return components.string ?? urlString
-    }
-
     /// Names of bundled templates that run locally on the user's machine rather
     /// than as cloud services. Used to group the Add Engine sheet into Cloud
     /// and Local sections on both platforms.
@@ -187,7 +161,7 @@ enum DefaultEngineDefinitions {
     static let definitions: [Service] = [
         Service(
             name: "Gemini",
-            url: "https://gemini.google.com?referrer=https://github.io/sassanh/quiper",
+            url: "https://gemini.google.com",
             focus_selector: "rich-textarea .textarea, .textarea, div[contenteditable='true'], textarea",
             actionScripts: [
                 DefaultEngineDefinitions.newSessionActionID: """
@@ -377,7 +351,7 @@ enum DefaultEngineDefinitions {
         ),
         Service(
             name: "Claude",
-            url: "https://claude.ai?referrer=https://github.io/sassanh/quiper",
+            url: "https://claude.ai",
             focus_selector: "[data-testid='chat-input'] div[contenteditable='true'], div[contenteditable='true'], textarea",
             actionScripts: [
                 DefaultEngineDefinitions.newSessionActionID: """
@@ -516,7 +490,7 @@ enum DefaultEngineDefinitions {
         ),
         Service(
             name: "Grok",
-            url: "https://grok.com?referrer=https://github.io/sassanh/quiper",
+            url: "https://grok.com",
             focus_selector: "textarea[aria-label='Ask Grok anything'], textarea, div[contenteditable='true']",
             actionScripts: [
                 DefaultEngineDefinitions.newSessionActionID: """
@@ -694,7 +668,7 @@ enum DefaultEngineDefinitions {
         ),
         Service(
             name: "ChatGPT",
-            url: "https://chatgpt.com?referrer=https://github.io/sassanh/quiper",
+            url: "https://chatgpt.com",
             // Prefer the stable prompt id; keep ProseMirror/role fallbacks for older markup.
             focus_selector: "#prompt-textarea, .ProseMirror[role='textbox'], textarea[name='prompt'], div[contenteditable='true'][role='textbox']",
             actionScripts: [
@@ -879,7 +853,7 @@ enum DefaultEngineDefinitions {
         ),
         Service(
             name: "X",
-            url: "https://x.com/i/grok?referrer=https://github.io/sassanh/quiper",
+            url: "https://x.com",
             focus_selector: "div[contenteditable='true'], textarea",
             actionScripts: [
                 DefaultEngineDefinitions.newSessionActionID: """
@@ -1140,8 +1114,12 @@ enum DefaultEngineDefinitions {
                 RoutingRule(pattern: "^https?://([^/]*\\.)?accounts\\.google\\.com(/|$)", action: .internalStay)
             ],
             customCSS: """
-            body, div[data-testid="primaryColumn"] {
+            body, div[data-testid="primaryColumn"], .r-kemksi:not(.r-u8s1d,.r-1867qdf,[data-viewportview="true"]), .r-14lw9ot:not(.r-u8s1d,.r-1867qdf,[data-viewportview="true"]) {
               background-color: transparent !important;
+            }
+
+            article[data-testid='tweet']:has(>div:nth-child(1)>div:nth-child(1)>div:nth-child(2)>div:nth-child(2)>div:nth-child(1)>div:nth-child(1)>div:nth-child(2)>div:nth-child(1)>div:nth-child(1)>span:nth-child(1)) {
+              display: none;
             }
             """,
         ),
@@ -1306,7 +1284,7 @@ enum DefaultEngineDefinitions {
         ),
         Service(
             name: "Z.ai",
-            url: "https://chat.z.ai?referrer=https://github.io/sassanh/quiper",
+            url: "https://chat.z.ai",
             focus_selector: "textarea, div[contenteditable='true'], [role='textbox']",
             actionScripts: [
                 DefaultEngineDefinitions.newSessionActionID: """
@@ -1486,7 +1464,7 @@ enum DefaultEngineDefinitions {
         ),
         Service(
             name: "Kimi",
-            url: "https://www.kimi.com?referrer=https://github.io/sassanh/quiper",
+            url: "https://www.kimi.com",
             focus_selector: "[contenteditable='true'][role='textbox'], textarea",
             actionScripts: [
                 DefaultEngineDefinitions.newSessionActionID: """
@@ -1631,7 +1609,7 @@ enum DefaultEngineDefinitions {
         ),
         Service(
             name: "Qwen",
-            url: "https://chat.qwen.ai?referrer=https://github.io/sassanh/quiper",
+            url: "https://chat.qwen.ai",
             focus_selector: ".message-input-textarea, textarea[placeholder='How can I help you today?'], textarea",
             actionScripts: [
                 DefaultEngineDefinitions.newSessionActionID: """
@@ -1756,7 +1734,7 @@ enum DefaultEngineDefinitions {
         ),
         Service(
             name: "DeepSeek",
-            url: "https://chat.deepseek.com?referrer=https://github.io/sassanh/quiper",
+            url: "https://chat.deepseek.com",
             focus_selector: "textarea, div[contenteditable='true'], [role='textbox']",
             actionScripts: [
                 DefaultEngineDefinitions.newSessionActionID: """
@@ -2322,7 +2300,7 @@ enum DefaultEngineDefinitions {
         ),
         Service(
             name: "Google",
-            url: "https://www.google.com?referrer=https://github.io/sassanh/quiper",
+            url: "https://www.google.com",
             focus_selector: "textarea[name='q'], input[name='q'], textarea[aria-label='Search'], input[aria-label='Search'], textarea[title='Search'], input[title='Search'], input[type='search']",
             actionScripts: [
                 DefaultEngineDefinitions.newSessionActionID: """
@@ -2341,7 +2319,7 @@ enum DefaultEngineDefinitions {
                 if (homeLink) {
                   homeLink.click();
                 } else {
-                  window.location.assign("https://www.google.com?referrer=https://github.io/sassanh/quiper");
+                  window.location.assign("https://www.google.com");
                 }
                 """,
                 DefaultEngineDefinitions.openSettingsActionID: """

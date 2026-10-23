@@ -30,7 +30,7 @@ These guides need a "run the server first" prerequisite section before the stand
 
 ## Per-guide checklist
 
-Use exact bundled-template URLs above (including the `?referrer=` parameter) when telling readers to re-add an engine manually. Each finished guide must also be wired up:
+Use exact bundled-template URLs above when telling readers to re-add an engine manually. Each finished guide must also be wired up:
 
 1. Add an entry to **Available guides** in [`../engines-setup.md`](../engines-setup.md).
 2. Add a sidebar item under "Setting Up Engines" in `docs/.vitepress/config.mts`.

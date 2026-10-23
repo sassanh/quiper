@@ -80,7 +80,7 @@ ChatGPT ships as a built-in engine template, so on a fresh install it's already 
 3.  A session tab opens and Quiper automatically places the keyboard cursor inside ChatGPT's prompt field, ready to type.
 
 > [!NOTE]
-> **Don't see a ChatGPT tab?** On a fresh install all default engines are preloaded, but if ChatGPT was removed earlier you can add it again: open **Settings (`⌘ ⇧ ,`) → Engines**, click **Add Engine**, choose **Blank**, set the name to `ChatGPT` and the URL to `https://chatgpt.com?referrer=https://github.io/sassanh/quiper`, then save. See [Managing Engines](../engines) for the focus selector (`#prompt-textarea, .ProseMirror[role='textbox'], textarea[name='prompt'], div[contenteditable='true'][role='textbox']`) and custom CSS defaults.
+> **Don't see a ChatGPT tab?** On a fresh install all default engines are preloaded, but if ChatGPT was removed earlier you can add it again: open **Settings (`⌘ ⇧ ,`) → Engines**, click **Add Engine**, choose **Blank**, set the name to `ChatGPT` and the URL to `https://chatgpt.com`, then save. See [Managing Engines](../engines) for the focus selector (`#prompt-textarea, .ProseMirror[role='textbox'], textarea[name='prompt'], div[contenteditable='true'][role='textbox']`) and custom CSS defaults.
 
 ---
 

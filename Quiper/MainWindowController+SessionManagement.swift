@@ -191,10 +191,9 @@ extension MainWindowController {
     // Every trigger creates a new sub-window; nothing toggles in place.
 
     /// Opens a new private sub-window owned by the current tab, loading the
-    /// engine home without Quiper's referral. The current tab is never
-    /// touched. An empty engine gets its session tab created first — the
-    /// force-create path empty-engine activation uses — so the sub-window
-    /// always has a live owner. Inert while the engine is locked: the
+    /// engine home. The current tab is never touched. An empty engine gets
+    /// its session tab created first — the force-create path empty-engine
+    /// activation uses — so the sub-window always has a live owner. Inert while the engine is locked: the
     /// overlay shows only the lock placeholder there and the home address
     /// lives inside the encrypted bundle.
     func openPrivateWindow() {
@@ -213,15 +212,12 @@ extension MainWindowController {
         webViewManager.openPrivateWindow(url: url, owner: owner, parentWindow: window)
     }
 
-    /// The engine home a private sub-window opens at, never carrying
-    /// Quiper's referral: the session's pinned address for pinned-tab
-    /// engines, the engine address otherwise.
+    /// The engine home a private sub-window opens at: the session's pinned
+    /// address for pinned-tab engines, the engine address otherwise.
     private static func privateWindowHomeURLString(for service: Service, sessionIndex: Int) -> String {
-        DefaultEngineDefinitions.urlStringWithoutQuiperReferral(
-            service.isPinnedTabs
-                ? (service.pinnedURL(for: sessionIndex) ?? service.url)
-                : service.url
-        )
+        service.isPinnedTabs
+            ? (service.pinnedURL(for: sessionIndex) ?? service.url)
+            : service.url
     }
 
     /// Opens a link in a new private sub-window owned by the source tab. A
