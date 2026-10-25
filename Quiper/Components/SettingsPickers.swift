@@ -1226,9 +1226,6 @@ struct ContentBlockingPicker: View {
 
 struct PromptRecordingIndicatorPicker: View {
     @ObservedObject private var settings = Settings.shared
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var previewDashPhase: CGFloat = 0
-    @State private var previewGlowPhase: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1253,45 +1250,6 @@ struct PromptRecordingIndicatorPicker: View {
             }
         }
         .frame(width: 260, alignment: .trailing)
-        .onAppear { startPreviewAnimations() }
-        .onDisappear { stopPreviewAnimations() }
-        .onReceive(NotificationCenter.default.publisher(for: .settingsWindowDidOpen)) { _ in
-            startPreviewAnimations()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .settingsWindowDidClose)) { _ in
-            stopPreviewAnimations()
-        }
-    }
-
-    /// The marching-dash previews animate only while they can actually be
-    /// seen. A `repeatForever` animation is not cancelled by leaving the
-    /// tab or closing the Settings window: it keeps ticking the SwiftUI
-    /// view graph, and every tick drives a display-cycle layout pass of
-    /// the hosting view — which the window retains for the app's whole
-    /// lifetime. An unscoped preview therefore keeps the CPU spinning
-    /// long after the window it lives in is gone.
-    private func startPreviewAnimations() {
-        guard !reduceMotion else { return }
-        previewDashPhase = 0
-        withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
-            previewDashPhase = -14
-        }
-        previewGlowPhase = 0
-        withAnimation(.linear(duration: 5).repeatForever(autoreverses: false)) {
-            previewGlowPhase = -143
-        }
-    }
-
-    /// A fresh transaction with animations disabled is what actually ends
-    /// a running `repeatForever`; it replaces the animation and lands the
-    /// phase values on their resting state.
-    private func stopPreviewAnimations() {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            previewDashPhase = 0
-            previewGlowPhase = 0
-        }
     }
 
     private func label(for style: PromptRecordingIndicatorStyle) -> String {
@@ -1331,8 +1289,7 @@ struct PromptRecordingIndicatorPicker: View {
                         style: StrokeStyle(
                             lineWidth: 2.5,
                             lineCap: .round,
-                            dash: [5, 4],
-                            dashPhase: reduceMotion ? 0 : previewDashPhase
+                            dash: [5, 4]
                         )
                     )
                     .frame(width: 52, height: 30)
@@ -1350,8 +1307,7 @@ struct PromptRecordingIndicatorPicker: View {
                         style: StrokeStyle(
                             lineWidth: 1.7,
                             lineCap: .round,
-                            dash: [18, 125],
-                            dashPhase: reduceMotion ? 0 : previewGlowPhase
+                            dash: [18, 125]
                         )
                     )
                     .frame(width: 52, height: 30)
