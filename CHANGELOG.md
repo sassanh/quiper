@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Keys a Page Doesn't Use Stop Beeping**: Pressing a key a page doesn't act on no longer triggers the system alert in the overlay or a popup, including keys the page has already inserted into an editor. Quiper's own error sounds still play.
+
 ## [8.0.0] - 2026-10-19
 
 This release blocks ads and trackers before every page loads, routes links from other apps, the default browser, and modifier- or menu-driven clicks to the destination you meant, and lets popups minimize to a toolbar strip while private browsing runs in its own window.

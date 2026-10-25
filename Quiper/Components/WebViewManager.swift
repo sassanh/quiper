@@ -3020,6 +3020,12 @@ final class WebViewManager: NSObject {
 /// alone with its top edge anchored, so the toolbar never moves.
 @MainActor
 final class PopupWindow: NSWindow, NSWindowDelegate {
+    override func keyDown(with event: NSEvent) {
+        // WebKit has already routed the key to the page. The page may perform
+        // its default action while still reporting the event as unhandled;
+        // NSWindow's fallback would then beep. A web surface stays silent.
+    }
+
     var onClose: (@MainActor () -> Void)?
     /// Set by the manager: the shared refresh/stop toggle for this popup's
     /// page, so reload semantics stay single-sourced with the main toolbar.

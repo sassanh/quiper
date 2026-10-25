@@ -16,6 +16,12 @@ public class OverlayWindow: NSWindow {
             super.performClose(sender)
         }
     }
+
+    public override func keyDown(with event: NSEvent) {
+        // WebKit has already routed the key to the page. The page may perform
+        // its default action while still reporting the event as unhandled;
+        // NSWindow's fallback would then beep. A web surface stays silent.
+    }
     
     // MARK: - Accessibility
     
