@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- **Quiper Runs Natively on Intel Macs**: The released app is now built for both Apple silicon and Intel, so the disk image runs natively on either Mac instead of only Apple silicon.
 - **Keys a Page Doesn't Use Stop Beeping**: Pressing a key a page doesn't act on no longer triggers the system alert in the overlay or a popup, including keys the page has already inserted into an editor. Quiper's own error sounds still play.
 
 ## [8.0.0] - 2026-10-19

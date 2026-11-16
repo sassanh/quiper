@@ -49,10 +49,14 @@ rm -rf "$BUILD_DIR"
 # Build with xcodebuild
 SIGNING_IDENTITY=${SIGNING_IDENTITY:-"-"}
 
+# Build for any Mac, not just the host: without a generic destination,
+# xcodebuild picks the concrete "My Mac" destination and emits only the
+# host's architecture.
 XCODEBUILD_ARGS=(
 	-project "$PROJECT"
 	-scheme "$SCHEME"
 	-configuration "$CONFIGURATION"
+	-destination "generic/platform=macOS"
 	-derivedDataPath "$BUILD_DIR"
 	MARKETING_VERSION="$APP_VERSION"
 	CURRENT_PROJECT_VERSION="$APP_BUILD"
@@ -78,6 +82,16 @@ APP_PATH="$BUILD_DIR/Build/Products/$CONFIGURATION/$APP_NAME.app"
 if [ ! -d "$APP_PATH" ]; then
 	echo "❌ Error: $APP_NAME.app not found at $APP_PATH"
 	exit 1
+fi
+
+# The release artifact must run natively on both Apple silicon and Intel;
+# refuse to ship a build that lost either slice.
+if [ "$CONFIGURATION" = "Release" ]; then
+	BUILT_ARCHS=$(lipo -archs "$APP_PATH/Contents/MacOS/$APP_NAME" 2>/dev/null || true)
+	if [[ "$BUILT_ARCHS" != *arm64* || "$BUILT_ARCHS" != *x86_64* ]]; then
+		echo "❌ Error: $APP_NAME is not universal (architectures: ${BUILT_ARCHS:-unknown})"
+		exit 1
+	fi
 fi
 
 # Copy to root for easy access. Replace, never merge: leftover files from

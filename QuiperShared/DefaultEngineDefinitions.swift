@@ -2091,12 +2091,10 @@ enum DefaultEngineDefinitions {
                 """,
             ],
             customCSS: """
-            html {
-              --bg-primary: transparent !important;
-            }
-
-            .right-sidebar-width, .sidebar-width {
-              background-color: var(--bg-secondary);
+            html[lang="en"]>body.bg-white {
+              &,&>.bg-white,&>*>.bg-surface {
+                background-color: transparent !important;
+              }
             }
             """,
         ),
