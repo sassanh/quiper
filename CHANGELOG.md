@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [8.0.1] - 2026-11-16
+
+This release makes the disk image run natively on Intel Macs as well as Apple silicon, and stops unhandled keys from beeping in the overlay.
+
 ### Fixed
 
 - **Quiper Runs Natively on Intel Macs**: The released app is now built for both Apple silicon and Intel, so the disk image runs natively on either Mac instead of only Apple silicon.
