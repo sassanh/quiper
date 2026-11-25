@@ -1,14 +1,8 @@
 import XCTest
-import AppKit
-import WebKit
 @testable import Quiper
 
 @MainActor
 final class WebLoadErrorTests: XCTestCase {
-    private func privateProperty<T>(_ object: Any, named name: String) -> T? {
-        Mirror(reflecting: object).children.first { $0.label == name }?.value as? T
-    }
-
     func testNetworkErrorClassification() {
         XCTAssertEqual(WebLoadError(error: URLError(.timedOut)).kind, .timeout)
         XCTAssertEqual(WebLoadError(error: URLError(.dnsLookupFailed)).kind, .dnsFailure)
@@ -97,46 +91,30 @@ final class WebLoadErrorTests: XCTestCase {
         XCTAssertTrue(WebLoadError.shouldSurface(NSError(domain: "WebKitErrorDomain", code: 404)))
     }
 
-    func testErrorViewPersistsWhenSessionWrapperIsHidden() throws {
-        let service = Service(name: "Service", url: "https://example.com", focus_selector: "")
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        let manager = WebViewManager(containerView: container)
-        manager.updateServices([service])
-        let webView = manager.getOrCreateWebView(
-            for: service,
-            sessionIndex: 0,
-            dragArea: nil,
-            loadImmediately: false
+    func testErrorPageShowsTheFailureAndOffersRetry() {
+        let address = URL(string: "https://failed.example/page")!
+        let page = WebLoadErrorPage.html(
+            for: WebLoadError(kind: .timeout),
+            address: address
         )
 
-        let wrapper = try XCTUnwrap(webView.superview as? WebViewWrapperView)
-        let errorView = try XCTUnwrap(wrapper.subviews.compactMap { $0 as? WebLoadErrorView }.first)
-        wrapper.showError(WebLoadError(kind: .timeout), retryAvailable: true)
-
-        manager.hideAll()
-
-        XCTAssertTrue(wrapper.isHidden)
-        XCTAssertTrue(wrapper.isShowingError)
-        XCTAssertTrue(webView.isHidden)
-        XCTAssertFalse(errorView.isHidden)
-
-        wrapper.isHidden = false
-        XCTAssertTrue(wrapper.isShowingError)
-        XCTAssertTrue(webView.isHidden)
-        XCTAssertFalse(errorView.isHidden)
-
-        wrapper.showWebContent()
-        XCTAssertFalse(wrapper.isShowingError)
-        XCTAssertFalse(webView.isHidden)
-        XCTAssertTrue(errorView.isHidden)
-        manager.removeWebView(for: service, sessionIndex: 0)
+        XCTAssertTrue(page.contains(WebLoadError.Kind.timeout.title))
+        XCTAssertTrue(page.contains(WebLoadError.Kind.timeout.message))
+        XCTAssertTrue(
+            page.contains("location.reload()"),
+            "Retry re-requests the address the page stands for"
+        )
     }
 
-    func testRetryButtonIsDisabledWithoutRetryTarget() throws {
-        let errorView = WebLoadErrorView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        errorView.configure(error: WebLoadError(kind: .invalidURL), retryAvailable: false)
+    func testErrorPageWithoutAnAddressOffersNoRetry() {
+        let page = WebLoadErrorPage.html(
+            for: WebLoadError(kind: .invalidURL),
+            address: nil
+        )
 
-        let retryButton: NSButton = try XCTUnwrap(privateProperty(errorView, named: "retryButton"))
-        XCTAssertFalse(retryButton.isEnabled)
+        XCTAssertFalse(
+            page.contains("location.reload()"),
+            "A page with no address has nothing to retry"
+        )
     }
 }

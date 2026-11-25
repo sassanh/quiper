@@ -361,7 +361,7 @@ final class WebViewSession: NSObject, ObservableObject, UIGestureRecognizerDeleg
         webView.reload()
     }
 
-    /// Mirrors macOS `retryFailedNavigation`: reloads the URL that failed.
+    /// Reloads the URL that failed.
     func retryFailedLoad() {
         guard let url = failedRequestURL else { return }
         beginMainFrameNavigation(to: url)

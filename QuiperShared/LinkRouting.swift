@@ -232,3 +232,62 @@ enum RoutingResolver {
         return updated
     }
 }
+
+/// The address form in which a one-shot in-place approval is recorded and
+/// matched. WebKit parses a request before it decides its policy, so the
+/// address the decision reports is not always the spelling the app loaded:
+/// scheme and host read lower-case, a default port drops, an empty path
+/// gains "/", and dot segments resolve — including percent-encoded ones
+/// ("%2E%2E"), which Foundation's standardization leaves alone, and a dot
+/// segment above the root, which it leaves behind as "..". An approval
+/// recorded in the caller's spelling instead would miss the decision for
+/// the very load it was armed for, and that load would be routed as if the
+/// page had offered it.
+enum InPlaceApproval {
+    /// Whether the routing gate will see this address at all. Only http(s)
+    /// navigations are routed, so an approval for another scheme could only
+    /// linger unconsumed.
+    static func supports(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
+    }
+
+    static func key(for url: URL) -> String {
+        let standardized = url.standardized
+        guard var components = URLComponents(url: standardized, resolvingAgainstBaseURL: false) else {
+            return standardized.absoluteString
+        }
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
+        if let scheme = components.scheme, let port = components.port,
+           (scheme == "http" && port == 80) || (scheme == "https" && port == 443) {
+            components.port = nil
+        }
+        components.percentEncodedPath = canonicalPath(components.percentEncodedPath)
+        return components.string ?? standardized.absoluteString
+    }
+
+    /// Resolves dot segments the way WebKit's URL parser does: a segment is
+    /// single- or double-dot after percent-decoding, and ".." above the root
+    /// stays at the root. Repeated slashes and the empty segment a trailing
+    /// slash leaves are preserved.
+    private static func canonicalPath(_ percentEncodedPath: String) -> String {
+        let segments = percentEncodedPath.split(separator: "/", omittingEmptySubsequences: false)
+        var resolved: [Substring] = []
+        for (index, segment) in segments.enumerated() {
+            let decoded = segment.removingPercentEncoding ?? String(segment)
+            let isLast = index == segments.count - 1
+            if decoded == "." {
+                if isLast { resolved.append("") }
+            } else if decoded == ".." {
+                if resolved.count > 1 { resolved.removeLast() }
+                if isLast { resolved.append("") }
+            } else {
+                resolved.append(segment)
+            }
+        }
+        var path = resolved.joined(separator: "/")
+        if !path.hasPrefix("/") { path = "/" + path }
+        return path
+    }
+}

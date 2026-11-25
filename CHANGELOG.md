@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Back Leaves a Failed Page for the Page It Came From**: A page that fails to load now sits in history at the address that failed, so Back returns to the page you were on instead of skipping past it, Forward goes to the failed address, and the address bar shows it.
+- **Refresh Retries a Failed Page**: Refreshing a failed page — the toolbar button, ⌘R, or the Retry button on the page — re-requests the address that failed instead of reloading the page hidden behind it, and a retry that fails again updates that one history entry instead of stacking another.
+- **Typed Addresses Stay in the Tab**: An address typed into the location bar now opens in the current tab even when it is written without a trailing slash or with upper-case letters in the host, instead of being sent to the default browser.
+
 ## [8.0.1] - 2026-11-16
 
 This release makes the disk image run natively on Intel Macs as well as Apple silicon, and stops unhandled keys from beeping in the overlay.

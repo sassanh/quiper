@@ -119,6 +119,7 @@
 				SyncPreparationState.swift,
 				TextFileStorage.swift,
 				WebLoadError.swift,
+				WebLoadErrorPage.swift,
 				WebNotificationBridge.swift,
 				WebScripts.swift,
 				Zoom.swift,

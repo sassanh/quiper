@@ -36,55 +36,7 @@ protocol WebViewManagerDelegate: AnyObject {
 
 @MainActor
 final class WebViewWrapperView: NSView {
-    enum RenderMode: Equatable {
-        case webContent
-        case error
-    }
-
     weak var interactiveOverlayView: NSView?
-    private weak var managedWebView: WKWebView?
-    private weak var errorView: WebLoadErrorView?
-
-    private(set) var renderMode: RenderMode = .webContent {
-        didSet { renderSurface() }
-    }
-
-    var isShowingError: Bool { renderMode == .error }
-
-    func install(webView: WKWebView, errorView: WebLoadErrorView) {
-        managedWebView = webView
-        self.errorView = errorView
-        renderSurface()
-    }
-
-    func showWebContent() {
-        renderMode = .webContent
-    }
-
-    func showError(_ error: WebLoadError, retryAvailable: Bool) {
-        errorView?.configure(error: error, retryAvailable: retryAvailable)
-        renderMode = .error
-    }
-
-    func focusError() {
-        errorView?.focus()
-    }
-
-    func detachSessionSurface() {
-        errorView?.removeFromSuperview()
-        managedWebView = nil
-        errorView = nil
-        renderMode = .webContent
-    }
-
-    private func renderSurface() {
-        guard let managedWebView, let errorView else { return }
-
-        let showsError = renderMode == .error
-        managedWebView.isHidden = showsError
-        errorView.setVisible(showsError)
-        assert(managedWebView.isHidden != errorView.isHidden, "A session must render exactly one content surface.")
-    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         // `point` arrives in the superview's coordinates (AppKit contract).
@@ -157,7 +109,10 @@ final class WebViewManager: NSObject {
     private var pendingLazyLoadURLs: [ObjectIdentifier: String] = [:]
     private var lastKnownTitlesByWebView: [ObjectIdentifier: String] = [:]
     private var activeRequestURLsByWebView: [ObjectIdentifier: URL] = [:]
-    private var failedRequestURLsByWebView: [ObjectIdentifier: URL] = [:]
+    /// The load committing Quiper's own failure document, if one is in
+    /// flight. `didFinish` compares against it so the crash-retry budget
+    /// reset — which a real page's success earns — stays off that document.
+    private var failureDocumentNavigationByWebView: [ObjectIdentifier: WKNavigation] = [:]
     // Context-menu link recording: the latest recorder posting, and when its
     // menu opened. A posting answers a menu only from the same webview and
     // only from within the delivery allowance before the menu opened or any
@@ -218,7 +173,14 @@ final class WebViewManager: NSObject {
     // injected scripts or handlers, so websites cannot detect Quiper
     // through them.
     private var privateWebviewTokens: Set<ObjectIdentifier> = []
-    private var approvedURLs = Set<URL>()
+    /// One-shot approvals for in-place main-frame loads, by webview. An
+    /// approval belongs to the webview that asked for it — a typed address,
+    /// or the failure page's own synthetic request — so another webview
+    /// loading the same URL still makes its own routing decision. Each is
+    /// keyed by the address in WebKit's canonical form, the form the policy
+    /// decision reports, so the request the approval was meant for is the
+    /// one that consumes it.
+    private var approvedAddressesByWebView: [ObjectIdentifier: Set<String>] = [:]
     /// Webviews whose in-flight main-frame navigation is allowed to stay
     /// where it is. Armed whenever a main-frame navigation is allowed in
     /// place and consulted while it is still provisional: a request that
@@ -1070,7 +1032,6 @@ final class WebViewManager: NSObject {
             isPersistent: isUnlocked
         )
         wrapperView.addSubview(webview)
-        installErrorView(for: webview, in: wrapperView)
 
         // Add Wrapper to Container
         if let dragArea = self.dragArea {
@@ -1203,7 +1164,6 @@ final class WebViewManager: NSObject {
                             // Create the real persistent webview
                             let realWebView = self.createWebViewInstance(for: unlockedService, sessionIndex: sessionIndex, bounds: wrapperView.bounds, isPersistent: true)
                             wrapperView.addSubview(realWebView)
-                            self.installErrorView(for: realWebView, in: wrapperView)
                             
                             // Update maps
                             self.webviewsByID[unlockedService.id]?[sessionIndex] = realWebView
@@ -1411,27 +1371,8 @@ final class WebViewManager: NSObject {
         return webview
     }
 
-    private func installErrorView(for webView: WKWebView, in wrapper: WebViewWrapperView) {
-        let errorView = WebLoadErrorView(frame: wrapper.bounds)
-        errorView.autoresizingMask = [.width, .height]
-        errorView.onRetry = { [weak self, weak webView] in
-            guard let self, let webView else { return }
-            self.retryFailedNavigation(for: webView)
-        }
-        wrapper.addSubview(errorView, positioned: .above, relativeTo: nil)
-        wrapper.install(webView: webView, errorView: errorView)
-    }
-
     private func beginMainFrameNavigation(_ webView: WKWebView, to url: URL) {
-        let token = ObjectIdentifier(webView)
-        let wrapper = hostingWrapper(for: webView)
-        let errorHadFocus = wrapper?.isShowingError == true && wrapper?.isHidden == false
-        failedRequestURLsByWebView.removeValue(forKey: token)
-        wrapper?.showWebContent()
         recordAddress(url, for: webView)
-        if errorHadFocus {
-            webView.window?.makeFirstResponder(webView)
-        }
     }
 
     /// The single writer of the address a page is recorded as showing.
@@ -1448,26 +1389,47 @@ final class WebViewManager: NSObject {
         activeRequestURLsByWebView[ObjectIdentifier(webView)] = url
     }
 
-    private func showLoadError(_ error: WebLoadError, for webView: WKWebView, fallbackURL: URL? = nil) {
-        let token = ObjectIdentifier(webView)
-        // A retry must address a real page: the blank document never
+    /// Shows the failure as a document at the address that failed. The page
+    /// commits into history like any other, so Back, Forward, refresh, the
+    /// location bar, and tab restore all read it from WebKit instead of
+    /// keeping error state of their own.
+    ///
+    /// A failure at the address already showing needs no special case:
+    /// WebKit replaces the current history entry for a load of the address
+    /// it already has, so a retry that fails again updates that one page
+    /// rather than stacking a second.
+    private func showLoadError(_ error: WebLoadError, for webView: WKWebView) {
+        // A page needs an address to stand for: the blank document never
         // qualifies — retrying it "succeeds" without fetching anything —
         // so the address the session was meant to show is the last resort.
-        let candidates = [error.url, fallbackURL, intendedAddress(for: webView)]
-        if let retryURL = candidates.compactMap({ $0 }).first(where: { Self.isLoadableAddress($0) }) {
-            failedRequestURLsByWebView[token] = retryURL
+        let candidates = [error.url, intendedAddress(for: webView)]
+        guard let address = candidates.compactMap({ $0 }).first(where: { Self.isLoadableAddress($0) }) else {
+            // No address to stand for: show the page in place, with no
+            // history entry and nothing to retry.
+            commitLoadErrorPage(error, at: nil, for: webView)
+            return
         }
-        let wrapper = hostingWrapper(for: webView)
-        wrapper?.showError(error, retryAvailable: failedRequestURLsByWebView[token] != nil)
-        if wrapper?.isHidden == false {
-            wrapper?.focusError()
-        }
+
+        commitLoadErrorPage(error, at: address, for: webView)
     }
 
-    private func clearLoadError(for webView: WKWebView) {
+    private func commitLoadErrorPage(_ error: WebLoadError, at address: URL?, for webView: WKWebView) {
+        endInPlaceNavigation(webView)
         let token = ObjectIdentifier(webView)
-        failedRequestURLsByWebView.removeValue(forKey: token)
-        hostingWrapper(for: webView)?.showWebContent()
+        let html = WebLoadErrorPage.html(for: error, address: address)
+        let navigation: WKNavigation?
+        if let address {
+            // The synthetic request is Quiper's own page for an address the
+            // user already asked for, not a link the page offered: it must not
+            // be routed to a popup, the system browser, or a prompt. Approve it
+            // exactly as a typed address is approved (`loadExplicitUserURL`),
+            // one-shot.
+            approveInPlaceLoad(of: address, in: webView)
+            navigation = webView.loadSimulatedRequest(URLRequest(url: address), responseHTML: html)
+        } else {
+            navigation = webView.loadHTMLString(html, baseURL: nil)
+        }
+        failureDocumentNavigationByWebView[token] = navigation
     }
 
     private func handleNavigationFailure(_ error: Error, for webView: WKWebView) {
@@ -1484,16 +1446,9 @@ final class WebViewManager: NSObject {
         showLoadError(loadError, for: webView)
     }
 
-    private func retryFailedNavigation(for webView: WKWebView) {
-        let token = ObjectIdentifier(webView)
-        guard let url = failedRequestURLsByWebView[token] else { return }
-
-        load(url, in: webView)
-    }
-
-    /// Performs a fresh main-frame load of `url` in `webView`, resetting any
-    /// visible load-error state first. All programmatic navigations must go
-    /// through here so the error-view bookkeeping stays in one place.
+    /// Performs a fresh main-frame load of `url` in `webView`. All
+    /// programmatic navigations must go through here so the address a
+    /// refresh would target is recorded before the request goes out.
     func load(_ url: URL, in webView: WKWebView) {
         // A fresh load supersedes whatever navigation was in flight; its
         // redirect chain no longer continues anything.
@@ -1510,14 +1465,34 @@ final class WebViewManager: NSObject {
     /// window's initial load, "Open Private" inside a private sub-window —
     /// load in place, bypassing link routing (popup/external/prompt); typed
     /// addresses do so even against pinned-tab pinning: each is an explicit
-    /// instruction to show the address here. One-shot: only this URL needs
-    /// approval; the navigation's redirects then follow it (see the
+    /// instruction to show the address here. One-shot: only this address
+    /// needs approval; the navigation's redirects then follow it (see the
     /// in-place navigation rule in `decidePolicyFor`). Link actions have
     /// their own gates: `openLinkHere`, `openLinkInNewWindow`,
     /// `openLinkPrivately`.
     func loadExplicitUserURL(_ url: URL, in webView: WKWebView) {
-        approvedURLs.insert(url)
+        approveInPlaceLoad(of: url, in: webView)
         load(url, in: webView)
+    }
+
+    /// Approves exactly this navigation to stay in `webView`, bypassing the
+    /// link-routing rules. One-shot: the next main-frame policy decision for
+    /// this address in this webview consumes it. Internal rather than
+    /// private so the per-webview boundary can be asserted without a live
+    /// navigation.
+    func approveInPlaceLoad(of url: URL, in webView: WKWebView) {
+        guard InPlaceApproval.supports(url) else { return }
+        approvedAddressesByWebView[ObjectIdentifier(webView), default: []].insert(InPlaceApproval.key(for: url))
+    }
+
+    /// Consumes the approval for `url` in `webView`, if one is pending.
+    func consumeInPlaceApproval(for url: URL, in webView: WKWebView) -> Bool {
+        let token = ObjectIdentifier(webView)
+        guard var approvedAddresses = approvedAddressesByWebView[token],
+              approvedAddresses.remove(InPlaceApproval.key(for: url)) != nil
+        else { return false }
+        approvedAddressesByWebView[token] = approvedAddresses.isEmpty ? nil : approvedAddresses
+        return true
     }
 
     /// Single gate for the "Open Link Here" action — the context-menu
@@ -1555,11 +1530,10 @@ final class WebViewManager: NSObject {
     /// A page whose document has no address of its own — the initial
     /// `about:blank` left behind when a session's first load never landed,
     /// typically after a failed initialization on a bad network — has
-    /// nothing to re-request: WebKit reports success on the blank document,
-    /// clears the load-error state, and leaves the session on an empty page
-    /// no number of ⌘R presses will leave. Such a page loads the address
-    /// the session was meant to show instead, so a plain refresh always
-    /// recovers it.
+    /// nothing to re-request: WebKit reports success on the blank document
+    /// and leaves the session on an empty page no number of ⌘R presses will
+    /// leave. Such a page loads the address the session was meant to show
+    /// instead, so a plain refresh always recovers it.
     func reload(_ webView: WKWebView) {
         refresh(webView, bypassingCache: false)
     }
@@ -1613,8 +1587,8 @@ final class WebViewManager: NSObject {
             }
         case .nothing:
             // Re-requesting the blank document would "succeed" without
-            // fetching anything and clear any load error showing over it,
-            // leaving the session stranded behind a green refresh.
+            // fetching anything, leaving the session stranded on an empty
+            // page behind a green refresh.
             break
         }
     }
@@ -1639,14 +1613,6 @@ final class WebViewManager: NSObject {
     private static func isLoadableAddress(_ url: URL?) -> Bool {
         guard let urlString = url?.absoluteString else { return false }
         return !urlString.isEmpty && urlString != "about:blank"
-    }
-
-    func hasVisibleLoadError(for webView: WKWebView) -> Bool {
-        hostingWrapper(for: webView)?.isShowingError == true
-    }
-
-    func focusLoadError(for webView: WKWebView) {
-        hostingWrapper(for: webView)?.focusError()
     }
 
     func hideAll() {
@@ -1979,7 +1945,6 @@ final class WebViewManager: NSObject {
         // configuration's references without touching any other webview.
         controller.removeAllUserScripts()
 
-        hostingWrapper?.detachSessionSurface()
         stopObservingWebContent(webView)
         webView.removeFromSuperview()
         hostingWrapper?.removeFromSuperview()
@@ -1997,7 +1962,8 @@ final class WebViewManager: NSObject {
 
     private func removeLoadState(for token: ObjectIdentifier) {
         activeRequestURLsByWebView.removeValue(forKey: token)
-        failedRequestURLsByWebView.removeValue(forKey: token)
+        failureDocumentNavigationByWebView.removeValue(forKey: token)
+        approvedAddressesByWebView.removeValue(forKey: token)
         processTerminationRetryStates.removeValue(forKey: token)
         inPlaceNavigations.remove(token)
     }
@@ -2225,7 +2191,6 @@ final class WebViewManager: NSObject {
         wrapper.alphaValue = seedLevel.alpha
         popupWindow.hostWebContent(wrapper)
         wrapper.addSubview(popupWebView)
-        installErrorView(for: popupWebView, in: wrapper)
         if startHidden {
             // Relaunch restore: stay ordered out until the session switch /
             // overlay show path syncs visibility for the active tab.
@@ -3689,9 +3654,18 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
         // it here sent the same menu item to Safari or a prompt depending on
         // hidden rules. The approval carries the initial load through the
         // popup's own decidePolicyFor pass.
-        guard let parentWindow = webView.window else { return nil }
-        approvedURLs.insert(url)
-        return makePopupWebView(for: service, configuration: configuration, parentWindow: parentWindow, opener: webView)
+        guard let parentWindow = webView.window,
+              let popupWebView = makePopupWebView(
+                  for: service,
+                  configuration: configuration,
+                  parentWindow: parentWindow,
+                  opener: webView
+              )
+        else { return nil }
+        // The popup's first load is the request that opened it, not a link
+        // it offered: approve it for the popup's own routing pass.
+        approveInPlaceLoad(of: url, in: popupWebView)
+        return popupWebView
     }
 
     @MainActor
@@ -3806,9 +3780,9 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             return
         }
 
-        // Loop prevention check
-        if approvedURLs.contains(url) {
-            approvedURLs.remove(url)
+        // A one-shot in-place approval — a typed address or the failure
+        // page's own synthetic request — lands here for its webview only.
+        if consumeInPlaceApproval(for: url, in: webView) {
             beginInPlaceNavigation(webView)
             decisionHandler(allowWithoutAppLink)
             return
@@ -4078,7 +4052,10 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
             case .loadSessionAddress, .reloadDocument:
                 reload(webView)
             case .nothing:
-                showLoadError(WebLoadError(kind: .contentProcessTerminated), for: webView)
+                showLoadError(
+                    WebLoadError(kind: .contentProcessTerminated),
+                    for: webView
+                )
             }
         } else {
             showLoadError(
@@ -4096,12 +4073,23 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         // The page committed: the navigation's redirect chain is over.
         endInPlaceNavigation(webView)
+        // A different navigation committed: a failure document still in
+        // flight will never finish, so stop pinning it.
+        let token = ObjectIdentifier(webView)
+        if failureDocumentNavigationByWebView[token] !== navigation {
+            failureDocumentNavigationByWebView.removeValue(forKey: token)
+        }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         let token = ObjectIdentifier(webView)
-        processTerminationRetryStates[token]?.reset()
-        clearLoadError(for: webView)
+        // The failure document is Quiper's own page, not proof that the
+        // service loaded: it must not reset the crash-retry budget.
+        if failureDocumentNavigationByWebView[token] === navigation {
+            failureDocumentNavigationByWebView.removeValue(forKey: token)
+        } else {
+            processTerminationRetryStates[token]?.reset()
+        }
         recordAddress(webView.url, for: webView)
         // Loads re-run the creation-time stylesheet, so re-apply whatever is
         // current (covers lazy tabs and post-edit navigations).
@@ -4129,11 +4117,11 @@ extension WebViewManager: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        // The pending URL is NOT cleared here: a failed load never
-        // committed, so no live URL exists to take over (didFinish's rule).
-        // Clearing it would leave the popup permanently URL-less, and every
-        // later snapshot — and with it the focus descriptor — would write
-        // nil for a popup that is still alive.
+        // The pending URL survives until the error page for it commits:
+        // until then no live URL exists to take over (didFinish's rule).
+        // Clearing it here would leave the popup permanently URL-less, and
+        // every later snapshot — and with it the focus descriptor — would
+        // write nil for a popup that is still alive.
         endInPlaceNavigation(webView)
         handleNavigationFailure(error, for: webView)
     }

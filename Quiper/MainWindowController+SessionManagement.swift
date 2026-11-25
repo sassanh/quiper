@@ -339,12 +339,8 @@ extension MainWindowController {
         observeNavigationState(of: activeWebview)
         
         if focusWebView, !restoredFindBarFocus, !GhostOnboardingManager.shared.isActive {
-            if webViewManager.hasVisibleLoadError(for: activeWebview) {
-                webViewManager.focusLoadError(for: activeWebview)
-            } else {
-                window?.makeFirstResponder(activeWebview)
-                focusInputInActiveWebview()
-            }
+            window?.makeFirstResponder(activeWebview)
+            focusInputInActiveWebview()
         }
 
         // Sync visibility last so the focus stage below judges the popups as

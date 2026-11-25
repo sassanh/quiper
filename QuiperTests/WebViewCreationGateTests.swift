@@ -4,8 +4,9 @@ import WebKit
 @testable import Quiper
 
 /// Guarantees of the single creation gate and shared teardown introduced to
-/// make popup webviews first-class managed webviews, plus the popup
-/// toolbar's chrome contracts: control placement and glyphs.
+/// make popup webviews first-class managed webviews, the in-place approval
+/// boundary that keeps a load in the webview that asked for it, plus the
+/// popup toolbar's chrome contracts: control placement and glyphs.
 @MainActor
 final class WebViewCreationGateTests: XCTestCase {
     // WebViewManager holds its container weakly; the test must retain it.
@@ -294,7 +295,7 @@ final class WebViewCreationGateTests: XCTestCase {
     func testPopupWebContentIsHostedByTheSameWrapperSessionsUse() {
         let service = makeService()
         let window = makeHostWindow()
-        let (manager, sessionWebView) = makeSession(with: service, in: window)
+        let (manager, _) = makeSession(with: service, in: window)
         defer {
             manager.removeWebView(for: service, sessionIndex: 0)
             window.close()
@@ -306,18 +307,11 @@ final class WebViewCreationGateTests: XCTestCase {
         }
 
         let wrapper = popupWebView.superview as? WebViewWrapperView
-        XCTAssertNotNil(wrapper, "Popup web content sits in the wrapper that hosts the load-error surface")
-        XCTAssertTrue(
-            wrapper?.subviews.contains { $0 is WebLoadErrorView } == true,
-            "Popups install the same load-error surface as session tabs"
-        )
-        XCTAssertFalse(
-            manager.hasVisibleLoadError(for: popupWebView),
-            "A freshly opened popup starts without a load error"
-        )
-        XCTAssertFalse(
-            manager.hasVisibleLoadError(for: sessionWebView),
-            "The opener session also starts without a load error"
+        XCTAssertNotNil(wrapper, "Popup web content sits in the wrapper that hosts it")
+        XCTAssertEqual(
+            wrapper?.subviews.compactMap { $0 as? WKWebView }.count,
+            1,
+            "The wrapper hosts the popup's web content and nothing else"
         )
 
         popupWindow.close()
@@ -704,6 +698,125 @@ final class WebViewCreationGateTests: XCTestCase {
         XCTAssertTrue(
             popupWindow.isKeyWindow,
             "The strip still takes key status through the focus gate"
+        )
+    }
+
+    /// An in-place approval is scoped to the webview that asked for it: two
+    /// sessions failing at the same address must not share one approval, or
+    /// the second simulated load falls through to link routing.
+    func testInPlaceApprovalBelongsToTheAskingWebView() {
+        let service = makeService()
+        let window = makeHostWindow()
+        let manager = makeManager(with: service, in: window)
+        let first = manager.getOrCreateWebView(
+            for: service,
+            sessionIndex: 0,
+            dragArea: nil,
+            loadImmediately: false
+        )
+        let second = manager.getOrCreateWebView(
+            for: service,
+            sessionIndex: 1,
+            dragArea: nil,
+            loadImmediately: false
+        )
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            manager.removeWebView(for: service, sessionIndex: 1)
+            window.close()
+        }
+
+        let address = URL(string: "https://failed.example/page")!
+        manager.approveInPlaceLoad(of: address, in: first)
+
+        XCTAssertFalse(
+            manager.consumeInPlaceApproval(
+                for: URL(string: "https://failed.example/other")!,
+                in: first
+            ),
+            "An approval covers only the URL it was given for"
+        )
+        XCTAssertFalse(
+            manager.consumeInPlaceApproval(for: address, in: second),
+            "A second webview must make its own routing decision for the same URL"
+        )
+        XCTAssertTrue(
+            manager.consumeInPlaceApproval(for: address, in: first),
+            "The asking webview consumes its approval"
+        )
+        XCTAssertFalse(
+            manager.consumeInPlaceApproval(for: address, in: first),
+            "An approval is one-shot"
+        )
+    }
+
+    /// WebKit reports the canonical address in a policy decision, not the
+    /// spelling the caller loaded: a host-only address gains "/", hosts
+    /// lower-case, and dot segments resolve — including percent-encoded
+    /// ones, and with ".." stopping at the root. An approval must match
+    /// that address or a typed URL and the failure page's synthetic load
+    /// both fall through to link routing.
+    func testInPlaceApprovalMatchesWebKitsCanonicalAddress() {
+        let service = makeService()
+        let window = makeHostWindow()
+        let manager = makeManager(with: service, in: window)
+        let webView = manager.getOrCreateWebView(
+            for: service,
+            sessionIndex: 0,
+            dragArea: nil,
+            loadImmediately: false
+        )
+        defer {
+            manager.removeWebView(for: service, sessionIndex: 0)
+            window.close()
+        }
+
+        let canonical = URL(string: "https://failed.example/page")!
+        let spelled = URL(string: "https://FAILED.example/a/../page")!
+
+        manager.approveInPlaceLoad(of: URL(string: "https://EXAMPLE.com")!, in: webView)
+        XCTAssertTrue(
+            manager.consumeInPlaceApproval(
+                for: URL(string: "https://example.com/")!,
+                in: webView
+            ),
+            "A host-only address gains the path WebKit reports"
+        )
+
+        manager.approveInPlaceLoad(
+            of: URL(string: "https://failed.example/a/%2E%2E/page")!,
+            in: webView
+        )
+        XCTAssertTrue(
+            manager.consumeInPlaceApproval(
+                for: URL(string: "https://failed.example/page")!,
+                in: webView
+            ),
+            "A percent-encoded dot segment resolves as WebKit resolves it"
+        )
+
+        manager.approveInPlaceLoad(
+            of: URL(string: "https://failed.example/a/b/../../..")!,
+            in: webView
+        )
+        XCTAssertTrue(
+            manager.consumeInPlaceApproval(
+                for: URL(string: "https://failed.example/")!,
+                in: webView
+            ),
+            "A dot segment above the root stops at the root"
+        )
+
+        manager.approveInPlaceLoad(of: spelled, in: webView)
+        XCTAssertTrue(
+            manager.consumeInPlaceApproval(for: canonical, in: webView),
+            "The approval is stored in the form the policy decision reports"
+        )
+
+        manager.approveInPlaceLoad(of: canonical, in: webView)
+        XCTAssertTrue(
+            manager.consumeInPlaceApproval(for: spelled, in: webView),
+            "The reported address is matched in the same canonical form"
         )
     }
 }

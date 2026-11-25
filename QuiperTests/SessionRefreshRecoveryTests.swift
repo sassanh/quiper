@@ -3,11 +3,13 @@ import AppKit
 import WebKit
 @testable import Quiper
 
-/// A session whose first load never lands — the typical bad-network
-/// initialization — sits on the initial `about:blank`, a document with no
-/// address of its own. Refresh must load the address the session was meant
-/// to show, because re-requesting the blank document succeeds without
-/// fetching anything and strands the session on an empty page.
+/// Refresh must act on a real address. A page with an address of its own —
+/// including the page a failed load leaves behind, which commits at the
+/// address that failed — re-requests that address. A page with none, the
+/// initial `about:blank` a session sits on until its first load starts,
+/// loads the address the session was meant to show instead, because
+/// re-requesting the blank document succeeds without fetching anything and
+/// strands the session on an empty page.
 ///
 /// Every address here is a local file, so the recovery rules are exercised
 /// without a network.
@@ -90,6 +92,23 @@ final class SessionRefreshRecoveryTests: XCTestCase {
     private func isShowing(_ webView: WKWebView, address: URL) -> Bool {
         guard let committedURL = webView.url else { return false }
         return committedURL.resolvingSymlinksInPath() == address.resolvingSymlinksInPath()
+    }
+
+    /// The text the document showing in `webView` renders, or nil while it
+    /// has none. Polls because a committed document can only be read once it
+    /// has loaded.
+    private func documentText(in webView: WKWebView, timeout: TimeInterval = 5) async -> String? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let text: String? = await withCheckedContinuation { continuation in
+                webView.evaluateJavaScript("document.body ? document.body.innerText : null") { value, _ in
+                    continuation.resume(returning: value as? String)
+                }
+            }
+            if let text, !text.isEmpty { return text }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return nil
     }
 
     func testRefreshLoadsTheAddressOfASessionThatNeverStartedOne() async throws {
@@ -215,12 +234,16 @@ final class SessionRefreshRecoveryTests: XCTestCase {
             window.close()
         }
 
-        await waitUntil("the failed initialization surfaces its load error") {
-            manager.hasVisibleLoadError(for: webView)
+        await waitUntil("the failure commits its page at the failed address") {
+            self.isShowing(webView, address: failedAddress)
+        }
+        guard case .reloadDocument(let retryAddress) = manager.refreshPlan(for: webView) else {
+            XCTFail("A committed error page refreshes by re-requesting its own address")
+            return
         }
         XCTAssertEqual(
-            manager.refreshPlan(for: webView),
-            .loadSessionAddress(failedAddress),
+            retryAddress.resolvingSymlinksInPath(),
+            failedAddress.resolvingSymlinksInPath(),
             "Refresh must retry the address the session failed to load, not fall back to the engine's root"
         )
     }
@@ -249,15 +272,21 @@ final class SessionRefreshRecoveryTests: XCTestCase {
             "With no loadable address anywhere, a refresh has nothing real to act on"
         )
         manager.reload(webView)
-        XCTAssertFalse(
-            manager.hasVisibleLoadError(for: webView),
+        let fabricatedText = await documentText(in: webView, timeout: 0.5)
+        XCTAssertNil(
+            fabricatedText,
             "A refresh with nothing to do must not fabricate a load error"
         )
 
         manager.webViewWebContentProcessDidTerminate(webView)
+        let crashText = await documentText(in: webView)
         XCTAssertTrue(
-            manager.hasVisibleLoadError(for: webView),
+            crashText?.contains(WebLoadError.Kind.contentProcessTerminated.title) == true,
             "A crash retry with nothing to re-request must surface the crash instead of ending in silence"
+        )
+        XCTAssertTrue(
+            crashText?.contains(WebLoadError.Kind.contentProcessTerminated.message) == true,
+            "The crash page must explain the failure"
         )
     }
 }

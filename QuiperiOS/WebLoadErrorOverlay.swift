@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// SwiftUI counterpart of the macOS `WebLoadErrorView`: covers a session's web
-/// content when a main-frame load fails, showing the reason and a Retry button.
-/// The material background adapts to light and dark mode automatically.
+/// Covers a session's web content when a main-frame load fails, showing the
+/// reason and a Retry button. The material background adapts to light and dark
+/// mode automatically.
 struct WebLoadErrorOverlay: View {
     let error: WebLoadError
     let onRetry: () -> Void

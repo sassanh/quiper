@@ -8,7 +8,11 @@ final class WebSessionCoordinator: NSObject {
     private var service: Service
     private let sessionIndex: Int
     private var notificationBridge: WebNotificationBridge?
-    private var userApprovedURLs = Set<URL>()
+    /// One-shot approvals for in-place loads, keyed by the canonical address
+    /// the policy decision reports (see `InPlaceApproval`). A routing
+    /// prompt's Open Here and an explicit new-window load each record one
+    /// for the request they start.
+    private var approvedInPlaceAddresses = Set<String>()
     /// Whether the webview's in-flight main-frame navigation was allowed to
     /// stay where it is, so a request that continues it — a redirect, which
     /// arrives as a `.other` request — is followed instead of being routed
@@ -201,11 +205,26 @@ final class WebSessionCoordinator: NSObject {
     /// pinned engines) the pinned address are bypassed; the navigation's
     /// redirects then follow it. Mirrors macOS `WebViewManager.openLinkHere`.
     private func openLinkHere(_ url: URL, in webView: WKWebView) {
-        userApprovedURLs.insert(url)
+        approveInPlaceLoad(of: url)
         // A fresh load supersedes whatever navigation was in flight; its
         // redirect chain no longer continues anything.
         endInPlaceNavigation()
         webView.load(URLRequest(url: url))
+    }
+
+    /// Records a one-shot in-place approval for `url`, shared with macOS
+    /// `WebViewManager`: the next main-frame decision for the address
+    /// WebKit reports for this load stays here.
+    private func approveInPlaceLoad(of url: URL) {
+        guard InPlaceApproval.supports(url) else { return }
+        approvedInPlaceAddresses.insert(InPlaceApproval.key(for: url))
+    }
+
+    /// Consumes the approval for `url`'s canonical address, if one is
+    /// pending. One-shot: the decision it was armed for is the one it
+    /// allows.
+    private func consumeInPlaceApproval(for url: URL) -> Bool {
+        approvedInPlaceAddresses.remove(InPlaceApproval.key(for: url)) != nil
     }
 
     /// Arms the in-place navigation rule: the main-frame navigation at hand
@@ -303,8 +322,7 @@ extension WebSessionCoordinator: WKNavigationDelegate {
             onMainFrameNavigationBegan?(requestURL)
         }
 
-        if userApprovedURLs.contains(url) {
-            userApprovedURLs.remove(url)
+        if consumeInPlaceApproval(for: url) {
             beginInPlaceNavigation()
             decisionHandler(allowWithoutAppLink)
             return
@@ -632,10 +650,9 @@ extension WebSessionCoordinator: WKUIDelegate {
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         // Explicit new-window requests always stay in Quiper: iOS has no
         // popup windows, so they load in place. The approval carries this
-        // load through the routing pass in decidePolicyFor, mirroring macOS
-        // approvedURLs.
+        // load through the routing pass in decidePolicyFor.
         if navigationAction.targetFrame == nil, let url = navigationAction.request.url {
-            userApprovedURLs.insert(url)
+            approveInPlaceLoad(of: url)
             // A fresh load supersedes whatever navigation was in flight;
             // its redirect chain no longer continues anything.
             endInPlaceNavigation()
